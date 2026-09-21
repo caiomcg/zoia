@@ -54,15 +54,15 @@ describe('parseKey', () => {
 
 describe('minting', () => {
   test('returns a raw key that verifies back to its record', async () => {
-    const { record, rawKey } = await store.add({ name: 'Alice', role: 'viewer' });
+    const { record, rawKey } = await store.add({ name: 'Alice' });
     const verified = await store.verify(rawKey);
     assert.equal(verified.id, record.id);
     assert.equal(verified.name, 'Alice');
-    assert.equal(verified.role, 'viewer');
+    assert.equal(verified.role, 'member');
   });
 
   test('never persists the raw secret', async () => {
-    const { rawKey } = await store.add({ name: 'Alice', role: 'viewer' });
+    const { rawKey } = await store.add({ name: 'Alice' });
     // parseKey, not split('_'): the base64url secret may itself contain '_',
     // and a truncated fragment collides with the stored hash by chance.
     const secret = parseKey(rawKey).secret;
@@ -73,14 +73,14 @@ describe('minting', () => {
   test('every minted key round-trips, whatever the random secret contains', async () => {
     // Exercises the alphabet: with 40 keys, a '_' in the secret is near-certain.
     for (let i = 0; i < 40; i += 1) {
-      const { rawKey } = await store.add({ name: `user${i}`, role: 'viewer' });
+      const { rawKey } = await store.add({ name: `user${i}` });
       assert.ok(await store.verify(rawKey), `key ${i} failed to verify: ${rawKey}`);
     }
   });
 
   test('issues distinct ids and secrets', async () => {
-    const a = await store.add({ name: 'Alice', role: 'viewer' });
-    const b = await store.add({ name: 'Bob', role: 'viewer' });
+    const a = await store.add({ name: 'Alice' });
+    const b = await store.add({ name: 'Bob' });
     assert.notEqual(a.record.id, b.record.id);
     assert.notEqual(a.rawKey, b.rawKey);
   });
@@ -90,24 +90,24 @@ describe('minting', () => {
   });
 
   test('rejects a blank name', async () => {
-    await assert.rejects(() => store.add({ name: '   ', role: 'viewer' }), /name is required/);
+    await assert.rejects(() => store.add({ name: '   ' }), /name is required/);
   });
 
   test('concurrent mints all survive', async () => {
-    await Promise.all(['a', 'b', 'c', 'd', 'e'].map((n) => store.add({ name: n, role: 'viewer' })));
+    await Promise.all(['a', 'b', 'c', 'd', 'e'].map((n) => store.add({ name: n })));
     assert.equal((await store.list()).length, 5);
   });
 });
 
 describe('verification', () => {
   test('rejects a wrong secret against a real id', async () => {
-    const { record } = await store.add({ name: 'Alice', role: 'viewer' });
+    const { record } = await store.add({ name: 'Alice' });
     const forged = `zoia_${record.id}_${'x'.repeat(43)}`;
     assert.equal(await store.verify(forged), null);
   });
 
   test('rejects an unknown id', async () => {
-    await store.add({ name: 'Alice', role: 'viewer' });
+    await store.add({ name: 'Alice' });
     assert.equal(await store.verify(`zoia_deadbeef_${'x'.repeat(43)}`), null);
   });
 
@@ -116,7 +116,7 @@ describe('verification', () => {
   });
 
   test('rejects a revoked key', async () => {
-    const { record, rawKey } = await store.add({ name: 'Alice', role: 'viewer' });
+    const { record, rawKey } = await store.add({ name: 'Alice' });
     assert.ok(await store.verify(rawKey));
     await store.revoke(record.id);
     assert.equal(await store.verify(rawKey), null, 'revocation must take effect immediately');
@@ -125,7 +125,6 @@ describe('verification', () => {
   test('rejects an expired key', async () => {
     const { rawKey } = await store.add({
       name: 'Alice',
-      role: 'viewer',
       expiresAt: new Date(Date.now() - 1000).toISOString(),
     });
     assert.equal(await store.verify(rawKey), null);
@@ -134,7 +133,6 @@ describe('verification', () => {
   test('accepts a key that has not expired yet', async () => {
     const { rawKey } = await store.add({
       name: 'Alice',
-      role: 'viewer',
       expiresAt: new Date(Date.now() + 60_000).toISOString(),
     });
     assert.ok(await store.verify(rawKey));
@@ -143,7 +141,7 @@ describe('verification', () => {
 
 describe('administration', () => {
   test('list omits salt and hash so callers cannot leak them', async () => {
-    await store.add({ name: 'Alice', role: 'viewer' });
+    await store.add({ name: 'Alice' });
     const [entry] = await store.list();
     assert.equal(entry.salt, undefined);
     assert.equal(entry.hash, undefined);
@@ -155,14 +153,14 @@ describe('administration', () => {
   });
 
   test('getActive resolves live records and drops revoked ones', async () => {
-    const { record } = await store.add({ name: 'Alice', role: 'viewer' });
+    const { record } = await store.add({ name: 'Alice' });
     assert.ok(await store.getActive(record.id));
     await store.revoke(record.id);
     assert.equal(await store.getActive(record.id), null);
   });
 
   test('touch records last seen', async () => {
-    const { record } = await store.add({ name: 'Alice', role: 'viewer' });
+    const { record } = await store.add({ name: 'Alice' });
     await store.touch(record.id);
     const [entry] = await store.list();
     assert.ok(entry.lastSeen, 'lastSeen should be populated after touch');

@@ -18,7 +18,7 @@ const PUBLIC_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'public')
 const COOKIE_NAME = 'zoia_sid';
 const COOKIE_MAX_AGE = 30 * 24 * 60 * 60 * 1000;
 
-export function createApp({ config, keyStore, tokenIssuer, logger = console }) {
+export function createApp({ config, keyStore, tokenIssuer, stage, logger = console }) {
   const app = express();
 
   // Behind the caddy front end. Without this every request appears to come from
@@ -120,7 +120,7 @@ export function createApp({ config, keyStore, tokenIssuer, logger = console }) {
     try {
       const record = await login(req.body?.key ?? '', req, res);
       if (!record) return res.status(401).json({ error: 'invalid_key' });
-      res.json({ name: record.name, role: record.role });
+      res.json({ name: record.name, id: record.id });
     } catch (err) {
       next(err);
     }
@@ -135,7 +135,7 @@ export function createApp({ config, keyStore, tokenIssuer, logger = console }) {
     try {
       const user = await currentUser(req, res);
       if (!user) return res.status(401).json({ error: 'unauthenticated' });
-      res.json({ name: user.name, role: user.role, id: user.id });
+      res.json({ name: user.name, id: user.id });
     } catch (err) {
       next(err);
     }
@@ -145,7 +145,41 @@ export function createApp({ config, keyStore, tokenIssuer, logger = console }) {
     try {
       const result = await tokenIssuer.issue(req.user);
       keyStore.touch(req.user.id);
-      res.json(result);
+      res.json({ ...result, quality: config.quality });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // ---- the stage ---------------------------------------------------------
+  // Publishing is a runtime permission, granted only while the stage is free.
+
+  app.get('/api/stage', requireSession, async (_req, res, next) => {
+    try {
+      res.json({
+        holder: await stage.holder(),
+        participants: await stage.participants(),
+      });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  app.post('/api/stage/claim', requireSession, async (req, res, next) => {
+    try {
+      const result = await stage.claim(req.user);
+      if (!result.ok) {
+        return res.status(409).json({ error: 'stage_busy', holder: result.holder });
+      }
+      res.json({ ok: true, holder: result.holder });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  app.post('/api/stage/release', requireSession, async (req, res, next) => {
+    try {
+      res.json(await stage.release(req.user));
     } catch (err) {
       next(err);
     }

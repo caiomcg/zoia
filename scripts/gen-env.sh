@@ -44,6 +44,13 @@ LIVEKIT_KEYS="${api_key}: ${api_secret}"
 
 SESSION_SECRET=${session_secret}
 
+# Broadcast quality. Upload needed = MAX_BITRATE x remote viewers.
+MAX_BITRATE=20000000
+MAX_FRAMERATE=60
+CAPTURE_WIDTH=3840
+CAPTURE_HEIGHT=2160
+VIDEO_CODEC=vp9
+
 ROOM_NAME=zoia
 PORT=3000
 # One proxy hop: the caddy container in front of the app.

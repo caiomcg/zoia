@@ -65,5 +65,10 @@ docker compose ps
 REMOTE
 
 echo "==> waiting for the app to report healthy"
-ssh "$HOST" "curl -fsS --retry 15 --retry-delay 2 --retry-connrefused http://127.0.0.1:3000/healthz" \
+# Through caddy, not :3000 — the app publishes no host port, and this also
+# exercises TLS and the proxy route, which is the path that serves users.
+ssh "$HOST" "set -a; . ${DEST}/.env; set +a; \
+  curl -fsS --retry 20 --retry-delay 2 --retry-connrefused \
+    --resolve \"\$PUBLIC_HOST:443:127.0.0.1\" \
+    \"https://\$PUBLIC_HOST/healthz\"" \
   && echo "" && echo "==> deployed"

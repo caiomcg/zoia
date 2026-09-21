@@ -1,12 +1,15 @@
 /**
  * LiveKit access tokens.
  *
- * This module is the security boundary. `canPublish` is derived from the role
- * stored against the invite key and from nothing the client sends, and LiveKit
- * validates that grant server-side on every publish attempt. A viewer editing
- * the page's JavaScript therefore achieves nothing.
+ * This module is the security boundary. Everyone joins with `canPublish: false`
+ * — there is one tier of user, and nobody is a broadcaster by default.
  *
- * Do not add a code path that lets a request influence `canPublish`.
+ * Publishing is granted later, at runtime, by `stage.js`, which checks that the
+ * stage is free before raising a participant's permission. LiveKit validates
+ * the resulting permission on every publish attempt, so a client that skips the
+ * claim call, or edits the page's JavaScript, still cannot publish.
+ *
+ * Do not add a code path that lets a request influence `canPublish` here.
  */
 
 import { AccessToken, RoomServiceClient } from 'livekit-server-sdk';
@@ -42,8 +45,8 @@ export function createTokenIssuer({
 
   return {
     async issue(user) {
-      const isHost = user.role === 'host';
-      if (isHost) await ensureRoom();
+      // The room must exist before anyone joins, since auto_create is off.
+      await ensureRoom();
 
       const at = new AccessToken(apiKey, apiSecret, {
         identity: user.id,
@@ -54,10 +57,12 @@ export function createTokenIssuer({
       at.addGrant({
         roomJoin: true,
         room: roomName,
-        // The whole model lives on this line.
-        canPublish: isHost,
+        // Nobody joins as a broadcaster. Publishing is granted at runtime by
+        // stage.js, and only when the stage is free.
+        canPublish: false,
         canSubscribe: true,
-        canPublishData: false,
+        // Data messages carry presence and stage chatter between clients.
+        canPublishData: true,
         canUpdateOwnMetadata: false,
         roomCreate: false,
         roomAdmin: false,
@@ -67,7 +72,6 @@ export function createTokenIssuer({
         token: await at.toJwt(),
         wsUrl,
         room: roomName,
-        role: user.role,
         identity: user.id,
         name: user.name,
       };

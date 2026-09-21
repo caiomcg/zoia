@@ -12,12 +12,10 @@
     />
   </head>
   <body>
-    <!-- Sign-in. Shown when there is no valid session. -->
     <main id="login" class="screen" hidden>
       <div class="card">
         <h1>Zoia</h1>
         <p class="muted">Enter the invite key you were sent.</p>
-
         <form id="login-form" autocomplete="off">
           <label class="sr-only" for="key-input">Invite key</label>
           <input
@@ -31,39 +29,51 @@
           />
           <button type="submit" class="primary">Sign in</button>
         </form>
-
         <p id="login-error" class="error" role="alert" hidden></p>
       </div>
     </main>
 
-    <!-- The broadcast. Shown once signed in. -->
     <div id="room" class="screen" hidden>
       <header class="bar">
         <span class="brand">Zoia</span>
         <span id="status" class="pill">connecting…</span>
         <span class="spacer"></span>
-        <span id="viewers" class="muted" hidden></span>
+        <button id="people-toggle" class="ghost" type="button" aria-expanded="false">
+          <span id="people-count">0</span> in the room
+        </button>
         <span id="whoami" class="muted"></span>
         <button id="logout" class="ghost" type="button">Sign out</button>
       </header>
 
-      <section class="stage">
-        <video id="video" playsinline autoplay></video>
+      <div class="body">
+        <section id="stage" class="stage">
+          <video id="video" playsinline autoplay muted></video>
+          <!-- Remote audio lives on its own element. Attaching a second track to
+               the video element would replace its stream and silence the audio. -->
+          <audio id="remote-audio" autoplay></audio>
 
-        <!-- Covers the stage whenever there is nothing to watch yet. -->
-        <div id="overlay" class="overlay">
-          <div class="overlay-inner">
-            <h2 id="overlay-title">Connecting…</h2>
-            <p id="overlay-text" class="muted"></p>
-            <button id="overlay-action" class="primary" type="button" hidden></button>
-            <p id="overlay-hint" class="hint" hidden></p>
+          <div id="overlay" class="overlay">
+            <div class="overlay-inner">
+              <h2 id="overlay-title">Connecting…</h2>
+              <p id="overlay-text" class="muted"></p>
+              <button id="overlay-action" class="primary" type="button" hidden></button>
+              <p id="overlay-hint" class="hint" hidden></p>
+            </div>
           </div>
-        </div>
-      </section>
 
-      <footer id="controls" class="bar" hidden>
-        <button id="share" class="primary" type="button">Start broadcast</button>
-        <button id="stop" class="danger" type="button" hidden>Stop broadcast</button>
+          <button id="unmute" class="floating" type="button" hidden>🔇 Tap for sound</button>
+        </section>
+
+        <aside id="people" class="people" hidden>
+          <h3>In the room</h3>
+          <ul id="people-list"></ul>
+        </aside>
+      </div>
+
+      <footer class="bar">
+        <button id="share" class="primary" type="button">Start broadcasting</button>
+        <button id="stop" class="danger" type="button" hidden>Stop broadcasting</button>
+        <button id="fullscreen" class="ghost" type="button">Fullscreen</button>
         <span id="share-note" class="muted"></span>
       </footer>
     </div>
