@@ -31,24 +31,37 @@ Discovered on the LAN (`192.168.31.0/24`), for reference while following this gu
 
 ## First deployment
 
-### 1. DNS (Cloudflare)
+### 1. DNS (Squarespace)
 
-Registration stays at Squarespace; only the nameservers move, which is what makes
-automated certificate renewal possible.
+DNS stays exactly where it is. NPM already issues Let's Encrypt certificates for other
+services on this domain, which proves port 80 reaches it from the internet — and that is the
+only thing the HTTP-01 challenge needs. NPM is the default vhost on 80, so a new subdomain
+needs no special handling.
 
-1. Add the zone at Cloudflare and **verify the imported records** before switching — other
-   services go dark at cutover otherwise.
-2. Point the Squarespace nameservers at the two Cloudflare assigns. Propagation is usually
-   under an hour.
-3. Add two records, both **DNS only (grey cloud)**:
+Add two records in the Squarespace DNS editor:
 
-   | Type | Name | Value |
-   |---|---|---|
-   | A | `zoia` | `206.42.10.147` |
-   | A | `sfu` | `206.42.10.147` |
+| Type | Host | Value | TTL |
+|---|---|---|---|
+| A | `zoia` | `206.42.10.147` | default |
+| A | `sfu` | `206.42.10.147` | default |
 
-   The grey cloud is not optional: Cloudflare's proxy will not carry WebRTC media.
-4. Create an API token scoped to **Zone:DNS:Edit** on this zone for NPM's DNS challenge.
+Then **wait for them to resolve publicly before requesting certificates** — Let's Encrypt
+validates from the outside, so a cert request made before propagation fails and counts
+against the rate limit:
+
+```bash
+dig +short zoia.<domain> @1.1.1.1
+dig +short sfu.<domain>  @1.1.1.1
+# both must print 206.42.10.147
+```
+
+> **Why not Cloudflare.** An earlier draft of this plan moved the nameservers to Cloudflare
+> so NPM could use a DNS-01 challenge. That is only necessary for a *wildcard* certificate.
+> Two ordinary per-hostname certificates work identically here, and avoid migrating DNS for
+> a domain that is already serving live services. See ADR 0003.
+>
+> If you ever do move to Cloudflare, both records must be **DNS only (grey cloud)** — the
+> proxy will not carry WebRTC media. `scripts/preflight.sh` checks for this.
 
 ### 2. The VM
 
@@ -91,7 +104,8 @@ Do not expose 7880.
 **Proxy Host — app**
 - `zoia.<domain>` → `http://192.168.31.50:3000`
 - Websockets Support · Block Common Exploits · Force SSL · HTTP/2
-- SSL: wildcard cert via the Cloudflare DNS challenge
+- SSL: **Request a new SSL Certificate**, Force SSL — leave "Use a DNS Challenge" unticked,
+  which is the HTTP-01 flow your other services already use
 
 **Proxy Host — SFU signalling**
 - `sfu.<domain>` → `http://192.168.31.50:7880`

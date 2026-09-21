@@ -81,8 +81,9 @@ These each cost hours if forgotten, and all of them fail in ways that look like 
 
 - **`rtc.use_external_ip: true`** in `livekit.yaml`. Without it LiveKit advertises only
   private ICE candidates: viewers connect, join the room, and see black video forever.
-- **Cloudflare DNS records must be grey-cloud (DNS only).** The orange-cloud proxy will not
-  carry WebRTC media.
+- **DNS is at Squarespace and stays there**; certificates come from NPM over HTTP-01. If the
+  zone is ever moved behind Cloudflare, both records must be grey-cloud (DNS only) — the
+  orange-cloud proxy will not carry WebRTC media.
 - **`proxy_read_timeout 86400s`** on the `sfu.<domain>` proxy host. Nginx's 60 s default
   cuts the signalling WebSocket mid-broadcast, and the stream hiccups every minute.
 - **UDP 7882 and TCP 7881 must be forwarded** to the VM directly. NPM cannot proxy them.
