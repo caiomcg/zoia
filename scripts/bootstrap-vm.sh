@@ -10,6 +10,22 @@ set -euo pipefail
 
 DEST="${ZOIA_PATH:-/opt/zoia}"
 
+# On a freshly provisioned VM, cloud-init is often still running its own apt
+# work, and it holds the dpkg lock. Without this wait the script dies on
+# "Could not get lock /var/lib/apt/lists/lock" the first time it is run.
+echo "==> waiting for cloud-init to finish"
+if command -v cloud-init >/dev/null; then
+  sudo cloud-init status --wait >/dev/null 2>&1 || true
+fi
+
+echo "==> waiting for the apt lock"
+for _ in $(seq 1 60); do
+  if ! sudo fuser /var/lib/dpkg/lock-frontend /var/lib/apt/lists/lock >/dev/null 2>&1; then
+    break
+  fi
+  sleep 5
+done
+
 echo "==> updating packages"
 sudo apt-get update -qq
 sudo apt-get install -y -qq ca-certificates curl gnupg qemu-guest-agent rsync dnsutils
