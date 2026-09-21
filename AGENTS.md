@@ -97,8 +97,9 @@ These each cost hours if forgotten, and all of them fail in ways that look like 
 - **UDP 7882 and TCP 7881 must be forwarded** to the VM directly. No HTTP proxy can carry them.
 - **System/tab audio capture is Chrome/Edge desktop only**, and only for a tab or an entire
   screen — never a single window. No browser can capture one application's audio; that needs
-  a native hook, which is why Discord can and Google Meet cannot. The supported escape hatch
-  is a virtual audio cable selected as an input; see the runbook.
+  a native hook — Discord's *desktop* client does this, but Discord in a browser has the same
+  constraints we do. The escape hatch is a virtual audio cable selected as an input; see the
+  runbook.
 - **LAN hairpin**: if the router won't route a LAN client to the public hostname, the host PC
   can't reach the app. Fix with a local DNS override, not with code.
 

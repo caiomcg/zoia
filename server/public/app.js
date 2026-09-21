@@ -188,45 +188,62 @@ function remoteScreen() {
 }
 
 /** Rebuilds the player's MediaStream from whatever should currently be shown. */
+/**
+ * Rebuilds the player's stream — but only when the set of tracks actually
+ * changes.
+ *
+ * Reassigning srcObject tears down and restarts playback. render() runs on a
+ * dozen LiveKit events, so rebuilding unconditionally restarted the element
+ * constantly: video mostly survives that, audio does not. It re-triggers
+ * autoplay gating on every rebuild and never settles into playing.
+ */
+let currentStreamKey = '';
+
 function updatePlayer() {
-  const stream = new MediaStream();
-  let hasAudio = false;
+  const tracks = [];
   let label = '';
 
   if (broadcasting) {
-    for (const t of publishedTracks) {
-      stream.addTrack(t.mediaStreamTrack);
-      if (t.kind === Track.Kind.Audio) hasAudio = true;
-    }
+    for (const t of publishedTracks) tracks.push(t.mediaStreamTrack);
     label = 'Your screen';
     // Never play your own audio back at yourself.
     el.video.muted = true;
   } else {
     const remote = remoteScreen();
     if (remote) {
-      stream.addTrack(remote.video.mediaStreamTrack);
-      for (const track of remote.audio) {
-        stream.addTrack(track.mediaStreamTrack);
-        hasAudio = true;
-      }
+      tracks.push(remote.video.mediaStreamTrack);
+      for (const t of remote.audio) tracks.push(t.mediaStreamTrack);
       label = `${remote.participant.name || remote.participant.identity} is broadcasting`;
       el.video.muted = false;
     }
   }
 
-  if (stream.getTracks().length === 0) {
-    el.video.srcObject = null;
+  const hasAudio = tracks.some((t) => t.kind === 'audio');
+  const key = tracks
+    .map((t) => t.id)
+    .sort()
+    .join('|');
+
+  if (key !== currentStreamKey) {
+    currentStreamKey = key;
+    if (tracks.length === 0) {
+      el.video.srcObject = null;
+    } else {
+      el.video.srcObject = new MediaStream(tracks);
+      el.video.play().catch(() => {
+        // Autoplay with sound refused until the viewer interacts; render()
+        // decides whether the unmute affordance is actually warranted.
+        if (hasAudio && !broadcasting) el.unmute.hidden = false;
+      });
+    }
+  }
+
+  if (tracks.length === 0) {
     el.nowPlaying.textContent = '';
     return false;
   }
 
-  el.video.srcObject = stream;
   el.nowPlaying.textContent = hasAudio ? label : `${label} · no audio`;
-  el.video.play().catch(() => {
-    // Autoplay with sound refused until the viewer interacts; render() decides
-    // whether the unmute affordance is actually warranted.
-    if (hasAudio && !broadcasting) el.unmute.hidden = false;
-  });
   return true;
 }
 
@@ -248,9 +265,12 @@ function render() {
     // volume away exactly when someone might reach for them.
     el.controls.classList.toggle('dim', !showing);
 
-    // Only offer the unmute affordance when there is sound to unmute.
-    const wantsAudio = showing && !broadcasting && el.video.srcObject?.getAudioTracks().length > 0;
-    el.unmute.hidden = !wantsAudio || Boolean(room.canPlaybackAudio);
+    // Only offer the unmute affordance when there is sound to unmute, and judge
+    // it by our own element rather than room.canPlaybackAudio: we manage this
+    // element ourselves, so LiveKit's view of playback is not the truth here.
+    const audioTracks = el.video.srcObject?.getAudioTracks?.() ?? [];
+    const wantsAudio = showing && !broadcasting && audioTracks.length > 0;
+    el.unmute.hidden = !wantsAudio || (!el.video.paused && !el.video.muted);
 
     if (broadcasting) setStatus('you are broadcasting', 'live');
     else if (showing) setStatus('watching', 'live');
