@@ -17,7 +17,7 @@ SFU_HOST="${2:-}"
 
 if [[ -z "$APP_HOST" || -z "$SFU_HOST" ]]; then
   echo "usage: $0 <app-hostname> <sfu-hostname>" >&2
-  echo "   eg: $0 zoia.example.com sfu.example.com" >&2
+  echo "   eg: $0 zoia.nullptrlabs.com sfu.nullptrlabs.com" >&2
   exit 1
 fi
 

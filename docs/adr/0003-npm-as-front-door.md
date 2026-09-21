@@ -28,26 +28,32 @@ Routing `/rtc` and `/twirp` through a single proxy host via NPM's custom locatio
 but NPM's custom locations are awkward with WebSocket upgrade headers and easy to get subtly
 wrong. A second proxy host is one more row in a table and nothing to debug.
 
-## Certificates: HTTP-01, DNS unchanged
+## Certificates: the existing wildcard
 
-**Amended 2026-09-21.** This ADR originally moved the zone's nameservers to Cloudflare so
-NPM could use a DNS-01 challenge, reasoning that Squarespace has no NPM DNS plugin. That
-reasoning was correct but did not lead where it appeared to: DNS-01 is required only for a
-*wildcard* certificate.
+**Amended twice; this is the settled position.**
 
-NPM already issues Let's Encrypt certificates for other services on this domain, which
-demonstrates that port 80 reaches it from the internet — the only requirement of an HTTP-01
-challenge. NPM is the default vhost on port 80, so any new subdomain pointed at the public
-IP validates with no extra configuration.
+The first version of this ADR proposed migrating the zone's nameservers to Cloudflare so NPM
+could use a DNS-01 challenge. The second reversed that, reasoning that HTTP-01 through
+Squarespace DNS would be simpler.
 
-So: **DNS stays at Squarespace.** Two A records, two ordinary per-hostname certificates.
+Both were wrong about the facts on the ground, and checking rather than reasoning settled it:
 
-This removes the single riskiest step in the deployment — migrating DNS for a domain already
-serving live services — in exchange for a wildcard certificate we were not going to use.
+- The zone is **already served by Cloudflare** (`nadia`/`rudy.ns.cloudflare.com`). There was
+  never a migration to perform.
+- A Let's Encrypt **wildcard `*.nullptrlabs.com` is already issued and renewing**, which is
+  only possible via DNS-01 — so NPM already holds a Cloudflare API token.
 
-If the zone is ever moved behind Cloudflare, both records must be **grey-cloud (DNS only)**:
-the proxy will not carry WebRTC media. `scripts/preflight.sh` checks for this regardless, so
-the mistake is caught rather than debugged.
+So: add two A records in Cloudflare, and in NPM **select the existing wildcard** rather than
+requesting anything. No migration, no new certificate, no challenge to configure.
+
+The records must be **DNS only (grey cloud)**. Cloudflare's network does not carry WebRTC
+media, and proxying the signalling WebSocket adds latency and failure modes for nothing.
+Cloudflare defaults new records to Proxied, and the apex on this zone *is* proxied, so this
+is the most likely single mistake in the whole deployment — `scripts/preflight.sh` checks it.
+
+**Lesson worth keeping:** two rounds of confident advice here rested on assumptions about
+someone else's infrastructure. A DNS lookup and a Certificate Transparency query answered it
+in seconds. Check the environment before reasoning about it.
 
 ## Consequences
 

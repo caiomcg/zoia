@@ -31,37 +31,34 @@ Discovered on the LAN (`192.168.31.0/24`), for reference while following this gu
 
 ## First deployment
 
-### 1. DNS (Squarespace)
+### 1. DNS (Cloudflare)
 
-DNS stays exactly where it is. NPM already issues Let's Encrypt certificates for other
-services on this domain, which proves port 80 reaches it from the internet — and that is the
-only thing the HTTP-01 challenge needs. NPM is the default vhost on 80, so a new subdomain
-needs no special handling.
+The zone `nullptrlabs.com` is served by Cloudflare nameservers (`nadia`/`rudy.ns.cloudflare.com`),
+and a Let's Encrypt wildcard `*.nullptrlabs.com` is already issued and renewing. That wildcard
+covers both hostnames below, so **no new certificate is required** — NPM selects the existing
+one from its dropdown.
 
-Add two records in the Squarespace DNS editor:
+Add two records in the **Cloudflare dashboard** → `nullptrlabs.com` → DNS → Records:
 
-| Type | Host | Value | TTL |
-|---|---|---|---|
-| A | `zoia` | `206.42.10.147` | default |
-| A | `sfu` | `206.42.10.147` | default |
+| Type | Name | IPv4 address | Proxy status | TTL |
+|---|---|---|---|---|
+| A | `zoia` | `206.42.10.147` | **DNS only** (grey) | Auto |
+| A | `sfu` | `206.42.10.147` | **DNS only** (grey) | Auto |
 
-Then **wait for them to resolve publicly before requesting certificates** — Let's Encrypt
-validates from the outside, so a cert request made before propagation fails and counts
-against the rate limit:
+> **Cloudflare defaults new records to Proxied (orange). Both of these must be toggled to
+> DNS only.** The apex record on this zone *is* proxied, so the habit is easy to carry over
+> by accident. Proxying breaks this app in two ways: Cloudflare's network does not carry
+> WebRTC media (UDP) at all, and routing the signalling WebSocket through it adds latency
+> and failure modes for no benefit. `scripts/preflight.sh` checks both records and fails
+> loudly if either is proxied.
+
+Confirm before going further — both must return the origin address, not a Cloudflare one:
 
 ```bash
-dig +short zoia.<domain> @1.1.1.1
-dig +short sfu.<domain>  @1.1.1.1
+nslookup zoia.nullptrlabs.com 1.1.1.1
+nslookup sfu.nullptrlabs.com  1.1.1.1
 # both must print 206.42.10.147
 ```
-
-> **Why not Cloudflare.** An earlier draft of this plan moved the nameservers to Cloudflare
-> so NPM could use a DNS-01 challenge. That is only necessary for a *wildcard* certificate.
-> Two ordinary per-hostname certificates work identically here, and avoid migrating DNS for
-> a domain that is already serving live services. See ADR 0003.
->
-> If you ever do move to Cloudflare, both records must be **DNS only (grey cloud)** — the
-> proxy will not carry WebRTC media. `scripts/preflight.sh` checks for this.
 
 ### 2. The VM
 
@@ -104,8 +101,8 @@ Do not expose 7880.
 **Proxy Host — app**
 - `zoia.<domain>` → `http://192.168.31.50:3000`
 - Websockets Support · Block Common Exploits · Force SSL · HTTP/2
-- SSL: **Request a new SSL Certificate**, Force SSL — leave "Use a DNS Challenge" unticked,
-  which is the HTTP-01 flow your other services already use
+- SSL: select the **existing `*.nullptrlabs.com` wildcard** from the dropdown. Do not request
+  a new certificate — the wildcard already covers this hostname. Force SSL, HTTP/2
 
 **Proxy Host — SFU signalling**
 - `sfu.<domain>` → `http://192.168.31.50:7880`
