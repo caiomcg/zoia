@@ -26,3 +26,4 @@ desktop/dist/
 desktop/*.tsbuildinfo
 desktop/*.log
 desktop/pid.txt
+desktop/release/

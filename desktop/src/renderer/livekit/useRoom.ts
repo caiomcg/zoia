@@ -75,7 +75,9 @@ export function useRoom() {
         });
 
       try {
+        const t0 = performance.now();
         await room.connect(wsUrl, token);
+        console.log(`[connect] room.connect resolved in ${(performance.now() - t0).toFixed(0)}ms`);
         setState('connected');
         refresh();
       } catch (err) {
