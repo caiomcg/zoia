@@ -55,6 +55,11 @@ if [[ ! -f .env ]]; then
   exit 1
 fi
 
+# Create the key-store mount point as this user. If docker creates it first it
+# is owned by root, and the container — which runs unprivileged — cannot write
+# the key store, so minting fails with EACCES.
+mkdir -p server/data
+
 docker compose up -d --build
 docker compose ps
 REMOTE

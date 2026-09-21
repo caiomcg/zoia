@@ -128,6 +128,15 @@ for spec in "7881/tcp" "7882/udp"; do
   fi
 done
 
+# The container runs unprivileged; if docker created the bind mount as root the
+# key store is unwritable and minting fails only when you first try it.
+if docker compose exec -T app sh -c \
+     'touch /app/server/data/.wtest 2>/dev/null && rm -f /app/server/data/.wtest' 2>/dev/null; then
+  ok "the key store is writable by the app"
+else
+  bad "the app cannot write server/data — run: sudo chown -R 1000:1000 server/data"
+fi
+
 # ---------------------------------------------------------------------------
 section "external ip discovery"
 
