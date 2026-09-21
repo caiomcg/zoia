@@ -108,9 +108,24 @@ const el = Object.fromEntries(
     'share',
     'stop',
     'share-note',
+    'no-audio',
+    'no-audio-retry',
     'toast',
   ].map((id) => [id.replace(/-(\w)/g, (_, c) => c.toUpperCase()), $(id)]),
 );
+
+/**
+ * A missing element must not take the whole page down. Attaching a listener to
+ * an undefined element throws at module scope, which leaves a blank screen and
+ * no clue why — so listeners go through here, and anything missing is reported
+ * loudly instead of fatally.
+ */
+const missing = Object.entries(el)
+  .filter(([, node]) => !node)
+  .map(([name]) => name);
+if (missing.length > 0) console.error(`[zoia] missing elements: ${missing.join(', ')}`);
+
+const on = (target, event, handler) => target?.addEventListener(event, handler);
 
 let session = null;
 let room = null;
@@ -363,7 +378,7 @@ function showLogin(message) {
   el.keyInput.focus();
 }
 
-el.loginForm.addEventListener('submit', async (event) => {
+on(el.loginForm, 'submit', async (event) => {
   event.preventDefault();
   const button = el.loginForm.querySelector('button');
   button.disabled = true;
@@ -393,7 +408,7 @@ el.loginForm.addEventListener('submit', async (event) => {
   }
 });
 
-el.logout.addEventListener('click', async () => {
+on(el.logout, 'click', async () => {
   await stopBroadcast().catch(() => {});
   await room?.disconnect();
   await fetch('/api/logout', { method: 'POST' });
@@ -592,20 +607,20 @@ async function stopBroadcast() {
   }
 }
 
-el.noAudioRetry.addEventListener('click', async () => {
+on(el.noAudioRetry, 'click', async () => {
   el.noAudio.hidden = true;
   await stopBroadcast();
   await startBroadcast();
 });
 
-el.share.addEventListener('click', startBroadcast);
-el.stop.addEventListener('click', stopBroadcast);
+on(el.share, 'click', startBroadcast);
+on(el.stop, 'click', stopBroadcast);
 
 // ---------------------------------------------------------------------------
 // player controls
 // ---------------------------------------------------------------------------
 
-el.unmute.addEventListener('click', async () => {
+on(el.unmute, 'click', async () => {
   try {
     await room?.startAudio();
     el.video.muted = false;
@@ -623,19 +638,19 @@ function syncVolumeUi() {
   el.volume.value = String(el.video.muted ? 0 : el.video.volume);
 }
 
-el.mute.addEventListener('click', () => {
+on(el.mute, 'click', () => {
   el.video.muted = !el.video.muted;
   if (!el.video.muted && el.video.volume === 0) el.video.volume = 1;
   syncVolumeUi();
 });
 
-el.volume.addEventListener('input', () => {
+on(el.volume, 'input', () => {
   el.video.volume = Number(el.volume.value);
   el.video.muted = el.video.volume === 0;
   syncVolumeUi();
 });
 
-el.video.addEventListener('volumechange', syncVolumeUi);
+on(el.video, 'volumechange', syncVolumeUi);
 
 async function toggleFullscreen() {
   if (document.fullscreenElement || document.webkitFullscreenElement) {
@@ -672,10 +687,10 @@ async function toggleFullscreen() {
   );
 }
 
-el.fullscreen.addEventListener('click', toggleFullscreen);
-el.video.addEventListener('dblclick', toggleFullscreen);
+on(el.fullscreen, 'click', toggleFullscreen);
+on(el.video, 'dblclick', toggleFullscreen);
 
-el.pip.addEventListener('click', async () => {
+on(el.pip, 'click', async () => {
   try {
     if (document.pictureInPictureElement) await document.exitPictureInPicture();
     else await el.video.requestPictureInPicture();
@@ -684,7 +699,7 @@ el.pip.addEventListener('click', async () => {
   }
 });
 
-el.statsToggle.addEventListener('click', () => {
+on(el.statsToggle, 'click', () => {
   el.stats.hidden = !el.stats.hidden;
   if (!el.stats.hidden) sampleStats();
 });
@@ -695,7 +710,7 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'm') el.mute.click();
 });
 
-el.peopleToggle.addEventListener('click', () => {
+on(el.peopleToggle, 'click', () => {
   const open = el.people.hidden;
   el.people.hidden = !open;
   el.peopleToggle.setAttribute('aria-expanded', String(open));
@@ -714,8 +729,8 @@ function wakeControls() {
     if (broadcasting || remoteScreen()) el.player.classList.add('idle');
   }, 3000);
 }
-el.player.addEventListener('mousemove', wakeControls);
-el.player.addEventListener('touchstart', wakeControls, { passive: true });
+on(el.player, 'mousemove', wakeControls);
+on(el.player, 'touchstart', wakeControls, { passive: true });
 
 // ---------------------------------------------------------------------------
 // entry
