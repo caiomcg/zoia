@@ -87,6 +87,11 @@ app.whenReady().then(async () => {
   registerDisplayMediaHandler();
   createWindow();
 
+  // Needs no auth, so it starts immediately rather than waiting on pairing —
+  // every second before the user can reach the picker is a second the first,
+  // expensive capture gets to finish in the background.
+  sources.startWarming();
+
   // safeStorage needs the app to be ready on Windows, so this is the first
   // point at which restoring a stored credential can succeed.
   await pairing.restoreSession();
@@ -98,5 +103,6 @@ app.whenReady().then(async () => {
 });
 
 app.on('window-all-closed', () => {
+  sources.stopWarming();
   if (process.platform !== 'darwin') app.quit();
 });

@@ -22,7 +22,7 @@ services:
       - app
 
   livekit:
-    image: livekit/livekit-server:v1.8
+    image: livekit/livekit-server:v1.13.7
     restart: unless-stopped
     # Host networking is not an optimisation here. WebRTC behind Docker's NAT
     # means wrestling ICE against a second layer of address translation; host

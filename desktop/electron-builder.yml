@@ -1,0 +1,41 @@
+# Windows x64 only — see README.md and docs/adr for why.
+appId: com.nullptrlabs.zoia
+productName: Zoia
+copyright: 'nullptrlabs'
+
+directories:
+  output: release
+  buildResources: build
+
+files:
+  - out/**/*
+  - package.json
+  - '!**/*.map'
+
+# Only what the shared build/ directory actually contains is used; a missing
+# icon.ico is a warning from electron-builder, not a failure — it falls back
+# to Electron's own icon. Add build/icon.ico here later without touching this
+# config.
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+    - target: portable
+      arch: [x64]
+  artifactName: '${productName}-${version}-${arch}.${ext}'
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  artifactName: '${productName}-Setup-${version}-${arch}.${ext}'
+
+portable:
+  artifactName: '${productName}-${version}-portable.${ext}'
+
+# No auto-update feed configured — a friend testing a hand-built exe has no
+# update server to check against, and a missing feed would otherwise print a
+# spurious warning on every build.
+publish: null
