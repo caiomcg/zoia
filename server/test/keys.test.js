@@ -63,7 +63,9 @@ describe('minting', () => {
 
   test('never persists the raw secret', async () => {
     const { rawKey } = await store.add({ name: 'Alice', role: 'viewer' });
-    const secret = rawKey.split('_')[2];
+    // parseKey, not split('_'): the base64url secret may itself contain '_',
+    // and a truncated fragment collides with the stored hash by chance.
+    const secret = parseKey(rawKey).secret;
     const onDisk = await readFile(join(dir, 'keys.json'), 'utf8');
     assert.ok(!onDisk.includes(secret), 'raw secret must not appear in the key store');
   });

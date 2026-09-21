@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import request from 'supertest';
 
 import { createApp } from '../src/app.js';
-import { createKeyStore } from '../src/keys.js';
+import { createKeyStore, parseKey } from '../src/keys.js';
 import { createTokenIssuer } from '../src/token.js';
 
 let dir;
@@ -85,7 +85,9 @@ describe('key login via URL', () => {
 
   test('the cookie carries only the key id, never the secret', async () => {
     const { rawKey, record } = await keyStore.add({ name: 'Alice', role: 'viewer' });
-    const secret = rawKey.split('_')[2];
+    // parseKey, not split('_'): the secret may contain '_' and a truncated
+    // fragment matches unrelated text by chance.
+    const secret = parseKey(rawKey).secret;
     const [cookie] = sessionCookie(await request(app).get(`/?k=${encodeURIComponent(rawKey)}`));
 
     assert.ok(cookie.includes(record.id));
@@ -116,7 +118,9 @@ describe('key login via URL', () => {
 
   test('no raw key is written to any log line', async () => {
     const { rawKey } = await keyStore.add({ name: 'Alice', role: 'viewer' });
-    const secret = rawKey.split('_')[2];
+    // parseKey, not split('_'): the secret may contain '_' and a truncated
+    // fragment matches unrelated text by chance.
+    const secret = parseKey(rawKey).secret;
 
     await request(app).get(`/?k=${encodeURIComponent(rawKey)}`);
     await request(app).get(`/?k=zoia_deadbeef_${'x'.repeat(43)}`);
