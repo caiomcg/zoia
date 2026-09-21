@@ -18,7 +18,15 @@ const PUBLIC_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'public')
 const COOKIE_NAME = 'zoia_sid';
 const COOKIE_MAX_AGE = 30 * 24 * 60 * 60 * 1000;
 
-export function createApp({ config, keyStore, tokenIssuer, stage, logger = console }) {
+export function createApp({
+  config,
+  keyStore,
+  tokenIssuer,
+  stage,
+  pairingStore = null,
+  deviceStore = null,
+  logger = console,
+}) {
   const app = express();
 
   // Behind the caddy front end. Without this every request appears to come from
@@ -51,8 +59,13 @@ export function createApp({ config, keyStore, tokenIssuer, stage, logger = conso
       ? loginLimiter(req, res, next)
       : next();
 
-  function setSession(res, keyId) {
-    res.cookie(COOKIE_NAME, keyId, {
+  /**
+   * Sessions carry `<kind>:<id>` so a device and an invite key can both hold
+   * one. A bare id is read as a key, which keeps cookies issued before the
+   * desktop app existed working.
+   */
+  function setSession(res, kind, id) {
+    res.cookie(COOKIE_NAME, `${kind}:${id}`, {
       httpOnly: true,
       secure: config.secureCookies,
       sameSite: 'lax',
@@ -72,15 +85,18 @@ export function createApp({ config, keyStore, tokenIssuer, stage, logger = conso
    * revoke` does nothing for up to a month.
    */
   async function currentUser(req, res) {
-    const keyId = req.signedCookies?.[COOKIE_NAME];
-    if (!keyId) return null;
+    const value = req.signedCookies?.[COOKIE_NAME];
+    if (!value) return null;
 
-    const record = await keyStore.getActive(keyId);
+    const [kind, id] = value.includes(':') ? value.split(':', 2) : ['key', value];
+    const store = kind === 'device' ? deviceStore : keyStore;
+
+    const record = await store?.getActive(id);
     if (!record) {
       clearSession(res);
       return null;
     }
-    return record;
+    return { ...record, kind };
   }
 
   async function requireSession(req, res, next) {
@@ -102,9 +118,9 @@ export function createApp({ config, keyStore, tokenIssuer, stage, logger = conso
       logger.warn(`[auth] rejected login attempt from ${req.ip}`);
       return null;
     }
-    setSession(res, record.id);
+    setSession(res, 'key', record.id);
     keyStore.touch(record.id);
-    logger.info(`[auth] ${record.name} (${record.id}, ${record.role}) signed in`);
+    logger.info(`[auth] ${record.name} (${record.id}) signed in`);
     return record;
   }
 
@@ -159,6 +175,67 @@ export function createApp({ config, keyStore, tokenIssuer, stage, logger = conso
       const result = await tokenIssuer.issue(req.user);
       keyStore.touch(req.user.id);
       res.json({ ...result, quality: config.quality });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // ---- device pairing ----------------------------------------------------
+  // A pairing token is spent once per machine for a device credential. It is
+  // guessed at far more aggressively than a login would be, so it gets its own
+  // tighter budget.
+
+  const pairLimiter = rateLimit({
+    windowMs: config.rateLimit?.windowMs ?? 60_000,
+    limit: config.rateLimit?.pairLimit ?? 5,
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+    message: { error: 'too_many_attempts' },
+    skipSuccessfulRequests: true,
+  });
+
+  const requirePairing = (_req, res, next) =>
+    pairingStore && deviceStore
+      ? next()
+      : res.status(501).json({ error: 'pairing_not_configured' });
+
+  app.post('/api/pair', pairLimiter, requirePairing, async (req, res, next) => {
+    try {
+      const deviceName = String(req.body?.deviceName ?? '').trim();
+      if (!deviceName) return res.status(400).json({ error: 'device_name_required' });
+
+      const claim = await pairingStore.claimActivation(req.body?.pairingToken ?? '');
+      if (!claim.ok) {
+        // Never log the token itself, only where the attempt came from.
+        logger.warn(`[pair] rejected (${claim.reason}) from ${req.ip}`);
+        return res.status(claim.reason === 'exhausted' ? 409 : 401).json({ error: claim.reason });
+      }
+
+      const { record, raw } = await deviceStore.issue({
+        name: deviceName,
+        pairingId: claim.pairing.id,
+      });
+
+      // The credential is returned exactly once; the app stores it in the OS
+      // keychain and we keep only its hash.
+      res.json({ deviceCredential: raw, deviceId: record.id, name: record.name });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  app.post('/api/device/session', loginLimiter, requirePairing, async (req, res, next) => {
+    try {
+      const record = await deviceStore.verify(req.body?.deviceCredential ?? '');
+      if (!record) {
+        logger.warn(`[device] rejected session from ${req.ip}`);
+        return res.status(401).json({ error: 'invalid_credential' });
+      }
+
+      setSession(res, 'device', record.id);
+      deviceStore.touch(record.id);
+      logger.info(`[device] ${record.name} (${record.id}) signed in`);
+      res.json({ name: record.name, id: record.id });
     } catch (err) {
       next(err);
     }

@@ -32,6 +32,8 @@ export function loadConfig(env = process.env) {
       apiUrl: env.LIVEKIT_API_URL ?? 'http://127.0.0.1:7880',
     },
     keyStoreFile: env.KEY_STORE_FILE ?? 'server/data/keys.json',
+    pairingStoreFile: env.PAIRING_STORE_FILE ?? 'server/data/pairings.json',
+    deviceStoreFile: env.DEVICE_STORE_FILE ?? 'server/data/devices.json',
     // Broadcast quality. Tunable without a code change because the right
     // values depend entirely on the uplink: the server sends one copy of the
     // stream per remote viewer, so upload = bitrate x viewers.

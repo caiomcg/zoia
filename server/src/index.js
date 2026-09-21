@@ -5,6 +5,8 @@ import { RoomServiceClient } from 'livekit-server-sdk';
 
 import { loadConfig } from './config.js';
 import { createKeyStore } from './keys.js';
+import { createPairingStore } from './pairings.js';
+import { createDeviceStore } from './devices.js';
 import { createTokenIssuer } from './token.js';
 import { createStage } from './stage.js';
 import { createApp } from './app.js';
@@ -18,6 +20,8 @@ try {
 const config = loadConfig();
 
 const keyStore = createKeyStore({ file: config.keyStoreFile });
+const pairingStore = createPairingStore({ file: config.pairingStoreFile });
+const deviceStore = createDeviceStore({ file: config.deviceStoreFile });
 const tokenIssuer = createTokenIssuer({
   apiKey: config.livekit.apiKey,
   apiSecret: config.livekit.apiSecret,
@@ -33,7 +37,7 @@ const rooms = new RoomServiceClient(
 );
 const stage = createStage({ rooms, roomName: config.roomName });
 
-const app = createApp({ config, keyStore, tokenIssuer, stage });
+const app = createApp({ config, keyStore, tokenIssuer, stage, pairingStore, deviceStore });
 
 app.listen(config.port, () => {
   console.log(`[zoia] listening on :${config.port}`);
