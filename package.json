@@ -10,8 +10,8 @@
   "scripts": {
     "start": "node server/src/index.js",
     "dev": "node --watch server/src/index.js",
-    "test": "node --test server/test/",
-    "test:coverage": "node --test --experimental-test-coverage server/test/",
+    "test": "node --test \"server/test/**/*.test.js\"",
+    "test:coverage": "node --test --experimental-test-coverage \"server/test/**/*.test.js\"",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
