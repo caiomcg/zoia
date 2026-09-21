@@ -11,14 +11,54 @@
  * mute and fullscreen behave as they do in any other player.
  */
 
-import { Room, RoomEvent, Track, createLocalScreenTracks } from './vendor/livekit-client.esm.mjs';
+import {
+  LocalAudioTrack,
+  LocalVideoTrack,
+  Room,
+  RoomEvent,
+  Track,
+} from './vendor/livekit-client.esm.mjs';
 
 /**
- * Capture. `audio: true` is deliberate — it is the documented way to request
- * system/tab audio, and passing a constraints object here has been observed to
- * come back with no audio track at all.
+ * Screen capture is done directly rather than through LiveKit's helper so the
+ * Chrome-specific audio hints can be set. `systemAudio: 'include'` is the one
+ * that matters: without it the picker is less likely to offer sound at all.
+ *
+ * There is no permission prompt for any of this. Screen and system audio are
+ * granted by what the user picks in the browser's own share dialog, which is
+ * why "share audio" is a checkbox there and not something the page can ask for.
  */
-const CAPTURE = { video: true, audio: true };
+async function captureScreen() {
+  const stream = await navigator.mediaDevices.getDisplayMedia({
+    video: {
+      frameRate: { ideal: quality.maxFramerate, max: quality.maxFramerate },
+      width: { ideal: quality.width },
+      height: { ideal: quality.height },
+    },
+    audio: true,
+    systemAudio: 'include',
+    surfaceSwitching: 'include',
+    monitorTypeSurfaces: 'include',
+    selfBrowserSurface: 'exclude',
+  });
+
+  const [videoMst] = stream.getVideoTracks();
+  const [audioMst] = stream.getAudioTracks();
+
+  const tracks = [];
+  if (videoMst) {
+    videoMst.contentHint = 'detail';
+    const track = new LocalVideoTrack(videoMst, undefined, false);
+    track.source = Track.Source.ScreenShare;
+    tracks.push(track);
+  }
+  if (audioMst) {
+    const track = new LocalAudioTrack(audioMst, undefined, false);
+    track.source = Track.Source.ScreenShareAudio;
+    tracks.push(track);
+  }
+  return tracks;
+}
 
 const PUBLISH = {
   simulcast: false,
@@ -431,13 +471,6 @@ async function connect() {
 // broadcasting
 // ---------------------------------------------------------------------------
 
-function captureOptions() {
-  return {
-    ...CAPTURE,
-    resolution: { width: quality.width, height: quality.height, frameRate: quality.maxFramerate },
-  };
-}
-
 function publishOptions() {
   const encoding = {
     maxBitrate: quality.maxBitrate,
@@ -495,7 +528,7 @@ async function startBroadcast() {
     if (!res.ok) throw new Error(`could not claim the stage (${res.status})`);
     claimed = true;
 
-    const tracks = await createLocalScreenTracks(captureOptions());
+    const tracks = await captureScreen();
     publishedTracks = tracks;
 
     const videoTrack = tracks.find((t) => t.kind === Track.Kind.Video);
@@ -510,18 +543,21 @@ async function startBroadcast() {
     }
 
     for (const track of tracks) {
-      await room.localParticipant.publishTrack(
-        track,
-        track.kind === Track.Kind.Video ? publishOptions() : {},
-      );
+      const opts =
+        track.kind === Track.Kind.Video
+          ? { ...publishOptions(), source: Track.Source.ScreenShare }
+          : { source: Track.Source.ScreenShareAudio };
+      // Same stream name keeps audio and video synchronised for viewers.
+      await room.localParticipant.publishTrack(track, { ...opts, stream: 'screen' });
     }
 
     const settings = videoTrack?.mediaStreamTrack?.getSettings?.() ?? {};
     const hasAudio = tracks.some((t) => t.kind === Track.Kind.Audio);
     el.shareNote.textContent = hasAudio
       ? `Sharing ${settings.width}×${settings.height} with audio.`
-      : 'No audio captured — tick “Share system audio” in the picker. It only appears for a tab or a whole screen, never a single window.';
-    if (!hasAudio) toast('Sharing without audio — see the note in the people panel.');
+      : '';
+    // A toast disappears; missing audio should stay visible until it is fixed.
+    el.noAudio.hidden = hasAudio;
 
     tracks[0]?.mediaStreamTrack.addEventListener('ended', () => stopBroadcast());
     render();
@@ -555,6 +591,12 @@ async function stopBroadcast() {
     await fetch('/api/stage/release', { method: 'POST' }).catch(() => {});
   }
 }
+
+el.noAudioRetry.addEventListener('click', async () => {
+  el.noAudio.hidden = true;
+  await stopBroadcast();
+  await startBroadcast();
+});
 
 el.share.addEventListener('click', startBroadcast);
 el.stop.addEventListener('click', stopBroadcast);

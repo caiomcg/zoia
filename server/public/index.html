@@ -63,6 +63,16 @@
             </div>
           </div>
 
+          <!-- Broadcasting, but the picker returned no audio track. -->
+          <div id="no-audio" class="no-audio" hidden>
+            <strong>Sharing without sound</strong>
+            <span
+              >Tick <b>Share system audio</b> in the picker. It only appears when you share a
+              <b>tab</b> or an <b>entire screen</b> — never a single window.</span
+            >
+            <button id="no-audio-retry" class="primary" type="button">Share again</button>
+          </div>
+
           <!-- Shown when the browser refuses to autoplay audio. -->
           <button id="unmute" class="unmute" type="button" hidden>Click to enable sound</button>
 
