@@ -27,6 +27,10 @@ const bridge: ZoiaBridge = {
     claim: () => ipcRenderer.invoke(IPC.stageClaim),
     release: () => ipcRenderer.invoke(IPC.stageRelease),
   },
+  sources: {
+    list: () => ipcRenderer.invoke(IPC.sourcesList),
+    select: (source) => ipcRenderer.invoke(IPC.sourcesSelect, source),
+  },
 };
 
 contextBridge.exposeInMainWorld('zoia', bridge);

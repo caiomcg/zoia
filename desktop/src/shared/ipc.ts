@@ -48,6 +48,14 @@ export interface ClaimResult {
   holder: StageHolder | null;
 }
 
+export interface SourceInfo {
+  id: string;
+  name: string;
+  kind: 'screen' | 'window';
+  thumbnailDataUrl: string;
+  processId: number | null;
+}
+
 export const IPC = {
   pairingStatus: 'zoia:pairing:status',
   pairingStart: 'zoia:pairing:start',
@@ -55,4 +63,6 @@ export const IPC = {
   stageGet: 'zoia:stage:get',
   stageClaim: 'zoia:stage:claim',
   stageRelease: 'zoia:stage:release',
+  sourcesList: 'zoia:sources:list',
+  sourcesSelect: 'zoia:sources:select',
 } as const;

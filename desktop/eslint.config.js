@@ -33,7 +33,14 @@ export default tseslint.config(
     },
     plugins: { 'react-hooks': reactHooks },
     rules: {
-      ...reactHooks.configs.recommended.rules,
+      // Only the two rules that apply to hand-written React without the
+      // Compiler pipeline. v7's "recommended" bundles ~25 React-Compiler
+      // safety rules (immutability, preserve-manual-memoization, purity, …)
+      // that assume a compilation step this project doesn't have, and flag
+      // ordinary, correct hook patterns as unsafe for a compiler that never
+      // runs.
+      'react-hooks/rules-of-hooks': 'error',
+      'react-hooks/exhaustive-deps': 'warn',
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
     },
   },
