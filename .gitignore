@@ -23,3 +23,6 @@ server/public/vendor/
 desktop/node_modules/
 desktop/out/
 desktop/dist/
+desktop/*.tsbuildinfo
+desktop/*.log
+desktop/pid.txt
