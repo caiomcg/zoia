@@ -1,14 +1,16 @@
 #!/usr/bin/env node
 /**
- * Invite-key administration.
+ * Access administration: invite keys for the web client, pairing tokens and
+ * device credentials for the desktop app.
  *
- *   keytool add --name "Alice" [--expires-in-days 30]
- *   keytool list
- *   keytool revoke <keyId>
+ * Every secret this prints is shown once and is unrecoverable afterwards —
+ * only its hash is stored. A lost credential is replaced, not looked up.
  */
 
 import { parseArgs } from 'node:util';
-import { createKeyStore, ROLES } from '../src/keys.js';
+import { createKeyStore } from '../src/keys.js';
+import { createPairingStore } from '../src/pairings.js';
+import { createDeviceStore } from '../src/devices.js';
 
 try {
   process.loadEnvFile('.env');
@@ -16,19 +18,36 @@ try {
   // No .env locally is fine; defaults below cover development.
 }
 
-const file = process.env.KEY_STORE_FILE ?? 'server/data/keys.json';
 const publicHost = process.env.PUBLIC_HOST ?? 'localhost:3000';
 const scheme = publicHost.startsWith('localhost') ? 'http' : 'https';
-const store = createKeyStore({ file });
+
+const quiet = { info() {}, warn() {}, error() {} };
+const keys = createKeyStore({ file: process.env.KEY_STORE_FILE ?? 'server/data/keys.json' });
+const pairings = createPairingStore({
+  file: process.env.PAIRING_STORE_FILE ?? 'server/data/pairings.json',
+  logger: quiet,
+});
+const devices = createDeviceStore({
+  file: process.env.DEVICE_STORE_FILE ?? 'server/data/devices.json',
+  logger: quiet,
+});
 
 const USAGE = `
-zoia keytool — manage invite keys
+zoia keytool
 
-  keytool add --name "Alice" [--expires-in-days N]
-  keytool list
-  keytool revoke <keyId>
+  Web invite keys
+    add --name "Alice" [--expires-in-days N]
+    list
+    revoke <keyId>
 
-Store: ${file}
+  Desktop pairing tokens — embedded in a build, spent once per machine
+    pair:new --name "v1 build" [--max-activations N] [--expires-in-days N]
+    pair:list
+    pair:revoke <pairingId> [--cascade]      --cascade also revokes its devices
+
+  Devices — one per machine that has paired
+    device:list
+    device:revoke <deviceId>
 `;
 
 function fail(message) {
@@ -37,77 +56,164 @@ function fail(message) {
   process.exit(1);
 }
 
+function daysFromNow(value) {
+  if (!value) return null;
+  const days = Number(value);
+  if (!Number.isFinite(days) || days <= 0) fail('--expires-in-days must be a positive number');
+  return new Date(Date.now() + days * 86_400_000).toISOString();
+}
+
+function status(record) {
+  if (record.revoked) return 'revoked';
+  if (record.expiresAt && Date.parse(record.expiresAt) <= Date.now()) return 'expired';
+  return 'active';
+}
+
 const [command, ...rest] = process.argv.slice(2);
 
 switch (command) {
   case 'add': {
     const { values } = parseArgs({
       args: rest,
-      options: {
-        name: { type: 'string' },
-        role: { type: 'string', default: 'member' },
-        'expires-in-days': { type: 'string' },
-      },
+      options: { name: { type: 'string' }, 'expires-in-days': { type: 'string' } },
     });
-
     if (!values.name) fail('--name is required');
-    if (!ROLES.includes(values.role)) fail(`--role must be one of: ${ROLES.join(', ')}`);
 
-    let expiresAt = null;
-    if (values['expires-in-days']) {
-      const days = Number(values['expires-in-days']);
-      if (!Number.isFinite(days) || days <= 0) fail('--expires-in-days must be a positive number');
-      expiresAt = new Date(Date.now() + days * 86_400_000).toISOString();
-    }
-
-    const { record, rawKey } = await store.add({
+    const { record, rawKey } = await keys.add({
       name: values.name,
-      role: values.role,
-      expiresAt,
+      expiresAt: daysFromNow(values['expires-in-days']),
     });
 
     console.log(`\n  invite key for ${record.name}`);
-    console.log(`  id:      ${record.id}`);
-    console.log('  anyone with a key may broadcast, one at a time');
-    if (expiresAt) console.log(`  expires: ${expiresAt}`);
-    console.log(`\n  Send this link — it is shown once and cannot be recovered:\n`);
+    console.log(`  id: ${record.id}`);
+    console.log('\n  Send this link — it is shown once and cannot be recovered:\n');
     console.log(`    ${scheme}://${publicHost}/?k=${rawKey}\n`);
     break;
   }
 
   case 'list': {
-    const keys = await store.list();
-    if (keys.length === 0) {
+    const all = await keys.list();
+    if (all.length === 0) {
       console.log('No keys yet. Mint one with: keytool add --name "Alice"');
       break;
     }
-    const rows = keys.map((k) => ({
-      id: k.id,
-      name: k.name,
-      role: k.role,
-      status: k.revoked
-        ? 'revoked'
-        : k.expiresAt && Date.parse(k.expiresAt) <= Date.now()
-          ? 'expired'
-          : 'active',
-      lastSeen: k.lastSeen ?? 'never',
-    }));
-    console.table(rows);
+    console.table(
+      all.map((k) => ({
+        id: k.id,
+        name: k.name,
+        status: status(k),
+        lastSeen: k.lastSeen ?? 'never',
+      })),
+    );
     break;
   }
 
   case 'revoke': {
+    if (!rest[0]) fail('revoke needs a key id (see: keytool list)');
+    if (!(await keys.revoke(rest[0]))) fail(`no key with id "${rest[0]}"`);
+    console.log(`revoked ${rest[0]} — takes effect on their next request`);
+    break;
+  }
+
+  case 'pair:new': {
+    const { values } = parseArgs({
+      args: rest,
+      options: {
+        name: { type: 'string' },
+        'max-activations': { type: 'string' },
+        'expires-in-days': { type: 'string' },
+      },
+    });
+    if (!values.name) fail('--name is required');
+
+    let maxActivations = null;
+    if (values['max-activations']) {
+      maxActivations = Number(values['max-activations']);
+      if (!Number.isInteger(maxActivations) || maxActivations <= 0) {
+        fail('--max-activations must be a positive integer');
+      }
+    }
+
+    const { record, raw } = await pairings.add({
+      name: values.name,
+      maxActivations,
+      expiresAt: daysFromNow(values['expires-in-days']),
+    });
+
+    console.log(`\n  pairing token "${record.name}"`);
+    console.log(`  id:          ${record.id}`);
+    console.log(`  activations: ${maxActivations ?? 'unlimited'}`);
+    console.log('\n  Build the desktop app with this token. Shown once:\n');
+    console.log(`    ZOIA_PAIRING_TOKEN=${raw}\n`);
+    console.log('  If it leaks: keytool pair:revoke ' + record.id);
+    console.log('  Machines already paired keep working; add --cascade to cut them off too.\n');
+    break;
+  }
+
+  case 'pair:list': {
+    const all = await pairings.list();
+    if (all.length === 0) {
+      console.log('No pairing tokens yet. Mint one with: keytool pair:new --name "v1"');
+      break;
+    }
+    console.table(
+      all.map((p) => ({
+        id: p.id,
+        name: p.name,
+        status: status(p),
+        activations: `${p.activations}${p.maxActivations === null ? '' : `/${p.maxActivations}`}`,
+        lastSeen: p.lastSeen ?? 'never',
+      })),
+    );
+    break;
+  }
+
+  case 'pair:revoke': {
     const id = rest[0];
-    if (!id) fail('revoke needs a key id (see: keytool list)');
-    const ok = await store.revoke(id);
-    if (!ok) fail(`no key with id "${id}"`);
-    console.log(`revoked ${id} — takes effect on their next request`);
+    if (!id) fail('pair:revoke needs a pairing id (see: keytool pair:list)');
+    const { values } = parseArgs({
+      args: rest.slice(1),
+      options: { cascade: { type: 'boolean' } },
+    });
+
+    if (!(await pairings.revoke(id))) fail(`no pairing token with id "${id}"`);
+    console.log(`revoked pairing token ${id} — no new machines can activate`);
+
+    if (values.cascade) {
+      const count = await devices.revokeByPairing(id);
+      console.log(`also revoked ${count} device${count === 1 ? '' : 's'} issued by it`);
+    } else {
+      console.log('machines already paired keep working; re-run with --cascade to cut them off');
+    }
+    break;
+  }
+
+  case 'device:list': {
+    const all = await devices.list();
+    if (all.length === 0) {
+      console.log('No devices paired yet.');
+      break;
+    }
+    console.table(
+      all.map((d) => ({
+        id: d.id,
+        name: d.name,
+        status: status(d),
+        pairing: d.pairingId,
+        lastSeen: d.lastSeen ?? 'never',
+      })),
+    );
+    break;
+  }
+
+  case 'device:revoke': {
+    if (!rest[0]) fail('device:revoke needs a device id (see: keytool device:list)');
+    if (!(await devices.revoke(rest[0]))) fail(`no device with id "${rest[0]}"`);
+    console.log(`revoked device ${rest[0]} — it loses access on its next request`);
     break;
   }
 
   default:
-    if (command && command !== '--help' && command !== '-h') {
-      fail(`unknown command "${command}"`);
-    }
+    if (command && command !== '--help' && command !== '-h') fail(`unknown command "${command}"`);
     console.log(USAGE);
 }

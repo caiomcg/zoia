@@ -1,0 +1,38 @@
+{
+  "name": "zoia-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Zoia broadcaster \u2014 screen and per-application audio over WebRTC.",
+  "main": "./out/main/index.js",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json && electron-vite build",
+    "preview": "electron-vite preview",
+    "pack": "npm run build && electron-builder --win --x64",
+    "lint": "eslint .",
+    "format:check": "prettier --check .",
+    "test": "node --test \"test/**/*.test.ts\""
+  },
+  "dependencies": {
+    "livekit-client": "^2.22.3",
+    "loopback-capture": "^3.0.2",
+    "node-window-manager": "^2.2.4",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/react": "^19.0.2",
+    "@types/react-dom": "^19.0.2",
+    "@vitejs/plugin-react": "^5.2.0",
+    "electron": "^44.4.3",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^5.0.0",
+    "typescript": "^5.7.2",
+    "vite": "^7.3.6"
+  }
+}
