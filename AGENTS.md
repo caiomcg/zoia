@@ -1,0 +1,90 @@
+# AGENTS.md
+
+Conventions and invariants for anyone — human or agent — working on this repo.
+`CLAUDE.md` points here; this file is the source of truth.
+
+## What this is
+
+Zoia is a private one-to-many screen broadcast. One **host** shares a screen, window or tab
+(with audio); up to ~15 **viewers** watch it live at ~200–500 ms latency. Everyone opens the
+same URL. Access is by per-person invite key.
+
+It is three pieces:
+
+1. **LiveKit** — a self-hosted SFU. The host uploads one stream; LiveKit fans it out. It
+   does no transcoding, so it is cheap on CPU and expensive on upstream bandwidth.
+2. **This Node app** — serves the page, authenticates people against the invite-key store,
+   and mints short-lived LiveKit tokens whose grants encode the person's role.
+3. **Nginx Proxy Manager** (pre-existing, not in this repo) — terminates TLS and reverse
+   proxies `zoia.<domain>` → app:3000 and `sfu.<domain>` → livekit:7880. Media does **not**
+   pass through it; WebRTC goes straight to the VM over UDP 7882.
+
+## Commands
+
+```bash
+npm install
+npm run dev                  # app on :3000, watch mode
+npm test                     # node:test suite
+npm run lint                 # eslint
+npm run format               # prettier --write
+npm run keytool -- add --name "Alice" --role viewer   # mint an invite key
+npm run keytool -- list
+npm run keytool -- revoke <keyId>
+./deploy.sh                  # rsync to the VM + docker compose up -d --build
+```
+
+## Layout
+
+| Path | Holds |
+|---|---|
+| `server/src/index.js` | Express app, routes, middleware wiring |
+| `server/src/keys.js` | Invite-key store: mint, verify, revoke, touch |
+| `server/src/token.js` | LiveKit AccessToken minting — **the security boundary** |
+| `server/src/config.js` | Env parsing and validation, fail-fast on startup |
+| `server/bin/keytool.js` | CLI over `keys.js` |
+| `server/public/` | The browser app (no build step, plain ESM) |
+| `server/data/keys.json` | Key store. Server-only, gitignored, never deployed over |
+| `docs/adr/` | Architecture decision records |
+
+## Invariants — do not break these
+
+1. **Viewer tokens must never receive `canPublish: true`.** This is the entire security
+   model: a viewer cannot hijack the broadcast because LiveKit rejects publishes from their
+   token, not because the UI hides a button. `server/test/token.test.js` guards this.
+2. **Never log a raw invite key** — not in the app, not in an error message, not in a debug
+   branch. Log the `keyId` instead; it is safe and identifies the person.
+3. **Sessions are re-validated against the key store on every request**, not just at login.
+   Otherwise `keytool revoke` does nothing until the cookie expires, which makes revocation
+   useless exactly when it is needed.
+4. **Never commit secrets.** `.env`, `server/data/`, and any key material stay out of git.
+   `livekit.yaml` is committed deliberately *without* credentials — LiveKit reads them from
+   `LIVEKIT_KEYS` in the environment.
+5. **`deploy.sh` must keep excluding `server/data`.** It runs `rsync --delete`; dropping that
+   exclude would wipe the key store and lock out every user, including you.
+6. **`app.set('trust proxy', ...)` must stay.** Behind NPM every request otherwise appears to
+   originate from the proxy, so rate limiting would throttle all users as a single client.
+
+## Environment gotchas
+
+These each cost hours if forgotten, and all of them fail in ways that look like app bugs:
+
+- **`rtc.use_external_ip: true`** in `livekit.yaml`. Without it LiveKit advertises only
+  private ICE candidates: viewers connect, join the room, and see black video forever.
+- **Cloudflare DNS records must be grey-cloud (DNS only).** The orange-cloud proxy will not
+  carry WebRTC media.
+- **`proxy_read_timeout 86400s`** on the `sfu.<domain>` proxy host. Nginx's 60 s default
+  cuts the signalling WebSocket mid-broadcast, and the stream hiccups every minute.
+- **UDP 7882 and TCP 7881 must be forwarded** to the VM directly. NPM cannot proxy them.
+- **System/tab audio capture is Chrome/Edge desktop only.** Firefox and Safari cannot
+  capture it; they can listen fine. This constrains who can host, not who can watch.
+- **LAN hairpin**: if the router won't route a LAN client to the public hostname, the host PC
+  can't reach the app. Fix with a local DNS override, not with code.
+
+## Conventions
+
+- **Conventional Commits**, enforced by commitlint in a hook and in CI.
+  Scopes: `auth` `api` `web` `livekit` `infra` `deploy` `docs` `test` `adr`.
+- ESM everywhere (`"type": "module"`). No build step, no bundler, no framework in the
+  browser code — it is small enough to read.
+- Tests use `node:test` + `supertest`. No test framework dependency.
+- Decisions that a future reader would otherwise re-litigate go in `docs/adr/`.
