@@ -1,0 +1,30 @@
+# LiveKit SFU configuration.
+#
+# Deliberately contains NO credentials — they are injected via the LIVEKIT_KEYS
+# environment variable so this file stays safe to commit.
+
+port: 7880
+
+rtc:
+  # WebRTC-over-TCP fallback, for viewers whose network blocks UDP.
+  tcp_port: 7881
+
+  # Single UDP port for all media, instead of a 50000-60000 range. One router
+  # forwarding rule then serves every viewer.
+  udp_port: 7882
+
+  # Load-bearing. LiveKit STUNs itself to discover the public IP and advertises
+  # it in ICE candidates. Without this it offers only private addresses, and
+  # remote viewers join the room and then watch black video forever.
+  use_external_ip: true
+
+room:
+  # Rooms are created explicitly by the app when a host requests a token, so a
+  # stray token cannot conjure rooms.
+  auto_create: false
+  empty_timeout: 300
+  max_participants: 30
+
+logging:
+  level: info
+  json: false

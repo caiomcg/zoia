@@ -1,0 +1,31 @@
+services:
+  livekit:
+    image: livekit/livekit-server:v1.8
+    restart: unless-stopped
+    # Host networking is not an optimisation here. WebRTC behind Docker's NAT
+    # means wrestling ICE candidates against a second layer of address
+    # translation; host mode sidesteps it entirely.
+    network_mode: host
+    command: --config /etc/livekit.yaml
+    environment:
+      LIVEKIT_KEYS: ${LIVEKIT_KEYS:?set LIVEKIT_KEYS in .env}
+    volumes:
+      - ./livekit.yaml:/etc/livekit.yaml:ro
+
+  app:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # livekit runs on the host's network namespace, so reach it via the
+      # docker bridge gateway rather than this container's own loopback.
+      LIVEKIT_API_URL: http://host.docker.internal:7880
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    ports:
+      - '3000:3000'
+    volumes:
+      # The key store lives on the server and survives redeploys.
+      - ./server/data:/app/server/data
+    depends_on:
+      - livekit
