@@ -38,19 +38,21 @@
         <span class="brand">Zoia</span>
         <span id="status" class="pill">connecting…</span>
         <span class="spacer"></span>
+        <button id="share" class="primary" type="button">Start broadcasting</button>
+        <button id="stop" class="danger" type="button" hidden>Stop broadcasting</button>
         <button id="people-toggle" class="ghost" type="button" aria-expanded="false">
-          <span id="people-count">0</span> in the room
+          <span id="people-count">0</span> here
         </button>
         <span id="whoami" class="muted"></span>
         <button id="logout" class="ghost" type="button">Sign out</button>
       </header>
 
       <div class="body">
-        <section id="stage" class="stage">
-          <video id="video" playsinline autoplay muted></video>
-          <!-- Remote audio lives on its own element. Attaching a second track to
-               the video element would replace its stream and silence the audio. -->
-          <audio id="remote-audio" autoplay></audio>
+        <!-- The player. Audio and video share one MediaStream on one element,
+             so the volume control, mute and fullscreen all behave the way a
+             viewer expects from any other video player. -->
+        <section id="player" class="player">
+          <video id="video" playsinline autoplay></video>
 
           <div id="overlay" class="overlay">
             <div class="overlay-inner">
@@ -61,21 +63,41 @@
             </div>
           </div>
 
-          <button id="unmute" class="floating" type="button" hidden>🔇 Tap for sound</button>
+          <!-- Shown when the browser refuses to autoplay audio. -->
+          <button id="unmute" class="unmute" type="button" hidden>🔇 Click to enable sound</button>
+
+          <div id="controls" class="controls">
+            <span id="live" class="live-badge" hidden><i></i>LIVE</span>
+
+            <button id="mute" class="icon" type="button" title="Mute (m)">🔊</button>
+            <input
+              id="volume"
+              class="volume"
+              type="range"
+              min="0"
+              max="1"
+              step="0.01"
+              value="1"
+              title="Volume"
+              aria-label="Volume"
+            />
+
+            <span id="now-playing" class="now-playing"></span>
+            <span class="spacer"></span>
+
+            <span id="stats" class="stats" hidden></span>
+            <button id="stats-toggle" class="icon" type="button" title="Quality stats">📊</button>
+            <button id="pip" class="icon" type="button" title="Picture in picture">⧉</button>
+            <button id="fullscreen" class="icon" type="button" title="Fullscreen (f)">⛶</button>
+          </div>
         </section>
 
         <aside id="people" class="people" hidden>
           <h3>In the room</h3>
           <ul id="people-list"></ul>
+          <p id="share-note" class="muted"></p>
         </aside>
       </div>
-
-      <footer class="bar">
-        <button id="share" class="primary" type="button">Start broadcasting</button>
-        <button id="stop" class="danger" type="button" hidden>Stop broadcasting</button>
-        <button id="fullscreen" class="ghost" type="button">Fullscreen</button>
-        <span id="share-note" class="muted"></span>
-      </footer>
     </div>
 
     <p id="toast" class="toast" role="status" hidden></p>

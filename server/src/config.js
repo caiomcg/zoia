@@ -36,11 +36,11 @@ export function loadConfig(env = process.env) {
     // values depend entirely on the uplink: the server sends one copy of the
     // stream per remote viewer, so upload = bitrate x viewers.
     quality: {
-      maxBitrate: Number(env.MAX_BITRATE ?? 20_000_000),
+      maxBitrate: Number(env.MAX_BITRATE ?? 12_000_000),
       maxFramerate: Number(env.MAX_FRAMERATE ?? 60),
-      width: Number(env.CAPTURE_WIDTH ?? 3840),
-      height: Number(env.CAPTURE_HEIGHT ?? 2160),
-      codec: env.VIDEO_CODEC ?? 'vp9',
+      width: Number(env.CAPTURE_WIDTH ?? 1920),
+      height: Number(env.CAPTURE_HEIGHT ?? 1080),
+      codec: env.VIDEO_CODEC ?? 'h264',
     },
     // Cookies must be Secure in production; local development over plain HTTP
     // would otherwise never receive one back.
