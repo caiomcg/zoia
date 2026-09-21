@@ -53,8 +53,8 @@ echo "==> adding $USER to the docker group"
 sudo usermod -aG docker "$USER"
 
 echo "==> creating $DEST"
-sudo mkdir -p "$DEST"
-sudo chown "$USER:$USER" "$DEST"
+sudo mkdir -p "$DEST/server/data"
+sudo chown -R "$USER:$USER" "$DEST"
 
 echo
 echo "==> done"
