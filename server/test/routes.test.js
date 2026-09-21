@@ -321,6 +321,26 @@ describe('rate limiting', () => {
       `expected throttling after the limit, got ${statuses.join(',')}`,
     );
   });
+
+  test('loading the page does not consume the attempt budget', async () => {
+    // Reloading your own room is not a credential check. Counting it locked
+    // people out for refreshing.
+    app = buildApp({ rateLimit: { windowMs: 60_000, limit: 3 } });
+
+    for (let i = 0; i < 10; i += 1) {
+      assert.equal((await request(app).get('/')).status, 200, `plain load ${i} was throttled`);
+    }
+  });
+
+  test('a successful key login does not consume the budget either', async () => {
+    app = buildApp({ rateLimit: { windowMs: 60_000, limit: 3 } });
+
+    for (let i = 0; i < 6; i += 1) {
+      const { rawKey } = await keyStore.add({ name: `user${i}` });
+      const res = await request(app).get(`/?k=${encodeURIComponent(rawKey)}`);
+      assert.equal(res.headers.location, '/', `valid login ${i} was throttled`);
+    }
+  });
 });
 
 describe('health', () => {

@@ -32,11 +32,24 @@ export function createApp({ config, keyStore, tokenIssuer, stage, logger = conso
 
   const loginLimiter = rateLimit({
     windowMs: config.rateLimit?.windowMs ?? 60_000,
-    limit: config.rateLimit?.limit ?? 10,
+    limit: config.rateLimit?.limit ?? 20,
     standardHeaders: 'draft-7',
     legacyHeaders: false,
     message: { error: 'too_many_attempts' },
+    // Only failed attempts count. The point is to blunt guessing, not to
+    // punish someone for reloading the page.
+    skipSuccessfulRequests: true,
   });
+
+  /**
+   * Rate limiting belongs on credential checks, not on serving the page.
+   * Applying it to every GET / meant an ordinary reload consumed the budget
+   * and locked people out of their own room.
+   */
+  const limitKeyAttempts = (req, res, next) =>
+    typeof req.query.k === 'string' && req.query.k.length > 0
+      ? loginLimiter(req, res, next)
+      : next();
 
   function setSession(res, keyId) {
     res.cookie(COOKIE_NAME, keyId, {
@@ -103,7 +116,7 @@ export function createApp({ config, keyStore, tokenIssuer, stage, logger = conso
    * Always answers with a redirect that drops the key, so it cannot linger in
    * the URL bar, browser history, or a Referer header sent to a third party.
    */
-  app.get('/', loginLimiter, async (req, res, next) => {
+  app.get('/', limitKeyAttempts, async (req, res, next) => {
     try {
       const rawKey = req.query.k;
       if (typeof rawKey === 'string' && rawKey.length > 0) {
