@@ -4,7 +4,11 @@ WORKDIR /app
 
 # Install production dependencies first so the layer caches across code changes.
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev
+# --ignore-scripts because the "prepare" script installs husky, a devDependency
+# that --omit=dev excludes; without it the build dies on "command sh -c husky".
+# Skipping lifecycle scripts in a production image is good practice regardless:
+# it removes a supply-chain foothold, and nothing here needs a postinstall.
+RUN npm ci --omit=dev --ignore-scripts
 
 COPY server ./server
 COPY scripts ./scripts

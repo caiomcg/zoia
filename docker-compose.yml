@@ -12,7 +12,6 @@ services:
       CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN:?set CLOUDFLARE_API_TOKEN in .env}
       ZOIA_HOSTNAME: ${PUBLIC_HOST:?set PUBLIC_HOST in .env}
       SFU_HOSTNAME: ${SFU_HOST:?set SFU_HOST in .env}
-      ACME_EMAIL: ${ACME_EMAIL:-}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data # certificates — must persist across restarts

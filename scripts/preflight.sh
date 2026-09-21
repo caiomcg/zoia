@@ -91,10 +91,15 @@ fi
 # ---------------------------------------------------------------------------
 section "local endpoints"
 
-if curl -fsS -m 5 http://127.0.0.1:3000/healthz >/dev/null 2>&1; then
-  ok "app answers on :3000/healthz"
+# The app publishes no host port; it is reachable only through caddy. Testing
+# through caddy also exercises TLS and the proxy route, which is the path that
+# actually matters.
+if [[ -n "${PUBLIC_HOST:-}" ]] \
+  && curl -fsS -m 10 --resolve "${PUBLIC_HOST}:443:127.0.0.1" \
+       "https://${PUBLIC_HOST}/healthz" >/dev/null 2>&1; then
+  ok "app answers through caddy at https://${PUBLIC_HOST}/healthz"
 else
-  bad "app is not answering on :3000/healthz"
+  bad "app is not answering through caddy on https://${PUBLIC_HOST:-?}/healthz"
 fi
 
 if curl -fsS -m 5 http://127.0.0.1:7880 >/dev/null 2>&1; then

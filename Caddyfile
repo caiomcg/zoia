@@ -4,9 +4,11 @@
 # This proxy deliberately serves these two hostnames and nothing else: any
 # other Host header gets a connection refused rather than reaching a service.
 
-{
-	email {$ACME_EMAIL}
-}
+# No global options block. An `email` directive here would be ideal for Let's
+# Encrypt expiry notices, but the Caddyfile has no way to omit a directive when
+# its variable is empty — `email {$ACME_EMAIL}` with nothing set is a parse
+# error and crash-loops the container. If you want expiry mail, hardcode it:
+#   { email you@example.com }
 
 # The web app.
 {$ZOIA_HOSTNAME} {

@@ -36,7 +36,6 @@ LIVEKIT_WS_URL=wss://${SFU_HOST}
 # Cloudflare API token scoped to Zone:DNS:Edit on this zone, for the ACME
 # DNS-01 challenge. Fill this in by hand — it is not generated.
 CLOUDFLARE_API_TOKEN=${CLOUDFLARE_API_TOKEN:-PASTE_YOUR_TOKEN_HERE}
-ACME_EMAIL=${ACME_EMAIL:-}
 
 LIVEKIT_API_KEY=${api_key}
 LIVEKIT_API_SECRET=${api_secret}
