@@ -167,7 +167,7 @@ qm importdisk 120 debian-12-generic-amd64.qcow2 local-lvm
 qm set 120 --scsi0 local-lvm:vm-120-disk-0 --boot order=scsi0 \
   --ide2 local-lvm:cloudinit --serial0 socket --vga serial0
 qm set 120 --ciuser zoia --sshkeys ~/.ssh/authorized_keys \
-  --ipconfig0 ip=192.168.31.50/24,gw=192.168.31.1
+  --ipconfig0 ip=192.168.31.60/24,gw=192.168.31.1
 qm resize 120 scsi0 32G && qm start 120
 ```
 
@@ -252,12 +252,12 @@ logging:
 ## Nginx Proxy Manager configuration
 
 **Proxy Host 1 — the app**
-- Domain: `zoia.<domain>` → `http://192.168.31.50:3000`
+- Domain: `zoia.<domain>` → `http://192.168.31.60:3000`
 - ✅ Websockets Support · ✅ Block Common Exploits · ✅ Force SSL + HTTP/2
 - SSL: the wildcard cert (Cloudflare DNS challenge)
 
 **Proxy Host 2 — LiveKit signalling**
-- Domain: `sfu.<domain>` → `http://192.168.31.50:7880`
+- Domain: `sfu.<domain>` → `http://192.168.31.60:7880`
 - ✅ Websockets Support (**essential** — this host is nothing but a WebSocket)
 - Advanced:
   ```nginx
@@ -492,7 +492,7 @@ app. Worth saying out loud so the absence reads as a decision rather than an omi
 ```bash
 #!/usr/bin/env bash
 set -euo pipefail
-HOST="zoia@192.168.31.50"
+HOST="zoia@192.168.31.60"
 DEST="/opt/zoia"
 
 rsync -az --delete \
@@ -507,7 +507,7 @@ The two excludes carry the whole design: **`.env` and `server/data` live only on
 server.** Secrets never sit in the workspace, and `--delete` never wipes your invite-key
 store — which would otherwise lock every user out on your next deploy, including you.
 
-Set up an SSH key to `zoia@192.168.31.50` first so deploys are non-interactive.
+Set up an SSH key to `zoia@192.168.31.60` first so deploys are non-interactive.
 
 ---
 

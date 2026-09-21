@@ -15,7 +15,7 @@ Discovered on the LAN (`192.168.31.0/24`), for reference while following this gu
 | Nginx Proxy Manager | `192.168.31.4` | Admin UI on `:81`, serving 80/443 |
 | Mesh node / repeater | `192.168.31.200` | Also answers with a MiWiFi certificate |
 | Workstation | `192.168.31.230` | |
-| **zoia-vm** | `192.168.31.50` | To be created; pick any free address and keep it fixed |
+| **zoia-vm** | `192.168.31.60` | Verified free by ping and ARP on 2026-09-21. `.50` was taken |
 | Public IP | `206.42.10.147` | Static |
 
 ## Helper scripts
@@ -72,7 +72,7 @@ qm importdisk 120 debian-12-generic-amd64.qcow2 local-lvm
 qm set 120 --scsi0 local-lvm:vm-120-disk-0 --boot order=scsi0 \
   --ide2 local-lvm:cloudinit --serial0 socket --vga serial0
 qm set 120 --ciuser zoia --sshkeys ~/.ssh/authorized_keys \
-  --ipconfig0 ip=192.168.31.50/24,gw=192.168.31.1
+  --ipconfig0 ip=192.168.31.60/24,gw=192.168.31.1
 qm resize 120 scsi0 32G && qm start 120
 ```
 
@@ -82,7 +82,7 @@ the router forwards and NPM address it by IP, and a lease change breaks both sil
 Then prepare it and **take a snapshot** before any app code lands:
 
 ```bash
-ssh zoia@192.168.31.50 'bash -s' < scripts/bootstrap-vm.sh
+ssh zoia@192.168.31.60 'bash -s' < scripts/bootstrap-vm.sh
 ```
 
 ### 3. Router
@@ -99,13 +99,13 @@ Do not expose 7880.
 ### 4. Nginx Proxy Manager
 
 **Proxy Host — app**
-- `zoia.<domain>` → `http://192.168.31.50:3000`
+- `zoia.<domain>` → `http://192.168.31.60:3000`
 - Websockets Support · Block Common Exploits · Force SSL · HTTP/2
 - SSL: select the **existing `*.example.com` wildcard** from the dropdown. Do not request
   a new certificate — the wildcard already covers this hostname. Force SSL, HTTP/2
 
 **Proxy Host — SFU signalling**
-- `sfu.<domain>` → `http://192.168.31.50:7880`
+- `sfu.<domain>` → `http://192.168.31.60:7880`
 - Websockets Support (this host is nothing but a WebSocket)
 - Advanced:
   ```nginx
@@ -118,7 +118,7 @@ Do not expose 7880.
 ### 5. The app
 
 ```bash
-ssh zoia@192.168.31.50
+ssh zoia@192.168.31.60
 sudo mkdir -p /opt/zoia && sudo chown zoia:zoia /opt/zoia
 ```
 
@@ -132,7 +132,7 @@ From the workspace:
 Then generate `/opt/zoia/.env` on the server:
 
 ```bash
-ssh zoia@192.168.31.50
+ssh zoia@192.168.31.60
 cd /opt/zoia
 ./scripts/gen-env.sh zoia.<domain> sfu.<domain> > .env
 chmod 600 .env
@@ -191,7 +191,7 @@ or `server/data` — secrets and the key store live only on the VM.
 ### Back up the key store
 
 ```bash
-scp zoia@192.168.31.50:/opt/zoia/server/data/keys.json ./keys-backup-$(date +%F).json
+scp zoia@192.168.31.60:/opt/zoia/server/data/keys.json ./keys-backup-$(date +%F).json
 ```
 
 It holds hashes, not keys, but losing it means re-inviting everyone. Keep it out of git.

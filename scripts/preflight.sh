@@ -2,7 +2,7 @@
 #
 # Post-deployment checks. Run it ON the VM, from the deploy directory:
 #
-#   ssh zoia@192.168.31.50 'cd /opt/zoia && bash scripts/preflight.sh'
+#   ssh zoia@192.168.31.60 'cd /opt/zoia && bash scripts/preflight.sh'
 #
 # Each check targets a failure mode that presents as an application bug and is
 # not one. Exits non-zero if any hard check fails.
