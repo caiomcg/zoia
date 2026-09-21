@@ -3,6 +3,30 @@
 Operating Zoia: first deployment, day-to-day tasks, and what to do when it
 misbehaves.
 
+## Network inventory
+
+Discovered on the LAN (`192.168.31.0/24`), for reference while following this guide:
+
+| Host | Address | Notes |
+|---|---|---|
+| Router (Xiaomi / MiWiFi) | `192.168.31.1` | Port forwarding and DHCP reservations live here |
+| Proxmox | `192.168.31.2:8006` | Web UI |
+| Pi-hole | `192.168.31.3` | **Where the split-horizon DNS override goes, if hairpin fails** |
+| Nginx Proxy Manager | `192.168.31.4` | Admin UI on `:81`, serving 80/443 |
+| Mesh node / repeater | `192.168.31.200` | Also answers with a MiWiFi certificate |
+| Workstation | `192.168.31.230` | |
+| **zoia-vm** | `192.168.31.50` | To be created; pick any free address and keep it fixed |
+| Public IP | `206.42.10.147` | Static |
+
+## Helper scripts
+
+| Script | Run it | Does |
+|---|---|---|
+| `scripts/bootstrap-vm.sh` | on the VM, once | Installs Docker, guest agent, creates `/opt/zoia` |
+| `scripts/gen-env.sh` | on the VM | Generates `.env` with consistent secrets |
+| `scripts/preflight.sh` | on the VM, after deploying | Checks every failure mode that looks like an app bug |
+| `deploy.sh` | from the workstation | rsync + `docker compose up -d --build` |
+
 ---
 
 ## First deployment
@@ -45,7 +69,11 @@ qm resize 120 scsi0 32G && qm start 120
 Adjust the subnet to the real LAN. Give the VM a **static IP or DHCP reservation** — both
 the router forwards and NPM address it by IP, and a lease change breaks both silently.
 
-Then install Docker and Compose, and **take a snapshot** before any app code lands.
+Then prepare it and **take a snapshot** before any app code lands:
+
+```bash
+ssh zoia@192.168.31.50 'bash -s' < scripts/bootstrap-vm.sh
+```
 
 ### 3. Router
 
@@ -90,14 +118,25 @@ From the workspace:
 ./deploy.sh
 ```
 
-Then, on the server, create `/opt/zoia/.env` from `.env.example`:
+Then generate `/opt/zoia/.env` on the server:
 
 ```bash
-docker run --rm livekit/generate           # api key + secret
-openssl rand -base64 48                    # SESSION_SECRET
+ssh zoia@192.168.31.50
+cd /opt/zoia
+./scripts/gen-env.sh zoia.<domain> sfu.<domain> > .env
+chmod 600 .env
+docker compose up -d --build
 ```
 
-`LIVEKIT_KEYS` must be `"<api key>: <api secret>"` — the same pair the app uses.
+The generator exists because the LiveKit credentials appear in three places that must
+agree — `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, and `LIVEKIT_KEYS` as `"key: secret"`.
+Out of step, they fail at connect time with no useful error.
+
+Then verify:
+
+```bash
+bash scripts/preflight.sh
+```
 
 Finally mint yourself a host key:
 
@@ -176,8 +215,13 @@ WebSocket at its 60 s default and the client is reconnecting.
 The router is not hairpinning: it answers its own WAN address from inside the LAN. Since the
 host PC is on that LAN, this blocks broadcasting entirely.
 
-Fix with a local DNS override mapping `zoia.<domain>` to NPM's LAN IP — a custom hosts entry
-on the router, a Pi-hole, or `/etc/hosts` on the host PC.
+Fix with a local DNS override mapping `zoia.<domain>` and `sfu.<domain>` to NPM's LAN IP
+(`192.168.31.4`). You already run a Pi-hole at `192.168.31.3`, so that is the place to do it:
+**Settings → Local DNS → DNS Records**, one entry per hostname. Every LAN client that uses
+the Pi-hole then resolves correctly, without per-machine `/etc/hosts` edits.
+
+Check that LAN clients actually use the Pi-hole for DNS first — if the router hands out its
+own address instead, the override will not be consulted.
 
 ### The host has no "Start broadcast" button
 
