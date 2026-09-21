@@ -162,8 +162,9 @@ function updatePlayer() {
   el.video.srcObject = stream;
   el.nowPlaying.textContent = hasAudio ? label : `${label} · no audio`;
   el.video.play().catch(() => {
-    // Autoplay with sound refused until the viewer interacts.
-    el.unmute.hidden = false;
+    // Autoplay with sound refused until the viewer interacts; render() decides
+    // whether the unmute affordance is actually warranted.
+    if (hasAudio && !broadcasting) el.unmute.hidden = false;
   });
   return true;
 }
@@ -182,7 +183,13 @@ function render() {
     el.share.hidden = broadcasting;
     el.stop.hidden = !broadcasting;
     el.live.hidden = !showing;
-    el.controls.style.display = showing ? '' : 'none';
+    // The control bar stays put. Hiding it when idle took fullscreen and
+    // volume away exactly when someone might reach for them.
+    el.controls.classList.toggle('dim', !showing);
+
+    // Only offer the unmute affordance when there is sound to unmute.
+    const wantsAudio = showing && !broadcasting && el.video.srcObject?.getAudioTracks().length > 0;
+    el.unmute.hidden = !wantsAudio || Boolean(room.canPlaybackAudio);
 
     if (broadcasting) setStatus('you are broadcasting', 'live');
     else if (showing) setStatus('watching', 'live');
@@ -193,6 +200,11 @@ function render() {
         title: 'Nobody is broadcasting',
         text: 'Anyone here can share their screen — one at a time.',
       });
+    }
+
+    if (!showing) {
+      el.player.classList.remove('idle');
+      clearTimeout(idleTimer);
     }
 
     renderPeople();
@@ -377,9 +389,7 @@ function wireRoomEvents() {
     .on(RoomEvent.ConnectionStateChanged, rerender)
     .on(RoomEvent.Reconnecting, () => setStatus('reconnecting…'))
     .on(RoomEvent.Reconnected, rerender)
-    .on(RoomEvent.AudioPlaybackStatusChanged, () => {
-      el.unmute.hidden = room.canPlaybackAudio;
-    })
+    .on(RoomEvent.AudioPlaybackStatusChanged, rerender)
     .on(RoomEvent.Disconnected, (reason) => {
       broadcasting = false;
       setStatus('disconnected', 'error');
@@ -565,7 +575,9 @@ el.unmute.addEventListener('click', async () => {
 });
 
 function syncVolumeUi() {
-  el.mute.textContent = el.video.muted || el.video.volume === 0 ? '🔇' : '🔊';
+  const silent = el.video.muted || el.video.volume === 0;
+  el.mute.classList.toggle('muted', silent);
+  el.mute.setAttribute('aria-label', silent ? 'Unmute' : 'Mute');
   el.volume.value = String(el.video.muted ? 0 : el.video.volume);
 }
 
@@ -584,12 +596,38 @@ el.volume.addEventListener('input', () => {
 el.video.addEventListener('volumechange', syncVolumeUi);
 
 async function toggleFullscreen() {
-  try {
-    if (document.fullscreenElement) await document.exitFullscreen();
-    else await el.player.requestFullscreen();
-  } catch (err) {
-    toast(`Fullscreen unavailable: ${err?.message ?? err}`);
+  if (document.fullscreenElement || document.webkitFullscreenElement) {
+    await (document.exitFullscreen?.() ?? document.webkitExitFullscreen?.());
+    return;
   }
+
+  // Try the player first so the controls stay available, then the video, then
+  // the iOS-only path. Report what actually failed rather than a blanket
+  // "unavailable", which says nothing useful.
+  const attempts = [
+    ['player', () => el.player.requestFullscreen?.()],
+    ['player (webkit)', () => el.player.webkitRequestFullscreen?.()],
+    ['video', () => el.video.requestFullscreen?.()],
+    ['video (ios)', () => el.video.webkitEnterFullscreen?.()],
+  ];
+
+  const errors = [];
+  for (const [what, run] of attempts) {
+    try {
+      const result = run();
+      if (result === undefined && !document.fullscreenElement) continue;
+      await result;
+      return;
+    } catch (err) {
+      errors.push(`${what}: ${err?.name ?? ''} ${err?.message ?? err}`.trim());
+    }
+  }
+
+  toast(
+    document.fullscreenEnabled === false
+      ? 'This browser has fullscreen disabled for the page.'
+      : `Fullscreen failed — ${errors[0] ?? 'no method available'}`,
+  );
 }
 
 el.fullscreen.addEventListener('click', toggleFullscreen);
@@ -621,12 +659,18 @@ el.peopleToggle.addEventListener('click', () => {
   el.peopleToggle.setAttribute('aria-expanded', String(open));
 });
 
-// Auto-hide the control bar while the pointer is still.
+/**
+ * Auto-hide the control bar while the pointer is still — but only while
+ * something is actually playing. Hiding it over an idle room left no way to
+ * reach fullscreen or volume without knowing to waggle the mouse first.
+ */
 let idleTimer;
 function wakeControls() {
   el.player.classList.remove('idle');
   clearTimeout(idleTimer);
-  idleTimer = setTimeout(() => el.player.classList.add('idle'), 2500);
+  idleTimer = setTimeout(() => {
+    if (broadcasting || remoteScreen()) el.player.classList.add('idle');
+  }, 3000);
 }
 el.player.addEventListener('mousemove', wakeControls);
 el.player.addEventListener('touchstart', wakeControls, { passive: true });
@@ -641,6 +685,11 @@ async function enterRoom() {
   el.whoami.textContent = session.name;
   syncVolumeUi();
 
+  // Open by default: "who else is here" is a primary question, not something
+  // to go hunting for behind a toggle.
+  el.people.hidden = false;
+  el.peopleToggle.setAttribute('aria-expanded', 'true');
+
   if (!navigator.mediaDevices?.getDisplayMedia) {
     el.share.disabled = true;
     el.share.title = window.isSecureContext
@@ -648,29 +697,26 @@ async function enterRoom() {
       : 'Screen capture needs HTTPS.';
   }
 
-  showOverlay({
-    title: 'Join the room',
-    text: 'One click, so the browser will let audio play.',
-    action: 'Join',
-    onAction: async () => {
-      el.overlayAction.disabled = true;
-      try {
-        await connect();
-      } catch (err) {
-        showOverlay({
-          title: 'Could not connect',
-          text: err?.message ?? String(err),
-          action: 'Try again',
-          onAction: () => connect(),
-        });
-        setStatus('error', 'error');
-      }
-    },
-  });
-  setStatus('ready');
+  // Connect straight away. Making people click through a modal before they can
+  // see the room or who is in it was the wrong trade: the only thing a gesture
+  // is actually needed for is audio, and that has its own affordance.
+  showOverlay({ title: 'Connecting…', text: 'Joining the room.' });
+  setStatus('connecting…');
 
   statsTimer ??= setInterval(sampleStats, 1000);
   wakeControls();
+
+  try {
+    await connect();
+  } catch (err) {
+    showOverlay({
+      title: 'Could not connect',
+      text: err?.message ?? String(err),
+      action: 'Try again',
+      onAction: () => connect(),
+    });
+    setStatus('error', 'error');
+  }
 }
 
 async function main() {
