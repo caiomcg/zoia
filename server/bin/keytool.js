@@ -2,7 +2,7 @@
 /**
  * Invite-key administration.
  *
- *   keytool add --name "Alice" [--role viewer] [--expires-in-days 30]
+ *   keytool add --name "Alice" [--expires-in-days 30]
  *   keytool list
  *   keytool revoke <keyId>
  */
@@ -24,7 +24,7 @@ const store = createKeyStore({ file });
 const USAGE = `
 zoia keytool — manage invite keys
 
-  keytool add --name "Alice" [--role viewer|host] [--expires-in-days N]
+  keytool add --name "Alice" [--expires-in-days N]
   keytool list
   keytool revoke <keyId>
 
@@ -45,7 +45,7 @@ switch (command) {
       args: rest,
       options: {
         name: { type: 'string' },
-        role: { type: 'string', default: 'viewer' },
+        role: { type: 'string', default: 'member' },
         'expires-in-days': { type: 'string' },
       },
     });
@@ -66,8 +66,9 @@ switch (command) {
       expiresAt,
     });
 
-    console.log(`\n  ${record.role === 'host' ? 'HOST' : 'viewer'} key for ${record.name}`);
+    console.log(`\n  invite key for ${record.name}`);
     console.log(`  id:      ${record.id}`);
+    console.log('  anyone with a key may broadcast, one at a time');
     if (expiresAt) console.log(`  expires: ${expiresAt}`);
     console.log(`\n  Send this link — it is shown once and cannot be recovered:\n`);
     console.log(`    ${scheme}://${publicHost}/?k=${rawKey}\n`);

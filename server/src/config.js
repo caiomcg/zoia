@@ -32,6 +32,16 @@ export function loadConfig(env = process.env) {
       apiUrl: env.LIVEKIT_API_URL ?? 'http://127.0.0.1:7880',
     },
     keyStoreFile: env.KEY_STORE_FILE ?? 'server/data/keys.json',
+    // Broadcast quality. Tunable without a code change because the right
+    // values depend entirely on the uplink: the server sends one copy of the
+    // stream per remote viewer, so upload = bitrate x viewers.
+    quality: {
+      maxBitrate: Number(env.MAX_BITRATE ?? 20_000_000),
+      maxFramerate: Number(env.MAX_FRAMERATE ?? 60),
+      width: Number(env.CAPTURE_WIDTH ?? 3840),
+      height: Number(env.CAPTURE_HEIGHT ?? 2160),
+      codec: env.VIDEO_CODEC ?? 'vp9',
+    },
     // Cookies must be Secure in production; local development over plain HTTP
     // would otherwise never receive one back.
     secureCookies: (env.SECURE_COOKIES ?? 'true') !== 'false',

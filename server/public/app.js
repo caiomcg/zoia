@@ -1,22 +1,69 @@
 /**
  * Zoia browser client.
  *
- * Two roles, one page. A host publishes a screen-share track; everyone else
- * subscribes to it. The role comes from the server with the token — nothing
- * here decides it, and changing it here would achieve nothing, because LiveKit
- * validates the grant server-side.
+ * One tier of user: everyone watches, anyone may claim the stage. Publish
+ * rights are granted by the server only while the stage is free, and LiveKit
+ * enforces them — claiming is not a UI state, it is a permission change.
  */
 
 import { Room, RoomEvent, Track, createLocalScreenTracks } from './vendor/livekit-client.esm.mjs';
 
-/** Screen content is mostly text. These settings are chosen for legibility. */
-const SCREEN_PUBLISH_OPTIONS = {
-  videoEncoding: { maxBitrate: 2_500_000, maxFramerate: 15 },
-  // Shed frame rate, never resolution. The default does the opposite, which
-  // turns an IDE or a spreadsheet into unreadable mush under load.
-  degradationPreference: 'maintain-resolution',
-  videoCodec: 'vp9',
+/**
+ * Capture settings. LiveKit caps screen capture at 1080p unless a resolution is
+ * given, so this asks for 2160p60 and lets the browser hand back whatever the
+ * display actually is.
+ */
+let quality = {
+  maxBitrate: 20_000_000,
+  maxFramerate: 60,
+  width: 3840,
+  height: 2160,
+  codec: 'vp9',
+};
+
+function captureOptions() {
+  return {
+    ...CAPTURE,
+    resolution: { width: quality.width, height: quality.height, frameRate: quality.maxFramerate },
+  };
+}
+
+function publishOptions() {
+  const encoding = {
+    maxBitrate: quality.maxBitrate,
+    maxFramerate: quality.maxFramerate,
+    priority: 'high',
+  };
+  return {
+    ...PUBLISH,
+    screenShareEncoding: encoding,
+    videoEncoding: encoding,
+    videoCodec: quality.codec,
+  };
+}
+
+const CAPTURE = {
+  video: true,
+  // Browser voice processing is tuned for microphones and mangles music and
+  // video soundtracks. Off, for system audio that sounds like the source.
+  audio: {
+    echoCancellation: false,
+    noiseSuppression: false,
+    autoGainControl: false,
+  },
+};
+
+/**
+ * Publish settings, tuned for legibility at high resolution. `screenShareEncoding`
+ * is the field that applies to a screen-share source; `videoEncoding` is set to
+ * the same values so nothing falls back to a default.
+ */
+const PUBLISH = {
+  // Simulcast splits the budget across layers; a single high-quality stream is
+  // the point here.
   simulcast: false,
+  // Shed frame rate before resolution: blurry text is worse than fewer frames.
+  degradationPreference: 'maintain-resolution',
 };
 
 const $ = (id) => document.getElementById(id);
@@ -28,17 +75,23 @@ const el = {
   room: $('room'),
   status: $('status'),
   whoami: $('whoami'),
-  viewers: $('viewers'),
   logout: $('logout'),
+  stage: $('stage'),
   video: $('video'),
+  remoteAudio: $('remote-audio'),
   overlay: $('overlay'),
   overlayTitle: $('overlay-title'),
   overlayText: $('overlay-text'),
   overlayAction: $('overlay-action'),
   overlayHint: $('overlay-hint'),
-  controls: $('controls'),
+  unmute: $('unmute'),
+  people: $('people'),
+  peopleList: $('people-list'),
+  peopleToggle: $('people-toggle'),
+  peopleCount: $('people-count'),
   share: $('share'),
   stop: $('stop'),
+  fullscreen: $('fullscreen'),
   shareNote: $('share-note'),
   toast: $('toast'),
 };
@@ -46,9 +99,11 @@ const el = {
 let session = null;
 let room = null;
 let publishedTracks = [];
+let broadcasting = false;
+let connecting = false;
 
 // ---------------------------------------------------------------------------
-// small ui helpers
+// ui helpers
 // ---------------------------------------------------------------------------
 
 let toastTimer;
@@ -58,7 +113,7 @@ function toast(message) {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => {
     el.toast.hidden = true;
-  }, 5000);
+  }, 6000);
 }
 
 function setStatus(text, state = '') {
@@ -67,12 +122,50 @@ function setStatus(text, state = '') {
   else delete el.status.dataset.state;
 }
 
+// ---------------------------------------------------------------------------
+// state → view. One place decides what the stage shows, so "waiting for a
+// broadcast" can never appear over your own screen share.
+// ---------------------------------------------------------------------------
+
+function remoteScreenPublication() {
+  for (const participant of room?.remoteParticipants?.values() ?? []) {
+    const pub = participant.getTrackPublication(Track.Source.ScreenShare);
+    if (pub?.track) return { participant, track: pub.track };
+  }
+  return null;
+}
+
+function render() {
+  if (!room) return;
+
+  const remote = remoteScreenPublication();
+  const showingSomething = broadcasting || Boolean(remote);
+
+  el.overlay.hidden = showingSomething;
+  el.share.hidden = broadcasting;
+  el.stop.hidden = !broadcasting;
+
+  if (broadcasting) {
+    setStatus('you are broadcasting', 'live');
+  } else if (remote) {
+    setStatus(`${remote.participant.name || remote.participant.identity} is broadcasting`, 'live');
+  } else {
+    setStatus('idle');
+    el.share.disabled = false;
+    showOverlay({
+      title: 'Nobody is broadcasting',
+      text: 'Start broadcasting to share your screen with everyone here.',
+    });
+  }
+
+  renderPeople(remote);
+}
+
 function showOverlay({ title, text = '', action = null, onAction = null, hint = '' }) {
   el.overlayTitle.textContent = title;
   el.overlayText.textContent = text;
   el.overlayHint.textContent = hint;
   el.overlayHint.hidden = !hint;
-
   el.overlayAction.hidden = !action;
   if (action) {
     el.overlayAction.textContent = action;
@@ -82,8 +175,40 @@ function showOverlay({ title, text = '', action = null, onAction = null, hint = 
   el.overlay.hidden = false;
 }
 
-function hideOverlay() {
-  el.overlay.hidden = true;
+function renderPeople(remote) {
+  const people = [];
+  if (room?.localParticipant) {
+    people.push({
+      name: session.name,
+      you: true,
+      broadcasting,
+    });
+  }
+  for (const p of room?.remoteParticipants?.values() ?? []) {
+    people.push({
+      name: p.name || p.identity,
+      you: false,
+      broadcasting: remote?.participant?.identity === p.identity,
+    });
+  }
+
+  el.peopleCount.textContent = String(people.length);
+  el.peopleList.replaceChildren(
+    ...people.map((person) => {
+      const li = document.createElement('li');
+      const dot = document.createElement('span');
+      dot.className = person.broadcasting ? 'dot live' : 'dot';
+      const label = document.createElement('span');
+      label.textContent = person.you ? `${person.name} (you)` : person.name;
+      li.append(dot, label);
+      if (person.broadcasting) {
+        const tag = document.createElement('em');
+        tag.textContent = 'broadcasting';
+        li.append(tag);
+      }
+      return li;
+    }),
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -110,14 +235,12 @@ el.loginForm.addEventListener('submit', async (event) => {
   const button = el.loginForm.querySelector('button');
   button.disabled = true;
   el.loginError.hidden = true;
-
   try {
     const res = await fetch('/api/login', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ key: el.keyInput.value.trim() }),
     });
-
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
       showLogin(
@@ -127,7 +250,6 @@ el.loginForm.addEventListener('submit', async (event) => {
       );
       return;
     }
-
     el.keyInput.value = '';
     session = await res.json();
     await enterRoom();
@@ -139,9 +261,48 @@ el.loginForm.addEventListener('submit', async (event) => {
 });
 
 el.logout.addEventListener('click', async () => {
+  await stopBroadcast().catch(() => {});
   await room?.disconnect();
   await fetch('/api/logout', { method: 'POST' });
   location.replace('/');
+});
+
+// ---------------------------------------------------------------------------
+// media
+// ---------------------------------------------------------------------------
+
+function attachTrack(track) {
+  if (track.kind === Track.Kind.Video) {
+    track.attach(el.video);
+    el.video.muted = true; // the video element carries no audio; see below
+  } else if (track.kind === Track.Kind.Audio) {
+    // Audio gets its own element. Attaching it to the video element would
+    // replace that element's stream and the picture would go with it.
+    track.attach(el.remoteAudio);
+    el.remoteAudio.muted = false;
+    el.remoteAudio.volume = 1;
+    el.remoteAudio.play().catch(() => {
+      // Autoplay refused until the viewer interacts.
+      el.unmute.hidden = false;
+    });
+  }
+  render();
+}
+
+function detachTrack(track) {
+  track.detach(el.video);
+  track.detach(el.remoteAudio);
+  render();
+}
+
+el.unmute.addEventListener('click', async () => {
+  try {
+    await room?.startAudio();
+    await el.remoteAudio.play();
+    el.unmute.hidden = true;
+  } catch (err) {
+    toast(`Could not start audio: ${err?.message ?? err}`);
+  }
 });
 
 // ---------------------------------------------------------------------------
@@ -151,7 +312,6 @@ el.logout.addEventListener('click', async () => {
 async function fetchToken() {
   const res = await fetch('/api/token', { method: 'POST' });
   if (res.status === 401) {
-    // The key was revoked, or the session expired, while the page was open.
     showLogin('Your access has ended. Ask for a new invite key.');
     return null;
   }
@@ -159,54 +319,23 @@ async function fetchToken() {
   return res.json();
 }
 
-/** Attaches a remote screen-share track to the stage. */
-function attachTrack(track) {
-  if (track.kind === Track.Kind.Video) {
-    track.attach(el.video);
-    hideOverlay();
-    setStatus('live', 'live');
-  } else if (track.kind === Track.Kind.Audio) {
-    // Audio rides the same element so a single user gesture unlocks both.
-    track.attach(el.video);
-  }
-}
-
-function remoteScreenTrack() {
-  for (const participant of room?.remoteParticipants?.values() ?? []) {
-    const pub = participant.getTrackPublication(Track.Source.ScreenShare);
-    if (pub?.track) return pub.track;
-  }
-  return null;
-}
-
-function updateViewerCount() {
-  if (session?.role !== 'host' || !room) return;
-  const count = room.remoteParticipants.size;
-  el.viewers.hidden = false;
-  el.viewers.textContent = count === 1 ? '1 viewer' : `${count} viewers`;
-}
-
-function showWaiting() {
-  el.video.srcObject = null;
-  showOverlay({
-    title: 'Waiting for the broadcast',
-    text: 'The stream will appear here as soon as the host starts sharing.',
-  });
-  setStatus('waiting');
-}
-
 function wireRoomEvents() {
   room
-    .on(RoomEvent.TrackSubscribed, (track) => attachTrack(track))
-    .on(RoomEvent.TrackUnsubscribed, (track) => {
-      track.detach(el.video);
-      if (!remoteScreenTrack()) showWaiting();
-    })
-    .on(RoomEvent.ParticipantConnected, updateViewerCount)
-    .on(RoomEvent.ParticipantDisconnected, updateViewerCount)
+    .on(RoomEvent.TrackSubscribed, attachTrack)
+    .on(RoomEvent.TrackUnsubscribed, detachTrack)
+    .on(RoomEvent.ParticipantConnected, render)
+    .on(RoomEvent.ParticipantDisconnected, render)
+    .on(RoomEvent.TrackPublished, render)
+    .on(RoomEvent.TrackUnpublished, render)
+    .on(RoomEvent.LocalTrackPublished, render)
+    .on(RoomEvent.LocalTrackUnpublished, render)
     .on(RoomEvent.Reconnecting, () => setStatus('reconnecting…'))
-    .on(RoomEvent.Reconnected, () => setStatus(remoteScreenTrack() ? 'live' : 'waiting', 'live'))
+    .on(RoomEvent.Reconnected, render)
+    .on(RoomEvent.AudioPlaybackStatusChanged, () => {
+      el.unmute.hidden = room.canPlaybackAudio;
+    })
     .on(RoomEvent.Disconnected, (reason) => {
+      broadcasting = false;
       setStatus('disconnected', 'error');
       showOverlay({
         title: 'Disconnected',
@@ -219,136 +348,160 @@ function wireRoomEvents() {
 }
 
 async function connect() {
-  const credentials = await fetchToken();
-  if (!credentials) return;
+  if (connecting) return;
+  connecting = true;
+  try {
+    const credentials = await fetchToken();
+    if (!credentials) return;
+    if (credentials.quality) quality = { ...quality, ...credentials.quality };
 
-  setStatus('connecting…');
-  room = new Room({ adaptiveStream: true, dynacast: true });
-  wireRoomEvents();
+    setStatus('connecting…');
+    room = new Room({
+      // Both of these trade quality for bandwidth by sending fewer pixels when
+      // the viewer's element is small. This deployment wants full quality.
+      adaptiveStream: false,
+      dynacast: false,
+    });
+    wireRoomEvents();
 
-  await room.connect(credentials.wsUrl, credentials.token);
+    await room.connect(credentials.wsUrl, credentials.token);
+    await room.startAudio().catch(() => {});
 
-  // Browsers block audio until a user gesture; connect() is always reached
-  // from a click, so this is the moment it is allowed to succeed.
-  await room.startAudio().catch(() => {});
-
-  updateViewerCount();
-
-  const existing = remoteScreenTrack();
-  if (existing) attachTrack(existing);
-  else if (session.role === 'host') hideOverlay();
-  else showWaiting();
+    // Pick up anything already being broadcast.
+    const existing = remoteScreenPublication();
+    if (existing) attachTrack(existing.track);
+    for (const p of room.remoteParticipants.values()) {
+      const audio = p.getTrackPublication(Track.Source.ScreenShareAudio);
+      if (audio?.track) attachTrack(audio.track);
+    }
+    render();
+  } finally {
+    connecting = false;
+  }
 }
 
 // ---------------------------------------------------------------------------
-// broadcasting (host only)
+// broadcasting
 // ---------------------------------------------------------------------------
 
 async function startBroadcast() {
   el.share.disabled = true;
+  let claimed = false;
+
   try {
-    const tracks = await createLocalScreenTracks({ audio: true });
+    // Ask the server for publish rights first. If someone else holds the stage
+    // this fails before the browser ever prompts for a screen.
+    const res = await fetch('/api/stage/claim', { method: 'POST' });
+    if (res.status === 409) {
+      const body = await res.json().catch(() => ({}));
+      toast(`${body.holder?.name ?? 'Someone else'} is broadcasting. Only one at a time.`);
+      return;
+    }
+    if (!res.ok) throw new Error(`could not claim the stage (${res.status})`);
+    claimed = true;
+
+    const tracks = await createLocalScreenTracks(captureOptions());
 
     for (const track of tracks) {
       if (track.kind === Track.Kind.Video) {
         // Tells the encoder to preserve sharp edges over smooth motion.
-        track.mediaStreamTrack.contentHint = 'text';
-        await room.localParticipant.publishTrack(track, SCREEN_PUBLISH_OPTIONS);
+        track.mediaStreamTrack.contentHint = 'detail';
+        await room.localParticipant.publishTrack(track, publishOptions());
         track.attach(el.video);
       } else {
-        await room.localParticipant.publishTrack(track);
+        await room.localParticipant.publishTrack(track, { audioPreset: undefined });
       }
     }
 
     publishedTracks = tracks;
-    hideOverlay();
-    setStatus('broadcasting', 'live');
-    el.share.hidden = true;
-    el.stop.hidden = false;
+    broadcasting = true;
 
+    const settings = tracks
+      .find((t) => t.kind === Track.Kind.Video)
+      ?.mediaStreamTrack?.getSettings?.();
     const sharedAudio = tracks.some((t) => t.kind === Track.Kind.Audio);
-    el.shareNote.textContent = sharedAudio
-      ? 'Sharing screen and audio.'
-      : 'Sharing screen only — tick “share audio” in the picker to include sound.';
+    el.shareNote.textContent = [
+      settings
+        ? `${settings.width}×${settings.height} @ ${Math.round(settings.frameRate ?? 0)}fps`
+        : '',
+      sharedAudio ? 'audio on' : 'no audio — tick “share audio” in the picker',
+    ]
+      .filter(Boolean)
+      .join(' · ');
 
     // The browser's own "Stop sharing" bar ends the track behind our back.
     tracks[0]?.mediaStreamTrack.addEventListener('ended', () => stopBroadcast());
+
+    render();
   } catch (err) {
-    if (err?.name === 'NotAllowedError') {
-      toast('Screen sharing was cancelled.');
-    } else {
-      toast(`Could not start sharing: ${err?.message ?? err}`);
-    }
+    if (claimed) await fetch('/api/stage/release', { method: 'POST' }).catch(() => {});
+    if (err?.name === 'NotAllowedError') toast('Screen sharing was cancelled.');
+    else toast(`Could not start sharing: ${err?.message ?? err}`);
   } finally {
     el.share.disabled = false;
+    render();
   }
 }
 
 async function stopBroadcast() {
   for (const track of publishedTracks) {
-    await room?.localParticipant.unpublishTrack(track, true);
+    await room?.localParticipant.unpublishTrack(track, true).catch(() => {});
   }
   publishedTracks = [];
+  broadcasting = false;
   el.video.srcObject = null;
-  el.share.hidden = false;
-  el.stop.hidden = true;
   el.shareNote.textContent = '';
-  setStatus('idle');
-  showOverlay({
-    title: 'Ready when you are',
-    text: 'Start a broadcast to share your screen with everyone connected.',
-  });
+  await fetch('/api/stage/release', { method: 'POST' }).catch(() => {});
+  render();
 }
 
 el.share.addEventListener('click', startBroadcast);
 el.stop.addEventListener('click', stopBroadcast);
 
 // ---------------------------------------------------------------------------
-// entry
+// fullscreen and people panel
 // ---------------------------------------------------------------------------
 
-function canCaptureScreen() {
-  return Boolean(navigator.mediaDevices?.getDisplayMedia);
+async function toggleFullscreen() {
+  try {
+    if (document.fullscreenElement) await document.exitFullscreen();
+    else await el.stage.requestFullscreen({ navigationUI: 'hide' });
+  } catch (err) {
+    toast(`Fullscreen unavailable: ${err?.message ?? err}`);
+  }
 }
+
+el.fullscreen.addEventListener('click', toggleFullscreen);
+el.video.addEventListener('dblclick', toggleFullscreen);
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'f' && !el.room.hidden && e.target === document.body) toggleFullscreen();
+});
+
+el.peopleToggle.addEventListener('click', () => {
+  const open = el.people.hidden;
+  el.people.hidden = !open;
+  el.peopleToggle.setAttribute('aria-expanded', String(open));
+});
+
+// ---------------------------------------------------------------------------
+// entry
+// ---------------------------------------------------------------------------
 
 async function enterRoom() {
   el.login.hidden = true;
   el.room.hidden = false;
-  el.whoami.textContent = `${session.name} · ${session.role}`;
+  el.whoami.textContent = session.name;
 
-  if (session.role === 'host') {
-    if (!canCaptureScreen()) {
-      // Almost always the real cause: an insecure origin.
-      showOverlay({
-        title: 'Screen capture unavailable',
-        text: 'This browser will not allow screen capture on this page.',
-        hint: window.isSecureContext
-          ? 'Use Chrome or Edge on a desktop to broadcast.'
-          : 'The page must be served over HTTPS for screen capture to be possible.',
-      });
-      setStatus('unsupported', 'error');
-      return;
-    }
-
-    el.controls.hidden = false;
-    showOverlay({
-      title: 'Ready when you are',
-      text: 'Start a broadcast to share your screen with everyone connected.',
-      action: 'Start broadcast',
-      onAction: async () => {
-        el.overlayAction.disabled = true;
-        await connect();
-        await startBroadcast();
-      },
-      hint: 'Audio capture needs Chrome or Edge on desktop, and is offered for a tab or a whole screen — not a single window.',
-    });
-    setStatus('idle');
-    return;
+  if (!navigator.mediaDevices?.getDisplayMedia) {
+    el.share.disabled = true;
+    el.share.title = window.isSecureContext
+      ? 'This browser cannot capture a screen. Use Chrome or Edge on a desktop.'
+      : 'Screen capture needs HTTPS.';
   }
 
-  // Viewers join on a click: browsers refuse to start audio without a gesture.
   showOverlay({
-    title: 'Join the broadcast',
+    title: 'Join the room',
+    text: 'Audio needs a click before it can start.',
     action: 'Join',
     onAction: async () => {
       el.overlayAction.disabled = true;
@@ -370,9 +523,7 @@ async function enterRoom() {
 
 async function main() {
   const params = new URLSearchParams(location.search);
-  if (params.has('error')) {
-    history.replaceState(null, '', '/');
-  }
+  if (params.has('error')) history.replaceState(null, '', '/');
 
   session = await loadSession();
   if (!session) {
@@ -382,6 +533,8 @@ async function main() {
   await enterRoom();
 }
 
-main().catch((err) => {
-  showLogin(`Something went wrong: ${err?.message ?? err}`);
+window.addEventListener('pagehide', () => {
+  if (broadcasting) navigator.sendBeacon?.('/api/stage/release');
 });
+
+main().catch((err) => showLogin(`Something went wrong: ${err?.message ?? err}`));

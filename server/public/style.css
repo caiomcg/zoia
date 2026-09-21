@@ -268,3 +268,93 @@ footer.bar {
     display: none;
   }
 }
+
+/* ---- room body: stage + people panel ----------------------------------- */
+
+.body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.stage {
+  flex: 1;
+}
+
+.people {
+  width: 220px;
+  padding: 14px 16px;
+  overflow-y: auto;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+}
+
+.people h3 {
+  margin: 0 0 10px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.people ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 8px;
+}
+
+.people li {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 14px;
+}
+
+.people em {
+  margin-left: auto;
+  font-size: 11px;
+  font-style: normal;
+  color: var(--accent);
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--border);
+}
+
+.dot.live {
+  background: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent);
+}
+
+/* A stage in fullscreen must still fill the screen. */
+.stage:fullscreen #video {
+  width: 100vw;
+  height: 100vh;
+}
+
+.floating {
+  position: absolute;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  color: var(--accent-text);
+  background: var(--accent);
+}
+
+@media (max-width: 760px) {
+  .people {
+    width: 100%;
+    border-left: none;
+    border-top: 1px solid var(--border);
+  }
+  .body {
+    flex-direction: column;
+  }
+}

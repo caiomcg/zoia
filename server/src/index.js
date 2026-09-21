@@ -1,9 +1,12 @@
 #!/usr/bin/env node
 /** Entry point: wires config, key store and token issuer into the HTTP app. */
 
+import { RoomServiceClient } from 'livekit-server-sdk';
+
 import { loadConfig } from './config.js';
 import { createKeyStore } from './keys.js';
 import { createTokenIssuer } from './token.js';
+import { createStage } from './stage.js';
 import { createApp } from './app.js';
 
 try {
@@ -23,7 +26,14 @@ const tokenIssuer = createTokenIssuer({
   roomName: config.roomName,
 });
 
-const app = createApp({ config, keyStore, tokenIssuer });
+const rooms = new RoomServiceClient(
+  config.livekit.apiUrl,
+  config.livekit.apiKey,
+  config.livekit.apiSecret,
+);
+const stage = createStage({ rooms, roomName: config.roomName });
+
+const app = createApp({ config, keyStore, tokenIssuer, stage });
 
 app.listen(config.port, () => {
   console.log(`[zoia] listening on :${config.port}`);

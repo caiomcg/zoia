@@ -19,7 +19,8 @@ const scryptAsync = promisify(scrypt);
 const PREFIX = 'zoia';
 const KEY_LENGTH = 64;
 const SCRYPT_PARAMS = { N: 16384, r: 8, p: 1 };
-export const ROLES = ['host', 'viewer'];
+// One tier of user. Anyone may claim the stage; see stage.js.
+export const ROLES = ['member'];
 
 // The secret is base64url, whose alphabet includes '_'. Anchoring the pattern
 // on the fixed-width id keeps that unambiguous; splitting on '_' would break
@@ -85,7 +86,7 @@ export function createKeyStore({ file }) {
      * Mints a key. The raw value is returned once and never stored — a lost key
      * is replaced, not recovered.
      */
-    async add({ name, role, expiresAt = null }) {
+    async add({ name, role = 'member', expiresAt = null }) {
       if (!ROLES.includes(role)) {
         throw new Error(`role must be one of: ${ROLES.join(', ')}`);
       }
