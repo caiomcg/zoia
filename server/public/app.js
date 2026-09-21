@@ -110,6 +110,8 @@ const el = Object.fromEntries(
     'share-note',
     'no-audio',
     'no-audio-retry',
+    'audio-source',
+    'audio-permit',
     'toast',
   ].map((id) => [id.replace(/-(\w)/g, (_, c) => c.toUpperCase()), $(id)]),
 );
@@ -174,8 +176,12 @@ function remoteScreen() {
   for (const p of room?.remoteParticipants?.values() ?? []) {
     const video = p.getTrackPublication(Track.Source.ScreenShare);
     if (video?.track) {
-      const audio = p.getTrackPublication(Track.Source.ScreenShareAudio);
-      return { participant: p, video: video.track, audio: audio?.track ?? null };
+      // Every audio track the broadcaster publishes, not only screen audio:
+      // a microphone or a virtual cable arrives as Microphone.
+      const audio = [Track.Source.ScreenShareAudio, Track.Source.Microphone]
+        .map((src) => p.getTrackPublication(src)?.track)
+        .filter(Boolean);
+      return { participant: p, video: video.track, audio };
     }
   }
   return null;
@@ -199,8 +205,8 @@ function updatePlayer() {
     const remote = remoteScreen();
     if (remote) {
       stream.addTrack(remote.video.mediaStreamTrack);
-      if (remote.audio) {
-        stream.addTrack(remote.audio.mediaStreamTrack);
+      for (const track of remote.audio) {
+        stream.addTrack(track.mediaStreamTrack);
         hasAudio = true;
       }
       label = `${remote.participant.name || remote.participant.identity} is broadcasting`;
@@ -525,6 +531,85 @@ function waitForPublishPermission(timeoutMs = 10_000) {
   });
 }
 
+// ---------------------------------------------------------------------------
+// audio input: microphone, line-in, or a virtual cable carrying one app's sound
+// ---------------------------------------------------------------------------
+
+async function refreshAudioDevices() {
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const inputs = devices.filter((d) => d.kind === 'audioinput');
+    const chosen = el.audioSource.value;
+
+    el.audioSource.replaceChildren(
+      new Option('No extra audio', ''),
+      ...inputs.map((d, i) => new Option(d.label || `Input ${i + 1}`, d.deviceId)),
+    );
+    el.audioSource.value = inputs.some((d) => d.deviceId === chosen) ? chosen : '';
+
+    // Labels are blank until permission has been granted once.
+    el.audioPermit.hidden = inputs.some((d) => d.label);
+  } catch {
+    el.audioPermit.hidden = false;
+  }
+}
+
+/** Captures the selected input. Returns null when none is chosen. */
+async function captureAudioInput() {
+  const deviceId = el.audioSource.value;
+  if (!deviceId) return null;
+
+  const stream = await navigator.mediaDevices.getUserMedia({
+    audio: {
+      deviceId: { exact: deviceId },
+      // This is a media feed, not a voice call. Browser voice processing
+      // would gate, duck and denoise the very thing being shared.
+      echoCancellation: false,
+      noiseSuppression: false,
+      autoGainControl: false,
+    },
+  });
+
+  const [mst] = stream.getAudioTracks();
+  if (!mst) return null;
+  const track = new LocalAudioTrack(mst, undefined, false);
+  track.source = Track.Source.Microphone;
+  return track;
+}
+
+on(el.audioPermit, 'click', async () => {
+  try {
+    // Prompting is the only way to learn device labels.
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    for (const t of stream.getTracks()) t.stop();
+    await refreshAudioDevices();
+  } catch (err) {
+    toast(`Microphone access refused: ${err?.message ?? err}`);
+  }
+});
+
+on(el.audioSource, 'change', async () => {
+  if (!broadcasting) return;
+  // Swap the live input without interrupting the screen.
+  const existing = publishedTracks.find((t) => t.source === Track.Source.Microphone);
+  if (existing) {
+    await room.localParticipant.unpublishTrack(existing, true).catch(() => {});
+    publishedTracks = publishedTracks.filter((t) => t !== existing);
+  }
+  const track = await captureAudioInput().catch((err) => {
+    toast(`Could not open that input: ${err?.message ?? err}`);
+    return null;
+  });
+  if (track) {
+    await room.localParticipant.publishTrack(track, {
+      source: Track.Source.Microphone,
+      stream: 'screen',
+    });
+    publishedTracks.push(track);
+  }
+  render();
+});
+
 async function startBroadcast() {
   if (!room) {
     toast('Join the room first.');
@@ -566,8 +651,18 @@ async function startBroadcast() {
       await room.localParticipant.publishTrack(track, { ...opts, stream: 'screen' });
     }
 
+    // Whatever input the broadcaster picked rides along with the screen.
+    const inputTrack = await captureAudioInput().catch(() => null);
+    if (inputTrack) {
+      await room.localParticipant.publishTrack(inputTrack, {
+        source: Track.Source.Microphone,
+        stream: 'screen',
+      });
+      publishedTracks.push(inputTrack);
+    }
+
     const settings = videoTrack?.mediaStreamTrack?.getSettings?.() ?? {};
-    const hasAudio = tracks.some((t) => t.kind === Track.Kind.Audio);
+    const hasAudio = publishedTracks.some((t) => t.kind === Track.Kind.Audio);
     el.shareNote.textContent = hasAudio
       ? `Sharing ${settings.width}×${settings.height} with audio.`
       : '';
@@ -762,6 +857,8 @@ async function enterRoom() {
 
   statsTimer ??= setInterval(sampleStats, 1000);
   wakeControls();
+  refreshAudioDevices();
+  navigator.mediaDevices?.addEventListener?.('devicechange', refreshAudioDevices);
 
   try {
     await connect();

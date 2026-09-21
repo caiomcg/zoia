@@ -142,6 +142,16 @@
         <aside id="people" class="people" hidden>
           <h3>In the room</h3>
           <ul id="people-list"></ul>
+
+          <h3>Your audio</h3>
+          <select id="audio-source" aria-label="Audio input to broadcast">
+            <option value="">No extra audio</option>
+          </select>
+          <button id="audio-permit" class="ghost" type="button">Choose audio input…</button>
+          <p class="hint">
+            Browsers cannot capture one app's sound. To do it anyway, route that app's output to a
+            virtual audio cable in Windows sound settings, then pick the cable here.
+          </p>
           <p id="share-note" class="muted"></p>
         </aside>
       </div>
