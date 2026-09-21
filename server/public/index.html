@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Zoia</title>
+    <link rel="stylesheet" href="/style.css" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📺</text></svg>"
+    />
+  </head>
+  <body>
+    <!-- Sign-in. Shown when there is no valid session. -->
+    <main id="login" class="screen" hidden>
+      <div class="card">
+        <h1>Zoia</h1>
+        <p class="muted">Enter the invite key you were sent.</p>
+
+        <form id="login-form" autocomplete="off">
+          <label class="sr-only" for="key-input">Invite key</label>
+          <input
+            id="key-input"
+            name="key"
+            type="password"
+            placeholder="zoia_…"
+            spellcheck="false"
+            autocapitalize="off"
+            required
+          />
+          <button type="submit" class="primary">Sign in</button>
+        </form>
+
+        <p id="login-error" class="error" role="alert" hidden></p>
+      </div>
+    </main>
+
+    <!-- The broadcast. Shown once signed in. -->
+    <div id="room" class="screen" hidden>
+      <header class="bar">
+        <span class="brand">Zoia</span>
+        <span id="status" class="pill">connecting…</span>
+        <span class="spacer"></span>
+        <span id="viewers" class="muted" hidden></span>
+        <span id="whoami" class="muted"></span>
+        <button id="logout" class="ghost" type="button">Sign out</button>
+      </header>
+
+      <section class="stage">
+        <video id="video" playsinline autoplay></video>
+
+        <!-- Covers the stage whenever there is nothing to watch yet. -->
+        <div id="overlay" class="overlay">
+          <div class="overlay-inner">
+            <h2 id="overlay-title">Connecting…</h2>
+            <p id="overlay-text" class="muted"></p>
+            <button id="overlay-action" class="primary" type="button" hidden></button>
+            <p id="overlay-hint" class="hint" hidden></p>
+          </div>
+        </div>
+      </section>
+
+      <footer id="controls" class="bar" hidden>
+        <button id="share" class="primary" type="button">Start broadcast</button>
+        <button id="stop" class="danger" type="button" hidden>Stop broadcast</button>
+        <span id="share-note" class="muted"></span>
+      </footer>
+    </div>
+
+    <p id="toast" class="toast" role="status" hidden></p>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

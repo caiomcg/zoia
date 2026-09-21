@@ -16,12 +16,16 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "keytool": "node server/bin/keytool.js",
-    "prepare": "husky"
+    "prepare": "husky",
+    "vendor": "node scripts/vendor.js",
+    "prestart": "npm run vendor",
+    "predev": "npm run vendor"
   },
   "dependencies": {
     "cookie-parser": "^1.4.7",
     "express": "^5.1.0",
     "express-rate-limit": "^8.1.0",
+    "livekit-client": "^2.22.3",
     "livekit-server-sdk": "^2.13.1"
   },
   "devDependencies": {

@@ -1,0 +1,270 @@
+:root {
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --border: #e2e5ea;
+  --text: #16181d;
+  --muted: #666d78;
+  --accent: #2f6df6;
+  --accent-text: #ffffff;
+  --danger: #c0392b;
+  --stage: #0b0c0e;
+  --radius: 10px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f1114;
+    --surface: #171a1f;
+    --border: #2a2f37;
+    --text: #e9ecf1;
+    --muted: #98a0ac;
+    --accent: #5b8cff;
+    --accent-text: #0b0d10;
+    --danger: #ff6b5e;
+    --stage: #000000;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--text);
+  font:
+    15px/1.5 system-ui,
+    -apple-system,
+    'Segoe UI',
+    sans-serif;
+}
+
+.screen[hidden],
+[hidden] {
+  display: none !important;
+}
+
+/* ---- sign-in ------------------------------------------------------------ */
+
+#login {
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  padding: 24px;
+}
+
+.card {
+  width: 100%;
+  max-width: 380px;
+  padding: 32px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.card h1 {
+  margin: 0 0 4px;
+  font-size: 24px;
+}
+
+#login-form {
+  display: grid;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+input[type='password'] {
+  width: 100%;
+  padding: 10px 12px;
+  font: inherit;
+  font-family: ui-monospace, monospace;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+input:focus-visible,
+button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ---- buttons ------------------------------------------------------------ */
+
+button {
+  padding: 9px 16px;
+  font: inherit;
+  font-weight: 500;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.55;
+  cursor: progress;
+}
+
+.primary {
+  color: var(--accent-text);
+  background: var(--accent);
+}
+
+.danger {
+  color: #fff;
+  background: var(--danger);
+}
+
+.ghost {
+  color: var(--muted);
+  background: transparent;
+  border-color: var(--border);
+}
+
+/* ---- room --------------------------------------------------------------- */
+
+#room {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.bar {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 10px 16px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+footer.bar {
+  border-top: 1px solid var(--border);
+  border-bottom: none;
+}
+
+.brand {
+  font-weight: 600;
+}
+
+.spacer {
+  flex: 1;
+}
+
+.pill {
+  padding: 2px 10px;
+  font-size: 12px;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+
+.pill[data-state='live'] {
+  color: var(--accent-text);
+  background: var(--accent);
+  border-color: transparent;
+}
+
+.pill[data-state='error'] {
+  color: #fff;
+  background: var(--danger);
+  border-color: transparent;
+}
+
+.stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  background: var(--stage);
+}
+
+#video {
+  width: 100%;
+  height: 100%;
+  /* contain, not cover: cropping a shared desktop hides the part someone is
+     pointing at. Letterboxing is the lesser evil. */
+  object-fit: contain;
+  background: var(--stage);
+}
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  text-align: center;
+  background: color-mix(in srgb, var(--stage) 92%, transparent);
+  color: #e9ecf1;
+}
+
+.overlay-inner {
+  display: grid;
+  gap: 12px;
+  justify-items: center;
+  max-width: 460px;
+}
+
+.overlay h2 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.overlay .muted {
+  color: #98a0ac;
+}
+
+.hint {
+  margin: 0;
+  font-size: 13px;
+  color: #98a0ac;
+}
+
+.muted {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.error {
+  margin: 14px 0 0;
+  font-size: 13px;
+  color: var(--danger);
+}
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 22px;
+  transform: translateX(-50%);
+  max-width: min(90vw, 520px);
+  margin: 0;
+  padding: 10px 16px;
+  font-size: 14px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  box-shadow: 0 6px 24px rgb(0 0 0 / 0.18);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+@media (max-width: 560px) {
+  .card {
+    padding: 24px;
+  }
+  #whoami {
+    display: none;
+  }
+}
