@@ -62,22 +62,47 @@ nslookup sfu.nullptrlabs.com  1.1.1.1
 
 ### 2. The VM
 
-On the Proxmox host:
+Verified against this host: **Proxmox 9.2.11**, storage `local-lvm`, bridge `vmbr0`.
 
 ```bash
+# 1. fetch the image on the host — no browser upload
+cd /var/lib/vz/template/iso
 wget https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-generic-amd64.qcow2
-qm create 120 --name zoia-vm --memory 6144 --cores 4 --cpu host \
-  --net0 virtio,bridge=vmbr0 --scsihw virtio-scsi-pci --agent 1
-qm importdisk 120 debian-12-generic-amd64.qcow2 local-lvm
-qm set 120 --scsi0 local-lvm:vm-120-disk-0 --boot order=scsi0 \
-  --ide2 local-lvm:cloudinit --serial0 socket --vga serial0
-qm set 120 --ciuser zoia --sshkeys ~/.ssh/authorized_keys \
-  --ipconfig0 ip=192.168.31.60/24,gw=192.168.31.1
-qm resize 120 scsi0 32G && qm start 120
+
+# 2. create the VM
+qm create 120 --name zoia-vm \
+  --memory 6144 --cores 4 --cpu host \
+  --net0 virtio,bridge=vmbr0 \
+  --scsihw virtio-scsi-pci --ostype l26 \
+  --agent enabled=1 --serial0 socket --vga serial0
+
+# 3. import and attach the disk (PVE 8.1+; no manual volume naming)
+qm set 120 --scsi0 local-lvm:0,import-from=/var/lib/vz/template/iso/debian-12-generic-amd64.qcow2
+qm set 120 --boot order=scsi0
+qm disk resize 120 scsi0 32G
+
+# 4. cloud-init
+qm set 120 --ide2 local-lvm:cloudinit
+qm set 120 --ciuser zoia --sshkeys /root/zoia-key.pub
+qm set 120 --ipconfig0 ip=192.168.31.60/24,gw=192.168.31.1
+qm set 120 --nameserver 192.168.31.3 --searchdomain nullptrlabs.com
+
+# 5. start, then snapshot before any app code lands
+qm start 120
+qm snapshot 120 clean-debian --description "fresh cloud-init, pre-docker"
 ```
 
-Adjust the subnet to the real LAN. Give the VM a **static IP or DHCP reservation** — both
-the router forwards and NPM address it by IP, and a lease change breaks both silently.
+`--cpu host` exposes AES-NI to the guest, which both TLS and the SFU use. The nameserver
+points at the Pi-hole, so the VM honours any local DNS overrides added for hairpin.
+
+`/root/zoia-key.pub` is the workstation's SSH public key, written to the host beforehand.
+
+On Proxmox 7 or earlier, replace step 3 with `qm importdisk 120 <path> local-lvm`, then read
+the generated volume name from `qm config 120` and attach it as `scsi0` by hand.
+
+Give the VM a **static address or a DHCP reservation** — both the router forwards and NPM
+address it by IP, and a lease change would break both silently. `.60` was verified free by
+ping and ARP; `.50` is occupied.
 
 Then prepare it and **take a snapshot** before any app code lands:
 
