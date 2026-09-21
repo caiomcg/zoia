@@ -157,6 +157,15 @@ export function createKeyStore({ file }) {
       return timingSafeEqual(candidate, expected) ? record : null;
     },
 
+    /**
+     * Resolves once all queued writes have settled. `touch` is deliberately
+     * fire-and-forget so it never slows a request, which means a write can
+     * still be in flight at shutdown or at the end of a test.
+     */
+    async idle() {
+      return queue.catch(() => {});
+    },
+
     /** Records activity. Best-effort: a failure here must not break a request. */
     async touch(id) {
       return mutate((store) => {
