@@ -274,14 +274,16 @@ browser is not Chrome/Edge on desktop.
 
 ### Sharing one application's sound (the Discord question)
 
-**A web page cannot capture a specific application's audio.** This is a platform boundary,
-not a gap in this app: the browser exposes exactly two audio sources to a page — whatever the
-user picks in the share dialog, and audio *input* devices. There is no API for "give me the
-sound of that window", and there deliberately never has been, because it would let any page
-listen to everything you play.
+To be precise about what Discord does, because it is easy to overstate:
 
-Discord does it because the desktop client is a **native application** with a system audio
-hook. Google Meet hits the same wall Zoia does, for the same reason.
+- **Discord in a browser** shares audio using `getDisplayMedia`, exactly as this app does.
+  Same API, same constraints: tab audio, or system audio for a whole screen.
+- **Discord's desktop client** additionally captures a *specific application's* audio. That
+  needs a native system hook and is not available to any web page.
+
+So a browser can share sound — it just cannot single out one application. There is no web API
+for "the sound of that window", deliberately, since it would let any page listen to
+everything you play.
 
 What works in a browser, in order of effort:
 
