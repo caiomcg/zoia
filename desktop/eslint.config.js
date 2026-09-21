@@ -1,0 +1,44 @@
+import js from '@eslint/js';
+import tseslint from 'typescript-eslint';
+import reactHooks from 'eslint-plugin-react-hooks';
+import globals from 'globals';
+
+export default tseslint.config(
+  {
+    // Build output and generated files — never source, never worth linting.
+    ignores: ['out/', 'node_modules/', '*.tsbuildinfo', 'dist/'],
+  },
+  js.configs.recommended,
+  ...tseslint.configs.recommended,
+  {
+    // Main and preload run in Node, under Electron's process model.
+    files: ['src/main/**/*.ts', 'src/preload/**/*.ts', 'src/shared/**/*.ts'],
+    languageOptions: {
+      ecmaVersion: 2024,
+      sourceType: 'module',
+      globals: { ...globals.node },
+    },
+    rules: {
+      'no-console': 'off',
+      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
+    },
+  },
+  {
+    // The renderer is a browser page; it never sees Node globals.
+    files: ['src/renderer/**/*.{ts,tsx}'],
+    languageOptions: {
+      ecmaVersion: 2024,
+      sourceType: 'module',
+      globals: { ...globals.browser },
+    },
+    plugins: { 'react-hooks': reactHooks },
+    rules: {
+      ...reactHooks.configs.recommended.rules,
+      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
+    },
+  },
+  {
+    files: ['**/*.d.ts'],
+    rules: { '@typescript-eslint/no-unused-vars': 'off' },
+  },
+);

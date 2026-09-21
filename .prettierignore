@@ -4,3 +4,4 @@ server/data/
 *.md
 server/public/vendor/
 Caddyfile
+desktop/out/
