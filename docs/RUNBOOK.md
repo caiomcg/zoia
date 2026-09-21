@@ -12,7 +12,7 @@ Discovered on the LAN (`192.168.31.0/24`), for reference while following this gu
 | Router (Xiaomi / MiWiFi) | `192.168.31.1` | Port forwarding and DHCP reservations live here |
 | Proxmox | `192.168.31.2:8006` | Web UI |
 | Pi-hole | `192.168.31.3` | **Where the split-horizon DNS override goes, if hairpin fails** |
-| Nginx Proxy Manager | `192.168.31.4` | Admin UI on `:81`, serving 80/443 |
+| Nginx Proxy Manager | `192.168.31.4` | LAN/VPN only — **not** exposed, and not used by this project |
 | Mesh node / repeater | `192.168.31.200` | Also answers with a MiWiFi certificate |
 | Workstation | `192.168.31.230` | |
 | **zoia-vm** | `192.168.31.60` | Verified free by ping and ARP on 2026-09-21. `.50` was taken |
@@ -35,8 +35,8 @@ Discovered on the LAN (`192.168.31.0/24`), for reference while following this gu
 
 The zone `nullptrlabs.com` is served by Cloudflare nameservers (`nadia`/`rudy.ns.cloudflare.com`),
 and a Let's Encrypt wildcard `*.nullptrlabs.com` is already issued and renewing. That wildcard
-covers both hostnames below, so **no new certificate is required** — NPM selects the existing
-one from its dropdown.
+Caddy on the VM obtains its own certificates for the two hostnames below over a Cloudflare
+DNS-01 challenge, so nothing here depends on the existing wildcard.
 
 Add two records in the **Cloudflare dashboard** → `nullptrlabs.com` → DNS → Records:
 
@@ -100,8 +100,8 @@ points at the Pi-hole, so the VM honours any local DNS overrides added for hairp
 On Proxmox 7 or earlier, replace step 3 with `qm importdisk 120 <path> local-lvm`, then read
 the generated volume name from `qm config 120` and attach it as `scsi0` by hand.
 
-Give the VM a **static address or a DHCP reservation** — both the router forwards and NPM
-address it by IP, and a lease change would break both silently. `.60` was verified free by
+Give the VM a **static address or a DHCP reservation** — all three router forwards address
+it by IP, and a lease change would break them silently. `.60` was verified free by
 ping and ARP; `.50` is occupied.
 
 Then prepare it and **take a snapshot** before any app code lands:
@@ -112,33 +112,41 @@ ssh zoia@192.168.31.60 'bash -s' < scripts/bootstrap-vm.sh
 
 ### 3. Router
 
-Leave 80/443 pointed at NPM. Add two forwards to the VM:
+Nothing on this network was previously published to the internet — everything is reached over
+the VPN. Zoia is the first exposed service, so these are the first forwards.
 
-| Port | Proto | Why |
-|---|---|---|
-| 7882 | UDP | WebRTC media. One rule serves every viewer |
-| 7881 | TCP | Fallback for networks that block UDP |
+All three point at the **VM**, `192.168.31.60`:
 
-Do not expose 7880.
+| External port | Proto | → | Why |
+|---|---|---|---|
+| **443** | TCP | 192.168.31.60 | Caddy: the page and LiveKit signalling |
+| **7882** | UDP | 192.168.31.60 | WebRTC media. One rule serves every viewer |
+| **7881** | TCP | 192.168.31.60 | Fallback for networks that block UDP |
 
-### 4. Nginx Proxy Manager
+**Do not forward 80.** Certificates come from a DNS-01 challenge, which needs no inbound
+HTTP. Caddy publishes 80 for a LAN-side redirect only.
 
-**Proxy Host — app**
-- `zoia.<domain>` → `http://192.168.31.60:3000`
-- Websockets Support · Block Common Exploits · Force SSL · HTTP/2
-- SSL: select the **existing `*.nullptrlabs.com` wildcard** from the dropdown. Do not request
-  a new certificate — the wildcard already covers this hostname. Force SSL, HTTP/2
+**Do not forward anything to Nginx Proxy Manager.** It routes by `Host` header, so exposing
+it would make every service behind it reachable from the internet. It stays LAN/VPN only.
+See ADR 0004.
 
-**Proxy Host — SFU signalling**
-- `sfu.<domain>` → `http://192.168.31.60:7880`
-- Websockets Support (this host is nothing but a WebSocket)
-- Advanced:
-  ```nginx
-  proxy_read_timeout 86400s;
-  proxy_send_timeout 86400s;
-  ```
-  Nginx's 60 s default severs signalling mid-broadcast, and the stream then hiccups every
-  minute in a way that looks like an application bug.
+### 4. TLS (Caddy on the VM)
+
+No NPM proxy hosts are involved. Caddy obtains certificates itself over a Cloudflare DNS-01
+challenge, which is the same mechanism already issuing the `*.nullptrlabs.com` wildcard.
+
+Create a token at **Cloudflare → My Profile → API Tokens → Create Token → Edit zone DNS**:
+
+- Permissions: `Zone` · `DNS` · `Edit`
+- Zone Resources: `Include` · `Specific zone` · `nullptrlabs.com`
+
+Scope it to this zone only. It can edit DNS for the zone, so treat it as a real secret; it
+lives in `.env` on the server and never in git.
+
+Paste it into `/opt/zoia/.env` as `CLOUDFLARE_API_TOKEN`.
+
+Caddy serves exactly `zoia.nullptrlabs.com` and `sfu.nullptrlabs.com`. Any other Host header
+reaches nothing, which is the point.
 
 ### 5. The app
 
@@ -251,8 +259,8 @@ WebSocket at its 60 s default and the client is reconnecting.
 The router is not hairpinning: it answers its own WAN address from inside the LAN. Since the
 host PC is on that LAN, this blocks broadcasting entirely.
 
-Fix with a local DNS override mapping `zoia.<domain>` and `sfu.<domain>` to NPM's LAN IP
-(`192.168.31.4`). You already run a Pi-hole at `192.168.31.3`, so that is the place to do it:
+Fix with a local DNS override mapping `zoia.nullptrlabs.com` and `sfu.nullptrlabs.com` to the
+VM (`192.168.31.60`). You already run a Pi-hole at `192.168.31.3`, so that is the place:
 **Settings → Local DNS → DNS Records**, one entry per hostname. Every LAN client that uses
 the Pi-hole then resolves correctly, without per-machine `/etc/hosts` edits.
 

@@ -1,6 +1,6 @@
 # 3. Reuse Nginx Proxy Manager as the front door
 
-- **Status:** accepted
+- **Status:** superseded by [ADR 0004](0004-isolated-caddy-front-end.md)
 - **Date:** 2026-09-20
 
 ## Context

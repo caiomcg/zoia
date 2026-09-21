@@ -20,7 +20,7 @@ export function loadConfig(env = process.env) {
     publicHost: env.PUBLIC_HOST ?? 'localhost:3000',
     sessionSecret: env.SESSION_SECRET,
     roomName: env.ROOM_NAME ?? 'zoia',
-    // Number of proxy hops to trust. Behind Nginx Proxy Manager this is 1; if it
+    // Number of proxy hops to trust. Behind the caddy front end this is 1; if it
     // stays 0, every request looks like it came from the proxy and the rate
     // limiter throttles all users as a single client.
     trustProxy: Number(env.TRUST_PROXY ?? 0),

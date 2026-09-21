@@ -21,7 +21,7 @@ const COOKIE_MAX_AGE = 30 * 24 * 60 * 60 * 1000;
 export function createApp({ config, keyStore, tokenIssuer, logger = console }) {
   const app = express();
 
-  // Behind Nginx Proxy Manager. Without this every request appears to come from
+  // Behind the caddy front end. Without this every request appears to come from
   // the proxy and the rate limiter throttles all users as one client.
   app.set('trust proxy', config.trustProxy);
   app.disable('x-powered-by');

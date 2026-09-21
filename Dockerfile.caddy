@@ -1,0 +1,8 @@
+# Caddy with the Cloudflare DNS plugin, built here rather than pulled from a
+# third-party image. This container terminates TLS for the only publicly
+# reachable surface in the deployment, so its provenance should be ours.
+FROM caddy:2-builder AS builder
+RUN xcaddy build --with github.com/caddy-dns/cloudflare
+
+FROM caddy:2-alpine
+COPY --from=builder /usr/bin/caddy /usr/bin/caddy

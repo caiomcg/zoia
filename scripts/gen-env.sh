@@ -30,7 +30,13 @@ cat <<EOF
 # Keep this file on the server only. It is excluded from git and from deploys.
 
 PUBLIC_HOST=${APP_HOST}
+SFU_HOST=${SFU_HOST}
 LIVEKIT_WS_URL=wss://${SFU_HOST}
+
+# Cloudflare API token scoped to Zone:DNS:Edit on this zone, for the ACME
+# DNS-01 challenge. Fill this in by hand — it is not generated.
+CLOUDFLARE_API_TOKEN=${CLOUDFLARE_API_TOKEN:-PASTE_YOUR_TOKEN_HERE}
+ACME_EMAIL=${ACME_EMAIL:-}
 
 LIVEKIT_API_KEY=${api_key}
 LIVEKIT_API_SECRET=${api_secret}
@@ -41,7 +47,7 @@ SESSION_SECRET=${session_secret}
 
 ROOM_NAME=zoia
 PORT=3000
-# One proxy hop: Nginx Proxy Manager.
+# One proxy hop: the caddy container in front of the app.
 TRUST_PROXY=1
 SECURE_COOKIES=true
 EOF

@@ -5,26 +5,26 @@
 ```
   HOST PC (Chrome/Edge)                 PROXMOX  (Ryzen 5 3500U)
 ┌────────────────────┐          ┌──────────────────────────────────────┐
-│ getDisplayMedia()  │          │  ┌────────────────────────────────┐  │
-│   screen + audio   │          │  │ Nginx Proxy Manager (existing) │  │
-└─────────┬──────────┘          │  │   zoia.<domain> → app:3000     │  │
-          │                     │  │   sfu.<domain>  → livekit:7880 │  │
-          │  WSS :443 ──────────┼─►│   wildcard cert, Cloudflare DNS│  │
-          │  (signalling)       │  └────────────┬───────────────────┘  │
-          │                     │               │                      │
-          │  UDP :7882 ─────────┼───────────────┼──► ┌──────────────┐  │
-          │  (media, direct)    │               └───►│ zoia-vm      │  │
-          │                     │                    │ 4 vCPU / 6GB │  │
-  VIEWERS ×15                   │                    │              │  │
-┌────────────────────┐          │                    │ node app:3000│  │
-│ <video> + audio    │◄─────────┼── UDP :7882 ──────►│ livekit :7880│  │
-└────────────────────┘          │                    │        :7881 │  │
-                                │                    │        :7882 │  │
-                                └────────────────────┴──────────────┘  │
+│ getDisplayMedia()  │          │   zoia-vm  192.168.31.60             │
+│   screen + audio   │          │  ┌────────────────────────────────┐  │
+└─────────┬──────────┘          │  │ caddy  :443                    │  │
+          │  HTTPS/WSS :443 ────┼─►│   zoia.nullptrlabs.com → app    │  │
+          │  (page + signalling)│  │   sfu.nullptrlabs.com  → livekit│  │
+          │                     │  │   certs: Cloudflare DNS-01      │  │
+          │                     │  └───────┬─────────────┬──────────┘  │
+          │                     │          ▼             ▼             │
+          │                     │      app :3000    livekit :7880      │
+          │  UDP :7882 ─────────┼──────────────────►    :7881 :7882    │
+  VIEWERS │  (media, direct)    │                                      │
+   ×15 ◄──┴─────────────────────┼──────────────────────────────────────┤
+                                │   NOT EXPOSED — LAN/VPN only:        │
+                                │   NPM .4 · Pi-hole .3 · everything   │
+                                └──────────────────────────────────────┘
 ```
 
-Signalling rides the existing 443 through NPM. **Media does not touch NPM** — nginx cannot
-proxy WebRTC, so UDP 7882 goes straight to the VM.
+Caddy on the VM is the entire public surface. Nginx Proxy Manager, which serves every other
+service on this network, stays unreachable from the internet exactly as it was before this
+project existed — see [ADR 0004](adr/0004-isolated-caddy-front-end.md).
 
 ## Request flow
 
@@ -61,13 +61,16 @@ hundred lines; a bundler would add a failure mode and a toolchain for no gain.
 
 ## Port map
 
+All three forwards target the VM at `192.168.31.60`.
+
 | Port | Proto | Exposed to internet | Purpose |
 |---|---|---|---|
-| 443 | TCP | yes (existing NPM) | Web app + LiveKit signalling over TLS |
-| 7882 | UDP | yes (new forward) | WebRTC media — single-port mux |
-| 7881 | TCP | yes (new forward) | WebRTC-over-TCP fallback |
-| 3000 | TCP | no | Node app, reached only via NPM |
-| 7880 | TCP | no | LiveKit signalling, reached only via NPM |
+| 443 | TCP | yes | Caddy: web app + LiveKit signalling over TLS |
+| 7882 | UDP | yes | WebRTC media — single-port mux |
+| 7881 | TCP | yes | WebRTC-over-TCP fallback |
+| 80 | TCP | **no** | Caddy LAN redirect only; DNS-01 needs no inbound HTTP |
+| 3000 | TCP | no | Node app — no host port at all, reached only via Caddy |
+| 7880 | TCP | no | LiveKit signalling, reached only via Caddy |
 
 ## Capacity
 
