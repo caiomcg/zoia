@@ -516,3 +516,40 @@ footer.bar {
 .icon.muted .cross {
   display: inline;
 }
+
+/* ---- missing-audio banner ---------------------------------------------- */
+
+.no-audio {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  max-width: min(92%, 760px);
+  padding: 10px 16px;
+  font-size: 13px;
+  color: #fff;
+  background: color-mix(in srgb, var(--danger) 92%, black);
+  border-radius: 10px;
+  box-shadow: 0 8px 28px rgb(0 0 0 / 0.35);
+}
+
+.no-audio strong {
+  flex: none;
+}
+
+.no-audio button {
+  flex: none;
+  padding: 6px 12px;
+  font-size: 13px;
+}
+
+@media (max-width: 760px) {
+  .no-audio {
+    flex-direction: column;
+    align-items: flex-start;
+    text-align: left;
+  }
+}
