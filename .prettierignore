@@ -3,3 +3,4 @@ coverage/
 server/data/
 *.md
 server/public/vendor/
+Caddyfile

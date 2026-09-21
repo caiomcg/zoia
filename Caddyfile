@@ -1,0 +1,40 @@
+# Public entry point for zoia. Certificates come from Let's Encrypt over a
+# Cloudflare DNS-01 challenge, so no inbound port 80 is required.
+#
+# This proxy deliberately serves these two hostnames and nothing else: any
+# other Host header gets a connection refused rather than reaching a service.
+
+{
+	email {$ACME_EMAIL}
+}
+
+# The web app.
+{$ZOIA_HOSTNAME} {
+	tls {
+		dns cloudflare {$CLOUDFLARE_API_TOKEN}
+	}
+
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "same-origin"
+		-Server
+	}
+
+	reverse_proxy app:3000
+}
+
+# LiveKit signalling. This host is essentially one long-lived WebSocket;
+# Caddy streams it without the read timeout that would cut it mid-broadcast.
+{$SFU_HOSTNAME} {
+	tls {
+		dns cloudflare {$CLOUDFLARE_API_TOKEN}
+	}
+
+	# livekit runs in the host network namespace, so it is reached via the
+	# docker bridge gateway rather than a service name.
+	reverse_proxy host.docker.internal:7880
+}

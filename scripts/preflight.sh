@@ -58,8 +58,15 @@ else
     || bad "LIVEKIT_WS_URL must start with wss:// (got '${LIVEKIT_WS_URL:-unset}')"
 
   [[ "${TRUST_PROXY:-0}" != "0" ]] \
-    && ok "TRUST_PROXY=${TRUST_PROXY} (behind NPM)" \
+    && ok "TRUST_PROXY=${TRUST_PROXY} (behind caddy)" \
     || warn "TRUST_PROXY is 0 — rate limiting will treat every user as one client"
+
+  token="$(env_get CLOUDFLARE_API_TOKEN)"
+  if [[ -z "$token" || "$token" == "PASTE_YOUR_TOKEN_HERE" || "$token" == "replace-me" ]]; then
+    bad "CLOUDFLARE_API_TOKEN is not set — caddy cannot obtain certificates"
+  else
+    ok "CLOUDFLARE_API_TOKEN is set (${#token} chars)"
+  fi
 
   [[ "${SECURE_COOKIES:-true}" == "true" ]] \
     && ok "SECURE_COOKIES=true" \
@@ -72,7 +79,7 @@ section "containers"
 if ! command -v docker >/dev/null; then
   bad "docker is not installed"
 else
-  for svc in app livekit; do
+  for svc in caddy app livekit; do
     if docker compose ps --status running --services 2>/dev/null | grep -qx "$svc"; then
       ok "$svc is running"
     else
@@ -95,6 +102,16 @@ if curl -fsS -m 5 http://127.0.0.1:7880 >/dev/null 2>&1; then
 else
   bad "livekit is not answering on :7880"
 fi
+
+# Caddy owns the public surface; a missing 443 means nothing is reachable.
+for spec in "443/tcp" "80/tcp"; do
+  port="${spec%/*}"
+  if ss -tln 2>/dev/null | grep -q ":${port} "; then
+    ok "caddy is listening on ${port}/tcp"
+  else
+    bad "nothing is listening on ${port}/tcp — caddy is not up"
+  fi
+done
 
 for spec in "7881/tcp" "7882/udp"; do
   port="${spec%/*}"; proto="${spec#*/}"

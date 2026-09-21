@@ -15,9 +15,13 @@ It is three pieces:
    does no transcoding, so it is cheap on CPU and expensive on upstream bandwidth.
 2. **This Node app** — serves the page, authenticates people against the invite-key store,
    and mints short-lived LiveKit tokens whose grants encode the person's role.
-3. **Nginx Proxy Manager** (pre-existing, not in this repo) — terminates TLS and reverse
-   proxies `zoia.<domain>` → app:3000 and `sfu.<domain>` → livekit:7880. Media does **not**
-   pass through it; WebRTC goes straight to the VM over UDP 7882.
+3. **Caddy**, running on the same VM — terminates TLS for exactly two hostnames and nothing
+   else, with certificates from a Cloudflare DNS-01 challenge. It is the only publicly
+   reachable surface in the deployment. Media does **not** pass through it; WebRTC goes
+   straight to the VM over UDP 7882.
+
+   Nginx Proxy Manager serves every *other* service on this network and is deliberately
+   **not** exposed to the internet. Do not route this app through it — see ADR 0004.
 
 ## Commands
 
@@ -72,7 +76,7 @@ and `npm run dev` regenerate it; the Dockerfile runs it at image build.
    `LIVEKIT_KEYS` in the environment.
 5. **`deploy.sh` must keep excluding `server/data`.** It runs `rsync --delete`; dropping that
    exclude would wipe the key store and lock out every user, including you.
-6. **`app.set('trust proxy', ...)` must stay.** Behind NPM every request otherwise appears to
+6. **`app.set('trust proxy', ...)` must stay.** Behind Caddy every request otherwise appears to
    originate from the proxy, so rate limiting would throttle all users as a single client.
 
 ## Environment gotchas
@@ -85,9 +89,9 @@ These each cost hours if forgotten, and all of them fail in ways that look like 
   defaults new records to Proxied and the zone apex is proxied, so this is the easiest
   mistake to make; the proxy does not carry WebRTC media. TLS uses the existing
   `*.example.com` wildcard — no new certificate is needed.
-- **`proxy_read_timeout 86400s`** on the `sfu.<domain>` proxy host. Nginx's 60 s default
-  cuts the signalling WebSocket mid-broadcast, and the stream hiccups every minute.
-- **UDP 7882 and TCP 7881 must be forwarded** to the VM directly. NPM cannot proxy them.
+- **Caddy serves only the two configured hostnames.** Adding a third would widen the public
+  surface; that is a decision, not a config tweak.
+- **UDP 7882 and TCP 7881 must be forwarded** to the VM directly. No HTTP proxy can carry them.
 - **System/tab audio capture is Chrome/Edge desktop only.** Firefox and Safari cannot
   capture it; they can listen fine. This constrains who can host, not who can watch.
 - **LAN hairpin**: if the router won't route a LAN client to the public hostname, the host PC
