@@ -1,0 +1,37 @@
+{
+  "name": "zoia",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Private one-to-many screen broadcast over a self-hosted LiveKit SFU.",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node server/src/index.js",
+    "dev": "node --watch server/src/index.js",
+    "test": "node --test server/test/",
+    "test:coverage": "node --test --experimental-test-coverage server/test/",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "keytool": "node server/bin/keytool.js",
+    "prepare": "husky"
+  },
+  "dependencies": {
+    "cookie-parser": "^1.4.7",
+    "express": "^5.1.0",
+    "express-rate-limit": "^8.1.0",
+    "livekit-server-sdk": "^2.13.1"
+  },
+  "devDependencies": {
+    "@commitlint/cli": "^19.8.1",
+    "@commitlint/config-conventional": "^19.8.1",
+    "@eslint/js": "^9.36.0",
+    "eslint": "^9.36.0",
+    "globals": "^16.4.0",
+    "husky": "^9.1.7",
+    "prettier": "^3.6.2",
+    "supertest": "^7.1.4"
+  }
+}

@@ -1,0 +1,19 @@
+# dependencies
+node_modules/
+
+# secrets — never commit
+.env
+.env.*
+!.env.example
+*.p12
+*.pem
+*.key
+
+# runtime state (server-only, never deployed over)
+server/data/*
+!server/data/.gitkeep
+
+# misc
+.DS_Store
+*.log
+coverage/
