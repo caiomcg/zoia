@@ -272,6 +272,40 @@ own address instead, the override will not be consulted.
 `getDisplayMedia` is missing. Either the page is not on HTTPS (the page says which), or the
 browser is not Chrome/Edge on desktop.
 
+### Sharing one application's sound (the Discord question)
+
+**A web page cannot capture a specific application's audio.** This is a platform boundary,
+not a gap in this app: the browser exposes exactly two audio sources to a page — whatever the
+user picks in the share dialog, and audio *input* devices. There is no API for "give me the
+sound of that window", and there deliberately never has been, because it would let any page
+listen to everything you play.
+
+Discord does it because the desktop client is a **native application** with a system audio
+hook. Google Meet hits the same wall Zoia does, for the same reason.
+
+What works in a browser, in order of effort:
+
+| Sharing | Audio |
+|---|---|
+| **Entire screen** | ✅ Tick "Share system audio" — everything you hear |
+| **A Chrome tab** | ✅ Tick "Share tab audio" — just that tab |
+| **A window** | ❌ Never. No platform supports it |
+
+To get *per-application* audio anyway, route it through a virtual input device:
+
+1. Install a virtual audio cable on the broadcasting machine — VB-Audio Virtual Cable is
+   free and the usual choice on Windows.
+2. Windows → Settings → System → Sound → **Volume mixer**, and set that application's
+   output device to the cable.
+3. In Zoia's side panel, under **Your audio**, click "Choose audio input…" (this is the one
+   place a permission prompt appears) and select the cable.
+4. Share the window as normal. The cable's audio is published alongside it.
+
+To hear the app yourself while doing this, use VoiceMeeter or the cable's "listen to this
+device" option, otherwise the sound goes only to viewers.
+
+The same picker is how you **talk over a broadcast**: select your microphone instead.
+
 ### The host is sharing but there is no sound
 
 System and tab audio capture works only in Chrome and Edge on desktop. The "share audio"

@@ -553,3 +553,29 @@ footer.bar {
     text-align: left;
   }
 }
+
+/* ---- audio source picker ------------------------------------------------ */
+
+#audio-source {
+  width: 100%;
+  margin-bottom: 8px;
+  padding: 7px 8px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+}
+
+.people .hint {
+  margin: 10px 0 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.people button {
+  width: 100%;
+  font-size: 13px;
+}
