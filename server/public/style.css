@@ -269,7 +269,7 @@ footer.bar {
   }
 }
 
-/* ---- room body: stage + people panel ----------------------------------- */
+/* ---- player ------------------------------------------------------------- */
 
 .body {
   display: flex;
@@ -277,12 +277,129 @@ footer.bar {
   min-height: 0;
 }
 
-.stage {
+.player {
+  position: relative;
   flex: 1;
+  min-width: 0;
+  background: var(--stage);
 }
 
+#video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  /* contain, not cover: cropping a shared desktop hides the part someone is
+     pointing at. Letterboxing is the lesser evil. */
+  object-fit: contain;
+  background: var(--stage);
+}
+
+.player:fullscreen #video {
+  width: 100vw;
+  height: 100vh;
+}
+
+/* ---- control bar -------------------------------------------------------- */
+
+.controls {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 14px;
+  color: #f2f4f8;
+  background: linear-gradient(to top, rgb(0 0 0 / 0.78), rgb(0 0 0 / 0));
+  transition: opacity 0.25s ease;
+}
+
+.player.idle .controls {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.player.idle {
+  cursor: none;
+}
+
+.controls .icon {
+  padding: 4px 8px;
+  font-size: 16px;
+  line-height: 1;
+  color: inherit;
+  background: transparent;
+  border: none;
+}
+
+.controls .icon:hover {
+  background: rgb(255 255 255 / 0.14);
+}
+
+.volume {
+  width: 96px;
+  accent-color: var(--accent);
+}
+
+.now-playing,
+.stats {
+  font-size: 12px;
+  color: #cfd5de;
+}
+
+.stats {
+  font-family: ui-monospace, monospace;
+  padding: 2px 8px;
+  background: rgb(0 0 0 / 0.45);
+  border-radius: 6px;
+}
+
+.live-badge {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  padding: 2px 9px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: #fff;
+  background: var(--danger);
+  border-radius: 4px;
+}
+
+.live-badge i {
+  width: 7px;
+  height: 7px;
+  background: #fff;
+  border-radius: 50%;
+  animation: pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.25;
+  }
+}
+
+.unmute {
+  position: absolute;
+  left: 50%;
+  bottom: 70px;
+  transform: translateX(-50%);
+  padding: 12px 20px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--accent-text);
+  background: var(--accent);
+  box-shadow: 0 8px 28px rgb(0 0 0 / 0.4);
+}
+
+/* ---- people ------------------------------------------------------------- */
+
 .people {
-  width: 220px;
+  width: 230px;
+  flex: none;
   padding: 14px 16px;
   overflow-y: auto;
   background: var(--surface);
@@ -299,7 +416,7 @@ footer.bar {
 }
 
 .people ul {
-  margin: 0;
+  margin: 0 0 14px;
   padding: 0;
   list-style: none;
   display: grid;
@@ -329,32 +446,20 @@ footer.bar {
 }
 
 .dot.live {
-  background: var(--accent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent);
-}
-
-/* A stage in fullscreen must still fill the screen. */
-.stage:fullscreen #video {
-  width: 100vw;
-  height: 100vh;
-}
-
-.floating {
-  position: absolute;
-  left: 50%;
-  bottom: 24px;
-  transform: translateX(-50%);
-  color: var(--accent-text);
-  background: var(--accent);
+  background: var(--danger);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 25%, transparent);
 }
 
 @media (max-width: 760px) {
+  .body {
+    flex-direction: column;
+  }
   .people {
     width: 100%;
     border-left: none;
     border-top: 1px solid var(--border);
   }
-  .body {
-    flex-direction: column;
+  .volume {
+    width: 64px;
   }
 }

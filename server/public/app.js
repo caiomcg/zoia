@@ -3,107 +3,84 @@
  *
  * One tier of user: everyone watches, anyone may claim the stage. Publish
  * rights are granted by the server only while the stage is free, and LiveKit
- * enforces them — claiming is not a UI state, it is a permission change.
+ * enforces them — claiming is a permission change, not a UI state.
+ *
+ * Audio and video are put on a single MediaStream attached to one <video>
+ * element. LiveKit's own attach() would replace the element's stream per track,
+ * which silently drops the audio; one stream also means the volume control,
+ * mute and fullscreen behave as they do in any other player.
  */
 
 import { Room, RoomEvent, Track, createLocalScreenTracks } from './vendor/livekit-client.esm.mjs';
 
 /**
- * Capture settings. LiveKit caps screen capture at 1080p unless a resolution is
- * given, so this asks for 2160p60 and lets the browser hand back whatever the
- * display actually is.
+ * Capture. `audio: true` is deliberate — it is the documented way to request
+ * system/tab audio, and passing a constraints object here has been observed to
+ * come back with no audio track at all.
  */
-let quality = {
-  maxBitrate: 20_000_000,
-  maxFramerate: 60,
-  width: 3840,
-  height: 2160,
-  codec: 'vp9',
-};
+const CAPTURE = { video: true, audio: true };
 
-function captureOptions() {
-  return {
-    ...CAPTURE,
-    resolution: { width: quality.width, height: quality.height, frameRate: quality.maxFramerate },
-  };
-}
-
-function publishOptions() {
-  const encoding = {
-    maxBitrate: quality.maxBitrate,
-    maxFramerate: quality.maxFramerate,
-    priority: 'high',
-  };
-  return {
-    ...PUBLISH,
-    screenShareEncoding: encoding,
-    videoEncoding: encoding,
-    videoCodec: quality.codec,
-  };
-}
-
-const CAPTURE = {
-  video: true,
-  // Browser voice processing is tuned for microphones and mangles music and
-  // video soundtracks. Off, for system audio that sounds like the source.
-  audio: {
-    echoCancellation: false,
-    noiseSuppression: false,
-    autoGainControl: false,
-  },
-};
-
-/**
- * Publish settings, tuned for legibility at high resolution. `screenShareEncoding`
- * is the field that applies to a screen-share source; `videoEncoding` is set to
- * the same values so nothing falls back to a default.
- */
 const PUBLISH = {
-  // Simulcast splits the budget across layers; a single high-quality stream is
-  // the point here.
   simulcast: false,
-  // Shed frame rate before resolution: blurry text is worse than fewer frames.
   degradationPreference: 'maintain-resolution',
 };
 
-const $ = (id) => document.getElementById(id);
-const el = {
-  login: $('login'),
-  loginForm: $('login-form'),
-  keyInput: $('key-input'),
-  loginError: $('login-error'),
-  room: $('room'),
-  status: $('status'),
-  whoami: $('whoami'),
-  logout: $('logout'),
-  stage: $('stage'),
-  video: $('video'),
-  remoteAudio: $('remote-audio'),
-  overlay: $('overlay'),
-  overlayTitle: $('overlay-title'),
-  overlayText: $('overlay-text'),
-  overlayAction: $('overlay-action'),
-  overlayHint: $('overlay-hint'),
-  unmute: $('unmute'),
-  people: $('people'),
-  peopleList: $('people-list'),
-  peopleToggle: $('people-toggle'),
-  peopleCount: $('people-count'),
-  share: $('share'),
-  stop: $('stop'),
-  fullscreen: $('fullscreen'),
-  shareNote: $('share-note'),
-  toast: $('toast'),
+let quality = {
+  maxBitrate: 12_000_000,
+  maxFramerate: 60,
+  width: 1920,
+  height: 1080,
+  codec: 'h264',
 };
+
+const $ = (id) => document.getElementById(id);
+const el = Object.fromEntries(
+  [
+    'login',
+    'login-form',
+    'key-input',
+    'login-error',
+    'room',
+    'status',
+    'whoami',
+    'logout',
+    'player',
+    'video',
+    'overlay',
+    'overlay-title',
+    'overlay-text',
+    'overlay-action',
+    'overlay-hint',
+    'unmute',
+    'controls',
+    'live',
+    'mute',
+    'volume',
+    'now-playing',
+    'stats',
+    'stats-toggle',
+    'pip',
+    'fullscreen',
+    'people',
+    'people-list',
+    'people-toggle',
+    'people-count',
+    'share',
+    'stop',
+    'share-note',
+    'toast',
+  ].map((id) => [id.replace(/-(\w)/g, (_, c) => c.toUpperCase()), $(id)]),
+);
 
 let session = null;
 let room = null;
 let publishedTracks = [];
 let broadcasting = false;
 let connecting = false;
+let statsTimer = null;
 
 // ---------------------------------------------------------------------------
-// ui helpers
+// helpers
 // ---------------------------------------------------------------------------
 
 let toastTimer;
@@ -111,54 +88,13 @@ function toast(message) {
   el.toast.textContent = message;
   el.toast.hidden = false;
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => {
-    el.toast.hidden = true;
-  }, 6000);
+  toastTimer = setTimeout(() => (el.toast.hidden = true), 6000);
 }
 
 function setStatus(text, state = '') {
   el.status.textContent = text;
   if (state) el.status.dataset.state = state;
   else delete el.status.dataset.state;
-}
-
-// ---------------------------------------------------------------------------
-// state → view. One place decides what the stage shows, so "waiting for a
-// broadcast" can never appear over your own screen share.
-// ---------------------------------------------------------------------------
-
-function remoteScreenPublication() {
-  for (const participant of room?.remoteParticipants?.values() ?? []) {
-    const pub = participant.getTrackPublication(Track.Source.ScreenShare);
-    if (pub?.track) return { participant, track: pub.track };
-  }
-  return null;
-}
-
-function render() {
-  if (!room) return;
-
-  const remote = remoteScreenPublication();
-  const showingSomething = broadcasting || Boolean(remote);
-
-  el.overlay.hidden = showingSomething;
-  el.share.hidden = broadcasting;
-  el.stop.hidden = !broadcasting;
-
-  if (broadcasting) {
-    setStatus('you are broadcasting', 'live');
-  } else if (remote) {
-    setStatus(`${remote.participant.name || remote.participant.identity} is broadcasting`, 'live');
-  } else {
-    setStatus('idle');
-    el.share.disabled = false;
-    showOverlay({
-      title: 'Nobody is broadcasting',
-      text: 'Start broadcasting to share your screen with everyone here.',
-    });
-  }
-
-  renderPeople(remote);
 }
 
 function showOverlay({ title, text = '', action = null, onAction = null, hint = '' }) {
@@ -175,20 +111,110 @@ function showOverlay({ title, text = '', action = null, onAction = null, hint = 
   el.overlay.hidden = false;
 }
 
-function renderPeople(remote) {
+// ---------------------------------------------------------------------------
+// the stream shown in the player
+// ---------------------------------------------------------------------------
+
+function remoteScreen() {
+  for (const p of room?.remoteParticipants?.values() ?? []) {
+    const video = p.getTrackPublication(Track.Source.ScreenShare);
+    if (video?.track) {
+      const audio = p.getTrackPublication(Track.Source.ScreenShareAudio);
+      return { participant: p, video: video.track, audio: audio?.track ?? null };
+    }
+  }
+  return null;
+}
+
+/** Rebuilds the player's MediaStream from whatever should currently be shown. */
+function updatePlayer() {
+  const stream = new MediaStream();
+  let hasAudio = false;
+  let label = '';
+
+  if (broadcasting) {
+    for (const t of publishedTracks) {
+      stream.addTrack(t.mediaStreamTrack);
+      if (t.kind === Track.Kind.Audio) hasAudio = true;
+    }
+    label = 'Your screen';
+    // Never play your own audio back at yourself.
+    el.video.muted = true;
+  } else {
+    const remote = remoteScreen();
+    if (remote) {
+      stream.addTrack(remote.video.mediaStreamTrack);
+      if (remote.audio) {
+        stream.addTrack(remote.audio.mediaStreamTrack);
+        hasAudio = true;
+      }
+      label = `${remote.participant.name || remote.participant.identity} is broadcasting`;
+      el.video.muted = false;
+    }
+  }
+
+  if (stream.getTracks().length === 0) {
+    el.video.srcObject = null;
+    el.nowPlaying.textContent = '';
+    return false;
+  }
+
+  el.video.srcObject = stream;
+  el.nowPlaying.textContent = hasAudio ? label : `${label} · no audio`;
+  el.video.play().catch(() => {
+    // Autoplay with sound refused until the viewer interacts.
+    el.unmute.hidden = false;
+  });
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// render
+// ---------------------------------------------------------------------------
+
+function render() {
+  try {
+    if (!room) return;
+
+    const showing = updatePlayer();
+
+    el.overlay.hidden = showing;
+    el.share.hidden = broadcasting;
+    el.stop.hidden = !broadcasting;
+    el.live.hidden = !showing;
+    el.controls.style.display = showing ? '' : 'none';
+
+    if (broadcasting) setStatus('you are broadcasting', 'live');
+    else if (showing) setStatus('watching', 'live');
+    else {
+      setStatus('idle');
+      el.share.disabled = false;
+      showOverlay({
+        title: 'Nobody is broadcasting',
+        text: 'Anyone here can share their screen — one at a time.',
+      });
+    }
+
+    renderPeople();
+  } catch (err) {
+    // A silent render failure looks like a dead UI; make it visible instead.
+    toast(`UI error: ${err?.message ?? err}`);
+    console.error(err);
+  }
+}
+
+function renderPeople() {
+  const remote = remoteScreen();
   const people = [];
+
   if (room?.localParticipant) {
-    people.push({
-      name: session.name,
-      you: true,
-      broadcasting,
-    });
+    people.push({ name: session?.name ?? 'You', you: true, live: broadcasting });
   }
   for (const p of room?.remoteParticipants?.values() ?? []) {
     people.push({
       name: p.name || p.identity,
       you: false,
-      broadcasting: remote?.participant?.identity === p.identity,
+      live: remote?.participant?.identity === p.identity,
     });
   }
 
@@ -197,11 +223,11 @@ function renderPeople(remote) {
     ...people.map((person) => {
       const li = document.createElement('li');
       const dot = document.createElement('span');
-      dot.className = person.broadcasting ? 'dot live' : 'dot';
+      dot.className = person.live ? 'dot live' : 'dot';
       const label = document.createElement('span');
       label.textContent = person.you ? `${person.name} (you)` : person.name;
       li.append(dot, label);
-      if (person.broadcasting) {
+      if (person.live) {
         const tag = document.createElement('em');
         tag.textContent = 'broadcasting';
         li.append(tag);
@@ -212,13 +238,68 @@ function renderPeople(remote) {
 }
 
 // ---------------------------------------------------------------------------
-// session
+// quality stats — turns "it looks bad" into numbers
 // ---------------------------------------------------------------------------
 
-async function loadSession() {
-  const res = await fetch('/api/session');
-  return res.ok ? res.json() : null;
+let lastBytes = 0;
+let lastAt = 0;
+
+async function sampleStats() {
+  if (el.stats.hidden || !room) return;
+
+  const pub = broadcasting
+    ? room.localParticipant.getTrackPublication(Track.Source.ScreenShare)
+    : remoteScreen()?.video?.sid
+      ? null
+      : null;
+
+  const track = broadcasting ? pub?.track : remoteScreen()?.video;
+  if (!track?.mediaStreamTrack) return;
+
+  const settings = track.mediaStreamTrack.getSettings?.() ?? {};
+  let line = `${settings.width ?? '?'}×${settings.height ?? '?'}`;
+
+  try {
+    const report = await track.getRTCStatsReport?.();
+    let bytes = 0;
+    let fps = null;
+    let frameW = null;
+    let frameH = null;
+    report?.forEach((s) => {
+      if (s.type === 'outbound-rtp' && s.kind === 'video') {
+        bytes = s.bytesSent ?? bytes;
+        fps = s.framesPerSecond ?? fps;
+        frameW = s.frameWidth ?? frameW;
+        frameH = s.frameHeight ?? frameH;
+      }
+      if (s.type === 'inbound-rtp' && s.kind === 'video') {
+        bytes = s.bytesReceived ?? bytes;
+        fps = s.framesPerSecond ?? fps;
+        frameW = s.frameWidth ?? frameW;
+        frameH = s.frameHeight ?? frameH;
+      }
+    });
+
+    if (frameW) line = `${frameW}×${frameH}`;
+    if (fps != null) line += ` @ ${Math.round(fps)}fps`;
+
+    const now = performance.now();
+    if (lastAt && bytes > lastBytes) {
+      const mbps = ((bytes - lastBytes) * 8) / ((now - lastAt) / 1000) / 1e6;
+      line += ` · ${mbps.toFixed(1)} Mbps`;
+    }
+    lastBytes = bytes;
+    lastAt = now;
+  } catch {
+    // Stats are a diagnostic, never a reason to break playback.
+  }
+
+  el.stats.textContent = line;
 }
+
+// ---------------------------------------------------------------------------
+// session
+// ---------------------------------------------------------------------------
 
 function showLogin(message) {
   el.room.hidden = true;
@@ -268,44 +349,6 @@ el.logout.addEventListener('click', async () => {
 });
 
 // ---------------------------------------------------------------------------
-// media
-// ---------------------------------------------------------------------------
-
-function attachTrack(track) {
-  if (track.kind === Track.Kind.Video) {
-    track.attach(el.video);
-    el.video.muted = true; // the video element carries no audio; see below
-  } else if (track.kind === Track.Kind.Audio) {
-    // Audio gets its own element. Attaching it to the video element would
-    // replace that element's stream and the picture would go with it.
-    track.attach(el.remoteAudio);
-    el.remoteAudio.muted = false;
-    el.remoteAudio.volume = 1;
-    el.remoteAudio.play().catch(() => {
-      // Autoplay refused until the viewer interacts.
-      el.unmute.hidden = false;
-    });
-  }
-  render();
-}
-
-function detachTrack(track) {
-  track.detach(el.video);
-  track.detach(el.remoteAudio);
-  render();
-}
-
-el.unmute.addEventListener('click', async () => {
-  try {
-    await room?.startAudio();
-    await el.remoteAudio.play();
-    el.unmute.hidden = true;
-  } catch (err) {
-    toast(`Could not start audio: ${err?.message ?? err}`);
-  }
-});
-
-// ---------------------------------------------------------------------------
 // room
 // ---------------------------------------------------------------------------
 
@@ -320,17 +363,20 @@ async function fetchToken() {
 }
 
 function wireRoomEvents() {
+  const rerender = () => render();
   room
-    .on(RoomEvent.TrackSubscribed, attachTrack)
-    .on(RoomEvent.TrackUnsubscribed, detachTrack)
-    .on(RoomEvent.ParticipantConnected, render)
-    .on(RoomEvent.ParticipantDisconnected, render)
-    .on(RoomEvent.TrackPublished, render)
-    .on(RoomEvent.TrackUnpublished, render)
-    .on(RoomEvent.LocalTrackPublished, render)
-    .on(RoomEvent.LocalTrackUnpublished, render)
+    .on(RoomEvent.TrackSubscribed, rerender)
+    .on(RoomEvent.TrackUnsubscribed, rerender)
+    .on(RoomEvent.TrackPublished, rerender)
+    .on(RoomEvent.TrackUnpublished, rerender)
+    .on(RoomEvent.LocalTrackPublished, rerender)
+    .on(RoomEvent.LocalTrackUnpublished, rerender)
+    .on(RoomEvent.ParticipantConnected, rerender)
+    .on(RoomEvent.ParticipantDisconnected, rerender)
+    .on(RoomEvent.ParticipantNameChanged, rerender)
+    .on(RoomEvent.ConnectionStateChanged, rerender)
     .on(RoomEvent.Reconnecting, () => setStatus('reconnecting…'))
-    .on(RoomEvent.Reconnected, render)
+    .on(RoomEvent.Reconnected, rerender)
     .on(RoomEvent.AudioPlaybackStatusChanged, () => {
       el.unmute.hidden = room.canPlaybackAudio;
     })
@@ -357,8 +403,7 @@ async function connect() {
 
     setStatus('connecting…');
     room = new Room({
-      // Both of these trade quality for bandwidth by sending fewer pixels when
-      // the viewer's element is small. This deployment wants full quality.
+      // Both would send fewer pixels when the viewer's element is small.
       adaptiveStream: false,
       dynacast: false,
     });
@@ -366,14 +411,6 @@ async function connect() {
 
     await room.connect(credentials.wsUrl, credentials.token);
     await room.startAudio().catch(() => {});
-
-    // Pick up anything already being broadcast.
-    const existing = remoteScreenPublication();
-    if (existing) attachTrack(existing.track);
-    for (const p of room.remoteParticipants.values()) {
-      const audio = p.getTrackPublication(Track.Source.ScreenShareAudio);
-      if (audio?.track) attachTrack(audio.track);
-    }
     render();
   } finally {
     connecting = false;
@@ -384,13 +421,61 @@ async function connect() {
 // broadcasting
 // ---------------------------------------------------------------------------
 
+function captureOptions() {
+  return {
+    ...CAPTURE,
+    resolution: { width: quality.width, height: quality.height, frameRate: quality.maxFramerate },
+  };
+}
+
+function publishOptions() {
+  const encoding = {
+    maxBitrate: quality.maxBitrate,
+    maxFramerate: quality.maxFramerate,
+    priority: 'high',
+  };
+  return {
+    ...PUBLISH,
+    screenShareEncoding: encoding,
+    videoEncoding: encoding,
+    videoCodec: quality.codec,
+  };
+}
+
+/**
+ * The server grants publish rights over the LiveKit API; the client learns of it
+ * moments later over signalling. Publishing in that gap fails with
+ * "insufficient permissions", so wait for the permission to actually land.
+ */
+function waitForPublishPermission(timeoutMs = 10_000) {
+  const granted = () => Boolean(room?.localParticipant?.permissions?.canPublish);
+  if (granted()) return Promise.resolve(true);
+
+  return new Promise((resolve) => {
+    let timer;
+    let poll;
+    const finish = (ok) => {
+      room.off(RoomEvent.ParticipantPermissionsChanged, onChange);
+      clearTimeout(timer);
+      clearInterval(poll);
+      resolve(ok);
+    };
+    const onChange = () => granted() && finish(true);
+    room.on(RoomEvent.ParticipantPermissionsChanged, onChange);
+    poll = setInterval(onChange, 150);
+    timer = setTimeout(() => finish(granted()), timeoutMs);
+  });
+}
+
 async function startBroadcast() {
+  if (!room) {
+    toast('Join the room first.');
+    return;
+  }
   el.share.disabled = true;
   let claimed = false;
 
   try {
-    // Ask the server for publish rights first. If someone else holds the stage
-    // this fails before the browser ever prompts for a screen.
     const res = await fetch('/api/stage/claim', { method: 'POST' });
     if (res.status === 409) {
       const body = await res.json().catch(() => ({}));
@@ -401,71 +486,107 @@ async function startBroadcast() {
     claimed = true;
 
     const tracks = await createLocalScreenTracks(captureOptions());
+    publishedTracks = tracks;
 
-    for (const track of tracks) {
-      if (track.kind === Track.Kind.Video) {
-        // Tells the encoder to preserve sharp edges over smooth motion.
-        track.mediaStreamTrack.contentHint = 'detail';
-        await room.localParticipant.publishTrack(track, publishOptions());
-        track.attach(el.video);
-      } else {
-        await room.localParticipant.publishTrack(track, { audioPreset: undefined });
-      }
+    const videoTrack = tracks.find((t) => t.kind === Track.Kind.Video);
+    if (videoTrack) videoTrack.mediaStreamTrack.contentHint = 'detail';
+
+    // Show your own screen before the network is involved.
+    broadcasting = true;
+    render();
+
+    if (!(await waitForPublishPermission())) {
+      throw new Error('the stage was granted but the permission never arrived');
     }
 
-    publishedTracks = tracks;
-    broadcasting = true;
+    for (const track of tracks) {
+      await room.localParticipant.publishTrack(
+        track,
+        track.kind === Track.Kind.Video ? publishOptions() : {},
+      );
+    }
 
-    const settings = tracks
-      .find((t) => t.kind === Track.Kind.Video)
-      ?.mediaStreamTrack?.getSettings?.();
-    const sharedAudio = tracks.some((t) => t.kind === Track.Kind.Audio);
-    el.shareNote.textContent = [
-      settings
-        ? `${settings.width}×${settings.height} @ ${Math.round(settings.frameRate ?? 0)}fps`
-        : '',
-      sharedAudio ? 'audio on' : 'no audio — tick “share audio” in the picker',
-    ]
-      .filter(Boolean)
-      .join(' · ');
+    const settings = videoTrack?.mediaStreamTrack?.getSettings?.() ?? {};
+    const hasAudio = tracks.some((t) => t.kind === Track.Kind.Audio);
+    el.shareNote.textContent = hasAudio
+      ? `Sharing ${settings.width}×${settings.height} with audio.`
+      : 'No audio captured — tick “Share system audio” in the picker. It only appears for a tab or a whole screen, never a single window.';
+    if (!hasAudio) toast('Sharing without audio — see the note in the people panel.');
 
-    // The browser's own "Stop sharing" bar ends the track behind our back.
     tracks[0]?.mediaStreamTrack.addEventListener('ended', () => stopBroadcast());
-
     render();
   } catch (err) {
+    for (const t of publishedTracks) t.stop?.();
+    publishedTracks = [];
+    broadcasting = false;
     if (claimed) await fetch('/api/stage/release', { method: 'POST' }).catch(() => {});
     if (err?.name === 'NotAllowedError') toast('Screen sharing was cancelled.');
     else toast(`Could not start sharing: ${err?.message ?? err}`);
+    render();
   } finally {
     el.share.disabled = false;
-    render();
   }
 }
 
 async function stopBroadcast() {
-  for (const track of publishedTracks) {
-    await room?.localParticipant.unpublishTrack(track, true).catch(() => {});
+  // Local state and the server release happen whatever unpublishing does, so a
+  // failure there cannot leave the stage held with nobody broadcasting.
+  try {
+    for (const track of publishedTracks) {
+      await room?.localParticipant.unpublishTrack(track, true).catch(() => {});
+      track.stop?.();
+    }
+  } finally {
+    publishedTracks = [];
+    broadcasting = false;
+    el.shareNote.textContent = '';
+    el.video.srcObject = null;
+    render();
+    await fetch('/api/stage/release', { method: 'POST' }).catch(() => {});
   }
-  publishedTracks = [];
-  broadcasting = false;
-  el.video.srcObject = null;
-  el.shareNote.textContent = '';
-  await fetch('/api/stage/release', { method: 'POST' }).catch(() => {});
-  render();
 }
 
 el.share.addEventListener('click', startBroadcast);
 el.stop.addEventListener('click', stopBroadcast);
 
 // ---------------------------------------------------------------------------
-// fullscreen and people panel
+// player controls
 // ---------------------------------------------------------------------------
+
+el.unmute.addEventListener('click', async () => {
+  try {
+    await room?.startAudio();
+    el.video.muted = false;
+    await el.video.play();
+    el.unmute.hidden = true;
+  } catch (err) {
+    toast(`Could not start audio: ${err?.message ?? err}`);
+  }
+});
+
+function syncVolumeUi() {
+  el.mute.textContent = el.video.muted || el.video.volume === 0 ? '🔇' : '🔊';
+  el.volume.value = String(el.video.muted ? 0 : el.video.volume);
+}
+
+el.mute.addEventListener('click', () => {
+  el.video.muted = !el.video.muted;
+  if (!el.video.muted && el.video.volume === 0) el.video.volume = 1;
+  syncVolumeUi();
+});
+
+el.volume.addEventListener('input', () => {
+  el.video.volume = Number(el.volume.value);
+  el.video.muted = el.video.volume === 0;
+  syncVolumeUi();
+});
+
+el.video.addEventListener('volumechange', syncVolumeUi);
 
 async function toggleFullscreen() {
   try {
     if (document.fullscreenElement) await document.exitFullscreen();
-    else await el.stage.requestFullscreen({ navigationUI: 'hide' });
+    else await el.player.requestFullscreen();
   } catch (err) {
     toast(`Fullscreen unavailable: ${err?.message ?? err}`);
   }
@@ -473,8 +594,25 @@ async function toggleFullscreen() {
 
 el.fullscreen.addEventListener('click', toggleFullscreen);
 el.video.addEventListener('dblclick', toggleFullscreen);
+
+el.pip.addEventListener('click', async () => {
+  try {
+    if (document.pictureInPictureElement) await document.exitPictureInPicture();
+    else await el.video.requestPictureInPicture();
+  } catch (err) {
+    toast(`Picture-in-picture unavailable: ${err?.message ?? err}`);
+  }
+});
+
+el.statsToggle.addEventListener('click', () => {
+  el.stats.hidden = !el.stats.hidden;
+  if (!el.stats.hidden) sampleStats();
+});
+
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'f' && !el.room.hidden && e.target === document.body) toggleFullscreen();
+  if (el.room.hidden || e.target !== document.body) return;
+  if (e.key === 'f') toggleFullscreen();
+  if (e.key === 'm') el.mute.click();
 });
 
 el.peopleToggle.addEventListener('click', () => {
@@ -482,6 +620,16 @@ el.peopleToggle.addEventListener('click', () => {
   el.people.hidden = !open;
   el.peopleToggle.setAttribute('aria-expanded', String(open));
 });
+
+// Auto-hide the control bar while the pointer is still.
+let idleTimer;
+function wakeControls() {
+  el.player.classList.remove('idle');
+  clearTimeout(idleTimer);
+  idleTimer = setTimeout(() => el.player.classList.add('idle'), 2500);
+}
+el.player.addEventListener('mousemove', wakeControls);
+el.player.addEventListener('touchstart', wakeControls, { passive: true });
 
 // ---------------------------------------------------------------------------
 // entry
@@ -491,6 +639,7 @@ async function enterRoom() {
   el.login.hidden = true;
   el.room.hidden = false;
   el.whoami.textContent = session.name;
+  syncVolumeUi();
 
   if (!navigator.mediaDevices?.getDisplayMedia) {
     el.share.disabled = true;
@@ -501,7 +650,7 @@ async function enterRoom() {
 
   showOverlay({
     title: 'Join the room',
-    text: 'Audio needs a click before it can start.',
+    text: 'One click, so the browser will let audio play.',
     action: 'Join',
     onAction: async () => {
       el.overlayAction.disabled = true;
@@ -519,13 +668,16 @@ async function enterRoom() {
     },
   });
   setStatus('ready');
+
+  statsTimer ??= setInterval(sampleStats, 1000);
+  wakeControls();
 }
 
 async function main() {
   const params = new URLSearchParams(location.search);
   if (params.has('error')) history.replaceState(null, '', '/');
 
-  session = await loadSession();
+  session = await fetch('/api/session').then((r) => (r.ok ? r.json() : null));
   if (!session) {
     showLogin(params.get('error') === 'invalid_key' ? 'That invite key was not accepted.' : '');
     return;

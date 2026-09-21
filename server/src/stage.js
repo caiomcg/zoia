@@ -25,7 +25,20 @@ const VIEW_PERMISSION = {
   canPublishData: true,
 };
 
-export function createStage({ rooms, roomName, logger = console }) {
+/**
+ * How long a holder may sit on the stage without publishing anything before
+ * someone else may take it. Covers the window between claiming and choosing a
+ * window in the browser's picker, and the case where a broadcaster's client
+ * dies without releasing.
+ */
+const STALE_CLAIM_MS = 20_000;
+
+export function createStage({ rooms, roomName, logger = console, now = () => Date.now() }) {
+  // Claim times are a hint for the staleness check only. Losing them (a
+  // restart) makes an idle holder look stale, which errs towards the stage
+  // being available rather than stuck — the right way round.
+  const claimedAt = new Map();
+
   async function listParticipants() {
     try {
       return await rooms.listParticipants(roomName);
@@ -74,24 +87,46 @@ export function createStage({ rooms, roomName, logger = console }) {
       const current = await holder();
 
       if (current && current.identity !== user.id) {
-        return { ok: false, reason: 'busy', holder: current };
+        const since = claimedAt.get(current.identity);
+        const stale =
+          !current.publishing && (since === undefined || now() - since > STALE_CLAIM_MS);
+
+        if (!stale) {
+          return { ok: false, reason: 'busy', holder: current };
+        }
+
+        // The holder has permission but is publishing nothing and has had long
+        // enough to start. Take it, so a crashed broadcaster cannot lock the
+        // room for everyone else.
+        logger.info(`[stage] taking the stage from idle holder ${current.identity}`);
+        await setPermission(current.identity, VIEW_PERMISSION).catch(() => {});
+        claimedAt.delete(current.identity);
       }
 
       await setPermission(user.id, PUBLISH_PERMISSION);
+      claimedAt.set(user.id, now());
       logger.info(`[stage] ${user.name} (${user.id}) claimed the stage`);
       return { ok: true, holder: { identity: user.id, name: user.name } };
     },
 
     async release(user) {
-      const current = await holder();
+      claimedAt.delete(user.id);
+
+      let current = null;
+      try {
+        current = await holder();
+      } catch {
+        // If the room cannot be listed, still try to drop the permission
+        // below rather than leaving the caller holding the stage.
+      }
 
       // Releasing when you do not hold it is a no-op, not an error: it keeps
-      // client cleanup paths simple and idempotent.
-      if (!current || current.identity !== user.id) {
+      // client cleanup paths idempotent.
+      if (current && current.identity !== user.id) {
         return { ok: true, released: false };
       }
 
-      await setPermission(user.id, VIEW_PERMISSION);
+      await setPermission(user.id, VIEW_PERMISSION).catch(() => {});
       logger.info(`[stage] ${user.name} (${user.id}) released the stage`);
       return { ok: true, released: true };
     },

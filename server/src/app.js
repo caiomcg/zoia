@@ -185,7 +185,10 @@ export function createApp({ config, keyStore, tokenIssuer, stage, logger = conso
     }
   });
 
-  app.use(express.static(PUBLIC_DIR, { index: false, maxAge: '1h' }));
+  // maxAge 0 with etags means the browser revalidates and gets a 304 when
+  // nothing changed. An hour of caching meant a deploy did not reach anyone
+  // already holding the page — they kept running the previous build.
+  app.use(express.static(PUBLIC_DIR, { index: false, maxAge: 0, etag: true }));
 
   app.use((err, req, res, _next) => {
     logger.error(`[error] ${req.method} ${req.path}: ${err?.message ?? err}`);

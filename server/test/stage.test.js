@@ -12,6 +12,7 @@ let participants;
 let updates;
 let rooms;
 let stage;
+let clock;
 
 function participant(identity, { canPublish = false, name = identity, tracks = [] } = {}) {
   return { identity, name, permission: { canPublish, canSubscribe: true }, tracks };
@@ -29,7 +30,13 @@ beforeEach(() => {
       return p;
     },
   };
-  stage = createStage({ rooms, roomName: 'zoia', logger: { info() {}, warn() {} } });
+  clock = 1_000_000;
+  stage = createStage({
+    rooms,
+    roomName: 'zoia',
+    logger: { info() {}, warn() {} },
+    now: () => clock,
+  });
 });
 
 describe('claiming', () => {
@@ -42,8 +49,11 @@ describe('claiming', () => {
     assert.equal(updates.at(-1).permission.canPublish, true);
   });
 
-  test('a second person is refused while someone holds it', async () => {
-    participants = [participant('alice', { canPublish: true, name: 'Alice' }), participant('bob')];
+  test('a second person is refused while someone is broadcasting', async () => {
+    participants = [
+      participant('alice', { canPublish: true, name: 'Alice', tracks: [{}] }),
+      participant('bob'),
+    ];
 
     const result = await stage.claim({ id: 'bob', name: 'Bob' });
 
@@ -54,7 +64,7 @@ describe('claiming', () => {
   });
 
   test('the holder re-claiming is allowed, so a retry is not a lockout', async () => {
-    participants = [participant('alice', { canPublish: true })];
+    participants = [participant('alice', { canPublish: true, tracks: [{}] })];
     const result = await stage.claim({ id: 'alice', name: 'Alice' });
     assert.equal(result.ok, true);
   });
@@ -75,6 +85,45 @@ describe('claiming', () => {
   });
 });
 
+describe('a holder who never starts', () => {
+  test('cannot be displaced immediately — the picker takes a moment', async () => {
+    participants = [participant('alice'), participant('bob')];
+    await stage.claim({ id: 'alice', name: 'Alice' });
+
+    const result = await stage.claim({ id: 'bob', name: 'Bob' });
+    assert.equal(result.ok, false, 'a fresh claimant must get time to choose a window');
+  });
+
+  test('is displaced once the grace period passes with nothing published', async () => {
+    participants = [participant('alice'), participant('bob')];
+    await stage.claim({ id: 'alice', name: 'Alice' });
+
+    clock += 21_000;
+    const result = await stage.claim({ id: 'bob', name: 'Bob' });
+
+    assert.equal(result.ok, true, 'a crashed broadcaster must not lock the room');
+    const alice = participants.find((p) => p.identity === 'alice');
+    assert.equal(alice.permission.canPublish, false, 'the stale holder loses publish rights');
+  });
+
+  test('is never displaced while actually publishing', async () => {
+    participants = [participant('alice'), participant('bob')];
+    await stage.claim({ id: 'alice', name: 'Alice' });
+    participants.find((p) => p.identity === 'alice').tracks = [{}];
+
+    clock += 60_000;
+    const result = await stage.claim({ id: 'bob', name: 'Bob' });
+    assert.equal(result.ok, false, 'a live broadcaster must never be interrupted');
+  });
+
+  test('an unknown claim time counts as stale, so a restart cannot wedge it', async () => {
+    // Nobody claimed through this instance; the permission is simply there.
+    participants = [participant('alice', { canPublish: true }), participant('bob')];
+    const result = await stage.claim({ id: 'bob', name: 'Bob' });
+    assert.equal(result.ok, true);
+  });
+});
+
 describe('releasing', () => {
   test('the holder can release, and permission is revoked', async () => {
     participants = [participant('alice', { canPublish: true })];
@@ -84,8 +133,19 @@ describe('releasing', () => {
     assert.equal(updates.at(-1).permission.canPublish, false);
   });
 
+  test('release still drops permission when the room cannot be listed', async () => {
+    participants = [participant('alice', { canPublish: true })];
+    rooms.listParticipants = async () => {
+      throw new Error('livekit unreachable');
+    };
+
+    const result = await stage.release({ id: 'alice', name: 'Alice' });
+    assert.equal(result.released, true, 'a listing failure must not strand the stage');
+    assert.equal(updates.at(-1).permission.canPublish, false);
+  });
+
   test('releasing when you do not hold it is a harmless no-op', async () => {
-    participants = [participant('alice', { canPublish: true }), participant('bob')];
+    participants = [participant('alice', { canPublish: true, tracks: [{}] }), participant('bob')];
     const result = await stage.release({ id: 'bob', name: 'Bob' });
 
     assert.equal(result.ok, true);
@@ -94,7 +154,7 @@ describe('releasing', () => {
   });
 
   test('release then claim by someone else succeeds', async () => {
-    participants = [participant('alice', { canPublish: true }), participant('bob')];
+    participants = [participant('alice', { canPublish: true, tracks: [{}] }), participant('bob')];
     await stage.release({ id: 'alice', name: 'Alice' });
     const result = await stage.claim({ id: 'bob', name: 'Bob' });
     assert.equal(result.ok, true);
