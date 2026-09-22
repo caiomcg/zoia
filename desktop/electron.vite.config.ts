@@ -5,11 +5,25 @@ import { resolve } from 'node:path';
 // Baked into the main-process bundle at build time. Whoever runs `npm run
 // pack` sets these in the environment; the resulting .exe carries them as
 // string literals, since the people it is sent to configure nothing.
+const pairingToken = process.env.ZOIA_PAIRING_TOKEN ?? '';
+
+// A build without a token produces an .exe that cannot pair with anything —
+// it reaches the pairing screen and dead-ends on "no pairing token embedded".
+// That is silent at build time and only discovered by whoever you sent it to,
+// so it is worth shouting about here.
+if (!pairingToken) {
+  console.warn(
+    '\n  WARNING: ZOIA_PAIRING_TOKEN is not set.\n' +
+      '  This build will NOT be able to pair on any machine.\n' +
+      '  Use make-exe.bat, or set the variable before building.\n',
+  );
+}
+
 const define = {
   __ZOIA_SERVER_URL__: JSON.stringify(
     process.env.ZOIA_SERVER_URL ?? 'https://zoia.example.com',
   ),
-  __ZOIA_PAIRING_TOKEN__: JSON.stringify(process.env.ZOIA_PAIRING_TOKEN ?? ''),
+  __ZOIA_PAIRING_TOKEN__: JSON.stringify(pairingToken),
 };
 
 export default defineConfig({

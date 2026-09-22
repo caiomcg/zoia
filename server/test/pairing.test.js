@@ -254,3 +254,54 @@ describe('device sessions', () => {
     assert.equal(res.body.name, 'Web user');
   });
 });
+
+describe('renaming a device', () => {
+  /** Pairs a device and returns an agent holding its session cookie. */
+  async function pairedAgent(name = 'Laptop') {
+    const { raw } = await pairings.add({ name: 'build', maxActivations: 5 });
+    const paired = await request(app)
+      .post('/api/pair')
+      .send({ pairingToken: raw, deviceName: name });
+    // Pairing hands back a credential; it has to be exchanged for a session
+    // cookie before any authenticated route will answer.
+    const agent = request.agent(app);
+    await agent
+      .post('/api/device/session')
+      .send({ deviceCredential: paired.body.deviceCredential });
+    return agent;
+  }
+
+  test('a device can rename itself and the new name sticks', async () => {
+    const agent = await pairedAgent('Old name');
+
+    const res = await agent.post('/api/name').send({ name: 'Caio' });
+    assert.equal(res.status, 200);
+    assert.equal(res.body.name, 'Caio');
+
+    // Read back through a fresh request: the store is the source of truth, so
+    // a rename that only lived in memory would be caught here.
+    const session = await agent.get('/api/session');
+    assert.equal(session.body.name, 'Caio');
+  });
+
+  test('an empty name is refused rather than blanking the display name', async () => {
+    const agent = await pairedAgent('Keep me');
+
+    const res = await agent.post('/api/name').send({ name: '   ' });
+    assert.equal(res.status, 400);
+
+    const session = await agent.get('/api/session');
+    assert.equal(session.body.name, 'Keep me', 'the old name must survive a rejected rename');
+  });
+
+  test('an absurdly long name is refused', async () => {
+    const agent = await pairedAgent();
+    const res = await agent.post('/api/name').send({ name: 'x'.repeat(33) });
+    assert.equal(res.status, 400);
+  });
+
+  test('renaming requires a session', async () => {
+    const res = await request(app).post('/api/name').send({ name: 'nobody' });
+    assert.equal(res.status, 401);
+  });
+});

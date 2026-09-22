@@ -12,6 +12,21 @@ files:
   - package.json
   - '!**/*.map'
 
+# Native addons cannot be loaded from inside the asar archive — they have to
+# exist as real files on disk for dlopen. electron-builder usually detects
+# .node files on its own, but these two ARE the product (per-application
+# audio capture and window->PID resolution), so they are pinned explicitly
+# rather than left to heuristics.
+# ffmpeg is the GPU encoding path (see src/main/nvenc.ts). It goes in
+# resources/ffmpeg rather than the asar, because it is executed, not read.
+extraResources:
+  - from: vendor/ffmpeg-gnutls.exe
+    to: ffmpeg/ffmpeg-gnutls.exe
+
+asarUnpack:
+  - '**/node_modules/loopback-capture/**'
+  - '**/node_modules/node-window-manager/**'
+
 # Only what the shared build/ directory actually contains is used; a missing
 # icon.ico is a warning from electron-builder, not a failure — it falls back
 # to Electron's own icon. Add build/icon.ico here later without touching this

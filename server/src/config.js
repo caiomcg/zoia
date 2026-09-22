@@ -37,6 +37,11 @@ export function loadConfig(env = process.env) {
     // Broadcast quality. Tunable without a code change because the right
     // values depend entirely on the uplink: the server sends one copy of the
     // stream per remote viewer, so upload = bitrate x viewers.
+    // Where the desktop app POSTs its WHIP offer. Reachable from the LAN the
+    // broadcaster is on; deliberately not exposed to the internet, since the
+    // only hardware-encoding publisher is on the same network as this server.
+    whipBaseUrl: env.WHIP_BASE_URL ?? 'http://192.168.31.60:8085/w',
+
     quality: {
       maxBitrate: Number(env.MAX_BITRATE ?? 12_000_000),
       maxFramerate: Number(env.MAX_FRAMERATE ?? 60),

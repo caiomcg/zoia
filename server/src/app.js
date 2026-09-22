@@ -23,6 +23,7 @@ export function createApp({
   keyStore,
   tokenIssuer,
   stage,
+  ingress = null,
   pairingStore = null,
   deviceStore = null,
   logger = console,
@@ -270,6 +271,53 @@ export function createApp({
   app.post('/api/stage/release', requireSession, async (req, res, next) => {
     try {
       res.json(await stage.release(req.user));
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // ---- hardware-encoded publishing ---------------------------------------
+  // The desktop app asks for somewhere to push NVENC output, because
+  // Chromium's own WebRTC encoder is software-only on Windows. Claiming the
+  // stage still goes through /api/stage — this only hands out the endpoint.
+
+  const requireIngress = (_req, res, next) =>
+    ingress ? next() : res.status(501).json({ error: 'ingress_not_configured' });
+
+  app.post('/api/ingress', requireSession, requireIngress, async (req, res) => {
+    try {
+      res.json(await ingress.endpointFor(req.user));
+    } catch (err) {
+      logger.error(`[ingress] ${err?.message ?? err}`);
+      res.status(502).json({ error: 'ingress_unavailable' });
+    }
+  });
+
+  app.post('/api/ingress/release', requireSession, requireIngress, async (req, res, next) => {
+    try {
+      res.json(await ingress.release(req.user));
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // ---- display name ------------------------------------------------------
+
+  app.post('/api/name', requireSession, async (req, res, next) => {
+    try {
+      const name = String(req.body?.name ?? '').trim();
+      if (!name) return res.status(400).json({ error: 'name_required' });
+      if (name.length > 32) return res.status(400).json({ error: 'name_too_long' });
+
+      const updated = deviceStore
+        ? await deviceStore.rename(req.user.id, name).catch(() => null)
+        : null;
+      if (!updated) return res.status(404).json({ error: 'unknown_device' });
+
+      // No separate session state to update: the name is read back out of
+      // the device store on every request, so the record *is* the source of
+      // truth and the next token issued carries the new name.
+      res.json({ ok: true, name });
     } catch (err) {
       next(err);
     }
