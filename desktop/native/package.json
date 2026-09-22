@@ -1,0 +1,10 @@
+{
+  "name": "zoia-capture",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Windows Graphics Capture piped straight into NVENC, without the frames ever leaving the GPU.",
+  "main": "index.js",
+  "dependencies": {
+    "node-addon-api": "^8.2.0"
+  }
+}

@@ -1,22 +1,21 @@
 /**
  * The hardware-encoded broadcast path.
  *
- * Unlike the Chromium path, nothing here touches getDisplayMedia or a
- * PeerConnection: ffmpeg captures the desktop on the GPU, encodes with NVENC
- * and publishes over WHIP to a LiveKit ingress, which joins the room as its
- * own participant. This renderer only starts it, stops it, and watches.
+ * Nothing here touches a PeerConnection. A native module captures the window
+ * with Windows Graphics Capture and encodes it with NVENC without the pixels
+ * ever leaving the GPU; ffmpeg muxes the resulting H.264 with the captured
+ * application audio and publishes it over WHIP to a LiveKit ingress, which
+ * joins the room as its own participant.
  *
- * Two consequences worth knowing:
- *  - it captures the whole screen, not one window, because ddagrab is
- *    Desktop Duplication; per-application *audio* still works, which is the
- *    combination that matters for sharing a game;
- *  - the broadcaster has no local preview from it, since the frames never
- *    enter this process. The preview shows what viewers get by subscribing
- *    to the ingress participant like anyone else.
+ * Chromium's WebRTC encoder is never involved, which is the entire point: it
+ * has no hardware encoder on Windows.
+ *
+ * There is no local preview, because the encoded stream goes straight out
+ * rather than back through this process.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { NvencStatus, QualityPreset } from '../../shared/ipc';
+import type { NvencStatus, QualityPreset, SourceInfo } from '../../shared/ipc';
 
 export type GpuBroadcastState = 'idle' | 'starting' | 'live';
 
@@ -37,31 +36,6 @@ export function useGpuBroadcast() {
     });
   }, []);
 
-  const start = useCallback(async (preset: QualityPreset, processId: number | null) => {
-    setError(null);
-    setState('starting');
-    try {
-      // The stage is claimed by the caller; this only obtains somewhere to
-      // publish to. The ingress is per-user and reused across broadcasts.
-      const endpoint = await window.zoia.ingress.get();
-      await window.zoia.nvenc.start({
-        whipUrl: endpoint.url,
-        width: preset.width,
-        height: preset.height,
-        framerate: preset.maxFramerate,
-        bitrate: preset.maxBitrate,
-        processId,
-      });
-      activeRef.current = true;
-      setState('live');
-      return true;
-    } catch (err) {
-      setState('idle');
-      setError(err instanceof Error ? err.message : String(err));
-      return false;
-    }
-  }, []);
-
   const stop = useCallback(async () => {
     activeRef.current = false;
     await window.zoia.nvenc.stop().catch(() => {});
@@ -69,6 +43,32 @@ export function useGpuBroadcast() {
     setState('idle');
     setStatus(null);
   }, []);
+
+  const start = useCallback(
+    async (preset: QualityPreset, source: SourceInfo | null) => {
+      setError(null);
+      setState('starting');
+      try {
+        const endpoint = await window.zoia.ingress.get();
+        await window.zoia.nvenc.start({
+          whipUrl: endpoint.url,
+          framerate: preset.maxFramerate,
+          bitrate: preset.maxBitrate,
+          // Audio follows the chosen application; video follows its window.
+          processId: source?.processId ?? null,
+          hwnd: source?.kind === 'window' ? source.hwnd : null,
+        });
+        activeRef.current = true;
+        setState('live');
+        return true;
+      } catch (err) {
+        await stop();
+        setError(err instanceof Error ? err.message : String(err));
+        return false;
+      }
+    },
+    [stop],
+  );
 
   return { state, status, error, start, stop };
 }

@@ -6,3 +6,5 @@ node_modules/
 electron-stdout.log
 electron-stderr.log
 vendor/
+native/build/
+native/node_modules/

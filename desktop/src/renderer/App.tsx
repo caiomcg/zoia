@@ -68,21 +68,20 @@ export default function App() {
 
   async function handlePick(source: SourceInfo) {
     setPickerOpen(false);
-    await room.startBroadcast(source, preset);
-  }
-
-  async function startSharing() {
     if (mode === 'window') {
-      setPickerOpen(true);
+      await room.startBroadcast(source, preset);
       return;
     }
-    // GPU mode captures the whole screen, so there is nothing to pick. Audio
-    // still comes from a single application when one is chosen; with none
-    // chosen it falls back to the whole system.
     const claim = await window.zoia.stage.claim();
     if (!claim.ok) return;
-    const ok = await gpuCast.start(preset, null);
+    const ok = await gpuCast.start(preset, source);
     if (!ok) await window.zoia.stage.release().catch(() => {});
+  }
+
+  function startSharing() {
+    // Both paths pick a source now: GPU mode encodes a chosen window through
+    // Chromium's capture, or the whole screen if a screen is picked.
+    setPickerOpen(true);
   }
 
   async function stopSharing() {
@@ -135,8 +134,8 @@ export default function App() {
         <div className="mode-switch" role="group" aria-label="Encoding mode">
           {(
             [
-              ['gpu', 'GPU · screen'],
-              ['window', 'Window'],
+              ['gpu', 'GPU encode'],
+              ['window', 'CPU encode'],
             ] as const
           ).map(([value, label]) => (
             <button
@@ -149,8 +148,8 @@ export default function App() {
               }}
               title={
                 value === 'gpu'
-                  ? 'Encode on the GPU with NVENC. Captures the whole screen at its native resolution; per-app audio still works.'
-                  : 'Capture a single window through Chromium. Encodes on the CPU.'
+                  ? 'Encode with NVENC on the GPU. Works for a single window or a whole screen.'
+                  : 'Publish through Chromium, which encodes in software on the CPU.'
               }
             >
               {label}
@@ -184,7 +183,7 @@ export default function App() {
           <button
             className="primary"
             disabled={room.state !== 'connected' || isStarting}
-            onClick={() => void startSharing()}
+            onClick={() => startSharing()}
           >
             {isStarting ? 'Starting…' : 'Share your screen'}
           </button>

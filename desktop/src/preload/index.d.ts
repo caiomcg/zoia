@@ -31,11 +31,11 @@ export interface ZoiaBridge {
   nvenc: {
     start(options: {
       whipUrl: string;
-      width: number;
-      height: number;
       framerate: number;
       bitrate: number;
       processId: number | null;
+      /** The window to capture natively; null captures the whole screen. */
+      hwnd: number | null;
     }): Promise<void>;
     stop(): Promise<void>;
     onStatus(cb: (status: NvencStatus) => void): () => void;

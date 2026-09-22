@@ -5,6 +5,7 @@ import * as api from './api';
 import * as sources from './sources';
 import * as audioCapture from './audio';
 import * as nvenc from './nvenc';
+import * as capture from './capture';
 import { IPC } from '../shared/ipc';
 import type { GpuStatus } from '../shared/ipc';
 
@@ -119,6 +120,7 @@ function createWindow(): void {
     minHeight: 640,
     backgroundColor: '#0b0c0e',
     autoHideMenuBar: true,
+    icon: join(__dirname, '../../build/icon.png'),
     webPreferences: {
       // Must be CJS: see electron.vite.config.ts for why.
       preload: join(__dirname, '../preload/index.cjs'),
@@ -174,20 +176,45 @@ function registerIpc(): void {
 
   ipcMain.handle(
     IPC.nvencStart,
-    (_event, options: Omit<nvenc.NvencOptions, 'processId'> & { processId: number | null }) => {
+    (_event, options: Omit<nvenc.NvencOptions, 'frames'> & { hwnd: number | null }) => {
       if (!mainWindow) return;
-      // Same reasoning as the Chromium path: refreshing picker thumbnails
-      // while live competes with the encoder for the main process.
+      // Refreshing picker thumbnails while live competes with the encoder
+      // for the main process.
       sources.stopWarming();
-      nvenc.start(mainWindow, options);
-      // Audio is captured exactly as before; it is only routed somewhere
-      // different, into ffmpeg's stdin rather than over IPC to the renderer.
+
+      if (options.hwnd !== null) {
+        // Native path: WGC captures the window and NVENC encodes it without
+        // the pixels ever leaving the GPU, so ffmpeg only has to mux the
+        // H.264 it is handed.
+        const info = capture.start(
+          options.hwnd,
+          options.framerate,
+          options.bitrate,
+          (packet) => nvenc.writeFrame(packet),
+          (message) =>
+            mainWindow?.webContents.send(IPC.nvencStatus, {
+              running: false,
+              fps: 0,
+              encoder: 'nvenc',
+              width: 0,
+              height: 0,
+              error: message,
+            }),
+        );
+        nvenc.start(mainWindow, { ...options, frames: info });
+      } else {
+        nvenc.start(mainWindow, { ...options, frames: null });
+      }
+
+      // Audio is captured exactly as before, only routed into ffmpeg's audio
+      // pipe rather than over IPC to the renderer.
       audioCapture.startCapture(mainWindow, options.processId, nvenc.writeAudio);
     },
   );
 
   ipcMain.handle(IPC.nvencStop, () => {
-    nvenc.stop();
+    capture.stop();
+    nvenc.shutdown();
     audioCapture.stopCapture();
     sources.startWarming();
   });
@@ -255,6 +282,7 @@ app.whenReady().then(async () => {
 app.on('window-all-closed', () => {
   sources.stopWarming();
   audioCapture.stopCapture();
-  nvenc.stop();
+  capture.stop();
+  nvenc.shutdown();
   if (process.platform !== 'darwin') app.quit();
 });
