@@ -6,15 +6,12 @@
     <meta name="color-scheme" content="light dark" />
     <title>Zoia</title>
     <link rel="stylesheet" href="/style.css" />
-    <link
-      rel="icon"
-      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📺</text></svg>"
-    />
+    <link rel="icon" href="/icon.png" />
   </head>
   <body>
     <main id="login" class="screen" hidden>
       <div class="card">
-        <h1>Zoia</h1>
+        <h1><img src="/logo.png" alt="Zoia" class="logo" /></h1>
         <p class="muted">Enter the invite key you were sent.</p>
         <form id="login-form" autocomplete="off">
           <label class="sr-only" for="key-input">Invite key</label>
@@ -35,7 +32,7 @@
 
     <div id="room" class="screen" hidden>
       <header class="bar">
-        <span class="brand">Zoia</span>
+        <span class="brand"><img src="/logo.png" alt="Zoia" class="brand-logo" /></span>
         <span id="status" class="pill">connecting…</span>
         <span class="spacer"></span>
         <button id="share" class="primary" type="button">Start broadcasting</button>

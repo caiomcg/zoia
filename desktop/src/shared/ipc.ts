@@ -141,6 +141,8 @@ export interface SourceInfo {
   kind: 'screen' | 'window';
   thumbnailDataUrl: string;
   processId: number | null;
+  /** Win32 window handle; the GPU path uses it to locate the window on screen. */
+  hwnd: number | null;
 }
 
 export const IPC = {

@@ -9,6 +9,8 @@ directories:
 
 files:
   - out/**/*
+  - native/index.js
+  - native/build/Release/zoia_capture.node
   - package.json
   - '!**/*.map'
 
@@ -22,6 +24,11 @@ files:
 extraResources:
   - from: vendor/ffmpeg-gnutls.exe
     to: ffmpeg/ffmpeg-gnutls.exe
+  # The WGC+NVENC capture module, and the shim that loads it.
+  - from: native/build/Release/zoia_capture.node
+    to: app.asar.unpacked/native/build/Release/zoia_capture.node
+  - from: native/index.js
+    to: app.asar.unpacked/native/index.js
 
 asarUnpack:
   - '**/node_modules/loopback-capture/**'

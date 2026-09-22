@@ -74,6 +74,11 @@ body {
   font-size: 24px;
 }
 
+.card h1 .logo {
+  height: 48px;
+  width: auto;
+}
+
 #login-form {
   display: grid;
   gap: 10px;
@@ -157,6 +162,12 @@ footer.bar {
 
 .brand {
   font-weight: 600;
+}
+
+.brand .brand-logo {
+  height: 24px;
+  width: auto;
+  vertical-align: middle;
 }
 
 .spacer {

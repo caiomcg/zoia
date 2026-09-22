@@ -17,18 +17,33 @@
  */
 
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { createServer, type Server, type Socket } from 'node:net';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { app, type BrowserWindow } from 'electron';
 
 export interface NvencOptions {
   whipUrl: string;
-  width: number;
-  height: number;
   framerate: number;
   bitrate: number;
   /** null captures the whole system's audio rather than one process. */
   processId: number | null;
+  /**
+   * Set when an already-encoded H.264 bitstream arrives on stdin, which is
+   * what the native WGC+NVENC capture produces. ffmpeg then only muxes.
+   *
+   * ffmpeg has no way to capture a single window: ddagrab is Desktop
+   * Duplication (screen only) and gdigrab returns blank frames for modern
+   * GPU-composited windows — verified by capturing one and looking at it.
+   * Windows Graphics Capture is the only thing that genuinely captures a
+   * window, and here only Chromium has it.
+   *
+   * So for window sharing, Chromium captures and this encodes: raw frames
+   * arrive on stdin and go straight to NVENC. The readback that costs is
+   * measured at ~3.8GB/s on this machine, against the ~500MB/s that 1080p60
+   * needs, so the encoder rather than the bridge is the limit.
+   */
+  frames: { width: number; height: number } | null;
 }
 
 export interface NvencStatus {
@@ -43,6 +58,9 @@ export interface NvencStatus {
 
 const SAMPLE_RATE = 48000;
 const CHANNELS = 2;
+
+// Windows named pipe. ffmpeg opens this as an ordinary input file.
+const AUDIO_PIPE = '\\\\.\\pipe\\zoia-audio';
 
 /**
  * Bundled rather than assumed present: the build that ships must be one with
@@ -72,7 +90,34 @@ let framesAtLastCheck = -1;
 let frameCount = 0;
 let captureWidth = 0;
 let captureHeight = 0;
+let audioServer: Server | null = null;
+let audioSocket: Socket | null = null;
 let lastAudioAt = 0;
+
+/**
+ * ffmpeg reads its inputs together, so audio and video each need their own
+ * channel; stdin carries video frames, and this pipe carries PCM. The server
+ * is started before ffmpeg so the pipe exists when ffmpeg opens it.
+ */
+function startAudioPipe(): void {
+  stopAudioPipe();
+  audioServer = createServer((socket) => {
+    audioSocket = socket;
+    socket.on('error', () => {});
+    socket.on('close', () => {
+      if (audioSocket === socket) audioSocket = null;
+    });
+  });
+  audioServer.on('error', () => {});
+  audioServer.listen(AUDIO_PIPE);
+}
+
+function stopAudioPipe(): void {
+  audioSocket?.destroy();
+  audioSocket = null;
+  audioServer?.close();
+  audioServer = null;
+}
 let keepAlive: ReturnType<typeof setInterval> | null = null;
 
 // 50ms of stereo silence, which is what gets written when the capture has
@@ -91,9 +136,9 @@ const SILENCE = Buffer.alloc((SAMPLE_RATE * CHANNELS * 2 * KEEPALIVE_MS) / 1000)
 function startKeepAlive(): void {
   lastAudioAt = Date.now();
   keepAlive = setInterval(() => {
-    if (!child?.stdin.writable) return;
+    if (!audioSocket?.writable) return;
     if (Date.now() - lastAudioAt >= KEEPALIVE_MS) {
-      child.stdin.write(SILENCE, () => {});
+      audioSocket.write(SILENCE);
       lastAudioAt = Date.now();
     }
   }, KEEPALIVE_MS);
@@ -132,12 +177,14 @@ function buildArgs(options: NvencOptions): string[] {
     // ddagrab captures the desktop at its native resolution. Constraining it
     // with video_size produced a running encoder that emitted zero frames, so
     // the scaling happens afterwards, on the GPU, where it is nearly free.
-    '-f',
-    'lavfi',
-    '-i',
-    `ddagrab=output_idx=0:framerate=${framerate}`,
+    // Video. Either an H.264 bitstream the native capture already encoded on
+    // the GPU, or the whole desktop grabbed by ffmpeg itself.
+    ...(options.frames
+      ? ['-f', 'h264', '-framerate', String(framerate), '-thread_queue_size', '64', '-i', 'pipe:0']
+      : ['-f', 'lavfi', '-i', `ddagrab=output_idx=0:framerate=${framerate}`]),
 
-    // Audio: raw PCM on stdin, exactly what WASAPI process loopback produces.
+    // Audio: raw PCM, exactly what WASAPI process loopback produces. It gets
+    // its own named pipe because stdin may already be carrying video.
     '-f',
     's16le',
     '-ar',
@@ -147,7 +194,10 @@ function buildArgs(options: NvencOptions): string[] {
     '-thread_queue_size',
     '512',
     '-i',
-    'pipe:0',
+    AUDIO_PIPE,
+
+    // Chromium hands over BGRA in system memory; NVENC wants it on the GPU.
+    ...(options.frames ? ['-vf', 'format=nv12,hwupload_cuda'] : []),
 
     ...scaleArgs(),
 
@@ -225,6 +275,7 @@ export function start(win: BrowserWindow, options: NvencOptions): void {
   lastError = null;
   frameCount = 0;
 
+  startAudioPipe();
   const binary = ffmpegPath();
   child = spawn(binary, buildArgs(options), { windowsHide: true });
 
@@ -284,13 +335,26 @@ export function start(win: BrowserWindow, options: NvencOptions): void {
   startKeepAlive();
 }
 
+/** Ends the broadcast for good, as opposed to the restart start() performs. */
+export function shutdown(): void {
+  stop();
+}
+
 /** Feeds one chunk of captured PCM to the encoder. */
 export function writeAudio(chunk: Buffer): void {
-  if (!child?.stdin.writable) return;
+  if (!audioSocket?.writable) return;
   lastAudioAt = Date.now();
   // Dropped rather than buffered: audio that cannot be written now is audio
   // that is already late, and queueing it would only grow the A/V offset.
-  child.stdin.write(chunk, () => {});
+  audioSocket.write(chunk);
+}
+
+/** Feeds one captured video frame (BGRA) to the encoder. */
+export function writeFrame(frame: Buffer): void {
+  if (!child?.stdin.writable) return;
+  // Back-pressure is handled by dropping: a frame that cannot be written now
+  // is better skipped than queued, which would only add latency.
+  child.stdin.write(frame, () => {});
 }
 
 export function stop(): void {
@@ -298,6 +362,7 @@ export function stop(): void {
   watchdog = null;
   if (keepAlive) clearInterval(keepAlive);
   keepAlive = null;
+  stopAudioPipe();
   if (!child) return;
   const dying = child;
   child = null;

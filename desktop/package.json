@@ -12,11 +12,12 @@
     "dev": "electron-vite dev",
     "build": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json && electron-vite build",
     "preview": "electron-vite preview",
-    "pack": "npm run build && electron-builder --win --x64",
+    "pack": "npm run build:native && npm run build && electron-builder --win --x64",
     "lint": "eslint .",
     "format:check": "prettier --check .",
     "test": "node --test \"test/**/*.test.ts\"",
-    "pack:portable": "npm run build && electron-builder --win portable --x64"
+    "pack:portable": "npm run build:native && npm run build && electron-builder --win portable --x64",
+    "build:native": "cd native && node-gyp rebuild --target=44.4.3 --dist-url=https://electronjs.org/headers --arch=x64"
   },
   "dependencies": {
     "livekit-client": "^2.22.3",
