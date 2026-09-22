@@ -18,6 +18,11 @@ rtc:
   # remote viewers join the room and then watch black video forever.
   use_external_ip: true
 
+# Required for the ingress service to coordinate with the SFU. Bound to
+# localhost only (see docker-compose.yml), so it is not reachable off-box.
+redis:
+  address: 127.0.0.1:6379
+
 room:
   # Rooms are created explicitly by the app when a host requests a token, so a
   # stray token cannot conjure rooms.

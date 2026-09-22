@@ -6,7 +6,7 @@
 
 import { contextBridge, ipcRenderer } from 'electron';
 import { IPC } from '../shared/ipc';
-import type { PairingStatus } from '../shared/ipc';
+import type { NvencStatus, PairingStatus } from '../shared/ipc';
 import type { ZoiaBridge } from './index.d';
 
 const bridge: ZoiaBridge = {
@@ -30,6 +30,34 @@ const bridge: ZoiaBridge = {
   sources: {
     list: () => ipcRenderer.invoke(IPC.sourcesList),
     select: (source) => ipcRenderer.invoke(IPC.sourcesSelect, source),
+  },
+  nvenc: {
+    start: (options) => ipcRenderer.invoke(IPC.nvencStart, options),
+    stop: () => ipcRenderer.invoke(IPC.nvencStop),
+    onStatus: (cb) => {
+      const listener = (_e: Electron.IpcRendererEvent, status: NvencStatus) => cb(status);
+      ipcRenderer.on(IPC.nvencStatus, listener);
+      return () => ipcRenderer.removeListener(IPC.nvencStatus, listener);
+    },
+  },
+  ingress: {
+    get: () => ipcRenderer.invoke(IPC.ingressGet),
+    release: () => ipcRenderer.invoke(IPC.ingressRelease),
+  },
+  device: {
+    rename: (name) => ipcRenderer.invoke(IPC.renameDevice, name),
+  },
+  gpu: {
+    status: () => ipcRenderer.invoke(IPC.gpuStatus),
+  },
+  audio: {
+    start: (processId) => ipcRenderer.invoke(IPC.audioStart, processId),
+    stop: () => ipcRenderer.invoke(IPC.audioStop),
+    onChunk: (cb) => {
+      const listener = (_event: Electron.IpcRendererEvent, chunk: Uint8Array) => cb(chunk);
+      ipcRenderer.on(IPC.audioChunk, listener);
+      return () => ipcRenderer.removeListener(IPC.audioChunk, listener);
+    },
   },
 };
 

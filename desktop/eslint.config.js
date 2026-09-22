@@ -48,4 +48,22 @@ export default tseslint.config(
     files: ['**/*.d.ts'],
     rules: { '@typescript-eslint/no-unused-vars': 'off' },
   },
+  {
+    // AudioWorkletGlobalScope: runs on the dedicated audio rendering thread,
+    // not the main renderer thread, with its own globals that the "globals"
+    // package has no preset for.
+    files: ['src/renderer/public/pcm-worklet.js'],
+    languageOptions: {
+      ecmaVersion: 2024,
+      sourceType: 'script',
+      globals: { AudioWorkletProcessor: 'readonly', registerProcessor: 'readonly' },
+    },
+  },
+  {
+    // Ad hoc verification tooling at the project root, not part of the
+    // shipped app — one-off CDP/capture probes written during manual testing.
+    files: ['*.cjs'],
+    languageOptions: { ecmaVersion: 2022, sourceType: 'commonjs', globals: { ...globals.node } },
+    rules: { '@typescript-eslint/no-require-imports': 'off', 'no-redeclare': 'off' },
+  },
 );

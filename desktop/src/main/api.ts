@@ -12,7 +12,7 @@
  */
 
 import { net } from 'electron';
-import type { TokenResult, StageState, ClaimResult } from '../shared/ipc';
+import type { TokenResult, StageState, ClaimResult, IngressEndpoint } from '../shared/ipc';
 
 const BASE = __ZOIA_SERVER_URL__;
 
@@ -59,6 +59,23 @@ export function getSession() {
 
 export function getToken() {
   return call<TokenResult>('/api/token', { method: 'POST' });
+}
+
+/** Somewhere to publish NVENC output to; see src/main/nvenc.ts for why. */
+export function ingressGet() {
+  return call<IngressEndpoint>('/api/ingress', { method: 'POST' });
+}
+
+export function ingressRelease() {
+  return call<{ ok: boolean; released: boolean }>('/api/ingress/release', { method: 'POST' });
+}
+
+export function renameDevice(name: string) {
+  return call<{ ok: boolean; name: string }>('/api/name', {
+    method: 'POST',
+    body: JSON.stringify({ name }),
+    headers: { 'content-type': 'application/json' },
+  });
 }
 
 export function stageGet() {

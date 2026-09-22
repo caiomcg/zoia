@@ -9,6 +9,7 @@ import { createPairingStore } from './pairings.js';
 import { createDeviceStore } from './devices.js';
 import { createTokenIssuer } from './token.js';
 import { createStage } from './stage.js';
+import { createIngressService } from './ingress.js';
 import { createApp } from './app.js';
 
 try {
@@ -36,8 +37,24 @@ const rooms = new RoomServiceClient(
   config.livekit.apiSecret,
 );
 const stage = createStage({ rooms, roomName: config.roomName });
+const ingress = createIngressService({
+  apiUrl: config.livekit.apiUrl,
+  apiKey: config.livekit.apiKey,
+  apiSecret: config.livekit.apiSecret,
+  roomName: config.roomName,
+  whipBaseUrl: config.whipBaseUrl,
+  rooms,
+});
 
-const app = createApp({ config, keyStore, tokenIssuer, stage, pairingStore, deviceStore });
+const app = createApp({
+  config,
+  keyStore,
+  tokenIssuer,
+  stage,
+  ingress,
+  pairingStore,
+  deviceStore,
+});
 
 app.listen(config.port, () => {
   console.log(`[zoia] listening on :${config.port}`);

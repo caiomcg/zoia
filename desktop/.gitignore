@@ -1,0 +1,8 @@
+release/
+out/
+node_modules/
+*.log
+.pairing-token
+electron-stdout.log
+electron-stderr.log
+vendor/

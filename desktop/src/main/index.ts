@@ -3,9 +3,113 @@ import { join } from 'node:path';
 import * as pairing from './pairing';
 import * as api from './api';
 import * as sources from './sources';
+import * as audioCapture from './audio';
+import * as nvenc from './nvenc';
 import { IPC } from '../shared/ipc';
+import type { GpuStatus } from '../shared/ipc';
 
 let mainWindow: BrowserWindow | null = null;
+
+/**
+ * GPU switches for the capture/compositing path.
+ *
+ * Note on hardware *encoding*: it does not happen here, and these switches
+ * cannot make it happen. Measured on this machine (RTX 4070 SUPER, driver
+ * 32.0.16.1047): navigator.mediaCapabilities.encodingInfo() reports
+ * powerEfficient=false for H.264, VP8, VP9 and AV1 at every resolution, and
+ * a live broadcast reports encoderImplementation "OpenH264". Stock Chrome on
+ * the same machine reports exactly the same, so this is Chromium's WebRTC
+ * stack rather than anything Electron or this app does. Getting NVENC would
+ * mean encoding natively and bypassing Chromium's WebRTC encoder entirely.
+ *
+ * Software H.264 sustains 1080p60 at ~12Mbps here; 4K is where it hurts.
+ *
+ * Chromium will fall back to *software* H.264 without complaining, and at
+ * 1080p60 (let alone 4K) that pins several CPU cores — which shows up as
+ * laggy, blurry video for viewers and, because the same process relays
+ * captured audio over IPC, as periodic gaps in that audio too. Both symptoms
+ * have one cause.
+ *
+ * These switches must be set before app ready, which is why this runs at
+ * module scope.
+ */
+function requestHardwareEncoding(): void {
+  app.commandLine.appendSwitch('ignore-gpu-blocklist');
+
+  // Chromium throttles renderers that are not in the foreground: timers are
+  // clamped, rendering is suspended, and occluded windows get backgrounded
+  // outright. For an ordinary app that saves battery. For this one it stops
+  // the broadcast, because the capture and encode loop lives in the renderer
+  // — and the moment you share a window you switch *to* that window, putting
+  // Zoia in the background. That is the stream halting when a window goes to
+  // the background.
+  app.commandLine.appendSwitch('disable-background-timer-throttling');
+  app.commandLine.appendSwitch('disable-renderer-backgrounding');
+  app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
+
+  // ANGLE on D3D11 is what lets the GPU process come up at all on Windows;
+  // being explicit avoids falling back to the basic render driver.
+  app.commandLine.appendSwitch('use-angle', 'd3d11');
+
+  // Windows Graphics Capture is deliberately left ENABLED (it is the default).
+  // It hands frames over as D3D11 textures that can go straight into the
+  // hardware encoder; the older GDI/DXGI capturer produces CPU-side frames,
+  // and forcing that path was measured to leave WebRTC encoding in software
+  // (encoderImplementation: OpenH264) on a machine whose chrome://gpu reports
+  // "Video Encode: Hardware accelerated". The WGC "Source is not capturable"
+  // errors in the log come from enumerating thumbnails for windows that
+  // cannot be grabbed, not from the live broadcast, which kept running.
+}
+
+requestHardwareEncoding();
+
+let gpuStatus: GpuStatus = {
+  hardwareEncoding: false,
+  videoEncode: 'unknown',
+  adapter: 'unknown',
+};
+
+/**
+ * Reports what the GPU actually ended up doing, rather than assuming. The
+ * adapter name is the part that matters most when encoding is unexpectedly
+ * software: a real discrete GPU means a flag or blocklist problem, while
+ * "Microsoft Basic Render Driver" means Chromium never reached the GPU at
+ * all and no encoder flag will help.
+ */
+async function refreshGpuStatus(): Promise<void> {
+  const features = app.getGPUFeatureStatus();
+  const videoEncode = features.video_encode ?? 'unknown';
+
+  let adapter = 'unknown';
+  try {
+    const info = (await app.getGPUInfo('complete')) as {
+      gpuDevice?: Array<{ vendorId?: number; deviceId?: number; active?: boolean }>;
+      auxAttributes?: Record<string, unknown>;
+    };
+    const aux = info.auxAttributes ?? {};
+    const described = [aux.glRenderer, aux.glVendor, aux.driverVersion]
+      .filter((v): v is string => typeof v === 'string' && v.length > 0)
+      .join(' | ');
+    const active = (info.gpuDevice ?? []).find((d) => d.active) ?? (info.gpuDevice ?? [])[0];
+    const ids = active
+      ? `vendor=0x${(active.vendorId ?? 0).toString(16)} device=0x${(active.deviceId ?? 0).toString(16)}`
+      : 'no adapter reported';
+    adapter = described ? `${ids} | ${described}` : ids;
+  } catch (err) {
+    adapter = `lookup failed: ${err instanceof Error ? err.message : String(err)}`;
+  }
+
+  gpuStatus = {
+    hardwareEncoding: videoEncode.startsWith('enabled'),
+    videoEncode,
+    adapter,
+  };
+
+  console.log('[gpu] video_encode:', videoEncode);
+  console.log('[gpu] video_decode:', features.video_decode ?? 'unknown');
+  console.log('[gpu] gpu_compositing:', features.gpu_compositing ?? 'unknown');
+  console.log('[gpu] adapter:', adapter);
+}
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -21,6 +125,10 @@ function createWindow(): void {
       contextIsolation: true,
       sandbox: true,
       nodeIntegration: false,
+      // The per-window counterpart to the switches above: without it this
+      // window still gets throttled once it loses focus, which is exactly
+      // when a broadcast needs it running.
+      backgroundThrottling: false,
     },
   });
 
@@ -46,6 +154,8 @@ function registerIpc(): void {
 
   ipcMain.handle(IPC.getToken, () => api.getToken());
 
+  ipcMain.handle(IPC.gpuStatus, () => gpuStatus);
+
   ipcMain.handle(IPC.stageGet, () => api.stageGet());
   ipcMain.handle(IPC.stageClaim, () => api.stageClaim());
   ipcMain.handle(IPC.stageRelease, () => api.stageRelease());
@@ -57,6 +167,45 @@ function registerIpc(): void {
       sources.selectSource(source);
     },
   );
+
+  ipcMain.handle(IPC.ingressGet, () => api.ingressGet());
+  ipcMain.handle(IPC.ingressRelease, () => api.ingressRelease());
+  ipcMain.handle(IPC.renameDevice, (_event, name: string) => api.renameDevice(name));
+
+  ipcMain.handle(
+    IPC.nvencStart,
+    (_event, options: Omit<nvenc.NvencOptions, 'processId'> & { processId: number | null }) => {
+      if (!mainWindow) return;
+      // Same reasoning as the Chromium path: refreshing picker thumbnails
+      // while live competes with the encoder for the main process.
+      sources.stopWarming();
+      nvenc.start(mainWindow, options);
+      // Audio is captured exactly as before; it is only routed somewhere
+      // different, into ffmpeg's stdin rather than over IPC to the renderer.
+      audioCapture.startCapture(mainWindow, options.processId, nvenc.writeAudio);
+    },
+  );
+
+  ipcMain.handle(IPC.nvencStop, () => {
+    nvenc.stop();
+    audioCapture.stopCapture();
+    sources.startWarming();
+  });
+
+  ipcMain.handle(IPC.audioStart, (_event, processId: number | null) => {
+    if (!mainWindow) return;
+    // Nobody picks a new source mid-broadcast, so refreshing the picker's
+    // thumbnail cache from here on buys nothing — and it is not free: each
+    // refresh drives desktopCapturer across every window (repeatedly logging
+    // WGC "Source is not capturable" for ones it cannot grab) on the same
+    // process that relays captured audio to the renderer.
+    sources.stopWarming();
+    audioCapture.startCapture(mainWindow, processId);
+  });
+  ipcMain.handle(IPC.audioStop, () => {
+    audioCapture.stopCapture();
+    sources.startWarming();
+  });
 }
 
 /**
@@ -83,6 +232,7 @@ function registerDisplayMediaHandler(): void {
 }
 
 app.whenReady().then(async () => {
+  await refreshGpuStatus();
   registerIpc();
   registerDisplayMediaHandler();
   createWindow();
@@ -104,5 +254,7 @@ app.whenReady().then(async () => {
 
 app.on('window-all-closed', () => {
   sources.stopWarming();
+  audioCapture.stopCapture();
+  nvenc.stop();
   if (process.platform !== 'darwin') app.quit();
 });

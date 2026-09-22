@@ -15,7 +15,8 @@
     "pack": "npm run build && electron-builder --win --x64",
     "lint": "eslint .",
     "format:check": "prettier --check .",
-    "test": "node --test \"test/**/*.test.ts\""
+    "test": "node --test \"test/**/*.test.ts\"",
+    "pack:portable": "npm run build && electron-builder --win portable --x64"
   },
   "dependencies": {
     "livekit-client": "^2.22.3",

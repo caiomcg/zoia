@@ -4,6 +4,9 @@ import type {
   StageState,
   ClaimResult,
   SourceInfo,
+  GpuStatus,
+  IngressEndpoint,
+  NvencStatus,
 } from '../shared/ipc';
 
 export interface ZoiaBridge {
@@ -23,6 +26,36 @@ export interface ZoiaBridge {
   sources: {
     list(): Promise<SourceInfo[]>;
     select(source: Pick<SourceInfo, 'id' | 'name' | 'processId'>): Promise<void>;
+  };
+  /** The hardware-encoding path: ffmpeg + NVENC + WHIP, bypassing Chromium. */
+  nvenc: {
+    start(options: {
+      whipUrl: string;
+      width: number;
+      height: number;
+      framerate: number;
+      bitrate: number;
+      processId: number | null;
+    }): Promise<void>;
+    stop(): Promise<void>;
+    onStatus(cb: (status: NvencStatus) => void): () => void;
+  };
+  ingress: {
+    get(): Promise<IngressEndpoint>;
+    release(): Promise<{ ok: boolean; released: boolean }>;
+  };
+  device: {
+    rename(name: string): Promise<{ ok: boolean; name: string }>;
+  };
+  gpu: {
+    status(): Promise<GpuStatus>;
+  };
+  audio: {
+    /** `processId: null` captures the whole system's output instead of one app. */
+    start(processId: number | null): Promise<void>;
+    stop(): Promise<void>;
+    /** Each chunk is S16LE stereo PCM at 48kHz. Returns an unsubscribe function. */
+    onChunk(cb: (chunk: Uint8Array) => void): () => void;
   };
 }
 
