@@ -46,6 +46,7 @@ cd desktop
 npx tsc --noEmit -p tsconfig.node.json
 npx tsc --noEmit -p tsconfig.web.json
 npm run lint
+npx electron-vite build
 ```
 
 What CI **cannot** run is the native addon and the Windows installer: one needs MSVC and the
