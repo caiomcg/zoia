@@ -17,7 +17,8 @@
     "format:check": "prettier --check .",
     "keytool": "node server/bin/keytool.js",
     "prepare": "husky",
-    "coverage:check": "node scripts/coverage-check.js"
+    "coverage:check": "node scripts/coverage-check.js",
+    "version:check": "node scripts/check-release-version.js"
   },
   "dependencies": {
     "cookie-parser": "^1.4.7",

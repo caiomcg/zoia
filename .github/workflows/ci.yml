@@ -57,9 +57,9 @@ jobs:
   # The desktop app was invisible to CI until now, which meant a type error or
   # a lint failure only surfaced on someone's Windows machine at package time.
   #
-  # Typecheck, lint and bundle. The native addon needs MSVC and the installer
-  # needs Windows, so neither can run here; both are verified by hand on
-  # Windows before a release (docs/DISTRIBUTING.md).
+  # Typecheck, lint, test and bundle. The native addon needs MSVC and the
+  # installer needs Windows, so neither runs here — release.yml builds both on
+  # a Windows runner when a version tag is pushed.
   desktop:
     runs-on: ubuntu-latest
     defaults:
@@ -85,14 +85,18 @@ jobs:
       # place the app is linted. Formatting is not repeated here: the root
       # `prettier --check .` already covers desktop/ and runs in the lint job.
       - run: npm run lint
+      - run: npm test
       # Bundling is where a bad dependency actually shows up. The typecheck
       # above runs on source and would not notice a Vite or plugin upgrade
       # that breaks the build itself, so without this a broken bundler
       # reached the Windows machine at packaging time instead of here.
       #
-      # It prints a warning about the missing ZOIA_PAIRING_TOKEN and carries
-      # on, which is correct: a CI runner has no business holding one.
+      # Tokenless, like every published build: a CI runner has no business
+      # holding a pairing token, and the flag stops the build warning about
+      # an absence that is deliberate here.
       - name: Bundle main, preload and renderer
+        env:
+          ZOIA_TOKENLESS_BUILD: '1'
         run: npx electron-vite build
 
   commitlint:

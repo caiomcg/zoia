@@ -1,0 +1,169 @@
+name: Release
+
+# Builds the Windows binaries and publishes them.
+#
+# This needs no secrets, which is the whole point of the change that
+# introduced it: the published exe carries no server URL and no pairing token,
+# so there is nothing to inject. Whoever downloads it supplies a
+# zoia-invite.json at runtime. See docs/adr/0010-invites-outside-the-binary.md.
+
+on:
+  push:
+    tags: ['v*']
+  # A tag is a one-way door, and this is the first CI that ever compiles the
+  # native addon. Running it from a branch first — with publish off — means the
+  # compile can be debugged without a tag already pushed.
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Create a GitHub Release (otherwise the artifacts are only attached to this run)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  # Never cancelled: a half-finished release can leave a release object created
+  # with no assets attached to it.
+  cancel-in-progress: false
+
+jobs:
+  build:
+    # Pinned rather than windows-latest. This is the only job in the repo that
+    # compiles C++, and the image's Visual Studio and Windows SDK are inputs to
+    # the artifact. A silent image migration should not first be noticed as a
+    # failed release.
+    runs-on: windows-2025
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Refuse a tag that disagrees with package.json
+        if: github.event_name == 'push'
+        working-directory: .
+        run: node scripts/check-release-version.js "${{ github.ref_name }}"
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      # node-gyp needs Python. The image ships one, but pinning it means an
+      # image refresh cannot change the toolchain under a release.
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      # electron-builder lists vendor/ffmpeg-gnutls.exe under extraResources,
+      # and it is gitignored, so packaging fails without it. Restored before
+      # anything expensive so a miss is cheap.
+      - name: Restore the vendored ffmpeg
+        id: ffmpeg
+        uses: actions/cache@v4
+        with:
+          path: desktop/vendor/ffmpeg-gnutls.exe
+          key: ffmpeg-gnutls-v1
+
+      - name: Download ffmpeg
+        if: steps.ffmpeg.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force -Path vendor, vendor/tmp | Out-Null
+          Invoke-WebRequest -Uri 'https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip' -OutFile vendor/tmp/ff.zip -UseBasicParsing
+          Expand-Archive vendor/tmp/ff.zip vendor/tmp -Force
+          $exe = (Get-ChildItem vendor/tmp -Recurse -Filter ffmpeg.exe | Select-Object -First 1).FullName
+          Copy-Item $exe vendor/ffmpeg-gnutls.exe -Force
+          Remove-Item -Recurse -Force vendor/tmp
+
+      # Checked on a cache hit too: a cache entry is not trustworthy input to a
+      # binary other people download. An SChannel build negotiates DTLS and then
+      # dies with "no SRTP Protection Profile was chosen", which looks like a
+      # server fault and is not — see desktop/src/main/nvenc.ts.
+      - name: Verify ffmpeg is a GnuTLS build with NVENC
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $conf = & ./vendor/ffmpeg-gnutls.exe -hide_banner -buildconf 2>&1 | Out-String
+          if ($conf -notmatch '--enable-gnutls') { throw 'ffmpeg is not a GnuTLS build; WHIP cannot work with it' }
+          if ($conf -notmatch '--enable-nvenc')  { throw 'ffmpeg has no NVENC support' }
+          Write-Host "sha256: $((Get-FileHash vendor/ffmpeg-gnutls.exe -Algorithm SHA256).Hash.ToLower())"
+
+      # With scripts, unlike the ubuntu `desktop` job in ci.yml. That one uses
+      # --ignore-scripts because node-window-manager's binding.gyp is
+      # Windows-only and cannot build on Linux at all. Here the scripts are the
+      # point: node-window-manager has an install hook that runs node-gyp, and
+      # without it the window-to-PID addon is simply missing from the package.
+      - name: Install dependencies
+        run: npm ci
+
+      # The first C++ compile CI has ever done. It needs MSVC with the C++
+      # desktop workload and the Windows SDK's C++/WinRT headers, but no GPU and
+      # no CUDA SDK: nvEncodeAPI.h is vendored, and nvEncodeAPI64.dll is loaded
+      # with LoadLibraryW at runtime. So this proves the addon *builds*. It
+      # proves nothing about whether hardware encoding works.
+      - name: Build the capture addon
+        run: npm run build:native
+
+      - name: Bundle main, preload and renderer
+        env:
+          ZOIA_TOKENLESS_BUILD: '1'
+        run: npm run build
+
+      - name: Package the installer and the portable exe
+        run: npx electron-builder --win --x64 --publish never
+
+      - name: Checksum the artifacts
+        shell: pwsh
+        working-directory: desktop/release
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $files = @(Get-ChildItem -Filter '*.exe')
+          if ($files.Count -lt 2) { throw "expected an installer and a portable exe, found $($files.Count)" }
+          # Two spaces, the format `sha256sum -c` expects.
+          $files | ForEach-Object {
+            "$((Get-FileHash $_ -Algorithm SHA256).Hash.ToLower())  $($_.Name)"
+          } | Out-File -Encoding ascii SHA256SUMS.txt
+          Get-Content SHA256SUMS.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: zoia-windows
+          path: |
+            desktop/release/*.exe
+            desktop/release/SHA256SUMS.txt
+          retention-days: 7
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    if: github.event_name == 'push' || inputs.publish
+    runs-on: ubuntu-latest
+    # The only elevated permission in the repo, on the only job that needs it.
+    # It runs no third-party code and installs nothing, so `contents: write` is
+    # never in scope while ~1500 npm packages are executing.
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: zoia-windows
+          path: dist
+      # --verify-tag refuses to invent a tag that does not exist, so a typo
+      # fails instead of publishing under a name nobody tagged. Re-running a
+      # tag fails too, which is correct: deleting the old release is a
+      # deliberate act.
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ github.ref_name }}" dist/* \
+            --repo "${{ github.repository }}" \
+            --title "Zoia ${{ github.ref_name }}" \
+            --verify-tag \
+            --generate-notes
