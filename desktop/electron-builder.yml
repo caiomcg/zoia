@@ -1,7 +1,7 @@
 # Windows x64 only — see README.md and docs/adr for why.
-appId: com.example.zoia
+appId: com.github.caiomcg.zoia
 productName: Zoia
-copyright: 'example'
+copyright: 'Copyright © 2026 Caio Marcelo Campoy Guedes'
 
 directories:
   output: release
