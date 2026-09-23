@@ -20,7 +20,7 @@
 import { createRequire } from 'node:module';
 
 interface CaptureAddon {
-  isSupported(): boolean;
+  isSupported(): { windowCapture: boolean; hardwareEncoder: boolean };
   start(
     options: { hwnd: string; framerate: number; bitrate: number },
     callback: (error: string | null, packet?: Buffer, keyframe?: boolean) => void,
@@ -44,14 +44,48 @@ function load(): CaptureAddon | null {
   return addon;
 }
 
-/** True when this machine can do GPU window capture at all. */
-export function isSupported(): boolean {
+export interface Capabilities {
+  windowCapture: boolean;
+  hardwareEncoder: boolean;
+  /** Why hardware encoding is unavailable, in words a person can act on. */
+  reason: string | null;
+}
+
+/**
+ * What this machine can actually do, decided once at startup.
+ *
+ * NVENC ships with the NVIDIA driver, so a machine without one can never use
+ * the hardware path — which is what "nvEncodeAPI64.dll could not be loaded"
+ * was really saying, far too late and far too cryptically.
+ */
+export function capabilities(): Capabilities {
   const native = load();
-  if (!native) return false;
+  if (!native) {
+    return {
+      windowCapture: false,
+      hardwareEncoder: false,
+      reason: loadError ?? 'The capture module could not be loaded.',
+    };
+  }
+
   try {
-    return native.isSupported();
-  } catch {
-    return false;
+    const caps = native.isSupported();
+    return {
+      windowCapture: caps.windowCapture,
+      hardwareEncoder: caps.hardwareEncoder,
+      reason: caps.hardwareEncoder
+        ? caps.windowCapture
+          ? null
+          : 'Windows Graphics Capture is unavailable on this version of Windows.'
+        : 'No NVIDIA encoder was found. GPU encoding needs an NVIDIA GPU; ' +
+          'this machine will encode on the CPU instead.',
+    };
+  } catch (err) {
+    return {
+      windowCapture: false,
+      hardwareEncoder: false,
+      reason: err instanceof Error ? err.message : String(err),
+    };
   }
 }
 

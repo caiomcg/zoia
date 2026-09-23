@@ -68,6 +68,9 @@ let gpuStatus: GpuStatus = {
   hardwareEncoding: false,
   videoEncode: 'unknown',
   adapter: 'unknown',
+  hardwareEncoder: false,
+  windowCapture: false,
+  encoderReason: null,
 };
 
 /**
@@ -100,11 +103,16 @@ async function refreshGpuStatus(): Promise<void> {
     adapter = `lookup failed: ${err instanceof Error ? err.message : String(err)}`;
   }
 
+  const caps = capture.capabilities();
   gpuStatus = {
     hardwareEncoding: videoEncode.startsWith('enabled'),
     videoEncode,
     adapter,
+    hardwareEncoder: caps.hardwareEncoder,
+    windowCapture: caps.windowCapture,
+    encoderReason: caps.reason,
   };
+  if (caps.reason) console.log('[gpu]', caps.reason);
 
   console.log('[gpu] video_encode:', videoEncode);
   console.log('[gpu] video_decode:', features.video_decode ?? 'unknown');
@@ -159,7 +167,7 @@ function registerIpc(): void {
   ipcMain.handle(IPC.gpuStatus, () => gpuStatus);
 
   ipcMain.handle(IPC.stageGet, () => api.stageGet());
-  ipcMain.handle(IPC.stageClaim, () => api.stageClaim());
+  ipcMain.handle(IPC.stageClaim, (_event, force?: boolean) => api.stageClaim(force === true));
   ipcMain.handle(IPC.stageRelease, () => api.stageRelease());
 
   ipcMain.handle(IPC.sourcesList, () => sources.listSources());
@@ -259,7 +267,41 @@ function registerDisplayMediaHandler(): void {
   });
 }
 
+/**
+ * Last line of defence.
+ *
+ * An unhandled error in the main process shows Windows' "A JavaScript error
+ * occurred" dialog and takes the app with it — which is exactly how a broken
+ * pipe to ffmpeg ended a broadcast. Reporting and carrying on is better than
+ * dying: whatever failed, the room connection usually has not.
+ */
+function installCrashReporting(): void {
+  process.on('uncaughtException', (err) => {
+    console.error('[uncaught]', err);
+    void api.report({
+      kind: 'main-uncaught',
+      message: err?.message ?? String(err),
+      stack: err?.stack,
+    });
+  });
+
+  process.on('unhandledRejection', (reason) => {
+    const err = reason instanceof Error ? reason : new Error(String(reason));
+    console.error('[unhandled-rejection]', err);
+    void api.report({
+      kind: 'main-unhandled-rejection',
+      message: err.message,
+      stack: err.stack,
+    });
+  });
+
+  ipcMain.on(IPC.report, (_event, entry: { kind: string; message: string; stack?: string }) => {
+    void api.report(entry);
+  });
+}
+
 app.whenReady().then(async () => {
+  installCrashReporting();
   await refreshGpuStatus();
   registerIpc();
   registerDisplayMediaHandler();

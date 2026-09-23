@@ -126,7 +126,21 @@ export interface NvencStatus {
 /** Which encoding path a broadcast uses. */
 export type BroadcastMode = 'gpu' | 'window';
 
+/**
+ * Messages exchanged directly between clients over LiveKit's data channel.
+ * The token already grants canPublishData, so this needs no server round trip.
+ */
+export type RoomMessage =
+  | { type: 'takeover-request'; from: string; fromName: string }
+  | { type: 'takeover-granted'; to: string }
+  | { type: 'takeover-denied'; to: string };
+
 export interface GpuStatus {
+  /** False on machines with no NVIDIA encoder, where GPU mode cannot work. */
+  hardwareEncoder: boolean;
+  windowCapture: boolean;
+  /** Why the hardware path is unavailable, if it is. */
+  encoderReason: string | null;
   /** True only when Chromium reports an actually-enabled hardware encoder. */
   hardwareEncoding: boolean;
   /** Raw Chromium status string, e.g. "enabled" or "disabled_software". */
@@ -158,6 +172,7 @@ export const IPC = {
   audioStop: 'zoia:audio:stop',
   audioChunk: 'zoia:audio:chunk',
   gpuStatus: 'zoia:gpu:status',
+  report: 'zoia:report',
   nvencStart: 'zoia:nvenc:start',
   nvencStop: 'zoia:nvenc:stop',
   nvencStatus: 'zoia:nvenc:status',

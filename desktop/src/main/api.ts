@@ -70,6 +70,21 @@ export function ingressRelease() {
   return call<{ ok: boolean; released: boolean }>('/api/ingress/release', { method: 'POST' });
 }
 
+/**
+ * Ships a crash to the server.
+ *
+ * Failures kept arriving as screenshots of a dialog, relayed from someone
+ * else's machine, hours later. Swallows its own errors: a reporter that
+ * throws would be one more crash nobody can see.
+ */
+export function report(entry: { kind: string; message: string; stack?: string; context?: string }) {
+  return call<{ ok: boolean }>('/api/report', {
+    method: 'POST',
+    body: JSON.stringify({ ...entry, appVersion: process.env.npm_package_version ?? 'dev' }),
+    headers: { 'content-type': 'application/json' },
+  }).catch(() => undefined);
+}
+
 export function renameDevice(name: string) {
   return call<{ ok: boolean; name: string }>('/api/name', {
     method: 'POST',
@@ -83,10 +98,12 @@ export function stageGet() {
 }
 
 /** A 409 (stage busy) is an expected outcome, not a failure — it carries the holder. */
-export async function stageClaim(): Promise<ClaimResult> {
+export async function stageClaim(force = false): Promise<ClaimResult> {
   try {
     const result = await call<{ ok: true; holder: ClaimResult['holder'] }>('/api/stage/claim', {
       method: 'POST',
+      body: JSON.stringify({ force }),
+      headers: { 'content-type': 'application/json' },
     });
     return { ok: true, holder: result.holder };
   } catch (err) {

@@ -190,3 +190,53 @@ describe('reporting', () => {
     assert.equal(list[1].canPublish, false);
   });
 });
+
+describe('taking the stage', () => {
+  test('a forced claim displaces a holder who is actively publishing', async () => {
+    participants = [
+      participant('alice', { canPublish: true, tracks: [{ sid: 'TR_1' }] }),
+      participant('bob'),
+    ];
+
+    // Refused without force, because Alice is genuinely broadcasting rather
+    // than sitting idle — this is the case the staleness rule will not cover.
+    const refused = await stage.claim({ id: 'bob', name: 'Bob' });
+    assert.equal(refused.ok, false);
+    assert.equal(refused.holder.identity, 'alice');
+
+    const forced = await stage.claim({ id: 'bob', name: 'Bob' }, { force: true });
+    assert.equal(forced.ok, true);
+    assert.equal((await stage.holder()).identity, 'bob');
+  });
+
+  test('the displaced holder loses publish, so the room stays single-producer', async () => {
+    participants = [
+      participant('alice', { canPublish: true, tracks: [{ sid: 'TR_1' }] }),
+      participant('bob'),
+    ];
+
+    await stage.claim({ id: 'bob', name: 'Bob' }, { force: true });
+
+    const list = await stage.participants();
+    assert.equal(list.find((p) => p.identity === 'alice').canPublish, false);
+    assert.equal(list.filter((p) => p.canPublish).length, 1);
+  });
+
+  test('forcing an empty stage is just a claim', async () => {
+    participants = [participant('alice')];
+    const result = await stage.claim({ id: 'alice', name: 'Alice' }, { force: true });
+    assert.equal(result.ok, true);
+    assert.equal((await stage.holder()).identity, 'alice');
+  });
+
+  test('forcing does not disturb a holder who is already you', async () => {
+    participants = [participant('alice', { canPublish: true, tracks: [{ sid: 'TR_1' }] })];
+    const result = await stage.claim({ id: 'alice', name: 'Alice' }, { force: true });
+    assert.equal(result.ok, true);
+    assert.equal(
+      updates.filter((u) => u.permission.canPublish === false).length,
+      0,
+      'nobody should have been demoted',
+    );
+  });
+});
