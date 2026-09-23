@@ -65,12 +65,10 @@ function requestHardwareEncoding(): void {
 requestHardwareEncoding();
 
 let gpuStatus: GpuStatus = {
-  hardwareEncoding: false,
-  videoEncode: 'unknown',
-  adapter: 'unknown',
   hardwareEncoder: false,
   windowCapture: false,
   encoderReason: null,
+  adapter: 'unknown',
 };
 
 /**
@@ -105,12 +103,10 @@ async function refreshGpuStatus(): Promise<void> {
 
   const caps = capture.capabilities();
   gpuStatus = {
-    hardwareEncoding: videoEncode.startsWith('enabled'),
-    videoEncode,
-    adapter,
     hardwareEncoder: caps.hardwareEncoder,
     windowCapture: caps.windowCapture,
     encoderReason: caps.reason,
+    adapter,
   };
   if (caps.reason) console.log('[gpu]', caps.reason);
 

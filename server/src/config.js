@@ -40,7 +40,9 @@ export function loadConfig(env = process.env) {
     // Where the desktop app POSTs its WHIP offer. Reachable from the LAN the
     // broadcaster is on; deliberately not exposed to the internet, since the
     // only hardware-encoding publisher is on the same network as this server.
-    whipBaseUrl: env.WHIP_BASE_URL ?? 'http://192.168.31.60:8085/w',
+    // No default: this is one deployment's LAN address, and a wrong guess
+    // fails at broadcast time rather than at boot. Set it in .env.
+    whipBaseUrl: env.WHIP_BASE_URL ?? null,
 
     quality: {
       maxBitrate: Number(env.MAX_BITRATE ?? 12_000_000),

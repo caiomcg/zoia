@@ -10,7 +10,7 @@ everyone gets the same URL, and only people you've explicitly invited can get in
 The build is a **self-hosted LiveKit SFU** plus a **small Node app you own** that serves the
 page, checks who you are, and mints LiveKit tokens. The SFU is what lets one uploader feed
 15 downloaders without the host's PC melting; the Node app is what makes "host" and "viewer"
-real roles rather than an honour system. Your existing **Nginx Proxy Manager** is the front
+real roles rather than an honour system. Your existing **an existing reverse proxy** is the front
 door — no new TLS layer, no new public ports for HTTP.
 
 Two facts drive most of the decisions below:
@@ -27,22 +27,22 @@ Two facts drive most of the decisions below:
 
 | Check | Result |
 |---|---|
-| `206.42.10.147` matches your actual public IP | ✅ Confirmed — your Squarespace A record points at the right address |
+| `<public-ip>` matches your actual public IP | ✅ Confirmed — your Squarespace A record points at the right address |
 | Static IP | ✅ Per you, never changes — no DDNS needed |
-| Ports 80/443 from inside the LAN | Answered by **nginx 1.12.2 with a `MIWIFI ROOT CA` cert** — i.e. your Xiaomi router's own admin UI |
+| Ports 80/443 from inside the LAN | Answered by the router's own admin UI, presenting its vendor certificate |
 | Port 8080 | Open (also the router) |
 | Ports 22, 7880, 7881, 8006, 8443 | Closed from outside ✅ |
 
-Since NPM is already public on 80/443, that MiWiFi response was the router answering its own
+Since NPM is already public on 80/443, that the router response was the router answering its own
 WAN IP **from inside the LAN** — normal hairpin behaviour, not an exposed admin panel.
 Nothing to fix. But it has one consequence that matters a great deal here:
 
 > ### ⚠️ Verify LAN hairpin before building
 > If a machine **on your home network** browses to `https://zoia.<domain>` and gets the
-> MiWiFi login page instead of NPM, your router isn't hairpinning — and since **the host PC
+> the router login page instead of NPM, your router isn't hairpinning — and since **the host PC
 > is on that LAN**, the person broadcasting couldn't reach the app at all. Test this first.
 > If it fails, the fix is a local DNS override pointing `zoia.<domain>` at NPM's LAN IP (a
-> custom hosts entry on the MiWiFi, Pi-hole, or worst case `/etc/hosts` on the host PC).
+> custom hosts entry on the the router, your local DNS, or worst case `/etc/hosts` on the host PC).
 > This costs five minutes to check now and is maddening to diagnose later.
 
 ---
@@ -53,7 +53,7 @@ Nothing to fix. But it has one consequence that matters a great deal here:
   HOST PC (Chrome/Edge)                 PROXMOX  (Ryzen 5 3500U)
 ┌────────────────────┐          ┌──────────────────────────────────────┐
 │ getDisplayMedia()  │          │  ┌────────────────────────────────┐  │
-│   screen + audio   │          │  │ Nginx Proxy Manager (existing) │  │
+│   screen + audio   │          │  │ an existing reverse proxy (existing) │  │
 └─────────┬──────────┘          │  │   zoia.<domain> → app:3000     │  │
           │                     │  │   sfu.<domain>  → livekit:7880 │  │
           │  WSS :443 ──────────┼─►│   wildcard cert, Cloudflare DNS│  │
@@ -108,8 +108,8 @@ unlocks automated DNS-01 renewal, which NPM supports natively.
 
 | Type | Name | Value | Proxy |
 |---|---|---|---|
-| A | `zoia` | 206.42.10.147 | **DNS only** |
-| A | `sfu` | 206.42.10.147 | **DNS only** |
+| A | `zoia` | <public-ip> | **DNS only** |
+| A | `sfu` | <public-ip> | **DNS only** |
 
 > **The grey cloud is mandatory.** Cloudflare's orange-cloud proxy will not carry WebRTC
 > media, and proxying the signalling subdomain adds nothing but breakage. If video mysteriously
@@ -167,11 +167,11 @@ qm importdisk 120 debian-12-generic-amd64.qcow2 local-lvm
 qm set 120 --scsi0 local-lvm:vm-120-disk-0 --boot order=scsi0 \
   --ide2 local-lvm:cloudinit --serial0 socket --vga serial0
 qm set 120 --ciuser zoia --sshkeys ~/.ssh/authorized_keys \
-  --ipconfig0 ip=192.168.31.60/24,gw=192.168.31.1
+  --ipconfig0 ip=<server-ip>/24,gw=<lan-prefix>.1
 qm resize 120 scsi0 32G && qm start 120
 ```
 
-Adjust the subnet to your actual LAN (MiWiFi defaults to `192.168.31.0/24`). Give it a
+Adjust the subnet to your actual LAN (the router defaults to `<lan-prefix>.0/24`). Give it a
 **static IP or DHCP reservation** — the router port-forwards and NPM both point at it by
 address, so a lease change breaks both silently.
 
@@ -249,15 +249,15 @@ logging:
 
 ---
 
-## Nginx Proxy Manager configuration
+## an existing reverse proxy configuration
 
 **Proxy Host 1 — the app**
-- Domain: `zoia.<domain>` → `http://192.168.31.60:3000`
+- Domain: `zoia.<domain>` → `http://<server-ip>:3000`
 - ✅ Websockets Support · ✅ Block Common Exploits · ✅ Force SSL + HTTP/2
 - SSL: the wildcard cert (Cloudflare DNS challenge)
 
 **Proxy Host 2 — LiveKit signalling**
-- Domain: `sfu.<domain>` → `http://192.168.31.60:7880`
+- Domain: `sfu.<domain>` → `http://<server-ip>:7880`
 - ✅ Websockets Support (**essential** — this host is nothing but a WebSocket)
 - Advanced:
   ```nginx
@@ -492,7 +492,7 @@ app. Worth saying out loud so the absence reads as a decision rather than an omi
 ```bash
 #!/usr/bin/env bash
 set -euo pipefail
-HOST="zoia@192.168.31.60"
+HOST="zoia@<server-ip>"
 DEST="/opt/zoia"
 
 rsync -az --delete \
@@ -507,7 +507,7 @@ The two excludes carry the whole design: **`.env` and `server/data` live only on
 server.** Secrets never sit in the workspace, and `--delete` never wipes your invite-key
 store — which would otherwise lock every user out on your next deploy, including you.
 
-Set up an SSH key to `zoia@192.168.31.60` first so deploys are non-interactive.
+Set up an SSH key to `zoia@<server-ip>` first so deploys are non-interactive.
 
 ---
 
@@ -520,7 +520,7 @@ Each step ends in a commit, so history reads as the build sequence.
 | 1 | `git init`, `.gitignore`, `.env.example`, ESLint/Prettier, commitlint + husky | `chore: scaffold repository and tooling` |
 | 2 | `AGENTS.md`, `CLAUDE.md` pointer, `README`, `docs/` skeleton, the three ADRs, this plan as `docs/PLAN.md` | `docs: add agent guide, architecture and ADRs` |
 | 3 | Move DNS to Cloudflare; `zoia` + `sfu` A records **grey cloud**; verify imported records survived | — |
-| 4 | **Test LAN hairpin** against an existing NPM service. If a LAN machine gets the MiWiFi page, add the local DNS override now — the host PC depends on it | — |
+| 4 | **Test LAN hairpin** against an existing NPM service. If a LAN machine gets the the router page, add the local DNS override now — the host PC depends on it | — |
 | 5 | Provision `zoia-vm`; static IP; Docker + Compose; clean Proxmox snapshot | — |
 | 6 | Forward 7881/TCP + 7882/UDP to the VM | — |
 | 7 | `docker-compose.yml` + `livekit.yaml` (keys via env). Bring LiveKit up alone; add the `sfu.<domain>` proxy host with wildcard cert and long timeouts; confirm TLS | `feat(infra): add compose stack and livekit config` |

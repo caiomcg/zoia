@@ -89,11 +89,6 @@ export function capabilities(): Capabilities {
   }
 }
 
-export function unavailableReason(): string | null {
-  load();
-  return loadError;
-}
-
 let running = false;
 
 export function start(

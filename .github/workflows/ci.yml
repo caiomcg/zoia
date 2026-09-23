@@ -39,6 +39,21 @@ jobs:
       - run: npm ci
       - run: npm run test:coverage
 
+  # The README shows a coverage figure. This keeps it from quietly rotting:
+  # if line coverage drops below the floor, CI fails and the number has to be
+  # looked at rather than silently drifting away from reality.
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Enforce the coverage floor
+        run: npm run coverage:check
+
   commitlint:
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'

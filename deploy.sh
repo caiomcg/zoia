@@ -9,7 +9,7 @@
 
 set -euo pipefail
 
-HOST="${ZOIA_HOST:-zoia@192.168.31.60}"
+HOST="${ZOIA_HOST:?set ZOIA_HOST, e.g. zoia@<your-server-ip>}"
 DEST="${ZOIA_PATH:-/opt/zoia}"
 
 DRY_RUN=""

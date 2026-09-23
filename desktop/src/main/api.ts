@@ -53,10 +53,6 @@ export function deviceSession(deviceCredential: string) {
   });
 }
 
-export function getSession() {
-  return call<{ name: string; id: string }>('/api/session');
-}
-
 export function getToken() {
   return call<TokenResult>('/api/token', { method: 'POST' });
 }

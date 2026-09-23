@@ -2,7 +2,7 @@
 #
 # Prepares a fresh Debian 12 VM to run Zoia. Run it ON the VM:
 #
-#   ssh zoia@192.168.31.60 'bash -s' < scripts/bootstrap-vm.sh
+#   ssh zoia@<your-server> 'bash -s' < scripts/bootstrap-vm.sh
 #
 # Idempotent — safe to re-run.
 

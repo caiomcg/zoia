@@ -5,18 +5,18 @@ misbehaves.
 
 ## Network inventory
 
-Discovered on the LAN (`192.168.31.0/24`), for reference while following this guide:
+Discovered on the LAN (`<lan-prefix>.0/24`), for reference while following this guide:
 
 | Host | Address | Notes |
 |---|---|---|
-| Router (Xiaomi / MiWiFi) | `192.168.31.1` | Port forwarding and DHCP reservations live here |
-| Proxmox | `192.168.31.2:8006` | Web UI |
-| Pi-hole | `192.168.31.3` | **Where the split-horizon DNS override goes, if hairpin fails** |
-| Nginx Proxy Manager | `192.168.31.4` | LAN/VPN only — **not** exposed, and not used by this project |
-| Mesh node / repeater | `192.168.31.200` | Also answers with a MiWiFi certificate |
-| Workstation | `192.168.31.230` | |
-| **zoia-vm** | `192.168.31.60` | Verified free by ping and ARP on 2026-09-21. `.50` was taken |
-| Public IP | `206.42.10.147` | Static |
+| Router (your router) | `<lan-prefix>.1` | Port forwarding and DHCP reservations live here |
+| Proxmox | `<lan-prefix>.2:8006` | Web UI |
+| your local DNS | `<lan-prefix>.3` | **Where the split-horizon DNS override goes, if hairpin fails** |
+| an existing reverse proxy | `<lan-prefix>.4` | LAN/VPN only — **not** exposed, and not used by this project |
+| Mesh node / repeater | `<lan-prefix>.200` | Also answers with a the router certificate |
+| Workstation | `<lan-prefix>.230` | |
+| **zoia-vm** | `<server-ip>` | Verified free by ping and ARP on 2026-09-21. `.50` was taken |
+| Public IP | `<public-ip>` | Static |
 
 ## Helper scripts
 
@@ -42,8 +42,8 @@ Add two records in the **Cloudflare dashboard** → `example.com` → DNS → Re
 
 | Type | Name | IPv4 address | Proxy status | TTL |
 |---|---|---|---|---|
-| A | `zoia` | `206.42.10.147` | **DNS only** (grey) | Auto |
-| A | `sfu` | `206.42.10.147` | **DNS only** (grey) | Auto |
+| A | `zoia` | `<public-ip>` | **DNS only** (grey) | Auto |
+| A | `sfu` | `<public-ip>` | **DNS only** (grey) | Auto |
 
 > **Cloudflare defaults new records to Proxied (orange). Both of these must be toggled to
 > DNS only.** The apex record on this zone *is* proxied, so the habit is easy to carry over
@@ -57,7 +57,7 @@ Confirm before going further — both must return the origin address, not a Clou
 ```bash
 nslookup zoia.example.com 1.1.1.1
 nslookup sfu.example.com  1.1.1.1
-# both must print 206.42.10.147
+# both must print <public-ip>
 ```
 
 ### 2. The VM
@@ -84,8 +84,8 @@ qm disk resize 120 scsi0 32G
 # 4. cloud-init
 qm set 120 --ide2 local-lvm:cloudinit
 qm set 120 --ciuser zoia --sshkeys /root/zoia-key.pub
-qm set 120 --ipconfig0 ip=192.168.31.60/24,gw=192.168.31.1
-qm set 120 --nameserver 192.168.31.3 --searchdomain example.com
+qm set 120 --ipconfig0 ip=<server-ip>/24,gw=<lan-prefix>.1
+qm set 120 --nameserver <lan-prefix>.3 --searchdomain example.com
 
 # 5. start, then snapshot before any app code lands
 qm start 120
@@ -93,7 +93,7 @@ qm snapshot 120 clean-debian --description "fresh cloud-init, pre-docker"
 ```
 
 `--cpu host` exposes AES-NI to the guest, which both TLS and the SFU use. The nameserver
-points at the Pi-hole, so the VM honours any local DNS overrides added for hairpin.
+points at the your local DNS, so the VM honours any local DNS overrides added for hairpin.
 
 `/root/zoia-key.pub` is the workstation's SSH public key, written to the host beforehand.
 
@@ -107,7 +107,7 @@ ping and ARP; `.50` is occupied.
 Then prepare it and **take a snapshot** before any app code lands:
 
 ```bash
-ssh zoia@192.168.31.60 'bash -s' < scripts/bootstrap-vm.sh
+ssh zoia@<server-ip> 'bash -s' < scripts/bootstrap-vm.sh
 ```
 
 ### 3. Router
@@ -115,18 +115,18 @@ ssh zoia@192.168.31.60 'bash -s' < scripts/bootstrap-vm.sh
 Nothing on this network was previously published to the internet — everything is reached over
 the VPN. Zoia is the first exposed service, so these are the first forwards.
 
-All three point at the **VM**, `192.168.31.60`:
+All three point at the **VM**, `<server-ip>`:
 
 | External port | Proto | → | Why |
 |---|---|---|---|
-| **443** | TCP | 192.168.31.60 | Caddy: the page and LiveKit signalling |
-| **7882** | UDP | 192.168.31.60 | WebRTC media. One rule serves every viewer |
-| **7881** | TCP | 192.168.31.60 | Fallback for networks that block UDP |
+| **443** | TCP | <server-ip> | Caddy: the page and LiveKit signalling |
+| **7882** | UDP | <server-ip> | WebRTC media. One rule serves every viewer |
+| **7881** | TCP | <server-ip> | Fallback for networks that block UDP |
 
 **Do not forward 80.** Certificates come from a DNS-01 challenge, which needs no inbound
 HTTP. Caddy publishes 80 for a LAN-side redirect only.
 
-**Do not forward anything to Nginx Proxy Manager.** It routes by `Host` header, so exposing
+**Do not forward anything to an existing reverse proxy.** It routes by `Host` header, so exposing
 it would make every service behind it reachable from the internet. It stays LAN/VPN only.
 See ADR 0004.
 
@@ -151,7 +151,7 @@ reaches nothing, which is the point.
 ### 5. The app
 
 ```bash
-ssh zoia@192.168.31.60
+ssh zoia@<server-ip>
 sudo mkdir -p /opt/zoia && sudo chown zoia:zoia /opt/zoia
 ```
 
@@ -165,7 +165,7 @@ From the workspace:
 Then generate `/opt/zoia/.env` on the server:
 
 ```bash
-ssh zoia@192.168.31.60
+ssh zoia@<server-ip>
 cd /opt/zoia
 ./scripts/gen-env.sh zoia.<domain> sfu.<domain> > .env
 chmod 600 .env
@@ -224,7 +224,7 @@ or `server/data` — secrets and the key store live only on the VM.
 ### Back up the key store
 
 ```bash
-scp zoia@192.168.31.60:/opt/zoia/server/data/keys.json ./keys-backup-$(date +%F).json
+scp zoia@<server-ip>:/opt/zoia/server/data/keys.json ./keys-backup-$(date +%F).json
 ```
 
 It holds hashes, not keys, but losing it means re-inviting everyone. Keep it out of git.
@@ -260,11 +260,11 @@ The router is not hairpinning: it answers its own WAN address from inside the LA
 host PC is on that LAN, this blocks broadcasting entirely.
 
 Fix with a local DNS override mapping `zoia.example.com` and `sfu.example.com` to the
-VM (`192.168.31.60`). You already run a Pi-hole at `192.168.31.3`, so that is the place:
+VM (`<server-ip>`). You already run a your local DNS at `<lan-prefix>.3`, so that is the place:
 **Settings → Local DNS → DNS Records**, one entry per hostname. Every LAN client that uses
-the Pi-hole then resolves correctly, without per-machine `/etc/hosts` edits.
+the your local DNS then resolves correctly, without per-machine `/etc/hosts` edits.
 
-Check that LAN clients actually use the Pi-hole for DNS first — if the router hands out its
+Check that LAN clients actually use the your local DNS for DNS first — if the router hands out its
 own address instead, the override will not be consulted.
 
 ### The host has no "Start broadcast" button

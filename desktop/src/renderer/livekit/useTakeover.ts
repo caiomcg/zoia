@@ -13,11 +13,11 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { DataPacket_Kind, RoomEvent, type Participant, type Room } from 'livekit-client';
+import type { Participant, Room } from 'livekit-client';
 import type { RoomMessage } from '../../shared/ipc';
 
 /** How long to wait for an answer before the asker may take the stage. */
-export const TAKEOVER_GRACE_MS = 30_000;
+const TAKEOVER_GRACE_MS = 30_000;
 
 export interface IncomingRequest {
   identity: string;
@@ -148,5 +148,3 @@ export function useTakeover(
 
   return { incoming, outgoing, request, cancelRequest, respond, dismissIncoming, handleData };
 }
-
-export { RoomEvent, DataPacket_Kind };

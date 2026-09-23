@@ -1,0 +1,8 @@
+# GitHub shows a Sponsor button for whichever of these is filled in. The
+# github entry only appears once Sponsors is enabled on the account; the rest
+# are commented out until there is a real handle behind them, because a
+# donate link that 404s is worse than no donate link.
+github: [caiomcg]
+# ko_fi: your-handle
+# buy_me_a_coffee: your-handle
+# custom: ['https://example.com/donate']

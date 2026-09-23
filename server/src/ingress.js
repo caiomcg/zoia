@@ -64,6 +64,10 @@ export function createIngressService({
         enableTranscoding: false,
       });
 
+      if (!whipBaseUrl) {
+        throw new Error('WHIP_BASE_URL is not set, so there is nowhere to publish to.');
+      }
+
       const endpoint = {
         ingressId: info.ingressId,
         streamKey: info.streamKey,

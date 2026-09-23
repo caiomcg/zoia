@@ -6,7 +6,7 @@
 
 ## Context
 
-ADR 0003 made Nginx Proxy Manager the public entry point, on the stated premise that NPM was
+ADR 0003 made an existing reverse proxy the public entry point, on the stated premise that NPM was
 already serving 80/443 from the internet. That premise was wrong.
 
 Nothing on this network is published to the internet. Every service is reached over a VPN,
@@ -47,7 +47,7 @@ surface in the deployment, so its provenance should be ours.
 
 - **Public blast radius is one VM** running one application that has its own authentication,
   snapshotted and disposable — instead of the whole internal service estate.
-- Three router rules, all to the same host (`192.168.31.60`): 443/TCP, 7881/TCP, 7882/UDP.
+- Three router rules, all to the same host (`<server-ip>`): 443/TCP, 7881/TCP, 7882/UDP.
   One target is easier to reason about than two.
 - **Port 80 is not needed.** DNS-01 requires no inbound HTTP, so it is published on the
   container for LAN convenience only and deliberately not forwarded.

@@ -20,9 +20,7 @@ if (!pairingToken) {
 }
 
 const define = {
-  __ZOIA_SERVER_URL__: JSON.stringify(
-    process.env.ZOIA_SERVER_URL ?? 'https://zoia.example.com',
-  ),
+  __ZOIA_SERVER_URL__: JSON.stringify(process.env.ZOIA_SERVER_URL ?? 'https://zoia.example.com'),
   __ZOIA_PAIRING_TOKEN__: JSON.stringify(pairingToken),
 };
 

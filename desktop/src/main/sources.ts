@@ -137,36 +137,6 @@ export async function listSources(): Promise<SourceInfo[]> {
 // getDisplayMedia() call follows the choice — see docs/adr for why: once a
 // session has a setDisplayMediaRequestHandler, Chromium's own picker never
 // appears at all, so this *is* the picker.
-/**
- * Where a window currently sits on the desktop, in physical pixels.
- *
- * The hardware-encoding path needs this because ddagrab captures a *region*
- * of the desktop rather than a window: to send one application, we point the
- * capture at wherever that application happens to be. Read live rather than
- * cached, since windows move.
- */
-export function windowBounds(
-  hwnd: number,
-): { x: number; y: number; width: number; height: number } | null {
-  const target = windowManager.getWindows().find((w) => w.id === hwnd);
-  if (!target) return null;
-
-  const { x, y, width, height } = target.getBounds();
-  if (
-    typeof x !== 'number' ||
-    typeof y !== 'number' ||
-    typeof width !== 'number' ||
-    typeof height !== 'number' ||
-    width <= 0 ||
-    height <= 0
-  ) {
-    return null;
-  }
-
-  // NVENC wants even dimensions; an odd width silently fails to initialise.
-  return { x, y, width: width - (width % 2), height: height - (height % 2) };
-}
-
 let selected: { id: string; name: string; processId: number | null } | null = null;
 
 export function selectSource(source: { id: string; name: string; processId: number | null }): void {
@@ -175,8 +145,4 @@ export function selectSource(source: { id: string; name: string; processId: numb
 
 export function getSelectedSource() {
   return selected;
-}
-
-export function clearSelectedSource(): void {
-  selected = null;
 }

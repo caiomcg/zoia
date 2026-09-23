@@ -279,10 +279,6 @@ function startWatchdog(win: BrowserWindow): void {
   }, 5000);
 }
 
-export function isRunning(): boolean {
-  return child !== null;
-}
-
 export function start(win: BrowserWindow, options: NvencOptions): void {
   stop();
   lastError = null;

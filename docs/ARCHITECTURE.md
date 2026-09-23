@@ -5,7 +5,7 @@
 ```
   HOST PC (Chrome/Edge)                 PROXMOX  (Ryzen 5 3500U)
 ┌────────────────────┐          ┌──────────────────────────────────────┐
-│ getDisplayMedia()  │          │   zoia-vm  192.168.31.60             │
+│ getDisplayMedia()  │          │   zoia-vm  <server-ip>             │
 │   screen + audio   │          │  ┌────────────────────────────────┐  │
 └─────────┬──────────┘          │  │ caddy  :443                    │  │
           │  HTTPS/WSS :443 ────┼─►│   zoia.example.com → app    │  │
@@ -18,11 +18,11 @@
   VIEWERS │  (media, direct)    │                                      │
    ×15 ◄──┴─────────────────────┼──────────────────────────────────────┤
                                 │   NOT EXPOSED — LAN/VPN only:        │
-                                │   NPM .4 · Pi-hole .3 · everything   │
+                                │   NPM .4 · your local DNS .3 · everything   │
                                 └──────────────────────────────────────┘
 ```
 
-Caddy on the VM is the entire public surface. Nginx Proxy Manager, which serves every other
+Caddy on the VM is the entire public surface. an existing reverse proxy, which serves every other
 service on this network, stays unreachable from the internet exactly as it was before this
 project existed — see [ADR 0004](adr/0004-isolated-caddy-front-end.md).
 
@@ -61,7 +61,7 @@ hundred lines; a bundler would add a failure mode and a toolchain for no gain.
 
 ## Port map
 
-All three forwards target the VM at `192.168.31.60`.
+All three forwards target the VM at `<server-ip>`.
 
 | Port | Proto | Exposed to internet | Purpose |
 |---|---|---|---|

@@ -1,4 +1,4 @@
-# 3. Reuse Nginx Proxy Manager as the front door
+# 3. Reuse an existing reverse proxy as the front door
 
 - **Status:** superseded by [ADR 0004](0004-isolated-caddy-front-end.md)
 - **Date:** 2026-09-20
@@ -8,7 +8,7 @@
 The initial design put Caddy in front of the app for TLS. The server already runs Nginx
 Proxy Manager, publicly reachable on 80/443, fronting other services.
 
-An earlier probe found ports 80 and 443 answering with the Xiaomi router's own admin UI.
+An earlier probe found ports 80 and 443 answering with the router's own admin UI.
 That was the router responding to its own WAN address from inside the LAN — ordinary
 hairpin behaviour — not an exposed admin panel.
 

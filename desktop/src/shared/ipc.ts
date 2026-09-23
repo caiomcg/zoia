@@ -168,11 +168,7 @@ export interface GpuStatus {
   windowCapture: boolean;
   /** Why the hardware path is unavailable, if it is. */
   encoderReason: string | null;
-  /** True only when Chromium reports an actually-enabled hardware encoder. */
-  hardwareEncoding: boolean;
-  /** Raw Chromium status string, e.g. "enabled" or "disabled_software". */
-  videoEncode: string;
-  /** Human-readable active adapter, for telling a 4070 from a basic driver. */
+  /** Human-readable active adapter, shown in the encoder tooltip. */
   adapter: string;
 }
 
