@@ -105,6 +105,8 @@ export default function Player({
   canMonitor,
   setMonitorGain,
   gpuBroadcasting = false,
+  onStop,
+  onSwitch,
 }: {
   remoteScreen: RemoteScreen | null;
   localTrack: LocalVideoTrack | null;
@@ -116,6 +118,9 @@ export default function Player({
    * them directly — so there is no local track to preview.
    */
   gpuBroadcasting?: boolean;
+  /** Shown floating over the picture while this device is the one sharing. */
+  onStop?: () => void;
+  onSwitch?: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const stageRef = useRef<HTMLElement>(null);
@@ -185,6 +190,19 @@ export default function Player({
   return (
     <section className="stage" ref={stageRef}>
       <video ref={videoRef} playsInline autoPlay />
+
+      {(isBroadcasting || gpuBroadcasting) && onStop && (
+        <div className="live-controls">
+          <button className="danger" onClick={onStop}>
+            Stop sharing
+          </button>
+          {onSwitch && (
+            <button onClick={onSwitch} title="Share something else without stopping">
+              Switch
+            </button>
+          )}
+        </div>
+      )}
 
       {!videoTrack && gpuBroadcasting && (
         <div className="overlay">
