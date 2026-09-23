@@ -1,12 +1,31 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { SourceInfo } from '../../shared/ipc';
+import { QUALITY_PRESETS, type SourceInfo } from '../../shared/ipc';
 
+/**
+ * Quality and hardware encoding live here rather than in the top bar because
+ * this is the moment they are decided. In the bar they were two controls that
+ * spent almost all of their time disabled — they cannot be changed mid-share —
+ * and were read, if at all, long after the choice had been made.
+ */
 export default function SourcePicker({
   onPick,
   onCancel,
+  presetId,
+  onPresetChange,
+  hardware,
+  onHardwareChange,
+  hardwareAvailable,
+  hardwareDetail,
 }: {
   onPick: (source: SourceInfo) => void;
   onCancel: () => void;
+  presetId: string;
+  onPresetChange: (id: string) => void;
+  hardware: boolean;
+  onHardwareChange: (value: boolean) => void;
+  hardwareAvailable: boolean;
+  /** Which encoder and card, or why there isn't one. Shown either way. */
+  hardwareDetail: string;
 }) {
   const [sources, setSources] = useState<SourceInfo[] | null>(null);
   const [query, setQuery] = useState('');
@@ -100,7 +119,36 @@ export default function SourcePicker({
           </div>
         )}
 
-        <footer>
+        <footer className="picker-footer">
+          <div className="picker-options">
+            <label className="picker-option">
+              <span>Quality</span>
+              <select value={presetId} onChange={(e) => onPresetChange(e.target.value)}>
+                {QUALITY_PRESETS.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label
+              className={`picker-option picker-toggle${hardwareAvailable ? '' : ' unavailable'}`}
+              title={hardwareDetail}
+            >
+              <input
+                type="checkbox"
+                checked={hardware && hardwareAvailable}
+                disabled={!hardwareAvailable}
+                onChange={(e) => onHardwareChange(e.target.checked)}
+              />
+              <span>
+                Hardware acceleration
+                <em>{hardwareDetail}</em>
+              </span>
+            </label>
+          </div>
+
           <button onClick={onCancel}>Cancel</button>
         </footer>
       </div>

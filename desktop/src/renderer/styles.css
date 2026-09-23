@@ -431,6 +431,77 @@ button.danger {
   border-top: 1px solid var(--border);
 }
 
+/* Quality and hardware encoding sit beside Cancel: they are decided here, at
+   the moment something is picked, rather than in the top bar where they spent
+   their time greyed out. */
+.picker-footer {
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.picker-options {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  min-width: 0;
+}
+
+.picker-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.picker-option select {
+  height: var(--control-height);
+  padding: 0 8px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font: inherit;
+  font-size: 12px;
+}
+
+.picker-toggle {
+  align-items: flex-start;
+  cursor: pointer;
+}
+
+.picker-toggle input {
+  margin: 2px 0 0;
+  accent-color: var(--accent);
+}
+
+.picker-toggle span {
+  display: grid;
+  color: var(--text);
+}
+
+/* The adapter, or the reason there isn't one. Worth showing rather than
+   hiding in a tooltip: it is the difference between "this will work" and
+   "this will quietly fall back". */
+.picker-toggle em {
+  font-style: normal;
+  font-size: 11px;
+  color: var(--muted);
+  max-width: 34ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.picker-toggle.unavailable {
+  cursor: not-allowed;
+}
+
+.picker-toggle.unavailable span {
+  color: var(--muted);
+}
+
 /* ---- player controls ----------------------------------------------------- */
 
 .stage {

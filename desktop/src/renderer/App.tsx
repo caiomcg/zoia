@@ -20,15 +20,7 @@ import {
 } from '../shared/ipc';
 
 const PRESET_STORAGE_KEY = 'zoia.qualityPreset';
-const MODE_STORAGE_KEY = 'zoia.broadcastMode';
-
-/**
- * The GPU path is switched off while it settles down — it has crashed on an
- * AMD machine, and the window-capture half is newer than the rest of the app.
- * Everything behind it is intact and still tested; flip this back to true to
- * offer the choice again.
- */
-const MODE_SELECTION_ENABLED = false;
+const HARDWARE_STORAGE_KEY = 'zoia.hardwareAcceleration';
 
 export default function App() {
   const [status, setStatus] = useState<PairingStatus | null>(null);
@@ -40,14 +32,19 @@ export default function App() {
   const [presetId, setPresetId] = useState(
     () => localStorage.getItem(PRESET_STORAGE_KEY) ?? DEFAULT_PRESET_ID,
   );
-  const [mode, setMode] = useState<BroadcastMode>(() =>
-    MODE_SELECTION_ENABLED
-      ? ((localStorage.getItem(MODE_STORAGE_KEY) as BroadcastMode) ?? 'gpu')
-      : 'window',
+  // Off unless the person turned it on, and it stays off after an upgrade:
+  // absent means false. The GPU path is the newer half of the app and the one
+  // that has broken on other people's hardware, so it is opt-in rather than
+  // something to discover by having a broadcast fail.
+  const [hardware, setHardware] = useState(
+    () => localStorage.getItem(HARDWARE_STORAGE_KEY) === 'true',
   );
 
   const room = useRoom();
   const gpuCast = useGpuBroadcast();
+
+  // The rest of the app still thinks in terms of which path is publishing.
+  const mode: BroadcastMode = hardware ? 'gpu' : 'window';
 
   const preset =
     QUALITY_PRESETS.find((p) => p.id === presetId) ??
@@ -74,10 +71,11 @@ export default function App() {
   useEffect(() => {
     window.zoia.gpu.status().then((next) => {
       setGpu(next);
-      // Fall back rather than leaving someone in a mode that cannot work.
-      if (MODE_SELECTION_ENABLED && !next.hardwareEncoder) {
-        setMode('window');
-        localStorage.setItem(MODE_STORAGE_KEY, 'window');
+      // Turn it back off rather than leaving someone switched on to a path
+      // this machine cannot take — they would only find out at "go live".
+      if (!next.hardwareEncoder) {
+        setHardware(false);
+        localStorage.setItem(HARDWARE_STORAGE_KEY, 'false');
       }
     });
   }, []);
@@ -164,10 +162,6 @@ export default function App() {
   const gpuLive = gpuCast.state === 'live';
   const holder = room.remoteScreen;
 
-  // GPU encoding needs an NVIDIA encoder, which an AMD or Intel machine will
-  // never have. Reported up front rather than failing at broadcast time with
-  // "nvEncodeAPI64.dll could not be loaded".
-  const canUseGpu = gpu?.hardwareEncoder !== false;
   const cameraLive = room.broadcastState === 'live' && room.sharingKind === 'camera';
   const screenLive = isLive && !cameraLive;
 
@@ -221,7 +215,10 @@ export default function App() {
               // works, so the light says "encoding, and healthy" and leaves
               // which encoder to the tooltip. It only warns when the GPU was
               // available and we ended up on the CPU anyway.
-              tone={gpuLive || !MODE_SELECTION_ENABLED ? 'ok' : 'warn'}
+              // Amber would mean something is wrong, and encoding on the CPU
+              // is not wrong unless hardware encoding was asked for and did
+              // not happen.
+              tone={gpuLive || !hardware ? 'ok' : 'warn'}
               label={gpuLive ? 'Encoding on the GPU' : 'Encoding on the CPU'}
               detail={encodeDetail}
             />
@@ -288,52 +285,6 @@ export default function App() {
               </svg>
             </button>
           </div>
-
-          {MODE_SELECTION_ENABLED && (
-            <div className="mode-switch" role="group" aria-label="Encoding mode">
-              {(
-                [
-                  ['gpu', 'GPU'],
-                  ['window', 'CPU'],
-                ] as const
-              ).map(([value, label]) => (
-                <button
-                  key={value}
-                  className={mode === value ? 'active' : ''}
-                  disabled={isLive || isStarting || (value === 'gpu' && !canUseGpu)}
-                  onClick={() => {
-                    setMode(value);
-                    localStorage.setItem(MODE_STORAGE_KEY, value);
-                  }}
-                  title={
-                    value === 'gpu'
-                      ? (gpu?.encoderReason ?? 'Encode with NVENC on the GPU.')
-                      : 'Publish through Chromium, which encodes in software on the CPU.'
-                  }
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          )}
-
-          <label className="quality-picker">
-            <select
-              value={presetId}
-              disabled={isLive || isStarting}
-              onChange={(e) => {
-                setPresetId(e.target.value);
-                localStorage.setItem(PRESET_STORAGE_KEY, e.target.value);
-              }}
-              title={isLive ? 'Stop sharing to change quality' : 'Resolution and frame rate'}
-            >
-              {QUALITY_PRESETS.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {mode === 'gpu' ? `${p.maxFramerate}fps · ${p.maxBitrate / 1e6}Mbps` : p.label}
-                </option>
-              ))}
-            </select>
-          </label>
         </div>
       </header>
 
@@ -395,7 +346,28 @@ export default function App() {
         />
       </div>
 
-      {pickerOpen && <SourcePicker onPick={handlePick} onCancel={() => setPickerOpen(false)} />}
+      {pickerOpen && (
+        <SourcePicker
+          onPick={handlePick}
+          onCancel={() => setPickerOpen(false)}
+          presetId={presetId}
+          onPresetChange={(id) => {
+            setPresetId(id);
+            localStorage.setItem(PRESET_STORAGE_KEY, id);
+          }}
+          hardware={hardware}
+          onHardwareChange={(next) => {
+            setHardware(next);
+            localStorage.setItem(HARDWARE_STORAGE_KEY, String(next));
+          }}
+          hardwareAvailable={Boolean(gpu?.hardwareEncoder)}
+          hardwareDetail={
+            gpu?.hardwareEncoder
+              ? `${(gpu.gpuEncoder ?? '').toUpperCase()} on ${gpu.adapter}`
+              : (gpu?.encoderReason ?? 'No hardware encoder was found on this machine.')
+          }
+        />
+      )}
 
       {cameraOpen && (
         <CameraDialog
