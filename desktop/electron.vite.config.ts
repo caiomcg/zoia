@@ -2,25 +2,34 @@ import { defineConfig, externalizeDepsPlugin } from 'electron-vite';
 import react from '@vitejs/plugin-react';
 import { resolve } from 'node:path';
 
-// Baked into the main-process bundle at build time. Whoever runs `npm run
-// pack` sets these in the environment; the resulting .exe carries them as
-// string literals, since the people it is sent to configure nothing.
+// Baked into the main-process bundle at build time — for a *private* build.
+// A published build embeds neither, and reads a zoia-invite.json at runtime
+// instead, because anything compiled into a public artifact is public. See
+// src/main/config.ts and docs/adr/0010-invites-outside-the-binary.md.
 const pairingToken = process.env.ZOIA_PAIRING_TOKEN ?? '';
 
-// A build without a token produces an .exe that cannot pair with anything —
-// it reaches the pairing screen and dead-ends on "no pairing token embedded".
-// That is silent at build time and only discovered by whoever you sent it to,
-// so it is worth shouting about here.
-if (!pairingToken) {
+// Deliberately opt-in rather than keying off process.env.CI: a *private*
+// build that happens to run in somebody's CI should still shout.
+const tokenless = process.env.ZOIA_TOKENLESS_BUILD === '1';
+
+// A private build that lost its token is silent at build time and only
+// discovered by whoever you sent it to, so it is still worth shouting about.
+// A public build has no token by design, and a warning that fires on every
+// release run is a warning people learn to scroll past.
+if (!pairingToken && !tokenless) {
   console.warn(
     '\n  WARNING: ZOIA_PAIRING_TOKEN is not set.\n' +
-      '  This build will NOT be able to pair on any machine.\n' +
-      '  Use make-exe.bat, or set the variable before building.\n',
+      '  This build can only pair from a zoia-invite.json handed over separately.\n' +
+      '  Set ZOIA_TOKENLESS_BUILD=1 if that is what you meant, or use make-exe.bat.\n',
   );
 }
 
 const define = {
-  __ZOIA_SERVER_URL__: JSON.stringify(process.env.ZOIA_SERVER_URL ?? 'https://zoia.example.com'),
+  // Empty, not a placeholder. This used to default to a real-looking
+  // hostname, which in a published build would have sent every fresh install
+  // at a domain belonging to somebody else. Empty means "nothing compiled in";
+  // src/main/config.ts treats it as absent and waits for an invite.
+  __ZOIA_SERVER_URL__: JSON.stringify(process.env.ZOIA_SERVER_URL ?? ''),
   __ZOIA_PAIRING_TOKEN__: JSON.stringify(pairingToken),
 };
 

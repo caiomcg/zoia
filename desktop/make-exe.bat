@@ -1,6 +1,12 @@
 @echo off
-REM Builds the portable Zoia .exe, with the pairing token baked in.
+REM Builds the portable Zoia .exe.
 REM Double-click this file, or run it from a Windows terminal.
+REM
+REM   make-exe.bat             private build: the token is baked in, so the
+REM                            person you send it to configures nothing
+REM   make-exe.bat --public    tokenless build: the .exe knows no server and
+REM                            no token, and reads a zoia-invite.json at
+REM                            runtime. This is what a GitHub release is.
 REM
 REM Must be run from Windows, NOT WSL: the native audio addon is
 REM platform-specific, and a WSL npm install puts Linux binaries in
@@ -11,6 +17,23 @@ cd /d "%~dp0"
 echo.
 echo === Zoia portable build =========================================
 echo.
+
+REM --- mode ---------------------------------------------------------
+REM Two kinds of build now exist, and conflating them is how a token ends
+REM up inside a binary published on the internet.
+set "MODE=private"
+if /I "%~1"=="--public" set "MODE=public"
+
+if "%MODE%"=="public" (
+  echo Building a PUBLIC, tokenless exe.
+  echo It carries no server URL and no pairing token; it pairs from a
+  echo zoia-invite.json handed over separately.
+  echo.
+  set "ZOIA_PAIRING_TOKEN="
+  set "ZOIA_SERVER_URL="
+  set "ZOIA_TOKENLESS_BUILD=1"
+  goto :ffmpeg
+)
 
 REM --- pairing token -----------------------------------------------
 REM Without this the .exe builds fine but dead-ends on the pairing
@@ -28,8 +51,16 @@ if "%ZOIA_PAIRING_TOKEN%"=="" (
   echo Mint one on the server with:
   echo     node server/bin/keytool.js pair:new --name "friends" --max-activations 5
   echo.
-  set /p ZOIA_PAIRING_TOKEN=Paste the pairing token here: 
-  if "!ZOIA_PAIRING_TOKEN!"=="" goto :notoken
+  set /p ZOIA_PAIRING_TOKEN=Paste the token, or press Enter for a tokenless build: 
+  if "!ZOIA_PAIRING_TOKEN!"=="" (
+    echo.
+    echo No token entered - building tokenless. The exe will need a
+    echo zoia-invite.json beside it, or dropped on the pairing screen.
+    echo.
+    set "MODE=public"
+    set "ZOIA_TOKENLESS_BUILD=1"
+    goto :ffmpeg
+  )
   echo !ZOIA_PAIRING_TOKEN!> .pairing-token
   echo Saved to .pairing-token for next time ^(this file is gitignored^).
 )
@@ -37,6 +68,7 @@ if "%ZOIA_PAIRING_TOKEN%"=="" (
 echo Token: %ZOIA_PAIRING_TOKEN:~0,8%... ^(truncated^)
 echo.
 
+:ffmpeg
 REM --- ffmpeg (GPU encoding) ---------------------------------------
 REM Must be a GnuTLS build. An ffmpeg built against Windows SChannel
 REM completes the DTLS handshake and then fails with "no SRTP Protection
@@ -59,15 +91,31 @@ taskkill /IM Zoia.exe /F >nul 2>&1
 
 call npm run pack:portable || goto :failed
 
-REM --- verify the token actually made it in -------------------------
-REM Belt and braces: a build that silently ships without a token is the
-REM exact failure this script exists to prevent.
-findstr /C:"%ZOIA_PAIRING_TOKEN%" out\main\index.js >nul 2>&1
-if errorlevel 1 goto :tokenmissing
+REM --- verify what did, or did not, make it in ----------------------
+REM Both directions matter, and the second matters more now. Shipping a
+REM private build without its token is inconvenient. Publishing a public
+REM build WITH one puts a credential on the internet, which cannot be
+REM taken back - only revoked.
+if "%MODE%"=="public" (
+  if exist ".pairing-token" (
+    set /p LEAKCHECK=<.pairing-token
+    findstr /C:"!LEAKCHECK!" out\main\index.js >nul 2>&1
+    if not errorlevel 1 goto :tokenleaked
+  )
+) else (
+  findstr /C:"%ZOIA_PAIRING_TOKEN%" out\main\index.js >nul 2>&1
+  if errorlevel 1 goto :tokenmissing
+)
 
 echo.
 echo === Done ========================================================
-echo Pairing token verified as embedded.
+if "%MODE%"=="public" (
+  echo Tokenless build confirmed: no pairing token in the bundle.
+  echo Send an invite separately. Mint one on the server with:
+  echo     node server/bin/keytool.js pair:new --name "friends" --invite zoia-invite.json
+) else (
+  echo Pairing token verified as embedded.
+)
 echo.
 dir /b release\*portable*.exe 2>nul
 echo.
@@ -77,10 +125,13 @@ echo.
 pause
 exit /b 0
 
-:notoken
+:tokenleaked
 echo.
-echo === ABORTED =====================================================
-echo No token entered. A build without one cannot pair with anything.
+echo === DO NOT DISTRIBUTE ===========================================
+echo A --public build came out with a pairing token inside it.
+echo That exe is a credential. Delete release\ and build again in a
+echo clean shell; a stale ZOIA_PAIRING_TOKEN in the environment is the
+echo usual cause.
 echo.
 pause
 exit /b 1
