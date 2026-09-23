@@ -91,8 +91,15 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $pin = Get-Content ffmpeg.json | ConvertFrom-Json
+          # Two invocations, because they print different things. The version
+          # lives in the startup banner, so asking for it while passing
+          # -hide_banner returns the configuration and nothing else — which is
+          # how the first attempt at this managed to fail on a correct ffmpeg.
+          $version = & ./vendor/ffmpeg-gnutls.exe -version 2>&1 | Out-String
           $conf = & ./vendor/ffmpeg-gnutls.exe -hide_banner -buildconf 2>&1 | Out-String
-          if ($conf -notmatch [regex]::Escape($pin.version)) { throw "ffmpeg is not $($pin.version)" }
+          if ($version -notmatch [regex]::Escape($pin.version)) {
+            throw "ffmpeg is not $($pin.version): $($version.Split([Environment]::NewLine)[0])"
+          }
           if ($conf -notmatch '--enable-gnutls') { throw 'ffmpeg is not a GnuTLS build; WHIP cannot work with it' }
           if ($conf -notmatch '--enable-nvenc')  { throw 'ffmpeg has no NVENC support' }
           # Recorded so the exact binary inside a release can be identified later,
