@@ -129,10 +129,17 @@ export function createApp({
   app.get('/healthz', (_req, res) => res.json({ ok: true }));
 
   /**
-   * The entry point people are given: /?k=<key>.
+   * What a browser gets: a static page saying where the app is.
    *
-   * Always answers with a redirect that drops the key, so it cannot linger in
-   * the URL bar, browser history, or a Referer header sent to a third party.
+   * The browser client is retired. Sharing one window's own audio needs APIs
+   * a page does not get, which is the whole reason the desktop app exists.
+   * This host still serves that app's API — pairing, tokens, the stage,
+   * ingress, crash reports — so only the human-facing half is gone.
+   *
+   * /?k=<key> still signs a session in and strips the key from the URL, so it
+   * cannot linger in history or a Referer header. Nothing consumes that
+   * session in a browser any more, but the key store is still real and still
+   * managed by keytool, so the path is left working rather than half-removed.
    */
   app.get('/', limitKeyAttempts, async (req, res, next) => {
     try {

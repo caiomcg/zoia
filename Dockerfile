@@ -13,8 +13,6 @@ RUN npm ci --omit=dev --ignore-scripts
 COPY server ./server
 COPY scripts ./scripts
 
-# Serve the LiveKit SDK from our own origin rather than a CDN; see scripts/vendor.js.
-RUN node scripts/vendor.js
 
 # The key store is bind-mounted at runtime; create it so the unprivileged user
 # owns the mount point.
