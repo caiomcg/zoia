@@ -12,18 +12,40 @@ export default function SourcePicker({
   const [query, setQuery] = useState('');
   const [loadError, setLoadError] = useState<string | null>(null);
 
+  // Thumbnails came from a single call when the picker opened, so they were
+  // a photograph of the moment it appeared — a window that changed, or was
+  // opened afterwards, never showed it. The list is polled while the picker
+  // is on screen instead; the main process keeps a warm cache, so this reads
+  // whatever the latest capture produced rather than forcing a new one.
   useEffect(() => {
     let cancelled = false;
-    window.zoia.sources
-      .list()
-      .then((list) => {
-        if (!cancelled) setSources(list);
-      })
-      .catch((err) => {
-        if (!cancelled) setLoadError(err instanceof Error ? err.message : String(err));
-      });
+
+    const load = () =>
+      window.zoia.sources
+        .list()
+        .then((list) => {
+          if (!cancelled) {
+            setSources(list);
+            setLoadError(null);
+          }
+        })
+        .catch((err) => {
+          // Only surface a failure if there is nothing to show at all; a
+          // refresh that fails while a good list is on screen is not worth
+          // replacing it with an error.
+          if (!cancelled) {
+            setSources((current) => {
+              if (!current) setLoadError(err instanceof Error ? err.message : String(err));
+              return current;
+            });
+          }
+        });
+
+    void load();
+    const timer = setInterval(() => void load(), 1500);
     return () => {
       cancelled = true;
+      clearInterval(timer);
     };
   }, []);
 

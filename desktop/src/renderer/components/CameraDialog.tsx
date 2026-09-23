@@ -131,7 +131,13 @@ export default function CameraDialog({
               ))}
             </select>
           </label>
+        </div>
 
+        {/* On its own row under the pickers: the meter answers "is this the
+            right microphone", which is a question about the choice just made
+            above it, and it needs the width to be readable. */}
+        <div className="camera-level">
+          <span className="muted">Microphone level</span>
           <div className="level-meter" title="Microphone level">
             {Array.from({ length: segments }, (_, i) => (
               <span key={i} className={`level-seg${i < lit ? ' on' : ''}`} />
