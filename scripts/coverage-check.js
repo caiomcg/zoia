@@ -8,14 +8,30 @@
  */
 
 import { spawnSync } from 'node:child_process';
+import { readdirSync } from 'node:fs';
+import { join } from 'node:path';
 
 const FLOOR = Number(process.env.COVERAGE_FLOOR ?? 90);
 
-const run = spawnSync(
-  process.execPath,
-  ['--test', '--experimental-test-coverage', 'server/test/**/*.test.js'],
-  { encoding: 'utf8', shell: process.platform === 'win32' },
-);
+// The files are listed explicitly rather than passed as a pattern. `--test`
+// only learned to expand globs itself in Node 21, this spawn has no shell to
+// expand one, and a positional path is loaded as a module rather than walked
+// as a directory. Enumerating here is the one form that behaves the same on
+// every Node the project supports.
+const TEST_DIR = new URL('../server/test/', import.meta.url);
+const files = readdirSync(TEST_DIR)
+  .filter((name) => name.endsWith('.test.js'))
+  .map((name) => join('server', 'test', name));
+
+if (files.length === 0) {
+  console.error('No test files found, which is not the same as everything passing.');
+  process.exit(1);
+}
+
+const run = spawnSync(process.execPath, ['--test', '--experimental-test-coverage', ...files], {
+  encoding: 'utf8',
+  shell: false,
+});
 
 const output = `${run.stdout ?? ''}${run.stderr ?? ''}`;
 if (run.status !== 0) {
