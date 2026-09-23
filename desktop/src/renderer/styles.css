@@ -373,6 +373,13 @@ button.danger {
   background: rgb(255 255 255 / 0.15);
 }
 
+/* An icon is a flex item, and flex items shrink by default — in a narrower
+   button that squeezed an 18px glyph down to 6px wide, which reads as the
+   icons having shrunk. They keep their own size instead. */
+.icon-button svg {
+  flex: 0 0 auto;
+}
+
 .icon-button.active {
   color: var(--accent);
   background: rgb(255 255 255 / 0.12);
@@ -932,7 +939,7 @@ button.danger {
 }
 
 .share-icons .icon-button {
-  width: 30px;
+  width: 34px;
   height: 100%;
   color: var(--muted);
 }

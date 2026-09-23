@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, session, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, Menu, session, shell } from 'electron';
 import { join } from 'node:path';
 import * as pairing from './pairing';
 import * as api from './api';
@@ -127,6 +127,9 @@ function createWindow(): void {
     minWidth: 960,
     minHeight: 640,
     backgroundColor: '#0b0c0e',
+    // No menu at all, rather than one hidden until Alt is pressed: the app
+    // has nothing to put in it, and what was appearing was Electron's own
+    // default with its developer tools.
     autoHideMenuBar: true,
     icon: join(__dirname, '../../build/icon.png'),
     webPreferences: {
@@ -302,6 +305,8 @@ function installCrashReporting(): void {
 
 app.whenReady().then(async () => {
   installCrashReporting();
+  // Removes the default menu outright, so Alt reveals nothing.
+  Menu.setApplicationMenu(null);
   await refreshGpuStatus();
   registerIpc();
   registerDisplayMediaHandler();
