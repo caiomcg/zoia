@@ -1041,6 +1041,28 @@ button.danger {
   border-radius: 6px;
 }
 
+/* Label above the bar, matching the device fields above it, so the three
+   controls read as one column rather than the meter being an afterthought. */
+.camera-level {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.camera-level .level-meter {
+  gap: 3px;
+  align-items: stretch;
+  height: 10px;
+  padding: 0;
+}
+
+.camera-level .level-seg {
+  flex: 1;
+  height: 100%;
+  border-radius: 2px;
+}
+
 .camera-dialog footer {
   display: flex;
   gap: 8px;

@@ -100,6 +100,13 @@ function refresh(): Promise<SourceInfo[]> {
  * finish in. Stop it when the window closes, since it is pure overhead
  * otherwise.
  */
+/**
+ * Keeps the cached list fresh in the background.
+ *
+ * The interval is a floor imposed by the work itself: a full capture with
+ * thumbnails was measured at ~3.3s, almost all of it Chromium grabbing the
+ * images. Asking more often would simply queue captures behind each other.
+ */
 export function startWarming(intervalMs = 4000): void {
   if (refreshTimer) return;
   void refresh();
