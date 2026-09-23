@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import Banner from './components/Banner';
+import CameraDialog from './components/CameraDialog';
 import PairingScreen from './components/PairingScreen';
 import Player from './components/Player';
 import Sidebar from './components/Sidebar';
@@ -21,17 +22,28 @@ import {
 const PRESET_STORAGE_KEY = 'zoia.qualityPreset';
 const MODE_STORAGE_KEY = 'zoia.broadcastMode';
 
+/**
+ * The GPU path is switched off while it settles down — it has crashed on an
+ * AMD machine, and the window-capture half is newer than the rest of the app.
+ * Everything behind it is intact and still tested; flip this back to true to
+ * offer the choice again.
+ */
+const MODE_SELECTION_ENABLED = false;
+
 export default function App() {
   const [status, setStatus] = useState<PairingStatus | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [cameraOpen, setCameraOpen] = useState(false);
   const [gpu, setGpu] = useState<GpuStatus | null>(null);
   const [stageError, setStageError] = useState<string | null>(null);
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
   const [presetId, setPresetId] = useState(
     () => localStorage.getItem(PRESET_STORAGE_KEY) ?? DEFAULT_PRESET_ID,
   );
-  const [mode, setMode] = useState<BroadcastMode>(
-    () => (localStorage.getItem(MODE_STORAGE_KEY) as BroadcastMode) ?? 'gpu',
+  const [mode, setMode] = useState<BroadcastMode>(() =>
+    MODE_SELECTION_ENABLED
+      ? ((localStorage.getItem(MODE_STORAGE_KEY) as BroadcastMode) ?? 'gpu')
+      : 'window',
   );
 
   const room = useRoom();
@@ -63,7 +75,7 @@ export default function App() {
     window.zoia.gpu.status().then((next) => {
       setGpu(next);
       // Fall back rather than leaving someone in a mode that cannot work.
-      if (!next.hardwareEncoder) {
+      if (MODE_SELECTION_ENABLED && !next.hardwareEncoder) {
         setMode('window');
         localStorage.setItem(MODE_STORAGE_KEY, 'window');
       }
@@ -159,14 +171,17 @@ export default function App() {
   const cameraLive = room.broadcastState === 'live' && room.sharingKind === 'camera';
   const screenLive = isLive && !cameraLive;
 
-  async function shareCamera() {
+  /**
+   * The camera button stands on its own, but it does not turn a camera on by
+   * itself: it opens a preview so the device and microphone can be checked
+   * before anything is published.
+   */
+  async function toggleCamera() {
     if (cameraLive) {
       await stopSharing();
       return;
     }
-    // The picker owns device selection; this is the quick path that uses
-    // whatever was chosen last, or the system default.
-    setPickerOpen(true);
+    setCameraOpen(true);
   }
 
   const connectionTone: StatusTone =
@@ -201,7 +216,12 @@ export default function App() {
           <StatusLight tone={connectionTone} label={`Connection: ${room.state}`} />
           {(gpuLive || encodingLive) && (
             <StatusLight
-              tone={gpuLive ? 'ok' : 'warn'}
+              // Amber would mean something is wrong. While the CPU path is
+              // the only one offered, encoding on the CPU is simply how this
+              // works, so the light says "encoding, and healthy" and leaves
+              // which encoder to the tooltip. It only warns when the GPU was
+              // available and we ended up on the CPU anyway.
+              tone={gpuLive || !MODE_SELECTION_ENABLED ? 'ok' : 'warn'}
               label={gpuLive ? 'Encoding on the GPU' : 'Encoding on the CPU'}
               detail={encodeDetail}
             />
@@ -209,16 +229,7 @@ export default function App() {
         </div>
 
         <div className="topbar-centre">
-          {isLive ? (
-            <>
-              <button className="danger" onClick={() => void stopSharing()}>
-                Stop sharing
-              </button>
-              <button onClick={() => setPickerOpen(true)} title="Share something else instead">
-                Switch
-              </button>
-            </>
-          ) : holder ? (
+          {holder && !isLive ? (
             <button
               className="primary"
               disabled={Boolean(takeover.outgoing)}
@@ -227,13 +238,7 @@ export default function App() {
               Ask to share
             </button>
           ) : (
-            <button
-              className="primary"
-              disabled={room.state !== 'connected' || isStarting}
-              onClick={() => setPickerOpen(true)}
-            >
-              {isStarting ? 'Starting…' : 'Share your screen'}
-            </button>
+            isStarting && <span className="muted">Starting…</span>
           )}
         </div>
 
@@ -266,7 +271,7 @@ export default function App() {
             <button
               className={`icon-button${cameraLive ? ' active' : ''}`}
               disabled={room.state !== 'connected' || isStarting}
-              onClick={() => void shareCamera()}
+              onClick={() => void toggleCamera()}
               title={cameraLive ? 'Sharing your camera — click to stop' : 'Share your camera'}
               aria-label="Share your camera"
             >
@@ -284,31 +289,33 @@ export default function App() {
             </button>
           </div>
 
-          <div className="mode-switch" role="group" aria-label="Encoding mode">
-            {(
-              [
-                ['gpu', 'GPU'],
-                ['window', 'CPU'],
-              ] as const
-            ).map(([value, label]) => (
-              <button
-                key={value}
-                className={mode === value ? 'active' : ''}
-                disabled={isLive || isStarting || (value === 'gpu' && !canUseGpu)}
-                onClick={() => {
-                  setMode(value);
-                  localStorage.setItem(MODE_STORAGE_KEY, value);
-                }}
-                title={
-                  value === 'gpu'
-                    ? (gpu?.encoderReason ?? 'Encode with NVENC on the GPU.')
-                    : 'Publish through Chromium, which encodes in software on the CPU.'
-                }
-              >
-                {label}
-              </button>
-            ))}
-          </div>
+          {MODE_SELECTION_ENABLED && (
+            <div className="mode-switch" role="group" aria-label="Encoding mode">
+              {(
+                [
+                  ['gpu', 'GPU'],
+                  ['window', 'CPU'],
+                ] as const
+              ).map(([value, label]) => (
+                <button
+                  key={value}
+                  className={mode === value ? 'active' : ''}
+                  disabled={isLive || isStarting || (value === 'gpu' && !canUseGpu)}
+                  onClick={() => {
+                    setMode(value);
+                    localStorage.setItem(MODE_STORAGE_KEY, value);
+                  }}
+                  title={
+                    value === 'gpu'
+                      ? (gpu?.encoderReason ?? 'Encode with NVENC on the GPU.')
+                      : 'Publish through Chromium, which encodes in software on the CPU.'
+                  }
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
 
           <label className="quality-picker">
             <select
@@ -376,6 +383,8 @@ export default function App() {
             canMonitor={room.canMonitor}
             setMonitorGain={room.setMonitorGain}
             gpuBroadcasting={gpuLive}
+            onStop={isLive ? () => void stopSharing() : undefined}
+            onSwitch={isLive ? () => setPickerOpen(true) : undefined}
           />
         </main>
 
@@ -386,17 +395,21 @@ export default function App() {
         />
       </div>
 
-      {pickerOpen && (
-        <SourcePicker
-          onPick={handlePick}
-          onPickCamera={(constraints) => {
-            setPickerOpen(false);
+      {pickerOpen && <SourcePicker onPick={handlePick} onCancel={() => setPickerOpen(false)} />}
+
+      {cameraOpen && (
+        <CameraDialog
+          onStart={(constraints) => {
+            setCameraOpen(false);
             // A camera always goes through the Chromium path: there is no
             // window for the hardware encoder to capture, and the frame is
             // small enough that it does not need one.
-            void room.startCamera(constraints);
+            void (async () => {
+              if (isLive) await stopSharing();
+              await room.startCamera(constraints);
+            })();
           }}
-          onCancel={() => setPickerOpen(false)}
+          onCancel={() => setCameraOpen(false)}
         />
       )}
     </div>
