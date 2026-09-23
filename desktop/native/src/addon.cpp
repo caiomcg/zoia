@@ -558,12 +558,13 @@ class Session {
     }
 
     const size_t rowBytes = static_cast<size_t>(width_) * 4;
-    std::vector<uint8_t> frame(rowBytes * height_);
+    // Not `frame`: that name already belongs to the captured surface above.
+    std::vector<uint8_t> pixels(rowBytes * height_);
     const auto* src = static_cast<const uint8_t*>(mapped.pData);
     // Row by row: the mapped pitch is the driver's, and is usually padded out
     // beyond width * 4.
     for (uint32_t y = 0; y < height_; ++y) {
-      memcpy(frame.data() + y * rowBytes, src + static_cast<size_t>(y) * mapped.RowPitch, rowBytes);
+      memcpy(pixels.data() + y * rowBytes, src + static_cast<size_t>(y) * mapped.RowPitch, rowBytes);
     }
     context_->Unmap(input_.Get(), 0);
 
@@ -571,7 +572,7 @@ class Session {
                         std::chrono::steady_clock::now() - encodeStart)
                         .count();
     ++frameIndex_;
-    Emit(std::move(frame), false, {});
+    Emit(std::move(pixels), false, {});
   }
 
  public:
