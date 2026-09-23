@@ -63,7 +63,11 @@ export function createTokenIssuer({
         canSubscribe: true,
         // Data messages carry presence and stage chatter between clients.
         canPublishData: true,
-        canUpdateOwnMetadata: false,
+        // Lets someone rename themselves without reconnecting. Scoped to
+        // their *own* participant record, so it grants no reach over anyone
+        // else — unlike canPublish, which stays false and is handed out by
+        // stage.js alone.
+        canUpdateOwnMetadata: true,
         roomCreate: false,
         roomAdmin: false,
       });

@@ -60,6 +60,16 @@ describe('join tokens are never publish tokens', () => {
     assert.ok(!grant.roomAdmin, 'roomAdmin must never be granted');
     assert.ok(!grant.roomCreate, 'roomCreate must never be granted');
   });
+
+  test('renaming yourself is allowed, and reaches no further than yourself', async () => {
+    const grant = await grantFor({});
+    // Needed so a rename shows up for everyone without a reconnect.
+    assert.equal(grant.canUpdateOwnMetadata, true);
+    // It must stay "own": nothing here may let one person edit another, or
+    // quietly become a publisher.
+    assert.ok(!grant.roomAdmin);
+    assert.equal(grant.canPublish, false);
+  });
 });
 
 describe('token shape', () => {

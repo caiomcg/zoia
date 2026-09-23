@@ -9,7 +9,7 @@ directories:
 
 files:
   - out/**/*
-  - native/index.js
+  - native/index.cjs
   - native/build/Release/zoia_capture.node
   - package.json
   - '!**/*.map'
@@ -27,10 +27,13 @@ extraResources:
   # The WGC+NVENC capture module, and the shim that loads it.
   - from: native/build/Release/zoia_capture.node
     to: app.asar.unpacked/native/build/Release/zoia_capture.node
-  - from: native/index.js
-    to: app.asar.unpacked/native/index.js
+  - from: native/index.cjs
+    to: app.asar.unpacked/native/index.cjs
 
 asarUnpack:
+  # The capture addon is dlopen'd, so it has to be a real file on disk, and
+  # the shim beside it must resolve to the same unpacked directory.
+  - 'native/**'
   - '**/node_modules/loopback-capture/**'
   - '**/node_modules/node-window-manager/**'
 
@@ -39,6 +42,7 @@ asarUnpack:
 # to Electron's own icon. Add build/icon.ico here later without touching this
 # config.
 win:
+  icon: build/icon.ico
   target:
     - target: nsis
       arch: [x64]

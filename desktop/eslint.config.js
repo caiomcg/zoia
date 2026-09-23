@@ -6,7 +6,15 @@ import globals from 'globals';
 export default tseslint.config(
   {
     // Build output and generated files — never source, never worth linting.
-    ignores: ['out/', 'node_modules/', '*.tsbuildinfo', 'dist/', 'native/build/', 'vendor/'],
+    ignores: [
+      'out/',
+      'node_modules/',
+      '*.tsbuildinfo',
+      'dist/',
+      'native/build/',
+      'vendor/',
+      'release/',
+    ],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,
@@ -62,7 +70,7 @@ export default tseslint.config(
   {
     // Ad hoc verification tooling at the project root, not part of the
     // shipped app — one-off CDP/capture probes written during manual testing.
-    files: ['*.cjs', 'native/*.js'],
+    files: ['*.cjs', 'native/*.cjs'],
     languageOptions: { ecmaVersion: 2022, sourceType: 'commonjs', globals: { ...globals.node } },
     rules: { '@typescript-eslint/no-require-imports': 'off', 'no-redeclare': 'off' },
   },

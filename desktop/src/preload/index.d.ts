@@ -36,6 +36,8 @@ export interface ZoiaBridge {
       processId: number | null;
       /** The window to capture natively; null captures the whole screen. */
       hwnd: number | null;
+      /** A screen share is silent; a window share carries that app's audio. */
+      withAudio: boolean;
     }): Promise<void>;
     stop(): Promise<void>;
     onStatus(cb: (status: NvencStatus) => void): () => void;

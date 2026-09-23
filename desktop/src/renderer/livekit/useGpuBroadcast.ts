@@ -50,13 +50,18 @@ export function useGpuBroadcast() {
       setState('starting');
       try {
         const endpoint = await window.zoia.ingress.get();
+        const isWindow = source?.kind === 'window';
         await window.zoia.nvenc.start({
           whipUrl: endpoint.url,
           framerate: preset.maxFramerate,
           bitrate: preset.maxBitrate,
-          // Audio follows the chosen application; video follows its window.
-          processId: source?.processId ?? null,
-          hwnd: source?.kind === 'window' ? source.hwnd : null,
+          // Audio and video both follow the chosen application. Sharing a
+          // whole screen sends no audio: the alternative is capturing the
+          // whole system, which means every notification and every other app
+          // going out too.
+          processId: isWindow ? source.processId : null,
+          hwnd: isWindow ? source.hwnd : null,
+          withAudio: isWindow,
         });
         activeRef.current = true;
         setState('live');

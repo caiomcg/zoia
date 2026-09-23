@@ -21,6 +21,7 @@ export default function App() {
   const [status, setStatus] = useState<PairingStatus | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [gpu, setGpu] = useState<GpuStatus | null>(null);
+  const [stageError, setStageError] = useState<string | null>(null);
   const [presetId, setPresetId] = useState(
     () => localStorage.getItem(PRESET_STORAGE_KEY) ?? DEFAULT_PRESET_ID,
   );
@@ -53,12 +54,18 @@ export default function App() {
     }
   }, [status?.paired, room]);
 
-  const handleRename = useCallback(async (name: string) => {
-    const result = await window.zoia.device.rename(name);
-    // Reflected locally straight away; the room itself only picks the new
-    // name up on the next token, which is not worth a reconnect to rename.
-    setStatus((prev) => (prev ? { ...prev, deviceName: result.name } : prev));
-  }, []);
+  const handleRename = useCallback(
+    async (name: string) => {
+      // Stored server-side so it survives a restart, and pushed into the
+      // room so everyone sees it now rather than after a reconnect.
+      const result = await window.zoia.device.rename(name);
+      setStatus((prev) => (prev ? { ...prev, deviceName: result.name } : prev));
+      await room.setDisplayName(result.name).catch(() => {
+        // The name is saved either way; it will be picked up on next join.
+      });
+    },
+    [room],
+  );
 
   if (!status) return <div className="loading">Loading…</div>;
   if (!status.paired) return <PairingScreen status={status} onPaired={setStatus} />;
@@ -72,8 +79,18 @@ export default function App() {
       await room.startBroadcast(source, preset);
       return;
     }
+
     const claim = await window.zoia.stage.claim();
-    if (!claim.ok) return;
+    if (!claim.ok) {
+      // Previously this returned in silence, so a busy stage looked exactly
+      // like a broadcast that simply never started.
+      setStageError(
+        claim.holder ? `${claim.holder.name} is already sharing.` : 'The stage is busy.',
+      );
+      return;
+    }
+
+    setStageError(null);
     const ok = await gpuCast.start(preset, source);
     if (!ok) await window.zoia.stage.release().catch(() => {});
   }
@@ -99,7 +116,15 @@ export default function App() {
   return (
     <div className="app">
       <header className="topbar">
-        <span className="brand">Zoia</span>
+        <img
+          className="brand"
+          src="logo.png"
+          alt="Zoia"
+          draggable={false}
+          // Resolved against the loaded document rather than a root-absolute
+          // path: under file:// a leading slash means the filesystem root,
+          // not the folder the page was loaded from.
+        />
         <span className={`pill ${room.state === 'connected' ? 'ok' : ''}`}>{room.state}</span>
 
         {gpuLive && (
@@ -193,6 +218,7 @@ export default function App() {
       {room.error && <p className="banner error">{room.error}</p>}
       {room.broadcastError && <p className="banner error">{room.broadcastError}</p>}
       {gpuCast.error && <p className="banner error">{gpuCast.error}</p>}
+      {stageError && <p className="banner error">{stageError}</p>}
       {room.audioWarning && <p className="banner warn">{room.audioWarning}</p>}
       {gpuLive && gpuCast.status?.error && <p className="banner warn">{gpuCast.status.error}</p>}
 
@@ -215,7 +241,19 @@ export default function App() {
         />
       </div>
 
-      {pickerOpen && <SourcePicker onPick={handlePick} onCancel={() => setPickerOpen(false)} />}
+      {pickerOpen && (
+        <SourcePicker
+          onPick={handlePick}
+          onPickCamera={(constraints) => {
+            setPickerOpen(false);
+            // A camera always goes through the Chromium path: there is no
+            // window for the hardware encoder to capture, and the frame is
+            // small enough that it does not need one.
+            void room.startCamera(constraints);
+          }}
+          onCancel={() => setPickerOpen(false)}
+        />
+      )}
     </div>
   );
 }
