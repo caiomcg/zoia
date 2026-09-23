@@ -67,15 +67,16 @@ jobs:
         uses: actions/cache@v4
         with:
           path: desktop/vendor/ffmpeg-gnutls.exe
-          key: ffmpeg-gnutls-v1
+          key: ffmpeg-${{ hashFiles('desktop/ffmpeg.json') }}
 
       - name: Download ffmpeg
         if: steps.ffmpeg.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
+          $pin = Get-Content ffmpeg.json | ConvertFrom-Json
           New-Item -ItemType Directory -Force -Path vendor, vendor/tmp | Out-Null
-          Invoke-WebRequest -Uri 'https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip' -OutFile vendor/tmp/ff.zip -UseBasicParsing
+          Invoke-WebRequest -Uri $pin.url -OutFile vendor/tmp/ff.zip -UseBasicParsing
           Expand-Archive vendor/tmp/ff.zip vendor/tmp -Force
           $exe = (Get-ChildItem vendor/tmp -Recurse -Filter ffmpeg.exe | Select-Object -First 1).FullName
           Copy-Item $exe vendor/ffmpeg-gnutls.exe -Force
@@ -85,14 +86,18 @@ jobs:
       # binary other people download. An SChannel build negotiates DTLS and then
       # dies with "no SRTP Protection Profile was chosen", which looks like a
       # server fault and is not — see desktop/src/main/nvenc.ts.
-      - name: Verify ffmpeg is a GnuTLS build with NVENC
+      - name: Verify the ffmpeg that will be shipped
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
+          $pin = Get-Content ffmpeg.json | ConvertFrom-Json
           $conf = & ./vendor/ffmpeg-gnutls.exe -hide_banner -buildconf 2>&1 | Out-String
+          if ($conf -notmatch [regex]::Escape($pin.version)) { throw "ffmpeg is not $($pin.version)" }
           if ($conf -notmatch '--enable-gnutls') { throw 'ffmpeg is not a GnuTLS build; WHIP cannot work with it' }
           if ($conf -notmatch '--enable-nvenc')  { throw 'ffmpeg has no NVENC support' }
-          Write-Host "sha256: $((Get-FileHash vendor/ffmpeg-gnutls.exe -Algorithm SHA256).Hash.ToLower())"
+          # Recorded so the exact binary inside a release can be identified later,
+          # and so the pin can be tightened to a checksum once one is known good.
+          Write-Host "ffmpeg $($pin.version) sha256: $((Get-FileHash vendor/ffmpeg-gnutls.exe -Algorithm SHA256).Hash.ToLower())"
 
       # With scripts, unlike the ubuntu `desktop` job in ci.yml. That one uses
       # --ignore-scripts because node-window-manager's binding.gyp is

@@ -1,0 +1,7 @@
+{
+  "version": "9.0.2",
+  "url": "https://github.com/GyanD/codexffmpeg/releases/download/9.0.2/ffmpeg-9.0.2-essentials_build.zip",
+  "_why_pinned": "make-exe.bat used to fetch ffmpeg-release-essentials.zip, a rolling pointer to whatever is newest. Two builds a month apart then embedded different encoders with no record of which, in a binary other people download. This is the same build from the same publisher, at a URL that names its version.",
+  "_why_gnutls": "Must be a GnuTLS build. An ffmpeg built against Windows SChannel completes the DTLS handshake and then fails with 'no SRTP Protection Profile was chosen', because SChannel has no use_srtp extension, so WHIP cannot work with it at all. See desktop/src/main/nvenc.ts.",
+  "_not_pinned_by_hash": "The build is verified by its reported version plus --enable-gnutls and --enable-nvenc, not by a checksum. A hash would be stronger, but one taken from a copy downloaded via the old rolling URL cannot be confirmed to match this asset without fetching it, and a wrong hash fails every release. Worth tightening once a release has run and the real hash is known."
+}
