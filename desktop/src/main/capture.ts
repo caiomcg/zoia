@@ -19,12 +19,24 @@
 
 import { createRequire } from 'node:module';
 
+/** Which encoder the captured frames will actually be handed to. */
+export type HardwareEncoder = 'nvenc' | 'amf' | 'qsv' | 'none';
+
+/** What the addon sends back: H.264 it encoded, or raw frames for ffmpeg. */
+export type CaptureOutput = 'h264' | 'bgra';
+
 interface CaptureAddon {
-  isSupported(): { windowCapture: boolean; hardwareEncoder: boolean };
+  isSupported(): {
+    windowCapture: boolean;
+    hardwareEncoder: boolean;
+    vendor: string;
+    adapter: string;
+    encoder: HardwareEncoder;
+  };
   start(
     options: { hwnd: string; framerate: number; bitrate: number },
     callback: (error: string | null, packet?: Buffer, keyframe?: boolean) => void,
-  ): { width: number; height: number };
+  ): { width: number; height: number; output: CaptureOutput; vendor: string; adapter: string };
   stop(): { framesArrived: number; averageEncodeMs: number };
 }
 
@@ -47,6 +59,11 @@ function load(): CaptureAddon | null {
 export interface Capabilities {
   windowCapture: boolean;
   hardwareEncoder: boolean;
+  /** nvidia / amd / intel, from the adapter this machine would encode on. */
+  vendor: string;
+  /** The adapter's own name, worth showing because people recognise it. */
+  adapter: string;
+  encoder: HardwareEncoder;
   /** Why hardware encoding is unavailable, in words a person can act on. */
   reason: string | null;
 }
@@ -54,9 +71,11 @@ export interface Capabilities {
 /**
  * What this machine can actually do, decided once at startup.
  *
- * NVENC ships with the NVIDIA driver, so a machine without one can never use
- * the hardware path — which is what "nvEncodeAPI64.dll could not be loaded"
- * was really saying, far too late and far too cryptically.
+ * This used to answer "is hardware encoding available" with "does the NVIDIA
+ * driver's DLL exist", which said yes on every switchable-graphics laptop
+ * while the broadcast then failed — the D3D device lands on the integrated
+ * GPU and NVENC will not open a session on one. It now reports the adapter
+ * that would actually be used, and which encoder that implies.
  */
 export function capabilities(): Capabilities {
   const native = load();
@@ -64,6 +83,9 @@ export function capabilities(): Capabilities {
     return {
       windowCapture: false,
       hardwareEncoder: false,
+      vendor: 'unknown',
+      adapter: '',
+      encoder: 'none',
       reason: loadError ?? 'The capture module could not be loaded.',
     };
   }
@@ -73,17 +95,22 @@ export function capabilities(): Capabilities {
     return {
       windowCapture: caps.windowCapture,
       hardwareEncoder: caps.hardwareEncoder,
-      reason: caps.hardwareEncoder
-        ? caps.windowCapture
-          ? null
-          : 'Windows Graphics Capture is unavailable on this version of Windows.'
-        : 'No NVIDIA encoder was found. GPU encoding needs an NVIDIA GPU; ' +
-          'this machine will encode on the CPU instead.',
+      vendor: caps.vendor,
+      adapter: caps.adapter,
+      encoder: caps.encoder,
+      reason: !caps.hardwareEncoder
+        ? 'No hardware graphics adapter was found; this machine will encode on the CPU.'
+        : !caps.windowCapture
+          ? 'Windows Graphics Capture is unavailable on this version of Windows.'
+          : null,
     };
   } catch (err) {
     return {
       windowCapture: false,
       hardwareEncoder: false,
+      vendor: 'unknown',
+      adapter: '',
+      encoder: 'none',
       reason: err instanceof Error ? err.message : String(err),
     };
   }
@@ -97,7 +124,7 @@ export function start(
   bitrate: number,
   onPacket: (packet: Buffer) => void,
   onError: (message: string) => void,
-): { width: number; height: number } {
+): { width: number; height: number; output: CaptureOutput; vendor: string; adapter: string } {
   const native = load();
   if (!native) throw new Error(loadError ?? 'The native capture module is unavailable.');
 

@@ -50,6 +50,98 @@ std::string HresultMessage(const char* what, HRESULT hr) {
   return buffer;
 }
 
+// PCI vendor ids. NVENC belongs to the NVIDIA driver, AMF to AMD's and Quick
+// Sync to Intel's, so the vendor of the adapter we render on decides which
+// encoder can possibly work.
+constexpr UINT kVendorNvidia = 0x10DE;
+constexpr UINT kVendorAmd = 0x1002;
+constexpr UINT kVendorAmdAlt = 0x1022;
+constexpr UINT kVendorIntel = 0x8086;
+
+const char* VendorName(UINT id) {
+  switch (id) {
+    case kVendorNvidia: return "nvidia";
+    case kVendorAmd:
+    case kVendorAmdAlt: return "amd";
+    case kVendorIntel: return "intel";
+    default: return "unknown";
+  }
+}
+
+std::string Narrow(const wchar_t* wide) {
+  if (!wide) return {};
+  const int needed = WideCharToMultiByte(CP_UTF8, 0, wide, -1, nullptr, 0, nullptr, nullptr);
+  if (needed <= 1) return {};
+  std::string out(static_cast<size_t>(needed - 1), '\0');
+  WideCharToMultiByte(CP_UTF8, 0, wide, -1, out.data(), needed, nullptr, nullptr);
+  return out;
+}
+
+bool NvencLibraryPresent() {
+  HMODULE module = LoadLibraryW(L"nvEncodeAPI64.dll");
+  if (!module) return false;
+  FreeLibrary(module);
+  return true;
+}
+
+struct AdapterChoice {
+  ComPtr<IDXGIAdapter1> adapter;
+  UINT vendorId = 0;
+  std::string name;
+  /** True only when this is an NVIDIA adapter AND the NVENC runtime loaded. */
+  bool nvenc = false;
+};
+
+/**
+ * Picks the adapter to capture and encode on.
+ *
+ * This used to pass nullptr to D3D11CreateDevice, which takes whatever Windows
+ * considers the default. On a desktop with one discrete card that is the right
+ * answer by luck. On a laptop with switchable graphics it is the integrated
+ * GPU — and NVENC, asked to open a session on an Intel or AMD device, refuses.
+ * Every hybrid-graphics machine failed that way while reporting that hardware
+ * encoding was available, because availability was inferred from the NVIDIA
+ * driver's DLL being installed rather than from the device actually in use.
+ *
+ * Preference order: an NVIDIA adapter when NVENC is loadable, since that path
+ * encodes without the frame ever leaving the GPU. Otherwise the first hardware
+ * adapter, whose frames go out to ffmpeg for AMF or Quick Sync.
+ */
+AdapterChoice ChooseAdapter() {
+  AdapterChoice choice;
+
+  ComPtr<IDXGIFactory1> factory;
+  if (FAILED(CreateDXGIFactory1(IID_PPV_ARGS(factory.GetAddressOf())))) return choice;
+
+  const bool nvencAvailable = NvencLibraryPresent();
+
+  ComPtr<IDXGIAdapter1> adapter;
+  for (UINT i = 0; factory->EnumAdapters1(i, adapter.ReleaseAndGetAddressOf()) != DXGI_ERROR_NOT_FOUND;
+       ++i) {
+    DXGI_ADAPTER_DESC1 desc = {};
+    if (FAILED(adapter->GetDesc1(&desc))) continue;
+    // WARP and the Basic Render Driver have no encoder at all, and picking one
+    // would turn "no hardware encoder" into a confusing runtime failure.
+    if (desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) continue;
+
+    if (nvencAvailable && desc.VendorId == kVendorNvidia) {
+      choice.adapter = adapter;
+      choice.vendorId = desc.VendorId;
+      choice.name = Narrow(desc.Description);
+      choice.nvenc = true;
+      return choice;
+    }
+
+    if (!choice.adapter) {
+      choice.adapter = adapter;
+      choice.vendorId = desc.VendorId;
+      choice.name = Narrow(desc.Description);
+    }
+  }
+
+  return choice;
+}
+
 // Encoded output handed back to JavaScript.
 struct Packet {
   std::vector<uint8_t> data;
@@ -62,6 +154,35 @@ class Encoder {
 
   // Opens an NVENC session on the same D3D11 device the capture runs on, so
   // the input surface never has to move between devices.
+  // Every NVENC failure used to come back as a sentence with no code in it,
+  // so "wrong GPU", "driver older than these headers" and "session limit
+  // reached" were indistinguishable in a crash report from someone else's
+  // machine. The status is the one value worth having.
+  static std::string NvencError(const char* what, NVENCSTATUS status) {
+    const char* meaning = "";
+    switch (status) {
+      case NV_ENC_ERR_INVALID_VERSION:
+        meaning = " (the display driver is older than this build expects)";
+        break;
+      case NV_ENC_ERR_UNSUPPORTED_DEVICE:
+      case NV_ENC_ERR_NO_ENCODE_DEVICE:
+        meaning = " (this GPU has no NVENC encoder)";
+        break;
+      case NV_ENC_ERR_OUT_OF_MEMORY:
+        meaning = " (the GPU is out of memory)";
+        break;
+      case NV_ENC_ERR_ENCODER_BUSY:
+        meaning = " (too many encode sessions are already open)";
+        break;
+      default:
+        break;
+    }
+    char buffer[192];
+    snprintf(buffer, sizeof(buffer), "NVENC: %s failed with status %d%s", what,
+             static_cast<int>(status), meaning);
+    return buffer;
+  }
+
   std::string Start(ID3D11Device* device, uint32_t width, uint32_t height, uint32_t fps,
                     uint32_t bitrate) {
     library_ = LoadLibraryW(L"nvEncodeAPI64.dll");
@@ -73,15 +194,18 @@ class Encoder {
 
     functions_ = {};
     functions_.version = NV_ENCODE_API_FUNCTION_LIST_VER;
-    if (create(&functions_) != NV_ENC_SUCCESS) return "NVENC refused to create an API instance.";
+    if (const NVENCSTATUS status = create(&functions_); status != NV_ENC_SUCCESS) {
+      return NvencError("NvEncodeAPICreateInstance", status);
+    }
 
     NV_ENC_OPEN_ENCODE_SESSION_EX_PARAMS open = {};
     open.version = NV_ENC_OPEN_ENCODE_SESSION_EX_PARAMS_VER;
     open.deviceType = NV_ENC_DEVICE_TYPE_DIRECTX;
     open.device = device;
     open.apiVersion = NVENCAPI_VERSION;
-    if (functions_.nvEncOpenEncodeSessionEx(&open, &encoder_) != NV_ENC_SUCCESS) {
-      return "NVENC refused to open an encode session.";
+    if (const NVENCSTATUS status = functions_.nvEncOpenEncodeSessionEx(&open, &encoder_);
+        status != NV_ENC_SUCCESS) {
+      return NvencError("nvEncOpenEncodeSessionEx", status);
     }
 
     NV_ENC_PRESET_CONFIG preset = {};
@@ -91,7 +215,7 @@ class Encoder {
                                                 NV_ENC_PRESET_P4_GUID,
                                                 NV_ENC_TUNING_INFO_ULTRA_LOW_LATENCY,
                                                 &preset) != NV_ENC_SUCCESS) {
-      return "NVENC refused to describe its low-latency preset.";
+      return "NVENC: nvEncGetEncodePresetConfigEx failed for the low-latency preset";
     }
 
     config_ = preset.presetCfg;
@@ -122,8 +246,9 @@ class Encoder {
     init.frameRateDen = 1;
     init.enablePTD = 1;
     init.encodeConfig = &config_;
-    if (functions_.nvEncInitializeEncoder(encoder_, &init) != NV_ENC_SUCCESS) {
-      return "NVENC refused the encoder configuration.";
+    if (const NVENCSTATUS status = functions_.nvEncInitializeEncoder(encoder_, &init);
+        status != NV_ENC_SUCCESS) {
+      return NvencError("nvEncInitializeEncoder", status);
     }
 
     NV_ENC_CREATE_BITSTREAM_BUFFER bitstream = {};
@@ -260,9 +385,18 @@ class Session {
                             Napi::ThreadSafeFunction tsfn) {
     tsfn_ = std::move(tsfn);
 
+    adapter_ = ChooseAdapter();
+    if (!adapter_.adapter) return "No hardware graphics adapter was found.";
+    // NVENC only when the adapter we are actually rendering on is NVIDIA's.
+    // Otherwise the frames go out raw and ffmpeg encodes them with AMF on a
+    // Radeon or Quick Sync on an Intel GPU.
+    encode_ = adapter_.nvenc;
+
     UINT flags = D3D11_CREATE_DEVICE_BGRA_SUPPORT;
-    HRESULT hr = D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, flags, nullptr, 0,
-                                   D3D11_SDK_VERSION, device_.GetAddressOf(), nullptr,
+    // D3D_DRIVER_TYPE_UNKNOWN is required when an adapter is named; passing
+    // HARDWARE with a non-null adapter fails with E_INVALIDARG.
+    HRESULT hr = D3D11CreateDevice(adapter_.adapter.Get(), D3D_DRIVER_TYPE_UNKNOWN, nullptr, flags,
+                                   nullptr, 0, D3D11_SDK_VERSION, device_.GetAddressOf(), nullptr,
                                    context_.GetAddressOf());
     if (FAILED(hr)) return HresultMessage("D3D11CreateDevice", hr);
 
@@ -289,12 +423,16 @@ class Session {
     height_ = static_cast<uint32_t>(size.Height) & ~1u;
     if (width_ == 0 || height_ == 0) return "That window has no visible area to capture.";
 
-    const std::string encoderError = encoder_.Start(device_.Get(), width_, height_, fps, bitrate);
-    if (!encoderError.empty()) return encoderError;
+    if (encode_) {
+      const std::string encoderError = encoder_.Start(device_.Get(), width_, height_, fps, bitrate);
+      if (!encoderError.empty()) return encoderError;
+    }
 
-    // A dedicated surface the encoder owns. Each captured frame is copied
-    // into it GPU-to-GPU, which avoids re-registering a different texture
-    // with NVENC every frame.
+    // A dedicated surface. For the NVENC path each captured frame is copied
+    // into it GPU-to-GPU, which avoids re-registering a different texture with
+    // NVENC every frame. For the raw path it is a staging texture the CPU can
+    // read, which is the one copy AMF and Quick Sync cost us — ffmpeg owns the
+    // encoder there and cannot be handed a texture on this process's device.
     D3D11_TEXTURE2D_DESC desc = {};
     desc.Width = width_;
     desc.Height = height_;
@@ -302,13 +440,21 @@ class Session {
     desc.ArraySize = 1;
     desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
     desc.SampleDesc.Count = 1;
-    desc.Usage = D3D11_USAGE_DEFAULT;
-    desc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
+    if (encode_) {
+      desc.Usage = D3D11_USAGE_DEFAULT;
+      desc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
+    } else {
+      desc.Usage = D3D11_USAGE_STAGING;
+      desc.BindFlags = 0;
+      desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+    }
     hr = device_->CreateTexture2D(&desc, nullptr, input_.GetAddressOf());
     if (FAILED(hr)) return HresultMessage("CreateTexture2D", hr);
 
-    const std::string registerError = encoder_.RegisterInput(input_.Get());
-    if (!registerError.empty()) return registerError;
+    if (encode_) {
+      const std::string registerError = encoder_.RegisterInput(input_.Get());
+      if (!registerError.empty()) return registerError;
+    }
 
     framePool_ = wgc::Direct3D11CaptureFramePool::CreateFreeThreaded(
         winrtDevice_, wgdx::DirectXPixelFormat::B8G8R8A8UIntNormalized, 3, item_.Size());
@@ -377,30 +523,65 @@ class Session {
     ComPtr<ID3D11Texture2D> captured;
     if (FAILED(access->GetInterface(IID_PPV_ARGS(captured.GetAddressOf())))) return;
 
-    // GPU to GPU. The only reason this copy exists is to keep one stable
-    // surface registered with the encoder.
-    context_->CopyResource(input_.Get(), captured.Get());
+    // A region copy rather than CopyResource: the destination is rounded down
+    // to even dimensions for the encoder, so on a window with an odd width the
+    // two textures do not match and CopyResource would quietly do nothing.
+    const D3D11_BOX box{0, 0, 0, width_, height_, 1};
+    context_->CopySubresourceRegion(input_.Get(), 0, 0, 0, 0, captured.Get(), 0, &box);
 
     ++arrivedCount_;
     const auto encodeStart = std::chrono::steady_clock::now();
 
-    Packet packet;
-    std::string error;
-    if (!encoder_.Encode(frameIndex_++, &packet, &error)) {
-      Emit({}, false, error);
+    if (encode_) {
+      Packet packet;
+      std::string error;
+      if (!encoder_.Encode(frameIndex_++, &packet, &error)) {
+        Emit({}, false, error);
+        return;
+      }
+      encodeNanos_ += std::chrono::duration_cast<std::chrono::nanoseconds>(
+                          std::chrono::steady_clock::now() - encodeStart)
+                          .count();
+      if (!packet.data.empty()) Emit(std::move(packet.data), packet.keyframe, {});
       return;
     }
+
+    // Raw path, for a GPU whose encoder this process cannot drive directly.
+    // The frame is read back and handed to ffmpeg, which encodes it with AMF
+    // or Quick Sync. One readback per frame is the whole cost of supporting
+    // those GPUs, and it is paid on the capture thread rather than the UI one.
+    D3D11_MAPPED_SUBRESOURCE mapped = {};
+    const HRESULT hr = context_->Map(input_.Get(), 0, D3D11_MAP_READ, 0, &mapped);
+    if (FAILED(hr)) {
+      Emit({}, false, HresultMessage("Map(staging texture)", hr));
+      return;
+    }
+
+    const size_t rowBytes = static_cast<size_t>(width_) * 4;
+    std::vector<uint8_t> frame(rowBytes * height_);
+    const auto* src = static_cast<const uint8_t*>(mapped.pData);
+    // Row by row: the mapped pitch is the driver's, and is usually padded out
+    // beyond width * 4.
+    for (uint32_t y = 0; y < height_; ++y) {
+      memcpy(frame.data() + y * rowBytes, src + static_cast<size_t>(y) * mapped.RowPitch, rowBytes);
+    }
+    context_->Unmap(input_.Get(), 0);
+
     encodeNanos_ += std::chrono::duration_cast<std::chrono::nanoseconds>(
                         std::chrono::steady_clock::now() - encodeStart)
                         .count();
-
-    if (!packet.data.empty()) Emit(std::move(packet.data), packet.keyframe, {});
+    ++frameIndex_;
+    Emit(std::move(frame), false, {});
   }
 
  public:
   // Distinguishes "the window is not redrawing" from "the encoder is slow",
   // which look identical from the outside.
   uint64_t arrived() const { return arrivedCount_; }
+  /** "h264" when NVENC encoded it, "bgra" when raw frames are being sent. */
+  const char* output() const { return encode_ ? "h264" : "bgra"; }
+  const char* vendor() const { return VendorName(adapter_.vendorId); }
+  const std::string& adapterName() const { return adapter_.name; }
   double averageEncodeMs() const {
     return arrivedCount_ ? (static_cast<double>(encodeNanos_) / arrivedCount_) / 1e6 : 0.0;
   }
@@ -440,6 +621,9 @@ class Session {
   winrt::event_token frameToken_{};
 
   Encoder encoder_;
+  AdapterChoice adapter_;
+  /** True when NVENC drives this session; false when frames go out raw. */
+  bool encode_ = false;
   std::mutex encodeMutex_;
   std::atomic<bool> running_{false};
   int64_t frameIndex_ = 0;
@@ -484,6 +668,11 @@ Napi::Value Start(const Napi::CallbackInfo& info) {
   Napi::Object result = Napi::Object::New(env);
   result.Set("width", Napi::Number::New(env, g_session.width()));
   result.Set("height", Napi::Number::New(env, g_session.height()));
+  // The caller cannot configure ffmpeg without knowing which of the two kinds
+  // of payload is about to start arriving.
+  result.Set("output", Napi::String::New(env, g_session.output()));
+  result.Set("vendor", Napi::String::New(env, g_session.vendor()));
+  result.Set("adapter", Napi::String::New(env, g_session.adapterName()));
   return result;
 }
 
@@ -507,17 +696,26 @@ Napi::Value IsSupported(const Napi::CallbackInfo& info) {
     wgcOk = false;
   }
 
-  // NVENC lives in the NVIDIA driver, so this is also the answer to "is
-  // there an NVIDIA GPU here". Checked up front rather than at broadcast
-  // time, because an AMD or Intel machine will never have it and should be
-  // told before it tries — not after, with "nvEncodeAPI64.dll could not be
-  // loaded".
-  HMODULE nvenc = LoadLibraryW(L"nvEncodeAPI64.dll");
-  const bool encoderOk = nvenc != nullptr;
-  if (nvenc) FreeLibrary(nvenc);
+  // Resolved from the adapter this session would actually run on, not from
+  // the mere presence of a driver DLL. A laptop with switchable graphics has
+  // NVENC installed and renders on the integrated GPU, so the old check said
+  // yes and the broadcast then failed — which is the bug this replaces.
+  const AdapterChoice choice = ChooseAdapter();
+
+  // Any hardware adapter can be encoded for: NVIDIA in-process through NVENC,
+  // AMD and Intel by handing raw frames to ffmpeg for AMF or Quick Sync.
+  const bool encoderOk = static_cast<bool>(choice.adapter);
 
   out.Set("windowCapture", Napi::Boolean::New(env, wgcOk));
   out.Set("hardwareEncoder", Napi::Boolean::New(env, encoderOk));
+  out.Set("vendor", Napi::String::New(env, VendorName(choice.vendorId)));
+  out.Set("adapter", Napi::String::New(env, choice.name));
+  // Which encoder the frames will meet, so the UI can say so rather than
+  // implying every GPU path is NVENC.
+  out.Set("encoder", Napi::String::New(env, choice.nvenc ? "nvenc"
+                                            : choice.vendorId == kVendorIntel ? "qsv"
+                                            : encoderOk ? "amf"
+                                                        : "none"));
   return out;
 }
 

@@ -175,13 +175,17 @@ export type RoomMessage =
   | { type: 'takeover-denied'; to: string };
 
 export interface GpuStatus {
-  /** False on machines with no NVIDIA encoder, where GPU mode cannot work. */
+  /** False only when no hardware adapter was found at all. */
   hardwareEncoder: boolean;
   windowCapture: boolean;
   /** Why the hardware path is unavailable, if it is. */
   encoderReason: string | null;
   /** Human-readable active adapter, shown in the encoder tooltip. */
   adapter: string;
+  /** nvidia / amd / intel — which encoder family this machine will use. */
+  gpuVendor: string;
+  /** nvenc, amf, qsv, or none. Shown rather than assuming every GPU is NVIDIA. */
+  gpuEncoder: 'nvenc' | 'amf' | 'qsv' | 'none';
 }
 
 export interface SourceInfo {

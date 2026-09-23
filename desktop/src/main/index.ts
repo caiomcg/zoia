@@ -71,6 +71,8 @@ let gpuStatus: GpuStatus = {
   windowCapture: false,
   encoderReason: null,
   adapter: 'unknown',
+  gpuVendor: 'unknown',
+  gpuEncoder: 'none',
 };
 
 /**
@@ -108,8 +110,14 @@ async function refreshGpuStatus(): Promise<void> {
     hardwareEncoder: caps.hardwareEncoder,
     windowCapture: caps.windowCapture,
     encoderReason: caps.reason,
-    adapter,
+    // The addon's own view of the adapter is the one that matters, since it is
+    // the device the encoder will actually run on. Chromium's is kept because
+    // it names the card in a way people recognise.
+    adapter: caps.adapter || adapter,
+    gpuVendor: caps.vendor,
+    gpuEncoder: caps.encoder,
   };
+  console.log('[gpu] encoder path:', caps.encoder, 'on', caps.vendor, caps.adapter);
   if (caps.reason) console.log('[gpu]', caps.reason);
 
   console.log('[gpu] video_encode:', videoEncode);
@@ -211,9 +219,11 @@ function registerIpc(): void {
       sources.stopWarming();
 
       if (options.hwnd !== null) {
-        // Native path: WGC captures the window and NVENC encodes it without
-        // the pixels ever leaving the GPU, so ffmpeg only has to mux the
-        // H.264 it is handed.
+        // Native path: WGC captures the window. On an NVIDIA adapter the addon
+        // also encodes it, without the pixels ever leaving the GPU, and ffmpeg
+        // only muxes. On a Radeon or an Intel GPU it hands back raw frames and
+        // ffmpeg encodes them with AMF or Quick Sync — `info.output` says
+        // which, and buildArgs follows it.
         const info = capture.start(
           options.hwnd,
           options.framerate,

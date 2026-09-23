@@ -36,21 +36,23 @@ export interface NvencOptions {
    */
   withAudio: boolean;
   /**
-   * Set when an already-encoded H.264 bitstream arrives on stdin, which is
-   * what the native WGC+NVENC capture produces. ffmpeg then only muxes.
+   * Set when the native capture is feeding stdin, with what it is sending.
    *
    * ffmpeg has no way to capture a single window: ddagrab is Desktop
    * Duplication (screen only) and gdigrab returns blank frames for modern
    * GPU-composited windows — verified by capturing one and looking at it.
    * Windows Graphics Capture is the only thing that genuinely captures a
-   * window, and here only Chromium has it.
+   * window, so the addon always does the capturing.
    *
-   * So for window sharing, Chromium captures and this encodes: raw frames
-   * arrive on stdin and go straight to NVENC. The readback that costs is
-   * measured at ~3.8GB/s on this machine, against the ~500MB/s that 1080p60
-   * needs, so the encoder rather than the bridge is the limit.
+   * What it sends depends on the GPU:
+   *
+   *  - `h264` on an NVIDIA adapter, where the addon encodes with NVENC and
+   *    the frame never leaves the GPU. ffmpeg only muxes.
+   *  - `bgra` on anything else, because NVENC is NVIDIA's alone. The addon
+   *    reads the frame back and ffmpeg encodes it with AMF on a Radeon or
+   *    Quick Sync on an Intel GPU — still on the GPU, one copy later.
    */
-  frames: { width: number; height: number } | null;
+  frames: { width: number; height: number; output: 'h264' | 'bgra'; vendor: string } | null;
 }
 
 export interface NvencStatus {
@@ -177,8 +179,70 @@ function scaleArgs(): string[] {
   return [];
 }
 
+/**
+ * The encoder to ask ffmpeg for, from the GPU the frames were captured on.
+ *
+ * Every one of these is in the vendored build (verified with -encoders), and
+ * all three are real hardware encoders — this is not a software fallback
+ * dressed up. `h264_mf` would be a fourth, through Media Foundation, but it
+ * has no low-latency controls worth the name.
+ */
+function encoderFor(vendor: string): string {
+  switch (vendor) {
+    case 'amd':
+      return 'h264_amf';
+    case 'intel':
+      return 'h264_qsv';
+    default:
+      return 'h264_nvenc';
+  }
+}
+
+/** Low-latency knobs, which every vendor spells differently. */
+function encoderTuning(encoder: string): string[] {
+  switch (encoder) {
+    case 'h264_amf':
+      return [
+        '-usage',
+        'ultralowlatency',
+        '-quality',
+        'speed',
+        '-rc',
+        'cbr',
+        // AMF measures this in frames, and anything above zero buys
+        // compression with latency a viewer feels.
+        '-bf',
+        '0',
+      ];
+    case 'h264_qsv':
+      return ['-preset', 'veryfast', '-look_ahead', '0', '-bf', '0'];
+    default:
+      return ['-preset', 'p4', '-tune', 'll', '-bf', '0'];
+  }
+}
+
+/**
+ * The encoder the current run is using. Status used to report h264_nvenc
+ * unconditionally, which on a Radeon was simply untrue and made the one
+ * number worth reading — what is doing the encoding — misleading.
+ */
+let currentEncoder = 'h264_nvenc';
+
+export function encoderInUse(): string {
+  return currentEncoder;
+}
+
 function buildArgs(options: NvencOptions): string[] {
   const { whipUrl, framerate, bitrate } = options;
+  const frames = options.frames;
+  // Already-encoded H.264 is muxed straight through. It used to be decoded and
+  // re-encoded here — the addon's NVENC output went through `format=nv12,
+  // hwupload_cuda` into h264_nvenc a second time — which cost quality and GPU
+  // for nothing.
+  const passthrough = frames?.output === 'h264';
+  const encoder = encoderFor(frames?.vendor ?? 'nvidia');
+  // Passthrough means the addon's own NVENC produced it; otherwise ffmpeg's.
+  currentEncoder = passthrough ? 'nvenc (native)' : encoder;
 
   return [
     '-hide_banner',
@@ -191,9 +255,33 @@ function buildArgs(options: NvencOptions): string[] {
     // the scaling happens afterwards, on the GPU, where it is nearly free.
     // Video. Either an H.264 bitstream the native capture already encoded on
     // the GPU, or the whole desktop grabbed by ffmpeg itself.
-    ...(options.frames
-      ? ['-f', 'h264', '-framerate', String(framerate), '-thread_queue_size', '64', '-i', 'pipe:0']
-      : ['-f', 'lavfi', '-i', `ddagrab=output_idx=0:framerate=${framerate}`]),
+    ...(!frames
+      ? ['-f', 'lavfi', '-i', `ddagrab=output_idx=0:framerate=${framerate}`]
+      : passthrough
+        ? [
+            '-f',
+            'h264',
+            '-framerate',
+            String(framerate),
+            '-thread_queue_size',
+            '64',
+            '-i',
+            'pipe:0',
+          ]
+        : [
+            '-f',
+            'rawvideo',
+            '-pix_fmt',
+            'bgra',
+            '-s',
+            `${frames.width}x${frames.height}`,
+            '-framerate',
+            String(framerate),
+            '-thread_queue_size',
+            '64',
+            '-i',
+            'pipe:0',
+          ]),
 
     // Audio: raw PCM, exactly what WASAPI process loopback produces. It gets
     // its own named pipe because stdin may already be carrying video.
@@ -212,29 +300,30 @@ function buildArgs(options: NvencOptions): string[] {
         ]
       : []),
 
-    // Chromium hands over BGRA in system memory; NVENC wants it on the GPU.
-    ...(options.frames ? ['-vf', 'format=nv12,hwupload_cuda'] : []),
+    // Raw frames arrive as BGRA in system memory; every hardware encoder
+    // wants NV12, and the conversion is cheap next to the encode.
+    ...(frames && !passthrough ? ['-vf', 'format=nv12'] : []),
 
     ...scaleArgs(),
 
-    '-c:v',
-    'h264_nvenc',
-    '-preset',
-    'p4',
-    '-tune',
-    'll', // low latency; this is a live stream, not a file
-    '-profile:v',
-    'baseline', // widest decoder support among viewers
-    '-b:v',
-    String(bitrate),
-    '-maxrate',
-    String(bitrate),
-    '-bufsize',
-    String(bitrate),
-    '-bf',
-    '0', // B-frames add latency and WebRTC does not want them
-    '-g',
-    String(framerate * 2),
+    ...(passthrough
+      ? // Nothing to do but carry the bitstream to the muxer.
+        ['-c:v', 'copy']
+      : [
+          '-c:v',
+          encoder,
+          ...encoderTuning(encoder),
+          '-profile:v',
+          'baseline', // widest decoder support among viewers
+          '-b:v',
+          String(bitrate),
+          '-maxrate',
+          String(bitrate),
+          '-bufsize',
+          String(bitrate),
+          '-g',
+          String(framerate * 2),
+        ]),
 
     ...(options.withAudio
       ? ['-c:a', 'libopus', '-b:a', '128k', '-application', 'lowdelay']
@@ -268,7 +357,7 @@ function startWatchdog(win: BrowserWindow): void {
         win.webContents.send('zoia:nvenc:status', {
           running: true,
           fps: 0,
-          encoder: 'h264_nvenc',
+          encoder: currentEncoder,
           width: captureWidth,
           height: captureHeight,
           error: 'No new frames — the screen may be static.',
@@ -320,7 +409,7 @@ export function start(win: BrowserWindow, options: NvencOptions): void {
       win.webContents.send('zoia:nvenc:status', {
         running: true,
         fps: lastFps,
-        encoder: 'h264_nvenc',
+        encoder: currentEncoder,
         width: captureWidth,
         height: captureHeight,
         error: lastError,
@@ -336,7 +425,7 @@ export function start(win: BrowserWindow, options: NvencOptions): void {
       win.webContents.send('zoia:nvenc:status', {
         running: false,
         fps: 0,
-        encoder: 'h264_nvenc',
+        encoder: currentEncoder,
         width: 0,
         height: 0,
         error: code === 0 ? null : (lastError ?? `ffmpeg exited with code ${code}`),
