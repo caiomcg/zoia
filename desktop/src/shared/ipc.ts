@@ -8,6 +8,18 @@ export interface PairingStatus {
   deviceName: string | null;
   /** Set when a stored credential exists but was rejected — revoked or corrupt. */
   error: string | null;
+  /**
+   * The server this copy is pointed at, so the pairing screen can show it
+   * before anyone commits to joining. Null until an invite supplies one.
+   * The pairing token itself is never sent to the renderer.
+   */
+  serverUrl: string | null;
+  /**
+   * True when there is nothing to pair with and the user has to supply an
+   * invite. Distinct from `error`: a server that is merely unreachable is not
+   * something an invite fixes, and saying so sends people hunting for a file.
+   */
+  needsInvite: boolean;
 }
 
 export interface TokenResult {
@@ -185,6 +197,8 @@ export interface SourceInfo {
 export const IPC = {
   pairingStatus: 'zoia:pairing:status',
   pairingStart: 'zoia:pairing:start',
+  pairingUseInvite: 'zoia:pairing:use-invite',
+  pairingChooseInvite: 'zoia:pairing:choose-invite',
   getToken: 'zoia:token:get',
   stageGet: 'zoia:stage:get',
   stageClaim: 'zoia:stage:claim',

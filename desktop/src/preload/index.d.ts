@@ -13,6 +13,12 @@ export interface ZoiaBridge {
   pairing: {
     status(): Promise<PairingStatus>;
     start(deviceName?: string): Promise<PairingStatus>;
+    /** Adopts an invite the user dropped on the window, by absolute path. */
+    useInvite(path: string): Promise<PairingStatus>;
+    /** Opens a file dialog; resolves to null if the user cancelled. */
+    chooseInvite(): Promise<PairingStatus | null>;
+    /** The on-disk path of a dropped File. Empty for anything not from disk. */
+    pathForFile(file: File): string;
     onChange(cb: (status: PairingStatus) => void): () => void;
   };
   token: {

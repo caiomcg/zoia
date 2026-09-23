@@ -13,8 +13,7 @@
 
 import { net } from 'electron';
 import type { TokenResult, StageState, ClaimResult, IngressEndpoint } from '../shared/ipc';
-
-const BASE = __ZOIA_SERVER_URL__;
+import { getServerUrl } from './config';
 
 class ApiError extends Error {
   constructor(
@@ -25,8 +24,27 @@ class ApiError extends Error {
   }
 }
 
+/**
+ * Thrown when nothing has told this copy of Zoia which server to talk to. It
+ * is a state the app can be in from launch — a release build carries no URL —
+ * so it is a first-class outcome here rather than a crash somewhere downstream.
+ */
+export class NoServerError extends Error {
+  override name = 'NoServerError';
+  constructor() {
+    super('No server is configured. Add an invite to connect.');
+  }
+}
+
 async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const res = await net.fetch(`${BASE}${path}`, {
+  // Read per request, not once at module load. The URL is resolved at startup
+  // from an invite, and can change again when a stored credential names the
+  // server it was paired against — a module constant captured whichever value
+  // happened to exist when this file was first imported.
+  const base = getServerUrl();
+  if (!base) throw new NoServerError();
+
+  const res = await net.fetch(`${base}${path}`, {
     ...init,
     credentials: 'include',
     headers: { 'content-type': 'application/json', ...init.headers },

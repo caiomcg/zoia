@@ -4,7 +4,7 @@
  * the renderer asks for a token or a stage change and gets exactly that back.
  */
 
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import { IPC } from '../shared/ipc';
 import type { NvencStatus, PairingStatus } from '../shared/ipc';
 import type { ZoiaBridge } from './index.d';
@@ -13,6 +13,12 @@ const bridge: ZoiaBridge = {
   pairing: {
     status: () => ipcRenderer.invoke(IPC.pairingStatus),
     start: (deviceName) => ipcRenderer.invoke(IPC.pairingStart, deviceName),
+    useInvite: (path) => ipcRenderer.invoke(IPC.pairingUseInvite, path),
+    // Electron removed File.path, and webUtils only works here in preload.
+    // Resolving to a path rather than reading the file in the renderer is
+    // deliberate: the pairing token stays out of the renderer entirely.
+    pathForFile: (file) => webUtils.getPathForFile(file),
+    chooseInvite: () => ipcRenderer.invoke(IPC.pairingChooseInvite),
     onChange: (cb) => {
       const listener = (_event: Electron.IpcRendererEvent, status: PairingStatus) => cb(status);
       ipcRenderer.on('zoia:pairing:changed', listener);

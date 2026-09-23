@@ -15,6 +15,16 @@ export interface StoredCredential {
   deviceId: string;
   deviceCredential: string;
   deviceName: string;
+  /**
+   * The server this credential was issued by. It is only valid there, so it
+   * travels with the credential rather than being resolved again at launch —
+   * otherwise a stale invite left beside the exe could point an already-paired
+   * machine at a server that has never heard of it.
+   *
+   * Optional because records written before invites existed do not have it;
+   * those fall back to the compiled-in URL.
+   */
+  serverUrl?: string;
 }
 
 function credentialPath(): string {

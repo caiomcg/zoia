@@ -1,6 +1,8 @@
-import { app, BrowserWindow, ipcMain, Menu, session, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, session, shell } from 'electron';
 import { join } from 'node:path';
 import * as pairing from './pairing';
+import * as config from './config';
+import { INVITE_FILENAME } from './invite';
 import * as api from './api';
 import * as sources from './sources';
 import * as audioCapture from './audio';
@@ -161,6 +163,25 @@ function registerIpc(): void {
 
   ipcMain.handle(IPC.pairingStart, (_event, deviceName?: string) => pairing.pair(deviceName));
 
+  ipcMain.handle(IPC.pairingUseInvite, (_event, path: string) => pairing.useInvite(path));
+
+  // The dialog lives in main because the renderer has no filesystem access at
+  // all, by design — it receives a status back, never a path or a token.
+  ipcMain.handle(IPC.pairingChooseInvite, async () => {
+    const result = await dialog.showOpenDialog({
+      title: 'Choose your Zoia invite',
+      defaultPath: INVITE_FILENAME,
+      filters: [
+        { name: 'Zoia invite', extensions: ['json'] },
+        { name: 'All files', extensions: ['*'] },
+      ],
+      properties: ['openFile'],
+    });
+    const [path] = result.filePaths;
+    if (result.canceled || !path) return null;
+    return pairing.useInvite(path);
+  });
+
   ipcMain.handle(IPC.getToken, () => api.getToken());
 
   ipcMain.handle(IPC.gpuStatus, () => gpuStatus);
@@ -312,6 +333,11 @@ app.whenReady().then(async () => {
   // every second before the user can reach the picker is a second the first,
   // expensive capture gets to finish in the background.
   sources.startWarming();
+
+  // Resolve which server this copy points at before anything tries to reach
+  // one. A release build carries no URL and no token; both normally arrive in
+  // an invite file (see src/main/config.ts).
+  await config.init();
 
   // safeStorage needs the app to be ready on Windows, so this is the first
   // point at which restoring a stored credential can succeed.
