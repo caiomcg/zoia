@@ -34,8 +34,11 @@ if (!summary) {
 const [, lines, branches, functions] = summary.map(Number);
 console.log(`lines ${lines}%  branches ${branches}%  functions ${functions}%`);
 
+// Only lines are gated. Branches and functions are printed because they are
+// the honest picture — and they sit lower than lines — but gating three
+// numbers at once turns every unreachable error path into a blocked merge.
 if (lines < FLOOR) {
   console.error(`Line coverage ${lines}% is below the ${FLOOR}% floor.`);
   process.exit(1);
 }
-console.log(`Above the ${FLOOR}% floor.`);
+console.log(`Line coverage is above the ${FLOOR}% floor.`);

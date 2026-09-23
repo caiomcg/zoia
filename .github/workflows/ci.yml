@@ -54,6 +54,38 @@ jobs:
       - name: Enforce the coverage floor
         run: npm run coverage:check
 
+  # The desktop app was invisible to CI until now, which meant a type error or
+  # a lint failure only surfaced on someone's Windows machine at package time.
+  #
+  # Typecheck, lint and format only. The native addon needs MSVC and the
+  # installer needs Windows, so neither can run here; both are verified by hand
+  # on Windows before a release (docs/DISTRIBUTING.md).
+  desktop:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - name: Install without running native build steps
+        # The electron binary is a ~100MB download this job never launches.
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+        run: npm ci --ignore-scripts
+      - name: Typecheck main and preload
+        run: npx tsc --noEmit -p tsconfig.node.json
+      - name: Typecheck the renderer
+        run: npx tsc --noEmit -p tsconfig.web.json
+      # eslint.config.js at the root ignores desktop/, so this is the only
+      # place the app is linted. Formatting is not repeated here: the root
+      # `prettier --check .` already covers desktop/ and runs in the lint job.
+      - run: npm run lint
+
   commitlint:
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
