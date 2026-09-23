@@ -83,6 +83,13 @@ are short, and the consequences section is the point: write down the costs, incl
 ones that make the decision look bad. A decision that stops being true gets a *new* record
 superseding the old one rather than an edit, so the history stays readable.
 
+**Electron's version is written down twice.** `desktop/package.json` pins it as a
+dependency, and the `build:native` script passes the same number to node-gyp as
+`--target`. They have to move together: the native addon is compiled against Electron's ABI,
+and a mismatch fails at load rather than at build. CI cannot catch it — there is no MSVC on
+the runner and the addon is never built there — so Dependabot is configured to leave major
+Electron bumps alone and they are done by hand.
+
 ## Reporting a problem
 
 The desktop app reports its own crashes to the server, with a stack, so a bug report can be

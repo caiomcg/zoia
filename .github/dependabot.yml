@@ -12,6 +12,30 @@ updates:
       dev-dependencies:
         dependency-type: development
 
+  # The desktop app has its own lockfile, so the root entry above never saw
+  # it — and this is the half that ships to people's machines, Electron and
+  # its Chromium included. Security updates here matter more than the
+  # server's, not less.
+  - package-ecosystem: npm
+    directory: /desktop
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: 'build'
+      include: scope
+    groups:
+      dev-dependencies:
+        dependency-type: development
+    ignore:
+      # A major Electron bump also needs --target in the build:native script
+      # to move with it, or the native addon is compiled against the wrong
+      # ABI and fails at load with a version mismatch. CI cannot catch that:
+      # it has no MSVC and never builds the addon. So majors are done by hand,
+      # deliberately, while patch and minor updates still arrive here.
+      - dependency-name: electron
+        update-types: ['version-update:semver-major']
+
   - package-ecosystem: github-actions
     directory: /
     schedule:
