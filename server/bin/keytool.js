@@ -8,6 +8,7 @@
  */
 
 import { parseArgs } from 'node:util';
+import { writeFile } from 'node:fs/promises';
 import { createKeyStore } from '../src/keys.js';
 import { createPairingStore } from '../src/pairings.js';
 import { createDeviceStore } from '../src/devices.js';
@@ -40,8 +41,9 @@ zoia keytool
     list
     revoke <keyId>
 
-  Desktop pairing tokens — embedded in a build, spent once per machine
-    pair:new --name "v1 build" [--max-activations N] [--expires-in-days N]
+  Desktop pairing tokens — sent as an invite, spent once per machine
+    pair:new --name "friends" [--max-activations N] [--expires-in-days N]
+             [--invite <path>]                write a zoia-invite.json to send
     pair:list
     pair:revoke <pairingId> [--cascade]      --cascade also revokes its devices
 
@@ -122,6 +124,7 @@ switch (command) {
         name: { type: 'string' },
         'max-activations': { type: 'string' },
         'expires-in-days': { type: 'string' },
+        invite: { type: 'string' },
       },
     });
     if (!values.name) fail('--name is required');
@@ -143,8 +146,24 @@ switch (command) {
     console.log(`\n  pairing token "${record.name}"`);
     console.log(`  id:          ${record.id}`);
     console.log(`  activations: ${maxActivations ?? 'unlimited'}`);
-    console.log('\n  Build the desktop app with this token. Shown once:\n');
-    console.log(`    ZOIA_PAIRING_TOKEN=${raw}\n`);
+
+    if (values.invite) {
+      // Writing the file is the normal path now. Published builds carry no
+      // server and no token, so what a person actually needs to be sent is
+      // this, not a token to paste somewhere.
+      const invite = { serverUrl: `${scheme}://${publicHost}`, pairingToken: raw };
+      // 0600 because this file is the invitation: anyone who can read it can
+      // pair a machine, up to the activation cap.
+      await writeFile(values.invite, `${JSON.stringify(invite, null, 2)}\n`, { mode: 0o600 });
+      console.log(`\n  Wrote ${values.invite} — send it to whoever is joining.`);
+      console.log(`  It points at ${invite.serverUrl}`);
+      console.log('  Treat it as a credential: it is shown once and cannot be recovered.\n');
+    } else {
+      console.log('\n  Shown once. Send it as an invite file with --invite <path>,');
+      console.log('  or bake it into a private build with make-exe.bat:\n');
+      console.log(`    ZOIA_PAIRING_TOKEN=${raw}\n`);
+    }
+
     console.log('  If it leaks: keytool pair:revoke ' + record.id);
     console.log('  Machines already paired keep working; add --cascade to cut them off too.\n');
     break;

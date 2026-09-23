@@ -28,10 +28,22 @@ if (files.length === 0) {
   process.exit(1);
 }
 
-const run = spawnSync(process.execPath, ['--test', '--experimental-test-coverage', ...files], {
-  encoding: 'utf8',
-  shell: false,
-});
+// server/bin is excluded deliberately. keytool is a CLI, and keytool.test.js
+// exercises it the way it is actually used — by spawning it — which the runner
+// cannot attribute back to its lines. Counting it reported 54% for a file whose
+// behaviour is tested, and pulled the figure for server/src down with it. This
+// floor is about the application.
+const run = spawnSync(
+  process.execPath,
+  [
+    '--test',
+    '--experimental-test-coverage',
+    '--test-coverage-exclude=server/bin/**',
+    '--test-coverage-exclude=server/test/**',
+    ...files,
+  ],
+  { encoding: 'utf8', shell: false },
+);
 
 const output = `${run.stdout ?? ''}${run.stderr ?? ''}`;
 if (run.status !== 0) {
@@ -40,8 +52,14 @@ if (run.status !== 0) {
   process.exit(run.status ?? 1);
 }
 
+// Colour codes sit between the pipes and the numbers whenever the runner emits
+// them, and `\s*` does not match an escape sequence — so the summary appeared
+// to vanish and this failed with a parse error instead of a figure.
+// eslint-disable-next-line no-control-regex
+const plain = output.replace(/\u001b\[[0-9;]*m/g, '');
+
 // The summary line reads: "all files | 95.53 | 87.11 | 86.41 |"
-const summary = output.match(/all files\s*\|\s*([\d.]+)\s*\|\s*([\d.]+)\s*\|\s*([\d.]+)/i);
+const summary = plain.match(/all files\s*\|\s*([\d.]+)\s*\|\s*([\d.]+)\s*\|\s*([\d.]+)/i);
 if (!summary) {
   console.error('Could not find a coverage summary in the test output.');
   process.exit(1);
