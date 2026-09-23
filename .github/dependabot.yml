@@ -35,6 +35,16 @@ updates:
       # deliberately, while patch and minor updates still arrive here.
       - dependency-name: electron
         update-types: ['version-update:semver-major']
+      # Vite 8 cannot be installed here at all: electron-vite 5 peers
+      # ^5 || ^6 || ^7, and @vitejs/plugin-react 6 in turn requires vite ^8,
+      # so the two move together or not at all. npm ci refuses the
+      # combination outright, which took a whole grouped PR down with it.
+      # Lift both of these once electron-vite 6 leaves beta — its peer range
+      # already reads ^6 || ^7 || ^8.
+      - dependency-name: vite
+        update-types: ['version-update:semver-major']
+      - dependency-name: '@vitejs/plugin-react'
+        update-types: ['version-update:semver-major']
 
   - package-ecosystem: github-actions
     directory: /
