@@ -454,12 +454,30 @@ button.danger {
 }
 
 .topbar {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   gap: 10px;
   align-items: center;
   padding: 10px 14px;
   background: var(--surface);
   border-bottom: 1px solid var(--border);
+}
+
+.topbar-left,
+.topbar-centre,
+.topbar-right {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+/* Centred on the window, not on whatever is left over beside the status. */
+.topbar-centre {
+  justify-content: center;
+}
+
+.topbar-right {
+  justify-content: flex-end;
 }
 
 /* Sized by height so the wordmark's own aspect ratio decides the width. */
@@ -698,9 +716,35 @@ button.danger {
 /* ---- banners ------------------------------------------------------------- */
 
 .banner {
+  display: flex;
+  gap: 10px;
+  align-items: center;
   margin: 0;
   padding: 8px 14px;
   font-size: 13px;
+}
+
+.banner-text {
+  flex: 1;
+}
+
+.banner-close {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  color: inherit;
+  background: rgb(0 0 0 / 0.18);
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.banner-close:hover {
+  background: rgb(0 0 0 / 0.32);
 }
 
 .banner.error {
@@ -739,4 +783,98 @@ button.danger {
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 6px;
+}
+
+/* ---- status lights ------------------------------------------------------- */
+
+/* A dot, with the words on hover. The detail matters when something looks
+   wrong, which is rarely, so it does not need to occupy the bar. */
+.status-light {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px;
+  cursor: default;
+}
+
+.status-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+}
+
+.status-light.ok .status-dot {
+  background: var(--live);
+  box-shadow: 0 0 0 3px rgb(35 165 90 / 0.18);
+}
+
+.status-light.warn .status-dot {
+  background: var(--warn);
+  box-shadow: 0 0 0 3px rgb(240 177 50 / 0.18);
+}
+
+.status-light.bad .status-dot {
+  background: var(--danger);
+  box-shadow: 0 0 0 3px rgb(218 55 60 / 0.2);
+}
+
+.status-light.idle .status-dot {
+  background: var(--muted);
+}
+
+/* ---- taking the stage ---------------------------------------------------- */
+
+.takeover {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 14px;
+  background: var(--raised);
+  border-bottom: 1px solid var(--border);
+}
+
+.takeover-body {
+  flex: 1;
+  font-size: 13px;
+}
+
+.takeover-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.takeover.incoming {
+  border-left: 3px solid var(--accent);
+}
+
+.takeover.outgoing {
+  border-left: 3px solid var(--warn);
+}
+
+/* ---- share controls ------------------------------------------------------ */
+
+/* Screen and camera are independent: either can be lit, and pressing one does
+   not imply anything about the other. */
+.share-icons {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.share-icons .icon-button {
+  width: 30px;
+  height: 28px;
+  color: var(--muted);
+}
+
+.share-icons .icon-button:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--raised);
+}
+
+.share-icons .icon-button.active {
+  color: #fff;
+  background: var(--live);
 }

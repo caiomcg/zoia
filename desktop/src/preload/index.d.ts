@@ -20,7 +20,8 @@ export interface ZoiaBridge {
   };
   stage: {
     get(): Promise<StageState>;
-    claim(): Promise<ClaimResult>;
+    /** force ends a takeover the holder never answered. */
+    claim(force?: boolean): Promise<ClaimResult>;
     release(): Promise<{ ok: boolean; released?: boolean }>;
   };
   sources: {
@@ -49,6 +50,8 @@ export interface ZoiaBridge {
   device: {
     rename(name: string): Promise<{ ok: boolean; name: string }>;
   };
+  /** Sends a renderer-side failure to the server. */
+  report(entry: { kind: string; message: string; stack?: string; context?: string }): void;
   gpu: {
     status(): Promise<GpuStatus>;
   };

@@ -10,6 +10,7 @@ import { createDeviceStore } from './devices.js';
 import { createTokenIssuer } from './token.js';
 import { createStage } from './stage.js';
 import { createIngressService } from './ingress.js';
+import { createReportStore } from './reports.js';
 import { createApp } from './app.js';
 
 try {
@@ -46,12 +47,15 @@ const ingress = createIngressService({
   rooms,
 });
 
+const reports = createReportStore();
+
 const app = createApp({
   config,
   keyStore,
   tokenIssuer,
   stage,
   ingress,
+  reports,
   pairingStore,
   deviceStore,
 });

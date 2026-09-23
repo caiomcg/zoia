@@ -82,11 +82,21 @@ export function createStage({ rooms, roomName, logger = console, now = () => Dat
     /**
      * Grants publish rights, if the stage is free. Returns the current holder
      * when it is not, so the caller can say who has it.
+     *
+     * `force` is the end of the takeover flow: the asker has already waited
+     * out the grace period without the holder answering, which is what
+     * happens when someone leaves a machine broadcasting and walks away. It
+     * is not a privilege — anyone in the room may do it, and the holder is
+     * told — so it cannot be used to gain rights nobody else has.
      */
-    async claim(user) {
+    async claim(user, { force = false } = {}) {
       const current = await holder();
 
-      if (current && current.identity !== user.id) {
+      if (current && current.identity !== user.id && force) {
+        logger.info(`[stage] ${user.name} (${user.id}) took the stage from ${current.identity}`);
+        await setPermission(current.identity, VIEW_PERMISSION).catch(() => {});
+        claimedAt.delete(current.identity);
+      } else if (current && current.identity !== user.id) {
         const since = claimedAt.get(current.identity);
         const stale =
           !current.publishing && (since === undefined || now() - since > STALE_CLAIM_MS);

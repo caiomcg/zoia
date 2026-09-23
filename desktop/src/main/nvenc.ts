@@ -143,9 +143,14 @@ const SILENCE = Buffer.alloc((SAMPLE_RATE * CHANNELS * 2 * KEEPALIVE_MS) / 1000)
 function startKeepAlive(): void {
   lastAudioAt = Date.now();
   keepAlive = setInterval(() => {
-    if (!audioSocket?.writable) return;
+    const socket = audioSocket;
+    if (!socket || socket.destroyed || !socket.writable) return;
     if (Date.now() - lastAudioAt >= KEEPALIVE_MS) {
-      audioSocket.write(SILENCE);
+      try {
+        socket.write(SILENCE);
+      } catch {
+        return;
+      }
       lastAudioAt = Date.now();
     }
   }, KEEPALIVE_MS);
@@ -287,6 +292,10 @@ export function start(win: BrowserWindow, options: NvencOptions): void {
   const binary = ffmpegPath();
   child = spawn(binary, buildArgs(options), { windowsHide: true });
 
+  // ffmpeg exiting closes this pipe; without a listener the resulting EPIPE
+  // is an uncaught exception rather than an event.
+  child.stdin.on('error', () => {});
+
   child.stderr.setEncoding('utf8');
   child.stderr.on('data', (chunk: string) => {
     // ffmpeg reports progress on stderr; the frame counter is the liveness
@@ -350,19 +359,38 @@ export function shutdown(): void {
 
 /** Feeds one chunk of captured PCM to the encoder. */
 export function writeAudio(chunk: Buffer): void {
-  if (!audioSocket?.writable) return;
+  const socket = audioSocket;
+  if (!socket || socket.destroyed || !socket.writable) return;
   lastAudioAt = Date.now();
-  // Dropped rather than buffered: audio that cannot be written now is audio
-  // that is already late, and queueing it would only grow the A/V offset.
-  audioSocket.write(chunk);
+  try {
+    // Dropped rather than buffered: audio that cannot be written now is audio
+    // that is already late, and queueing it would only grow the A/V offset.
+    socket.write(chunk);
+  } catch {
+    // Same as writeFrame: a closed pipe is the end of a broadcast, not a
+    // reason to bring the process down.
+  }
 }
 
-/** Feeds one captured video frame (BGRA) to the encoder. */
+/**
+ * Feeds one encoded frame to the muxer.
+ *
+ * Writes race against ffmpeg exiting: the pipe can close between the
+ * writable check and the write itself, and the resulting EPIPE/EOF is
+ * emitted on the stream rather than thrown by write(). Unhandled, that
+ * reached the process as "Uncaught Error: write EPIPE" and closed the app
+ * with a dialog. A dead pipe simply means the broadcast is over.
+ */
 export function writeFrame(frame: Buffer): void {
-  if (!child?.stdin.writable) return;
-  // Back-pressure is handled by dropping: a frame that cannot be written now
-  // is better skipped than queued, which would only add latency.
-  child.stdin.write(frame, () => {});
+  const stdin = child?.stdin;
+  if (!stdin || stdin.destroyed || !stdin.writable) return;
+  try {
+    // Back-pressure is handled by dropping: a frame that cannot be written
+    // now is better skipped than queued, which would only add latency.
+    stdin.write(frame, () => {});
+  } catch {
+    // The pipe went away mid-write; stop() will tidy up.
+  }
 }
 
 export function stop(): void {

@@ -141,6 +141,8 @@ export function useRoom() {
   const statsTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastSampleRef = useRef<{ bytes: number; at: number } | null>(null);
   const [canMonitor, setCanMonitor] = useState(false);
+  // Which of the two share controls is lit; they are independent.
+  const [sharingKind, setSharingKind] = useState<'screen' | 'camera' | null>(null);
 
   const findRemoteScreen = useCallback((room: Room): RemoteScreen | null => {
     // The hardware path publishes through an ingress, which joins as its own
@@ -190,6 +192,13 @@ export function useRoom() {
     return null;
   }, []);
 
+  const dataHandlerRef = useRef<((payload: Uint8Array, from?: Participant) => void) | null>(null);
+
+  /** Registers the takeover handler; useRoom stays unaware of the protocol. */
+  const onData = useCallback((handler: (payload: Uint8Array, from?: Participant) => void) => {
+    dataHandlerRef.current = handler;
+  }, []);
+
   const connect = useCallback(
     async (wsUrl: string, token: string, quality?: TokenResult['quality']) => {
       setState('connecting');
@@ -237,6 +246,13 @@ export function useRoom() {
         // Without this, a rename updated the server record and the person's
         // own footer while every list in every client kept the old name.
         .on(RoomEvent.ParticipantNameChanged, refresh)
+        .on(RoomEvent.DataReceived, (payload, participant) =>
+          dataHandlerRef.current?.(payload, participant),
+        )
+        // Permission changes are how losing the stage arrives: the server
+        // revokes canPublish and LiveKit pushes it down live.
+        .on(RoomEvent.ParticipantPermissionsChanged, refresh)
+        .on(RoomEvent.LocalTrackUnpublished, refresh)
         .on(RoomEvent.TrackSubscribed, refresh)
         .on(RoomEvent.TrackUnsubscribed, refresh)
         .on(RoomEvent.ParticipantConnected, refresh)
@@ -292,7 +308,8 @@ export function useRoom() {
    * state, so it stays a single stable reference other callbacks can close
    * over safely, and is declared first so nothing needs a forward reference.
    */
-  const stopBroadcast = useCallback(async () => {
+  /** Drops whatever is being published, without touching the stage. */
+  const stopPublishing = useCallback(async () => {
     const room = roomRef.current;
     const track = localTrackRef.current;
     if (room && track) {
@@ -320,8 +337,17 @@ export function useRoom() {
     setCanMonitor(false);
 
     setBroadcastState('idle');
-    await window.zoia.stage.release().catch(() => {});
+    setSharingKind(null);
   }, []);
+
+  /**
+   * Ends the local publish and releases the stage, unconditionally — whether
+   * the user clicked Stop, the OS ended capture, or the room disconnected.
+   */
+  const stopBroadcast = useCallback(async () => {
+    await stopPublishing();
+    await window.zoia.stage.release().catch(() => {});
+  }, [stopPublishing]);
 
   /**
    * Publishes a camera and microphone.
@@ -348,6 +374,7 @@ export function useRoom() {
       }
 
       try {
+        setSharingKind('camera');
         const stream = await navigator.mediaDevices.getUserMedia(constraints);
         const [videoTrack] = stream.getVideoTracks();
         if (!videoTrack) throw new Error('That camera returned no video.');
@@ -408,18 +435,25 @@ export function useRoom() {
    * the stage, the user never sees a capture prompt at all.
    */
   const startBroadcast = useCallback(
-    async (source: SourceInfo, preset?: QualityPreset) => {
+    async (source: SourceInfo, preset?: QualityPreset, { keepStage = false } = {}) => {
       setBroadcastError(null);
       setAudioWarning(null);
       setBroadcastState('starting');
 
-      const claim = await window.zoia.stage.claim();
-      if (!claim.ok) {
-        setBroadcastState('idle');
-        setBroadcastError(
-          claim.holder ? `${claim.holder.name} is already broadcasting.` : 'The stage is busy.',
-        );
-        return false;
+      // Switching what you are sharing keeps the stage you already hold:
+      // releasing and re-claiming would briefly free it for someone else and
+      // makes the viewer's picture drop out for no reason.
+      if (keepStage) {
+        await stopPublishing();
+      } else {
+        const claim = await window.zoia.stage.claim();
+        if (!claim.ok) {
+          setBroadcastState('idle');
+          setBroadcastError(
+            claim.holder ? `${claim.holder.name} is already broadcasting.` : 'The stage is busy.',
+          );
+          return false;
+        }
       }
 
       try {
@@ -436,6 +470,7 @@ export function useRoom() {
         // exactly the source just selected above — no native picker appears.
         // Without explicit constraints Chromium picks its own (often lower)
         // resolution and frame rate for screen capture.
+        setSharingKind('screen');
         const stream = await navigator.mediaDevices.getDisplayMedia({
           video: {
             width: { ideal: quality.width },
@@ -532,13 +567,13 @@ export function useRoom() {
 
         return true;
       } catch (err) {
-        await window.zoia.stage.release();
+        if (!keepStage) await window.zoia.stage.release().catch(() => {});
         setBroadcastState('idle');
         setBroadcastError(err instanceof Error ? err.message : String(err));
         return false;
       }
     },
-    [stopBroadcast],
+    [stopBroadcast, stopPublishing],
   );
 
   useEffect(
@@ -558,6 +593,7 @@ export function useRoom() {
     members,
     connect,
     disconnect,
+    onData,
     setDisplayName,
     broadcastState,
     broadcastError,
@@ -570,6 +606,7 @@ export function useRoom() {
       localAudioRef.current?.capture.setMonitorGain(value);
     }, []),
     localTrack,
+    sharingKind,
     startBroadcast,
     startCamera,
     stopBroadcast,

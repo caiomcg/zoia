@@ -24,7 +24,7 @@ const bridge: ZoiaBridge = {
   },
   stage: {
     get: () => ipcRenderer.invoke(IPC.stageGet),
-    claim: () => ipcRenderer.invoke(IPC.stageClaim),
+    claim: (force) => ipcRenderer.invoke(IPC.stageClaim, force),
     release: () => ipcRenderer.invoke(IPC.stageRelease),
   },
   sources: {
@@ -47,6 +47,7 @@ const bridge: ZoiaBridge = {
   device: {
     rename: (name) => ipcRenderer.invoke(IPC.renameDevice, name),
   },
+  report: (entry) => ipcRenderer.send(IPC.report, entry),
   gpu: {
     status: () => ipcRenderer.invoke(IPC.gpuStatus),
   },

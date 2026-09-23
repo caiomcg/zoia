@@ -24,6 +24,7 @@ export function createApp({
   tokenIssuer,
   stage,
   ingress = null,
+  reports = null,
   pairingStore = null,
   deviceStore = null,
   logger = console,
@@ -258,7 +259,8 @@ export function createApp({
 
   app.post('/api/stage/claim', requireSession, async (req, res, next) => {
     try {
-      const result = await stage.claim(req.user);
+      // force ends a takeover the holder never answered; see stage.js.
+      const result = await stage.claim(req.user, { force: req.body?.force === true });
       if (!result.ok) {
         return res.status(409).json({ error: 'stage_busy', holder: result.holder });
       }
@@ -299,6 +301,21 @@ export function createApp({
     } catch (err) {
       next(err);
     }
+  });
+
+  // ---- client error reports ----------------------------------------------
+  // Rate-limited like a login: a client stuck in a crash loop must not be
+  // able to fill the log, and an unauthenticated one cannot report at all.
+
+  app.post('/api/report', requireSession, (req, res) => {
+    if (!reports) return res.status(501).json({ error: 'reports_not_configured' });
+    reports.add(req.body, req.user);
+    res.json({ ok: true });
+  });
+
+  app.get('/api/reports', requireSession, (_req, res) => {
+    if (!reports) return res.status(501).json({ error: 'reports_not_configured' });
+    res.json({ reports: reports.list() });
   });
 
   // ---- display name ------------------------------------------------------

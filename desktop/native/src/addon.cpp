@@ -497,7 +497,28 @@ Napi::Value Stop(const Napi::CallbackInfo& info) {
 }
 
 Napi::Value IsSupported(const Napi::CallbackInfo& info) {
-  return Napi::Boolean::New(info.Env(), wgc::GraphicsCaptureSession::IsSupported());
+  Napi::Env env = info.Env();
+  Napi::Object out = Napi::Object::New(env);
+
+  bool wgcOk = false;
+  try {
+    wgcOk = wgc::GraphicsCaptureSession::IsSupported();
+  } catch (...) {
+    wgcOk = false;
+  }
+
+  // NVENC lives in the NVIDIA driver, so this is also the answer to "is
+  // there an NVIDIA GPU here". Checked up front rather than at broadcast
+  // time, because an AMD or Intel machine will never have it and should be
+  // told before it tries — not after, with "nvEncodeAPI64.dll could not be
+  // loaded".
+  HMODULE nvenc = LoadLibraryW(L"nvEncodeAPI64.dll");
+  const bool encoderOk = nvenc != nullptr;
+  if (nvenc) FreeLibrary(nvenc);
+
+  out.Set("windowCapture", Napi::Boolean::New(env, wgcOk));
+  out.Set("hardwareEncoder", Napi::Boolean::New(env, encoderOk));
+  return out;
 }
 
 Napi::Object Init(Napi::Env env, Napi::Object exports) {
