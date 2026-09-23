@@ -143,13 +143,45 @@ export function useRoom() {
   const [canMonitor, setCanMonitor] = useState(false);
 
   const findRemoteScreen = useCallback((room: Room): RemoteScreen | null => {
+    // The hardware path publishes through an ingress, which joins as its own
+    // participant — and from this app's point of view that participant is
+    // *remote*, including on the machine that is doing the broadcasting.
+    // Rendering it there plays your own captured audio back out of your own
+    // speakers, which is heard as an echo of whatever you are sharing.
+    const ownIngress = `${room.localParticipant.identity}-nvenc`;
+
     for (const participant of room.remoteParticipants.values()) {
-      const videoPub = participant.getTrackPublication(Track.Source.ScreenShare);
+      if (participant.identity === ownIngress) continue;
+      // Where the stream came from decides how it is labelled, and viewers
+      // must not care. The in-app path publishes ScreenShare; the hardware
+      // path goes through a LiveKit ingress, which publishes CAMERA and
+      // MICROPHONE because WHIP carries no notion of a screen share. Looking
+      // only for ScreenShare meant the NVENC stream published perfectly and
+      // nobody could see it.
+      const videoPub =
+        participant.getTrackPublication(Track.Source.ScreenShare) ??
+        [...participant.videoTrackPublications.values()].find((pub) => pub.track);
+
       if (videoPub?.track) {
-        const audioPub = participant.getTrackPublication(Track.Source.ScreenShareAudio);
+        const audioPub =
+          participant.getTrackPublication(Track.Source.ScreenShareAudio) ??
+          [...participant.audioTrackPublications.values()].find((pub) => pub.track);
+
+        // An ingress carries the name it was created with, so a later rename
+        // would leave viewers looking at a stale label. The human it belongs
+        // to is in the same room and always current.
+        const ingressOwnerId = participant.identity.replace(/-nvenc$/, '');
+        const owner =
+          ingressOwnerId === participant.identity
+            ? participant
+            : ([...room.remoteParticipants.values()].find((p) => p.identity === ingressOwnerId) ??
+              (room.localParticipant.identity === ingressOwnerId
+                ? room.localParticipant
+                : participant));
+
         return {
-          participantIdentity: participant.identity,
-          participantName: participant.name || participant.identity,
+          participantIdentity: owner.identity,
+          participantName: owner.name || owner.identity,
           videoTrack: videoPub.track,
           audioTrack: audioPub?.track ?? null,
         };
@@ -175,7 +207,9 @@ export function useRoom() {
           identity: p.identity,
           name: p.name || p.identity,
           isLocal,
-          isBroadcasting: Boolean(p.getTrackPublication(Track.Source.ScreenShare)),
+          // Any published video means sharing, for the same reason as above:
+          // an ingress publishes CAMERA rather than ScreenShare.
+          isBroadcasting: p.videoTrackPublications.size > 0,
           // Ingress participants are created by the server with a "-nvenc"
           // suffix on the publisher's own identity, so they can be folded
           // back into that person rather than listed separately.
@@ -200,6 +234,9 @@ export function useRoom() {
       };
 
       room
+        // Without this, a rename updated the server record and the person's
+        // own footer while every list in every client kept the old name.
+        .on(RoomEvent.ParticipantNameChanged, refresh)
         .on(RoomEvent.TrackSubscribed, refresh)
         .on(RoomEvent.TrackUnsubscribed, refresh)
         .on(RoomEvent.ParticipantConnected, refresh)
@@ -228,6 +265,18 @@ export function useRoom() {
     },
     [findRemoteScreen],
   );
+
+  /**
+   * Publishes a new display name to the room.
+   *
+   * The name every other client renders comes from the LiveKit participant,
+   * which is set from the token at join time — so changing it on the server
+   * alone is invisible until the next reconnect. This pushes it live; the
+   * token grants canUpdateOwnMetadata for exactly this, and nothing wider.
+   */
+  const setDisplayName = useCallback(async (name: string) => {
+    await roomRef.current?.localParticipant.setName(name);
+  }, []);
 
   const disconnect = useCallback(async () => {
     await roomRef.current?.disconnect();
@@ -273,6 +322,85 @@ export function useRoom() {
     setBroadcastState('idle');
     await window.zoia.stage.release().catch(() => {});
   }, []);
+
+  /**
+   * Publishes a camera and microphone.
+   *
+   * Kept separate from screen sharing on purpose: there is no window to
+   * capture, the audio is a microphone rather than an application, and the
+   * frame is small enough that the hardware encoder buys nothing. The tracks
+   * still publish as ScreenShare so that every viewer renders them the same
+   * way, whatever the stage holder happens to be sharing.
+   */
+  const startCamera = useCallback(
+    async (constraints: MediaStreamConstraints) => {
+      setBroadcastError(null);
+      setAudioWarning(null);
+      setBroadcastState('starting');
+
+      const claim = await window.zoia.stage.claim();
+      if (!claim.ok) {
+        setBroadcastState('idle');
+        setBroadcastError(
+          claim.holder ? `${claim.holder.name} is already broadcasting.` : 'The stage is busy.',
+        );
+        return false;
+      }
+
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        const [videoTrack] = stream.getVideoTracks();
+        if (!videoTrack) throw new Error('That camera returned no video.');
+
+        const room = roomRef.current;
+        if (!room) throw new Error('Not connected to the room.');
+
+        // 'motion' rather than 'detail': a camera image is moving video, not
+        // text, and the encoder should favour frame rate over sharpness.
+        videoTrack.contentHint = 'motion';
+        const local = new LocalVideoTrack(videoTrack, undefined, false);
+        local.source = Track.Source.ScreenShare;
+
+        await room.localParticipant.publishTrack(local, {
+          source: Track.Source.ScreenShare,
+          simulcast: false,
+          videoEncoding: { maxBitrate: 2_500_000, maxFramerate: 30 },
+          stream: 'screen',
+        });
+
+        localTrackRef.current = local;
+        setLocalTrack(local);
+        setBroadcastState('live');
+
+        videoTrack.addEventListener('ended', () => {
+          void stopBroadcast();
+        });
+
+        const [micTrack] = stream.getAudioTracks();
+        if (micTrack) {
+          const audioTrack = new LocalAudioTrack(micTrack, undefined, false);
+          audioTrack.source = Track.Source.ScreenShareAudio;
+          await room.localParticipant.publishTrack(audioTrack, {
+            source: Track.Source.ScreenShareAudio,
+            stream: 'screen',
+          });
+          // No capture handle here: the microphone is a plain MediaStream,
+          // not the WASAPI bridge, so there is nothing to monitor or meter.
+          localAudioRef.current = null;
+        } else {
+          setAudioWarning('No microphone was available, so the camera is being shared silently.');
+        }
+
+        return true;
+      } catch (err) {
+        await window.zoia.stage.release().catch(() => {});
+        setBroadcastState('idle');
+        setBroadcastError(err instanceof Error ? err.message : String(err));
+        return false;
+      }
+    },
+    [stopBroadcast],
+  );
 
   /**
    * Claims the stage, then captures and publishes the chosen source. The two
@@ -367,6 +495,17 @@ export function useRoom() {
         // inside the same try block as the video path above: a window whose
         // audio session WASAPI can't resolve (a rare edge case) should not
         // take down the video that is already live and working.
+        // Screens are shared silently here too, for the same reason: the only
+        // audio available for a whole screen is the whole system's.
+        if (source.kind !== 'window' || source.processId === null) {
+          setAudioWarning(
+            source.kind === 'window'
+              ? 'That window\u2019s audio could not be identified, so it is being shared silently.'
+              : 'Sharing a screen sends no audio. Share a window to send that app\u2019s sound.',
+          );
+          return true;
+        }
+
         try {
           const capture = await createCaptureAudioTrack(source.processId);
           const audioTrack = new LocalAudioTrack(capture.track, undefined, false);
@@ -383,10 +522,6 @@ export function useRoom() {
             setAudioLevel(stats.peak);
             setAudioLatencyMs(stats.latencyMs);
           });
-
-          if (source.processId === null) {
-            setAudioWarning('Sharing a screen captures your whole system’s audio, not one app.');
-          }
         } catch (audioErr) {
           setAudioWarning(
             `Audio capture failed for this window: ${
@@ -423,6 +558,7 @@ export function useRoom() {
     members,
     connect,
     disconnect,
+    setDisplayName,
     broadcastState,
     broadcastError,
     audioWarning,
@@ -435,6 +571,7 @@ export function useRoom() {
     }, []),
     localTrack,
     startBroadcast,
+    startCamera,
     stopBroadcast,
   };
 }

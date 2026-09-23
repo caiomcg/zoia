@@ -1,13 +1,17 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { SourceInfo } from '../../shared/ipc';
+import { useCameraDevices } from '../livekit/useCamera';
 
 export default function SourcePicker({
   onPick,
+  onPickCamera,
   onCancel,
 }: {
   onPick: (source: SourceInfo) => void;
+  onPickCamera: (constraints: MediaStreamConstraints) => void;
   onCancel: () => void;
 }) {
+  const camera = useCameraDevices();
   const [sources, setSources] = useState<SourceInfo[] | null>(null);
   const [query, setQuery] = useState('');
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -74,6 +78,50 @@ export default function SourcePicker({
                 </div>
               </section>
             )}
+            {camera.devices.cameras.length > 0 && !query && (
+              <section>
+                <h3>Camera</h3>
+                <div className="camera-row">
+                  <label>
+                    <span className="muted">Camera</span>
+                    <select
+                      value={camera.cameraId}
+                      onChange={(e) => camera.chooseCamera(e.target.value)}
+                    >
+                      {/* An empty value means whatever Windows considers the
+                          default, which is what most people want. */}
+                      <option value="">Default</option>
+                      {camera.devices.cameras.map((c) => (
+                        <option key={c.deviceId} value={c.deviceId}>
+                          {c.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label>
+                    <span className="muted">Microphone</span>
+                    <select
+                      value={camera.microphoneId}
+                      onChange={(e) => camera.chooseMicrophone(e.target.value)}
+                    >
+                      <option value="">Default</option>
+                      {camera.devices.microphones.map((m) => (
+                        <option key={m.deviceId} value={m.deviceId}>
+                          {m.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <button className="primary" onClick={() => onPickCamera(camera.constraints())}>
+                    Share camera
+                  </button>
+                </div>
+                {camera.error && <p className="error">{camera.error}</p>}
+              </section>
+            )}
+
             {filtered.length === 0 && <p className="muted">No matching sources.</p>}
           </div>
         )}

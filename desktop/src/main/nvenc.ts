@@ -26,8 +26,15 @@ export interface NvencOptions {
   whipUrl: string;
   framerate: number;
   bitrate: number;
-  /** null captures the whole system's audio rather than one process. */
+  /** The application whose audio to send; null means send no audio at all. */
   processId: number | null;
+  /**
+   * False for a screen share. Sharing a whole screen used to fall back to
+   * capturing the whole system's output, which sends every notification and
+   * every other app along with it — never what someone means by "share my
+   * screen". Sharing a window still sends that window's audio.
+   */
+  withAudio: boolean;
   /**
    * Set when an already-encoded H.264 bitstream arrives on stdin, which is
    * what the native WGC+NVENC capture produces. ffmpeg then only muxes.
@@ -185,16 +192,20 @@ function buildArgs(options: NvencOptions): string[] {
 
     // Audio: raw PCM, exactly what WASAPI process loopback produces. It gets
     // its own named pipe because stdin may already be carrying video.
-    '-f',
-    's16le',
-    '-ar',
-    String(SAMPLE_RATE),
-    '-ac',
-    String(CHANNELS),
-    '-thread_queue_size',
-    '512',
-    '-i',
-    AUDIO_PIPE,
+    ...(options.withAudio
+      ? [
+          '-f',
+          's16le',
+          '-ar',
+          String(SAMPLE_RATE),
+          '-ac',
+          String(CHANNELS),
+          '-thread_queue_size',
+          '512',
+          '-i',
+          AUDIO_PIPE,
+        ]
+      : []),
 
     // Chromium hands over BGRA in system memory; NVENC wants it on the GPU.
     ...(options.frames ? ['-vf', 'format=nv12,hwupload_cuda'] : []),
@@ -220,12 +231,9 @@ function buildArgs(options: NvencOptions): string[] {
     '-g',
     String(framerate * 2),
 
-    '-c:a',
-    'libopus',
-    '-b:a',
-    '128k',
-    '-application',
-    'lowdelay',
+    ...(options.withAudio
+      ? ['-c:a', 'libopus', '-b:a', '128k', '-application', 'lowdelay']
+      : ['-an']),
 
     // Without dtls_active ffmpeg tries to be the DTLS server and fails to
     // create a security context; measured on Windows.
@@ -275,7 +283,7 @@ export function start(win: BrowserWindow, options: NvencOptions): void {
   lastError = null;
   frameCount = 0;
 
-  startAudioPipe();
+  if (options.withAudio) startAudioPipe();
   const binary = ffmpegPath();
   child = spawn(binary, buildArgs(options), { windowsHide: true });
 
@@ -332,7 +340,7 @@ export function start(win: BrowserWindow, options: NvencOptions): void {
   });
 
   startWatchdog(win);
-  startKeepAlive();
+  if (options.withAudio) startKeepAlive();
 }
 
 /** Ends the broadcast for good, as opposed to the restart start() performs. */

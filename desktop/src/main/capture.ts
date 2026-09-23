@@ -36,7 +36,7 @@ let loadError: string | null = null;
 function load(): CaptureAddon | null {
   if (addon || loadError) return addon;
   try {
-    addon = require('../../native/index.js') as CaptureAddon;
+    addon = require('../../native/index.cjs') as CaptureAddon;
   } catch (err) {
     loadError = err instanceof Error ? err.message : String(err);
     addon = null;

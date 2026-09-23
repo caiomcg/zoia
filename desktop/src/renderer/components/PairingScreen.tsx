@@ -24,7 +24,7 @@ export default function PairingScreen({
   return (
     <main className="pairing">
       <div className="pairing-card">
-        <h1>Zoia</h1>
+        <img className="pairing-logo" src="logo.png" alt="Zoia" draggable={false} />
         <p className="muted">This copy of Zoia hasn&rsquo;t been set up on this machine yet.</p>
 
         <label htmlFor="device-name">Name for this device (optional)</label>

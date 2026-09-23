@@ -206,9 +206,10 @@ function registerIpc(): void {
         nvenc.start(mainWindow, { ...options, frames: null });
       }
 
-      // Audio is captured exactly as before, only routed into ffmpeg's audio
-      // pipe rather than over IPC to the renderer.
-      audioCapture.startCapture(mainWindow, options.processId, nvenc.writeAudio);
+      // Only a window carries audio; a screen share is deliberately silent.
+      if (options.withAudio && options.processId !== null) {
+        audioCapture.startCapture(mainWindow, options.processId, nvenc.writeAudio);
+      }
     },
   );
 

@@ -462,10 +462,18 @@ button.danger {
   border-bottom: 1px solid var(--border);
 }
 
+/* Sized by height so the wordmark's own aspect ratio decides the width. */
 .topbar .brand {
-  font-size: 15px;
-  font-weight: 700;
-  letter-spacing: 0.2px;
+  width: auto;
+  height: 22px;
+  user-select: none;
+}
+
+.pairing-logo {
+  width: auto;
+  height: 44px;
+  margin-bottom: 14px;
+  user-select: none;
 }
 
 .body {
@@ -703,4 +711,32 @@ button.danger {
 .banner.warn {
   color: #1a1b1e;
   background: var(--warn);
+}
+
+/* ---- camera picker ------------------------------------------------------- */
+
+.camera-row {
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+
+.camera-row label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  font-size: 12px;
+}
+
+.camera-row select {
+  max-width: 260px;
+  padding: 5px 8px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
 }
