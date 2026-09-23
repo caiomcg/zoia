@@ -38,6 +38,14 @@ export function createIngressService({
      * user's own app connection, which is why the identity is suffixed.
      */
     async endpointFor(user) {
+      // Checked before anything is created. This used to sit after
+      // createIngress, which meant a server missing WHIP_BASE_URL leaked a
+      // fresh ingress object on every attempt — created, then abandoned by the
+      // throw, with nothing holding its id to delete it later.
+      if (!whipBaseUrl) {
+        throw new Error('WHIP_BASE_URL is not set, so there is nowhere to publish to.');
+      }
+
       // The ingress joins as a participant, and LiveKit will not create a
       // room implicitly (auto_create is off). Without this the WHIP session
       // negotiates fully and then dies with "requested room does not exist".
@@ -63,10 +71,6 @@ export function createIngressService({
         bypassTranscoding: true,
         enableTranscoding: false,
       });
-
-      if (!whipBaseUrl) {
-        throw new Error('WHIP_BASE_URL is not set, so there is nowhere to publish to.');
-      }
 
       const endpoint = {
         ingressId: info.ingressId,
