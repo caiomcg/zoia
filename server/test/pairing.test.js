@@ -223,6 +223,23 @@ describe('device sessions', () => {
     assert.equal(grant.canPublish, false, 'devices join subscribe-only like everyone else');
   });
 
+  test('activity is recorded against the device, not the key store', async () => {
+    const { agent, body } = await pairedAgent();
+    await devices.idle();
+
+    const before = (await devices.list()).find((d) => d.id === body.deviceId).lastSeen;
+
+    // A running app renews its token without re-running /api/device/session,
+    // so if this did not update lastSeen, `device:list` would show a machine
+    // as idle while it was streaming — and the runbook says to revoke on that.
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    assert.equal((await agent.post('/api/token')).status, 200);
+    await devices.idle();
+
+    const after = (await devices.list()).find((d) => d.id === body.deviceId).lastSeen;
+    assert.ok(after > before, `lastSeen must advance on use (${before} -> ${after})`);
+  });
+
   test('revocation takes effect on the very next request', async () => {
     const { agent, body } = await pairedAgent();
     assert.equal((await agent.get('/api/session')).status, 200);

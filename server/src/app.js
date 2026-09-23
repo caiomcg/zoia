@@ -101,6 +101,12 @@ export function createApp({
     return { ...record, kind };
   }
 
+  /** Records activity against whichever store the session belongs to. */
+  function touchFor(user) {
+    if (user.kind === 'device') deviceStore?.touch(user.id);
+    else keyStore?.touch(user.id);
+  }
+
   async function requireSession(req, res, next) {
     try {
       const user = await currentUser(req, res);
@@ -182,7 +188,12 @@ export function createApp({
   app.post('/api/token', requireSession, async (req, res, next) => {
     try {
       const result = await tokenIssuer.issue(req.user);
-      keyStore.touch(req.user.id);
+      // Against the store the session actually came from. A device only hits
+      // /api/device/session once per launch, so if this touched the key store
+      // unconditionally a machine left running for weeks would keep reporting
+      // the lastSeen it had on the day it started — and `device:list` is what
+      // the runbook says to read before revoking something as idle.
+      touchFor(req.user);
       res.json({ ...result, quality: config.quality });
     } catch (err) {
       next(err);
