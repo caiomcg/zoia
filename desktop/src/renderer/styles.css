@@ -20,6 +20,43 @@
   box-sizing: border-box;
 }
 
+/* Scrollbars.
+ *
+ * Chromium draws its default light scrollbar regardless of the page's own
+ * colours, which on a dark UI is a bright white stripe down the side of the
+ * window list. Both syntaxes are set: the standard one covers the whole app,
+ * and the WebKit pseudo-elements allow a thinner track that only shows its
+ * thumb on hover. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border: 2px solid transparent;
+  border-radius: 6px;
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
 html,
 body,
 #root {
