@@ -3,6 +3,10 @@
 Operating Zoia: first deployment, day-to-day tasks, and what to do when it
 misbehaves.
 
+This is one real deployment written down in full — a worked example, with the addresses and
+quirks of one particular network. For the generic version, start with
+[SELF_HOSTING.md](SELF_HOSTING.md) and come back here for the detail.
+
 ## Network inventory
 
 Discovered on the LAN (`<lan-prefix>.0/24`), for reference while following this guide:
@@ -13,7 +17,7 @@ Discovered on the LAN (`<lan-prefix>.0/24`), for reference while following this 
 | Proxmox | `<lan-prefix>.2:8006` | Web UI |
 | your local DNS | `<lan-prefix>.3` | **Where the split-horizon DNS override goes, if hairpin fails** |
 | an existing reverse proxy | `<lan-prefix>.4` | LAN/VPN only — **not** exposed, and not used by this project |
-| Mesh node / repeater | `<lan-prefix>.200` | Also answers with a the router certificate |
+| Mesh node / repeater | `<lan-prefix>.200` | Also answers with the router's certificate |
 | Workstation | `<lan-prefix>.230` | |
 | **zoia-vm** | `<server-ip>` | Verified free by ping and ARP on 2026-09-21. `.50` was taken |
 | Public IP | `<public-ip>` | Static |
@@ -33,10 +37,10 @@ Discovered on the LAN (`<lan-prefix>.0/24`), for reference while following this 
 
 ### 1. DNS (Cloudflare)
 
-The zone `example.com` is served by Cloudflare nameservers (`nadia`/`rudy.ns.cloudflare.com`),
-and a Let's Encrypt wildcard `*.example.com` is already issued and renewing. That wildcard
-Caddy on the VM obtains its own certificates for the two hostnames below over a Cloudflare
-DNS-01 challenge, so nothing here depends on the existing wildcard.
+The zone `example.com` is served by Cloudflare nameservers, and a Let's Encrypt wildcard
+`*.example.com` is already issued and renewing. Caddy on the VM obtains its own certificates
+for the two hostnames below over a Cloudflare DNS-01 challenge, so nothing here depends on
+that existing wildcard.
 
 Add two records in the **Cloudflare dashboard** → `example.com` → DNS → Records:
 
@@ -93,7 +97,7 @@ qm snapshot 120 clean-debian --description "fresh cloud-init, pre-docker"
 ```
 
 `--cpu host` exposes AES-NI to the guest, which both TLS and the SFU use. The nameserver
-points at the your local DNS, so the VM honours any local DNS overrides added for hairpin.
+points at the local DNS server, so the VM honours any local DNS overrides added for hairpin.
 
 `/root/zoia-key.pub` is the workstation's SSH public key, written to the host beforehand.
 
@@ -182,11 +186,19 @@ Then verify:
 bash scripts/preflight.sh
 ```
 
-Finally mint yourself a host key:
+Finally mint a pairing token, which is what a build carries:
 
 ```bash
-docker compose exec app node server/bin/keytool.js add --name "Caio" --role host
+docker compose exec app node server/bin/keytool.js \
+  pair:new --name "friends" --max-activations 5
 ```
+
+It prints once. Bake it into an `.exe` with `desktop/make-exe.bat` — see
+[DISTRIBUTING.md](DISTRIBUTING.md).
+
+> `keytool add` still exists and still mints invite keys. Nothing consumes them since the
+> browser client was retired ([ADR 0008](adr/0008-retire-the-browser-client.md)); the desktop
+> app pairs instead ([ADR 0007](adr/0007-device-pairing.md)).
 
 ---
 
@@ -194,23 +206,49 @@ docker compose exec app node server/bin/keytool.js add --name "Caio" --role host
 
 ### Invite someone
 
+Send them a build. The pairing token inside it is what grants access, so the question is
+which token that build carries — mint one per group rather than one for everyone:
+
 ```bash
-docker compose exec app node server/bin/keytool.js add --name "Alice" --role viewer
+docker compose exec app node server/bin/keytool.js \
+  pair:new --name "friends" --max-activations 5
 ```
 
-Send them the printed URL. It is shown once and cannot be recovered; a lost key is replaced,
-not looked up.
+Printed once, and not recoverable. `--max-activations` caps how many machines it can ever
+enrol, which bounds the damage if it gets passed around. `--expires-in-days 30` works too.
 
-Add `--expires-in-days 30` for temporary access.
+Then build an `.exe` carrying it: [DISTRIBUTING.md](DISTRIBUTING.md).
+
+### See who has access
+
+```bash
+docker compose exec app node server/bin/keytool.js device:list
+```
+
+One row per machine, with the token it came from and when it was last seen. `lastSeen`
+updates on every token renewal, not just at launch, so a machine that has been streaming all
+week reads as current.
 
 ### Revoke someone
 
+Two levers, and which one to reach for depends on what went wrong:
+
 ```bash
-docker compose exec app node server/bin/keytool.js list
-docker compose exec app node server/bin/keytool.js revoke <keyId>
+# One machine loses access. Nobody else notices.
+docker compose exec app node server/bin/keytool.js device:revoke <deviceId>
+
+# No NEW machines can activate. Everyone already paired keeps working.
+docker compose exec app node server/bin/keytool.js pair:list
+docker compose exec app node server/bin/keytool.js pair:revoke <pairingId>
 ```
 
-It takes effect on their next request, including on a tab they already have open.
+Both take effect on the next request, not the next launch — the session cookie holds an id
+that is re-resolved against the store every time. See
+[ADR 0007](adr/0007-device-pairing.md).
+
+Revoking a pairing token does **not** cut off machines that already paired with it. If a
+build leaked and you want everyone on it gone, revoke the token *and* the devices it
+enrolled — `device:list` shows which those are.
 
 ### Deploy a change
 
@@ -219,15 +257,20 @@ It takes effect on their next request, including on a tab they already have open
 ```
 
 The script refuses to proceed if `.env` is missing on the server, and never transfers `.env`
-or `server/data` — secrets and the key store live only on the VM.
+or `server/data` — secrets and the access records live only on the VM.
 
-### Back up the key store
+### Back up the access records
+
+Three files, and all of them matter — devices and pairings are what the desktop app runs on:
 
 ```bash
-scp zoia@<server-ip>:/opt/zoia/server/data/keys.json ./keys-backup-$(date +%F).json
+ssh zoia@<server-ip> 'tar czf - -C /opt/zoia server/data' \
+  > zoia-data-$(date +%F).tar.gz
 ```
 
-It holds hashes, not keys, but losing it means re-inviting everyone. Keep it out of git.
+They hold scrypt hashes, not secrets, but losing them means re-pairing every machine. Keep
+them out of git — `deploy.sh` already refuses to transfer `server/data` in either
+direction.
 
 ---
 
@@ -267,52 +310,78 @@ the your local DNS then resolves correctly, without per-machine `/etc/hosts` edi
 Check that LAN clients actually use the your local DNS for DNS first — if the router hands out its
 own address instead, the override will not be consulted.
 
-### The host has no "Start broadcast" button
+### Somebody cannot start sharing
 
-`getDisplayMedia` is missing. Either the page is not on HTTPS (the page says which), or the
-browser is not Chrome/Edge on desktop.
+Publishing is a server-side permission, granted only while the stage is free. If the share
+button does nothing:
 
-### Sharing one application's sound (the Discord question)
+1. **Somebody else holds the stage.** Only one person broadcasts at a time. Ask for it — the
+   holder can hand over, and if they have wandered off it can be taken after thirty seconds.
+2. **A previous broadcaster's machine died without releasing.** This resolves itself: the
+   stage is derived from LiveKit's participant list, not stored, so a participant who has
+   gone simply is not in it. See [ADR 0005](adr/0005-one-tier-claimable-stage.md).
+3. **The device was revoked.** Their next request returns 401 and the app says so. Check
+   `device:list`.
 
-To be precise about what Discord does, because it is easy to overstate:
+### Audio: what carries sound and what does not
 
-- **Discord in a browser** shares audio using `getDisplayMedia`, exactly as this app does.
-  Same API, same constraints: tab audio, or system audio for a whole screen.
-- **Discord's desktop client** additionally captures a *specific application's* audio. That
-  needs a native system hook and is not available to any web page.
-
-So a browser can share sound — it just cannot single out one application. There is no web API
-for "the sound of that window", deliberately, since it would let any page listen to
-everything you play.
-
-What works in a browser, in order of effort:
+This is the app's whole reason for existing, so it is worth being precise:
 
 | Sharing | Audio |
 |---|---|
-| **Entire screen** | ✅ Tick "Share system audio" — everything you hear |
-| **A Chrome tab** | ✅ Tick "Share tab audio" — just that tab |
-| **A window** | ❌ Never. No platform supports it |
+| **A window** | ✅ That application's audio, captured per-process with WASAPI loopback |
+| **A whole screen** | ❌ Silent **on purpose** |
+| **A camera** | ✅ A microphone you pick, with a level meter before anything publishes |
 
-To get *per-application* audio anyway, route it through a virtual input device:
+A screen is silent by design, not by accident. A screen has no owning process, so the only
+audio it could carry is the entire system mix — every notification, every other call, and
+whatever music is playing. That is precisely what this app was built to avoid. Share the
+window instead.
 
-1. Install a virtual audio cable on the broadcasting machine — VB-Audio Virtual Cable is
-   free and the usual choice on Windows.
-2. Windows → Settings → System → Sound → **Volume mixer**, and set that application's
-   output device to the cable.
-3. In Zoia's side panel, under **Your audio**, click "Choose audio input…" (this is the one
-   place a permission prompt appears) and select the cable.
-4. Share the window as normal. The cable's audio is published alongside it.
+No virtual audio cable is needed, and installing one will not help. Earlier versions of this
+document described routing audio through VB-Audio Virtual Cable, because a browser cannot do
+per-application capture. The desktop app does it natively —
+[ADR 0006](adr/0006-native-desktop-client.md).
 
-To hear the app yourself while doing this, use VoiceMeeter or the cable's "listen to this
-device" option, otherwise the sound goes only to viewers.
+### A window is shared but viewers hear nothing
 
-The same picker is how you **talk over a broadcast**: select your microphone instead.
+In order of likelihood:
 
-### The host is sharing but there is no sound
+1. **It is a screen, not a window.** See above.
+2. **The application is genuinely silent**, or plays through a device Windows does not route
+   through the process. The level meter in the app answers this without a second machine:
+   if it does not move, nothing is being captured.
+3. **Windows is older than 10 build 19041 (2004).** Per-process loopback does not exist
+   before that, and the app falls back to system audio and says so.
+4. **The viewer has not clicked anything yet.** Browsers and Electron both refuse to start
+   audio without one user gesture.
 
-System and tab audio capture works only in Chrome and Edge on desktop. The "share audio"
-checkbox appears for a tab or a whole screen, never for a single window. Viewers also need
-one click before audio can start; that is what the Join button is for.
+### The stream is choppy or audio drifts behind the picture
+
+The app counts underruns, overruns and buffer depth, and shows them. Both counters should
+sit at or near zero over a long broadcast.
+
+- **Counters climbing steadily** means the capture clock and the playback clock disagree.
+  There is a latency ceiling that drops the oldest frames to bound the offset; if it is
+  working you will see `drifted` increase while latency stays flat.
+- **Video choppy, audio fine** is usually upstream bandwidth. Lower `MAX_BITRATE`.
+
+### A window stops updating when it is behind another window
+
+Only on the hardware encoding path, and it is inherent to it: Windows Graphics Capture is
+event-driven and delivers a frame when the window redraws. An occluded or minimised window
+genuinely stops redrawing. See [ADR 0009](adr/0009-hardware-encoding.md). The default CPU
+path does not have this behaviour.
+
+### The GPU path fails to start
+
+```
+NVENC is unavailable: nvEncodeAPI64.dll could not be loaded
+```
+
+That machine has no NVIDIA GPU. Capability is probed at startup and the app falls back to
+the CPU path on its own; this message means the hardware path was requested explicitly. It
+is off by default for exactly this reason.
 
 ### Text is blurry when the host shares an IDE
 
@@ -328,5 +397,14 @@ docker compose logs -f app
 docker compose logs -f livekit
 ```
 
-Raw invite keys must never appear there. If one does, that is a bug — fix it and rotate the
-affected key.
+Raw pairing tokens, device credentials and invite keys must never appear there. If one
+does, that is a bug — fix it, then revoke and reissue whatever leaked. There are tests
+asserting this for the pairing flow, because it is the kind of guarantee that breaks
+silently.
+
+Client-side crashes are reported automatically and readable without asking anyone to find a
+log file:
+
+```bash
+curl -s --cookie "$COOKIE" https://zoia.<domain>/api/reports | jq .
+```

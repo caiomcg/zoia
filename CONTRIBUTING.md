@@ -33,14 +33,24 @@ npm run dev
 ## What CI enforces
 
 Every pull request runs lint, formatting, the test suite on Node 20 and 22, a coverage
-floor, and commit message linting. You can run the same checks locally:
+floor, commit message linting, a Docker build, a secret scan over the full history, and a
+typecheck and lint of the desktop app. You can run the same checks locally:
 
 ```bash
 npm run lint
 npm run format:check
 npm test
 npm run coverage:check
+
+cd desktop
+npx tsc --noEmit -p tsconfig.node.json
+npx tsc --noEmit -p tsconfig.web.json
+npm run lint
 ```
+
+What CI **cannot** run is the native addon and the Windows installer: one needs MSVC and the
+other needs Windows. Both are verified by hand before a release — if you change anything
+under `desktop/native/`, say in the pull request that you built and ran it.
 
 Commits follow [Conventional Commits](https://www.conventionalcommits.org/). The allowed
 scopes are in `commitlint.config.js` — `desktop`, `api`, `web`, `infra` and a few others.
@@ -67,10 +77,16 @@ that would otherwise be re-discovered the hard way.
 from timing something rather than reasoning about it. If you find a number, put it in the
 comment or the commit message; the next person should not have to measure it again.
 
+**Decisions get written down.** Anything that would otherwise be re-argued later — or
+re-discovered by measuring it again — becomes an ADR in [docs/adr](docs/adr/README.md). They
+are short, and the consequences section is the point: write down the costs, including the
+ones that make the decision look bad. A decision that stops being true gets a *new* record
+superseding the old one rather than an edit, so the history stays readable.
+
 ## Reporting a problem
 
 The desktop app reports its own crashes to the server, with a stack, so a bug report can be
 as short as roughly when it happened and what you were sharing. Server-side, they are in
 `docker compose logs app`.
 
-Security issues: [SECURITY.md](SECURITY.md).
+Security issues: [docs/SECURITY.md](docs/SECURITY.md).

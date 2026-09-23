@@ -112,6 +112,17 @@ Stated plainly, because finding these out later is worse:
 - **One room, one broadcaster.** This is built for a handful of friends, not a platform.
 - **Unsigned binaries.** Code signing costs money this project does not have.
 
+## Documentation
+
+| | |
+|---|---|
+| [Self-hosting](docs/SELF_HOSTING.md) | Run your own server, start to finish |
+| [Distributing](docs/DISTRIBUTING.md) | Build an `.exe`, hand it out, revoke it |
+| [Architecture](docs/ARCHITECTURE.md) | How the pieces fit, and the audio path in detail |
+| [Runbook](docs/RUNBOOK.md) | Day-to-day operation, and a long list of symptoms with their real causes |
+| [Security](docs/SECURITY.md) | What this protects against, and what it does not |
+| [Decision records](docs/adr/README.md) | Why it is built this way, including what was tried and abandoned |
+
 ## Contributing
 
 Issues and pull requests are welcome. [CONTRIBUTING.md](CONTRIBUTING.md) covers the
