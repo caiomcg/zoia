@@ -64,11 +64,13 @@ Zoia is **Windows x64 only**, and unsigned — SmartScreen will warn on first ru
 
 1. Download the portable `.exe` from [Releases](https://github.com/caiomcg/zoia/releases),
    or build it yourself (below).
-2. Run it. It pairs itself on first launch using a token baked into the build.
-3. Share something.
+2. Get a `zoia-invite.json` from whoever runs the server you are joining.
+3. Put it next to the exe — or drag it onto the window — and run it.
+4. Share something.
 
-There is nothing to install on a viewer's machine beyond the same app, and nothing to
-configure: the server address and pairing token travel inside the binary.
+The download itself carries no server and no credentials, so it is the same file for
+everybody and safe to link publicly. The invite is the part that grants access, and the part
+to send privately.
 
 ## Run your own
 
@@ -81,12 +83,14 @@ cp .env.example .env        # fill in the secrets
 docker compose up -d
 ```
 
-Then mint a pairing token and build an installer that carries it:
+Then mint an invite and send it to whoever is joining:
 
 ```bash
-node server/bin/keytool.js pair:new --name "friends" --max-activations 5
-cd desktop && ./make-exe.bat        # on Windows
+node server/bin/keytool.js pair:new --name "friends" --max-activations 5 \
+  --invite zoia-invite.json
 ```
+
+They pair with that plus a release binary; there is nothing to build unless you want to.
 
 Full walkthrough, including DNS, TLS and the router ports that actually matter:
 [docs/SELF_HOSTING.md](docs/SELF_HOSTING.md). Day-to-day operations — revoking access,
@@ -94,10 +98,11 @@ reading crash reports, upgrading — are in [docs/RUNBOOK.md](docs/RUNBOOK.md).
 
 ## Distributing builds
 
-`desktop/make-exe.bat` produces a portable `.exe` with your pairing token embedded, and
-refuses to report success if the token did not make it in. See
-[docs/DISTRIBUTING.md](docs/DISTRIBUTING.md) for what to hand people, what SmartScreen will
-say, and how to revoke a build that escapes.
+Pushing a version tag builds the Windows binaries in CI and attaches them to a GitHub
+Release with checksums. `desktop/make-exe.bat` still produces a private build with a token
+baked in, for when you would rather hand over one file than two. See
+[docs/DISTRIBUTING.md](docs/DISTRIBUTING.md) for both paths, what SmartScreen will say, and
+how to revoke an invite that escapes.
 
 ## Known limits
 

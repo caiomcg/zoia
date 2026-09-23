@@ -128,37 +128,46 @@ The server sends one copy of the stream per viewer, so **upload is the binding c
 CPU is not the limit — an SFU forwards packets without decoding them. If the numbers do not
 fit your link, lower `MAX_BITRATE` first, then `MAX_FRAMERATE`, then resolution.
 
-## 5. Mint a pairing token
+## 5. Mint an invite
 
-Nobody can use the server until a build carries a token. Tokens are what you revoke later,
-so mint one per group rather than one for everyone:
+Nobody can reach the server until you invite them. An invite is what you revoke later, so
+mint one per group rather than one for everyone:
 
 ```bash
 docker compose exec app node server/bin/keytool.js \
-  pair:new --name "friends" --max-activations 5
+  pair:new --name "friends" --max-activations 5 --invite zoia-invite.json
 ```
 
-It prints the token **once**. `--max-activations` caps how many machines it can ever
-activate, which bounds the damage if it leaks.
+That writes a small file, mode `0600`:
 
-## 6. Build an .exe that carries it
-
-On a **Windows** machine with Node and Visual Studio Build Tools — not WSL, because the
-audio addon is native and a WSL install puts Linux binaries in `node_modules`:
-
-```
-cd desktop
-npm install
-make-exe.bat
+```json
+{
+  "serverUrl": "https://zoia.your-domain.com",
+  "pairingToken": "zpair_a1b2c3d4_…"
+}
 ```
 
-It asks for the pairing token on first run, saves it to a gitignored `.pairing-token`, and
-refuses to report success if the token did not make it into the binary. The result lands in
-`desktop/release/`.
+The token inside is shown **once** and is not recoverable. `--max-activations` caps how many
+machines the invite can ever pair, which bounds the damage if it is forwarded.
 
-Hand that one file to people. There is nothing to configure on their side: the server
-address and the pairing token travel inside it. [DISTRIBUTING.md](DISTRIBUTING.md) covers
-what SmartScreen will say and how to revoke a build that gets away from you.
+**This file is the credential.** Send it over something private.
+
+## 6. Send it, with a binary
+
+People need two things, and only one of them is secret:
+
+| | Where from | Sensitive |
+|---|---|---|
+| `Zoia-<version>-portable.exe` | Your [Releases](https://github.com/caiomcg/zoia/releases) page, or theirs | No — it carries no server and no token |
+| `zoia-invite.json` | You, over a private channel | **Yes** |
+
+They put the invite next to the portable exe, or drag it onto the Zoia window, and run it.
+Zoia copies it into its own data directory, so it does not have to stay where they put it.
+
+You do not have to build anything: a release binary is the same file for everyone. If you
+would rather hand over a single file, `desktop/make-exe.bat` on a Windows machine produces a
+private build with the token baked in. [DISTRIBUTING.md](DISTRIBUTING.md) covers both paths,
+what SmartScreen will say, and how to revoke an invite that gets away from you.
 
 ## Two kill switches
 

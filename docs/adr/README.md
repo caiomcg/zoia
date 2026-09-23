@@ -15,9 +15,10 @@ record that supersedes it, so the history stays legible.
 | [0004](0004-isolated-caddy-front-end.md) | An isolated Caddy front end on the VM | accepted |
 | [0005](0005-one-tier-claimable-stage.md) | One tier of user, with a claimable stage | accepted |
 | [0006](0006-native-desktop-client.md) | A native desktop client, for per-application audio | accepted |
-| [0007](0007-device-pairing.md) | Device pairing, not a key in the binary | accepted |
+| [0007](0007-device-pairing.md) | Device pairing, not a key in the binary | accepted, extended by [0010](0010-invites-outside-the-binary.md) |
 | [0008](0008-retire-the-browser-client.md) | Retire the browser client | accepted |
 | [0009](0009-hardware-encoding.md) | Hardware encoding via WGC and NVENC | accepted, **off by default** |
+| [0010](0010-invites-outside-the-binary.md) | The invitation lives outside the binary | accepted |
 
 ## The two that explain the most
 

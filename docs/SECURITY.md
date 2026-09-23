@@ -14,17 +14,37 @@ access is per-person, revocable, and enforced by the server rather than by the U
 This is the path the desktop app uses, and the one that matters today. Full reasoning in
 [ADR 0007](adr/0007-device-pairing.md).
 
-A build carries a **pairing token**, not an access token. The distinction is the whole
+An invitation is a **pairing token**, not an access token. The distinction is the whole
 design:
 
 > **A secret inside a distributed binary is extractable.** Anyone with the `.exe` can
 > recover it. No build flag or obfuscation changes that.
 
-So the embedded token grants nothing by itself. It is spent once, at first run, for a
+That is why the published binary contains no token at all, and no server URL either
+([ADR 0010](adr/0010-invites-outside-the-binary.md)). A release is inert: it can be linked
+publicly because it is not a credential. The invitation travels separately, as a
+`zoia-invite.json` sent over a private channel, and **that file is the credential** — a fact
+worth repeating to anyone you send one to, because it lands in a Downloads folder like
+anything else.
+
+A pairing token grants nothing by itself even so. It is spent once, at first run, for a
 credential belonging to that one machine, stored with Electron `safeStorage` (DPAPI on
-Windows). That gives two independent kill switches — revoke the token to stop *new*
-machines, revoke a device to cut off *one* — and means a leaked build is a bounded problem
-rather than a permanent one. `--max-activations` bounds it further.
+Windows). That gives two independent kill switches — revoke the invite to stop *new*
+machines, revoke a device to cut off *one* — and means a leaked invitation is a bounded
+problem rather than a permanent one. `--max-activations` bounds it further, and revoking now
+costs nothing to redo: no rebuild, no re-sending a binary.
+
+A private build made with `make-exe.bat` still embeds a token, and such a build **is** a
+credential. The build script fails loudly if a `--public` build comes out with one inside.
+
+### Pointing the app at a server
+
+Taking the server URL from a file is a new attack surface, so `src/main/invite.ts` validates
+it before anything is sent: **https only**, except on loopback where a self-hoster has no
+certificate yet. Honouring `http://` would put a device credential — and every later request
+carrying the session cookie — on the wire in the clear, at the choosing of whoever wrote the
+file. The token's shape is checked too, so a mistyped one fails as a bad token rather than as
+an opaque 401.
 
 Pairing tokens and device credentials use the same scrypt-at-rest and timing-safe comparison
 as invite keys below, and neither raw value is ever persisted or logged. `pairing.test.js`

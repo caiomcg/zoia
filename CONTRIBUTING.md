@@ -49,9 +49,11 @@ npm run lint
 npx electron-vite build
 ```
 
-What CI **cannot** run is the native addon and the Windows installer: one needs MSVC and the
-other needs Windows. Both are verified by hand before a release — if you change anything
-under `desktop/native/`, say in the pull request that you built and ran it.
+On a version tag, `.github/workflows/release.yml` additionally compiles the native addon and
+packages the Windows binaries on a Windows runner. That is the only place either happens, so
+a pull request still cannot prove the addon builds — if you change anything under
+`desktop/native/`, say in the pull request that you built and ran it. CI can tell you the
+addon *links*; only a real machine tells you it loads.
 
 Commits follow [Conventional Commits](https://www.conventionalcommits.org/). The allowed
 scopes are in `commitlint.config.js` — `desktop`, `api`, `web`, `infra` and a few others.
