@@ -239,6 +239,14 @@ function registerIpc(): void {
               error: message,
             }),
         );
+        if (info.fallbackReason) {
+          // NVENC was there and declined — almost always a driver older than
+          // the headers this was built against. The broadcast carries on over
+          // the readback path, but the reason belongs in the log rather than
+          // being invisible.
+          console.log('[gpu] NVENC declined, falling back to ffmpeg:', info.fallbackReason);
+        }
+        console.log(`[gpu] capturing ${info.adapter} -> ${info.output} (${info.vendor})`);
         nvenc.start(mainWindow, { ...options, frames: info });
       } else {
         nvenc.start(mainWindow, { ...options, frames: null });
@@ -250,6 +258,15 @@ function registerIpc(): void {
       }
     },
   );
+
+  // ffmpeg can die on its own — a rejected argument, a broken WHIP endpoint —
+  // and the capture has to come down with it or it keeps feeding a pipe that
+  // is gone.
+  nvenc.setOnExit(() => {
+    capture.stop();
+    audioCapture.stopCapture();
+    sources.startWarming();
+  });
 
   ipcMain.handle(IPC.nvencStop, () => {
     capture.stop();

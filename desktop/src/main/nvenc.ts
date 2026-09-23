@@ -198,7 +198,19 @@ function encoderFor(vendor: string): string {
   }
 }
 
-/** Low-latency knobs, which every vendor spells differently. */
+/**
+ * Low-latency knobs and the profile, which every vendor spells differently.
+ *
+ * The profile is the one that bit: AMF has no `baseline` at all — its options
+ * are main, high, constrained_baseline and constrained_high — so passing the
+ * profile NVENC wanted made ffmpeg exit with "Error opening output files:
+ * Invalid argument", which reads like a problem with the WHIP endpoint and is
+ * not. Checked against the vendored build with -h encoder=h264_amf rather than
+ * assumed.
+ *
+ * constrained_baseline is the AMF equivalent of what the other two get: no
+ * B-frames, and decodable by anything.
+ */
 function encoderTuning(encoder: string): string[] {
   switch (encoder) {
     case 'h264_amf':
@@ -209,15 +221,17 @@ function encoderTuning(encoder: string): string[] {
         'speed',
         '-rc',
         'cbr',
-        // AMF measures this in frames, and anything above zero buys
-        // compression with latency a viewer feels.
+        '-profile:v',
+        'constrained_baseline',
+        // AMF counts this in frames; above zero buys compression with latency
+        // a viewer feels.
         '-bf',
         '0',
       ];
     case 'h264_qsv':
-      return ['-preset', 'veryfast', '-look_ahead', '0', '-bf', '0'];
+      return ['-preset', 'veryfast', '-look_ahead', '0', '-profile:v', 'baseline', '-bf', '0'];
     default:
-      return ['-preset', 'p4', '-tune', 'll', '-bf', '0'];
+      return ['-preset', 'p4', '-tune', 'll', '-profile:v', 'baseline', '-bf', '0'];
   }
 }
 
@@ -313,8 +327,6 @@ function buildArgs(options: NvencOptions): string[] {
           '-c:v',
           encoder,
           ...encoderTuning(encoder),
-          '-profile:v',
-          'baseline', // widest decoder support among viewers
           '-b:v',
           String(bitrate),
           '-maxrate',
@@ -366,6 +378,21 @@ function startWatchdog(win: BrowserWindow): void {
     }
     framesAtLastCheck = frameCount;
   }, 5000);
+}
+
+/**
+ * Called when ffmpeg exits for any reason, so whoever is feeding it can stop.
+ *
+ * Without this the native capture kept running after ffmpeg died: on the raw
+ * path that is a full-resolution frame read back and copied into the main
+ * process on every window redraw, with nowhere to go. The app stopped
+ * responding, which looked like a hang rather than a failed broadcast — you
+ * could neither stop sharing nor touch the UI.
+ */
+let onExit: (() => void) | null = null;
+
+export function setOnExit(handler: (() => void) | null): void {
+  onExit = handler;
 }
 
 export function start(win: BrowserWindow, options: NvencOptions): void {
@@ -421,6 +448,13 @@ export function start(win: BrowserWindow, options: NvencOptions): void {
     child = null;
     if (watchdog) clearInterval(watchdog);
     watchdog = null;
+    // Before anything else: stop whatever is still producing frames for a
+    // process that no longer exists.
+    try {
+      onExit?.();
+    } catch {
+      // A cleanup handler that throws must not mask the exit itself.
+    }
     if (!win.isDestroyed()) {
       win.webContents.send('zoia:nvenc:status', {
         running: false,

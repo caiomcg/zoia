@@ -425,7 +425,17 @@ class Session {
 
     if (encode_) {
       const std::string encoderError = encoder_.Start(device_.Get(), width_, height_, fps, bitrate);
-      if (!encoderError.empty()) return encoderError;
+      if (!encoderError.empty()) {
+        // Degrade rather than refuse. NVENC can be present and still decline —
+        // most often on a driver older than the headers this was built
+        // against, which is what stopped a GTX 1060 sharing at all. The frames
+        // can still be read back and encoded by ffmpeg, which is exactly the
+        // path AMD and Intel take, so there is no reason to fail the
+        // broadcast. Reported so it is visible rather than a silent downgrade.
+        fallbackReason_ = encoderError;
+        encode_ = false;
+        encoder_.Stop();
+      }
     }
 
     // A dedicated surface. For the NVENC path each captured frame is copied
@@ -581,6 +591,8 @@ class Session {
   uint64_t arrived() const { return arrivedCount_; }
   /** "h264" when NVENC encoded it, "bgra" when raw frames are being sent. */
   const char* output() const { return encode_ ? "h264" : "bgra"; }
+  /** Empty unless NVENC was available, tried, and declined. */
+  const std::string& fallbackReason() const { return fallbackReason_; }
   const char* vendor() const { return VendorName(adapter_.vendorId); }
   const std::string& adapterName() const { return adapter_.name; }
   double averageEncodeMs() const {
@@ -625,6 +637,7 @@ class Session {
   AdapterChoice adapter_;
   /** True when NVENC drives this session; false when frames go out raw. */
   bool encode_ = false;
+  std::string fallbackReason_;
   std::mutex encodeMutex_;
   std::atomic<bool> running_{false};
   int64_t frameIndex_ = 0;
@@ -672,6 +685,7 @@ Napi::Value Start(const Napi::CallbackInfo& info) {
   // The caller cannot configure ffmpeg without knowing which of the two kinds
   // of payload is about to start arriving.
   result.Set("output", Napi::String::New(env, g_session.output()));
+  result.Set("fallbackReason", Napi::String::New(env, g_session.fallbackReason()));
   result.Set("vendor", Napi::String::New(env, g_session.vendor()));
   result.Set("adapter", Napi::String::New(env, g_session.adapterName()));
   return result;

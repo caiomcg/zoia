@@ -36,7 +36,14 @@ interface CaptureAddon {
   start(
     options: { hwnd: string; framerate: number; bitrate: number },
     callback: (error: string | null, packet?: Buffer, keyframe?: boolean) => void,
-  ): { width: number; height: number; output: CaptureOutput; vendor: string; adapter: string };
+  ): {
+    width: number;
+    height: number;
+    output: CaptureOutput;
+    vendor: string;
+    adapter: string;
+    fallbackReason: string;
+  };
   stop(): { framesArrived: number; averageEncodeMs: number };
 }
 
@@ -124,7 +131,14 @@ export function start(
   bitrate: number,
   onPacket: (packet: Buffer) => void,
   onError: (message: string) => void,
-): { width: number; height: number; output: CaptureOutput; vendor: string; adapter: string } {
+): {
+  width: number;
+  height: number;
+  output: CaptureOutput;
+  vendor: string;
+  adapter: string;
+  fallbackReason: string;
+} {
   const native = load();
   if (!native) throw new Error(loadError ?? 'The native capture module is unavailable.');
 
