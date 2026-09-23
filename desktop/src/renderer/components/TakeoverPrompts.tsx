@@ -19,13 +19,12 @@ export function IncomingTakeover({
   return (
     <div className="takeover incoming" role="alertdialog" aria-label="Someone wants to share">
       <div className="takeover-body">
-        <strong>{request.name}</strong> wants to share their screen.
-        <span className="muted"> If you don&rsquo;t answer, they can take over shortly.</span>
+        <strong>{request.name}</strong> wants to share.
       </div>
       <div className="takeover-actions">
         <button onClick={() => onRespond(false)}>Not now</button>
         <button className="primary" onClick={() => onRespond(true)}>
-          Let them share
+          Allow
         </button>
       </div>
     </div>
@@ -48,12 +47,12 @@ export function OutgoingTakeover({
       <div className="takeover-body">
         {request.denied ? (
           <>
-            <strong>{request.holderName}</strong> would rather keep sharing.
+            <strong>{request.holderName}</strong> declined.
           </>
         ) : (
           <>
-            Asked <strong>{request.holderName}</strong> to hand over
-            {!ready && <> — {request.secondsLeft}s</>}
+            Waiting for <strong>{request.holderName}</strong>
+            {!ready && <> · {request.secondsLeft}s</>}
           </>
         )}
       </div>

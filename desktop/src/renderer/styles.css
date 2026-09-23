@@ -1,6 +1,6 @@
 :root {
   /* Every control in the top bar is this tall, so they line up. */
-  --control-height: 32px;
+  --control-height: 28px;
   --bg: #1a1b1e;
   --surface: #232428;
   --surface-2: #2b2d31;
@@ -90,11 +90,20 @@ button {
 }
 
 button.primary {
-  width: 100%;
-  margin-top: 18px;
-  color: #0b0d10;
+  color: #fff;
   background: var(--accent);
   border-color: transparent;
+}
+
+button.primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+/* The pairing form has a single action and wants it to fill the card; that
+   is a property of the form, not of every primary button in the app. */
+.pairing button.primary {
+  width: 100%;
+  margin-top: 18px;
 }
 
 button:disabled {
@@ -473,7 +482,7 @@ button.danger {
   grid-template-columns: 1fr auto 1fr;
   gap: 10px;
   align-items: center;
-  padding: 10px 14px;
+  padding: 7px 12px;
   background: var(--surface);
   border-bottom: 1px solid var(--border);
 }
@@ -498,7 +507,7 @@ button.danger {
 /* Sized by height so the wordmark's own aspect ratio decides the width. */
 .topbar .brand {
   width: auto;
-  height: 22px;
+  height: 19px;
   user-select: none;
 }
 
@@ -709,8 +718,16 @@ button.danger {
   border-radius: 6px;
 }
 
+.topbar button {
+  height: var(--control-height);
+  padding: 0 12px;
+  font-size: 13px;
+  border-radius: 6px;
+}
+
 .mode-switch button {
-  padding: 4px 10px;
+  height: 100%;
+  padding: 0 10px;
   font-size: 12px;
   font-weight: 600;
   color: var(--muted);
@@ -842,29 +859,61 @@ button.danger {
 
 .takeover {
   display: flex;
-  gap: 12px;
+  gap: 10px;
   align-items: center;
-  padding: 10px 14px;
-  background: var(--raised);
+  padding: 6px 12px;
+  font-size: 12px;
+  background: var(--surface-2);
   border-bottom: 1px solid var(--border);
 }
 
 .takeover-body {
   flex: 1;
-  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .takeover-actions {
   display: flex;
-  gap: 8px;
+  gap: 6px;
+}
+
+/* Quiet by default: this interrupts whatever someone was doing, so it should
+   read as a line of text with two small actions rather than a dialog. */
+.takeover-actions button {
+  padding: 3px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  background: transparent;
+  border-radius: 5px;
+}
+
+.takeover-actions button:hover:not(:disabled) {
+  background: var(--raised);
+}
+
+.takeover-actions button.primary {
+  color: #fff;
+  background: var(--accent);
+}
+
+.takeover-actions button.danger {
+  color: #fff;
+  background: var(--danger);
+}
+
+.takeover-actions button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .takeover.incoming {
-  border-left: 3px solid var(--accent);
+  box-shadow: inset 2px 0 0 var(--accent);
 }
 
 .takeover.outgoing {
-  border-left: 3px solid var(--warn);
+  box-shadow: inset 2px 0 0 var(--warn);
 }
 
 /* ---- share controls ------------------------------------------------------ */
