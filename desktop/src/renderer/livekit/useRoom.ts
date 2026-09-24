@@ -19,6 +19,18 @@ import {
 import type { QualityPreset, SourceInfo, TokenResult } from '../../shared/ipc';
 import { createCaptureAudioTrack, type CaptureTrackHandle } from '../audio/capture-track';
 
+/**
+ * The identity suffix a hardware-encoded broadcast publishes under. Must match
+ * WHIP_SUFFIX in server/src/whip.js — the server mints the token with it, and
+ * this is how the client knows whose picture it is.
+ */
+export const WHIP_SUFFIX = '-gpu';
+
+/** The person a WHIP publisher belongs to, or the identity unchanged. */
+function ownerIdentity(identity: string): string {
+  return identity.endsWith(WHIP_SUFFIX) ? identity.slice(0, -WHIP_SUFFIX.length) : identity;
+}
+
 export interface RemoteScreen {
   participantIdentity: string;
   participantName: string;
@@ -49,7 +61,7 @@ export interface RoomMember {
   /** True while this member is the one sharing their screen. */
   isBroadcasting: boolean;
   /**
-   * The hardware-encoding path joins as its own ingress participant, which
+   * The hardware-encoding path joins as its own WHIP participant, which
    * would otherwise show up as a second, duplicate person in the list.
    */
   isIngress: boolean;
@@ -145,18 +157,18 @@ export function useRoom() {
   const [sharingKind, setSharingKind] = useState<'screen' | 'camera' | null>(null);
 
   const findRemoteScreen = useCallback((room: Room): RemoteScreen | null => {
-    // The hardware path publishes through an ingress, which joins as its own
+    // The hardware path publishes over WHIP, which joins as its own
     // participant — and from this app's point of view that participant is
     // *remote*, including on the machine that is doing the broadcasting.
     // Rendering it there plays your own captured audio back out of your own
     // speakers, which is heard as an echo of whatever you are sharing.
-    const ownIngress = `${room.localParticipant.identity}-nvenc`;
+    const ownIngress = `${room.localParticipant.identity}${WHIP_SUFFIX}`;
 
     for (const participant of room.remoteParticipants.values()) {
       if (participant.identity === ownIngress) continue;
       // Where the stream came from decides how it is labelled, and viewers
       // must not care. The in-app path publishes ScreenShare; the hardware
-      // path goes through a LiveKit ingress, which publishes CAMERA and
+      // path publishes over WHIP, which may label its tracks CAMERA and
       // MICROPHONE because WHIP carries no notion of a screen share. Looking
       // only for ScreenShare meant the NVENC stream published perfectly and
       // nobody could see it.
@@ -169,10 +181,10 @@ export function useRoom() {
           participant.getTrackPublication(Track.Source.ScreenShareAudio) ??
           [...participant.audioTrackPublications.values()].find((pub) => pub.track);
 
-        // An ingress carries the name it was created with, so a later rename
+        // A WHIP publisher carries the name it joined with, so a later rename
         // would leave viewers looking at a stale label. The human it belongs
         // to is in the same room and always current.
-        const ingressOwnerId = participant.identity.replace(/-nvenc$/, '');
+        const ingressOwnerId = ownerIdentity(participant.identity);
         const owner =
           ingressOwnerId === participant.identity
             ? participant
@@ -219,10 +231,10 @@ export function useRoom() {
           // Any published video means sharing, for the same reason as above:
           // an ingress publishes CAMERA rather than ScreenShare.
           isBroadcasting: p.videoTrackPublications.size > 0,
-          // Ingress participants are created by the server with a "-nvenc"
-          // suffix on the publisher's own identity, so they can be folded
-          // back into that person rather than listed separately.
-          isIngress: p.identity.endsWith('-nvenc'),
+          // WHIP publishers join under their owner's identity plus "-gpu",
+          // so they can be folded back into that person rather than listed
+          // as someone else.
+          isIngress: p.identity.endsWith(WHIP_SUFFIX),
         });
 
         const all = [
@@ -233,7 +245,7 @@ export function useRoom() {
         // Fold each ingress participant into the human it belongs to, so one
         // person sharing their screen is one row that says "live".
         const ingressOwners = new Set(
-          all.filter((m) => m.isIngress).map((m) => m.identity.replace(/-nvenc$/, '')),
+          all.filter((m) => m.isIngress).map((m) => ownerIdentity(m.identity)),
         );
         setMembers(
           all

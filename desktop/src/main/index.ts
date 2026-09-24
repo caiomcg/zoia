@@ -206,20 +206,27 @@ function registerIpc(): void {
     },
   );
 
-  ipcMain.handle(IPC.ingressGet, () => api.ingressGet());
-  ipcMain.handle(IPC.ingressRelease, () => api.ingressRelease());
   ipcMain.handle(IPC.renameDevice, (_event, name: string) => api.renameDevice(name));
 
   ipcMain.handle(
     IPC.encoderStart,
-    (_event, options: Omit<encoder.EncoderOptions, 'frames'> & { hwnd: number | null }) => {
+    async (
+      _event,
+      options: Omit<encoder.EncoderOptions, 'frames' | 'whipUrl' | 'whipToken' | 'gpuVendor'> & {
+        hwnd: number | null;
+      },
+    ) => {
       if (!mainWindow) return;
       // Refreshing picker thumbnails while live competes with the encoder
       // for the main process.
       sources.stopWarming();
 
       try {
-        return startEncoding(mainWindow, options);
+        // Fetched here, not in the renderer: the WHIP token is a credential
+        // to publish into the room, and the renderer never needs one. The
+        // server only answers for whoever holds the stage.
+        const whip = await api.whipGet();
+        return startEncoding(mainWindow, { ...options, whipUrl: whip.url, whipToken: whip.token });
       } catch (err) {
         // Capture can refuse before ffmpeg is ever spawned — a window that has
         // gone, a minimised one, an adapter with no encoder. Those threw
@@ -255,7 +262,7 @@ function registerIpc(): void {
 
   function startEncoding(
     mainWindow: BrowserWindow,
-    options: Omit<encoder.EncoderOptions, 'frames'> & { hwnd: number | null },
+    options: Omit<encoder.EncoderOptions, 'frames' | 'gpuVendor'> & { hwnd: number | null },
   ): void {
     if (options.hwnd !== null) {
       // Native path: WGC captures the window. On an NVIDIA adapter the addon
@@ -295,7 +302,7 @@ function registerIpc(): void {
       }
       encoder.start(mainWindow, { ...options, frames: info });
     } else {
-      encoder.start(mainWindow, { ...options, frames: null });
+      encoder.start(mainWindow, { ...options, frames: null, gpuVendor: gpuStatus.gpuVendor });
     }
 
     // Only a window carries audio; a screen share is deliberately silent.
@@ -311,6 +318,7 @@ function registerIpc(): void {
     capture.stop();
     audioCapture.stopCapture();
     sources.startWarming();
+    void api.whipRelease().catch(() => {});
   });
 
   ipcMain.handle(IPC.encoderStop, () => {
@@ -318,6 +326,10 @@ function registerIpc(): void {
     encoder.shutdown();
     audioCapture.stopCapture();
     sources.startWarming();
+    // ffmpeg's own WHIP teardown request does not reliably reach the SFU —
+    // measured: "Failed to read response from DELETE". Removing the publisher
+    // server-side makes stopping definite instead of waiting on a timeout.
+    void api.whipRelease().catch(() => {});
   });
 
   ipcMain.handle(IPC.audioStart, (_event, processId: number | null) => {

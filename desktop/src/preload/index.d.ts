@@ -5,7 +5,6 @@ import type {
   ClaimResult,
   SourceInfo,
   GpuStatus,
-  IngressEndpoint,
   EncoderStatus,
 } from '../shared/ipc';
 
@@ -37,7 +36,6 @@ export interface ZoiaBridge {
   /** The hardware-encoding path: ffmpeg + NVENC + WHIP, bypassing Chromium. */
   encoder: {
     start(options: {
-      whipUrl: string;
       framerate: number;
       bitrate: number;
       processId: number | null;
@@ -48,10 +46,6 @@ export interface ZoiaBridge {
     }): Promise<void>;
     stop(): Promise<void>;
     onStatus(cb: (status: EncoderStatus) => void): () => void;
-  };
-  ingress: {
-    get(): Promise<IngressEndpoint>;
-    release(): Promise<{ ok: boolean; released: boolean }>;
   };
   device: {
     rename(name: string): Promise<{ ok: boolean; name: string }>;

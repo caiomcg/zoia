@@ -46,10 +46,6 @@ const bridge: ZoiaBridge = {
       return () => ipcRenderer.removeListener(IPC.encoderStatus, listener);
     },
   },
-  ingress: {
-    get: () => ipcRenderer.invoke(IPC.ingressGet),
-    release: () => ipcRenderer.invoke(IPC.ingressRelease),
-  },
   device: {
     rename: (name) => ipcRenderer.invoke(IPC.renameDevice, name),
   },

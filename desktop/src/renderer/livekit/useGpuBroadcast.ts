@@ -4,8 +4,9 @@
  * Nothing here touches a PeerConnection. A native module captures the window
  * with Windows Graphics Capture and encodes it with NVENC without the pixels
  * ever leaving the GPU; ffmpeg muxes the resulting H.264 with the captured
- * application audio and publishes it over WHIP to a LiveKit ingress, which
- * joins the room as its own participant.
+ * application audio and publishes it over WHIP straight to the SFU, where it
+ * joins the room as its own participant (`<identity>-gpu`). The main process
+ * fetches the endpoint and its publish token; this hook never sees either.
  *
  * Chromium's WebRTC encoder is never involved, which is the entire point: it
  * has no hardware encoder on Windows.
@@ -39,7 +40,6 @@ export function useGpuBroadcast() {
   const stop = useCallback(async () => {
     activeRef.current = false;
     await window.zoia.encoder.stop().catch(() => {});
-    await window.zoia.ingress.release().catch(() => {});
     setState('idle');
     setStatus(null);
   }, []);
@@ -49,10 +49,8 @@ export function useGpuBroadcast() {
       setError(null);
       setState('starting');
       try {
-        const endpoint = await window.zoia.ingress.get();
         const isWindow = source?.kind === 'window';
         await window.zoia.encoder.start({
-          whipUrl: endpoint.url,
           framerate: preset.maxFramerate,
           bitrate: preset.maxBitrate,
           // Audio and video both follow the chosen application. Sharing a

@@ -35,7 +35,20 @@ import { app, type BrowserWindow } from 'electron';
 import * as api from './api';
 
 export interface EncoderOptions {
+  /**
+   * The GPU vendor, for a screen share, where there is no native capture to
+   * report it. Without this the screen path assumed NVIDIA: a Radeon sharing
+   * its screen asked ffmpeg for h264_nvenc and got "Cannot load nvcuda.dll".
+   */
+  gpuVendor?: string;
+  /** The SFU's WHIP endpoint. From the server, derived from LIVEKIT_WS_URL. */
   whipUrl: string;
+  /**
+   * A short-lived LiveKit token that allows publishing, sent as a Bearer
+   * header. It's a credential, so it's redacted wherever the command is
+   * logged or reported. See `redact`.
+   */
+  whipToken: string;
   framerate: number;
   bitrate: number;
   /** The application whose audio to send; null means send no audio at all. */
@@ -264,7 +277,11 @@ function buildArgs(options: EncoderOptions): string[] {
   // hwupload_cuda` into h264_nvenc a second time — which cost quality and GPU
   // for nothing.
   const passthrough = frames?.output === 'h264';
-  const encoder = encoderFor(frames?.vendor ?? 'nvidia');
+  const encoder = encoderFor(frames?.vendor ?? options.gpuVendor ?? 'nvidia');
+  // ddagrab hands over D3D11 surfaces, which NVENC takes directly. AMF and
+  // Quick Sync are given ordinary frames instead, downloaded once, rather than
+  // relying on each encoder accepting another device's surfaces.
+  const screenNeedsDownload = !frames && encoder !== 'h264_nvenc';
   // Passthrough means the addon's own NVENC produced it; otherwise ffmpeg's.
   currentEncoder = passthrough ? 'nvenc (native)' : encoder;
 
@@ -327,6 +344,7 @@ function buildArgs(options: EncoderOptions): string[] {
     // Raw frames arrive as BGRA in system memory; every hardware encoder
     // wants NV12, and the conversion is cheap next to the encode.
     ...(frames && !passthrough ? ['-vf', 'format=nv12'] : []),
+    ...(screenNeedsDownload ? ['-vf', 'hwdownload,format=bgra,format=nv12'] : []),
 
     ...scaleArgs(),
 
@@ -347,8 +365,11 @@ function buildArgs(options: EncoderOptions): string[] {
           String(framerate * 2),
         ]),
 
+    // Stereo, explicitly: the WHIP muxer refuses anything else with
+    // "Unsupported audio channels 1 by RTC". WASAPI loopback is already stereo,
+    // so this only makes the requirement visible rather than incidental.
     ...(options.withAudio
-      ? ['-c:a', 'libopus', '-b:a', '128k', '-application', 'lowdelay']
+      ? ['-c:a', 'libopus', '-ac', '2', '-b:a', '128k', '-application', 'lowdelay']
       : ['-an']),
 
     // Without dtls_active ffmpeg tries to be the DTLS server and fails to
@@ -359,10 +380,26 @@ function buildArgs(options: EncoderOptions): string[] {
     // soon as bitrate rises.
     '-ts_buffer_size',
     '16000000',
+    // The SFU authenticates a WHIP publisher like any other participant: with
+    // a LiveKit token, sent as `Authorization: Bearer`. ffmpeg adds the
+    // "Bearer " itself. Verified end to end against the real SFU before this
+    // was written.
+    '-authorization',
+    options.whipToken,
     '-f',
     'whip',
     whipUrl,
   ];
+}
+
+/**
+ * The command with the WHIP token replaced, for anywhere it gets written down.
+ * The log file and the crash report both record the full command, because
+ * that's what makes a failure diagnosable, and a publish token has no business
+ * in either.
+ */
+function redact(args: string[]): string[] {
+  return args.map((arg, i) => (args[i - 1] === '-authorization' ? '<redacted>' : arg));
 }
 
 /**
@@ -494,7 +531,7 @@ export function start(win: BrowserWindow, options: EncoderOptions): void {
   // The command first, because an argument this rejects is invisible in the
   // error it produces — "Error opening output files: Invalid argument" names
   // neither the argument nor the encoder.
-  startLog([binary, ...args].join(' '));
+  startLog([binary, ...redact(args)].join(' '));
   child = spawn(binary, args, { windowsHide: true });
 
   // ffmpeg exiting closes this pipe; without a listener the resulting EPIPE

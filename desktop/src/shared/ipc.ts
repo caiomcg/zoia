@@ -146,10 +146,16 @@ export const QUALITY_PRESETS: QualityPreset[] = [
 
 export const DEFAULT_PRESET_ID = '1080p60';
 
-export interface IngressEndpoint {
-  ingressId: string;
-  streamKey: string;
+/**
+ * Where a hardware-encoded broadcast is published, and permission to do it.
+ * Only ever held in the main process: the token is a credential to publish
+ * into the room, and the renderer has no use for one.
+ */
+export interface WhipEndpoint {
+  /** The SFU's own WHIP endpoint, derived server-side from LIVEKIT_WS_URL. */
   url: string;
+  /** A short-lived LiveKit token allowing publish-only access. */
+  token: string;
 }
 
 export interface EncoderStatus {
@@ -217,7 +223,5 @@ export const IPC = {
   encoderStart: 'zoia:encoder:start',
   encoderStop: 'zoia:encoder:stop',
   encoderStatus: 'zoia:encoder:status',
-  ingressGet: 'zoia:ingress:get',
-  ingressRelease: 'zoia:ingress:release',
   renameDevice: 'zoia:device:rename',
 } as const;

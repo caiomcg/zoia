@@ -12,7 +12,7 @@
  */
 
 import { net } from 'electron';
-import type { TokenResult, StageState, ClaimResult, IngressEndpoint } from '../shared/ipc';
+import type { TokenResult, StageState, ClaimResult, WhipEndpoint } from '../shared/ipc';
 import { getServerUrl } from './config';
 
 class ApiError extends Error {
@@ -75,13 +75,17 @@ export function getToken() {
   return call<TokenResult>('/api/token', { method: 'POST' });
 }
 
-/** Somewhere to publish NVENC output to; see src/main/nvenc.ts for why. */
-export function ingressGet() {
-  return call<IngressEndpoint>('/api/ingress', { method: 'POST' });
+/**
+ * Where to publish a hardware-encoded broadcast, and a token to do it with.
+ * The server only answers for whoever holds the stage; see server/src/whip.js.
+ */
+export function whipGet() {
+  return call<WhipEndpoint>('/api/whip', { method: 'POST' });
 }
 
-export function ingressRelease() {
-  return call<{ ok: boolean; released: boolean }>('/api/ingress/release', { method: 'POST' });
+/** Removes this device's WHIP publisher from the room, if it is still there. */
+export function whipRelease() {
+  return call<{ ok: boolean; released: boolean }>('/api/whip/release', { method: 'POST' });
 }
 
 /**
