@@ -22,6 +22,21 @@ Discovered on the LAN (`<lan-prefix>.0/24`), for reference while following this 
 | **zoia-vm** | `<server-ip>` | Verified free by ping and ARP on 2026-09-21. `.50` was taken |
 | Public IP | `<public-ip>` | Static |
 
+## Getting onto the server
+
+```bash
+ssh zoia@<server-ip>
+```
+
+**There is no password.** cloud-init created the `zoia` user with the workstation's SSH
+public key (`qm set --ciuser zoia --sshkeys …` in the VM section below) and no password at
+all, so login works only from a machine holding the matching private key, normally
+`~/.ssh/id_ed25519`. If that key is lost, get back in through the Proxmox console and add a
+new key to `~zoia/.ssh/authorized_keys`.
+
+Everything lives in `/opt/zoia`. `docker compose ps` there shows the five services (app,
+caddy, livekit, ingress, redis).
+
 ## Helper scripts
 
 | Script | Run it | Does |
@@ -372,6 +387,37 @@ Only on the hardware encoding path, and it is inherent to it: Windows Graphics C
 event-driven and delivers a frame when the window redraws. An occluded or minimised window
 genuinely stops redrawing. See [ADR 0009](adr/0009-hardware-encoding.md). The default CPU
 path does not have this behaviour.
+
+### Hardware encoding fails for somebody
+
+Read what their machine reported **before** changing anything. This is the lesson of
+[ADR 0011](adr/0011-hardware-encoding-over-the-internet.md): four fixes landed before
+anyone looked, and the first look found the cause.
+
+```bash
+docker compose logs app | grep -A40 '\[report\]'
+```
+
+A failed hardware broadcast reports as `gpu-broadcast-failed` or `gpu-start-failed`. The
+report carries the reason, the exact ffmpeg command, the GPU and encoder chosen, and the
+last 200 lines of ffmpeg's output. On their machine, `%APPDATA%\Zoia\ffmpeg.log` has the
+same, uncut. Ignore `Conversion failed!`: that's ffmpeg's generic last line, and the cause is
+above it.
+
+| What the log says | What it means |
+|---|---|
+| `Connection to tcp://…:8085 failed: Error number -138` | An old build publishing to the removed Ingress at a LAN address. Update the app |
+| `Failed to request url=https://sfu.<domain>/whip/v1` | The SFU rejected the publish token, usually because it expired before the connection finished. Retry; check the server's clock if it keeps happening |
+| `409 not_stage_holder` from `/api/whip` | They lost the stage before publishing started. Claim again |
+| Connects, then no picture | UDP 7882 isn't reaching the server, the same fault viewers would see |
+| `Unsupported audio channels 1 by RTC` | Mono audio reached the WHIP muxer. The app forces stereo, so this means a new code path forgot `-ac 2` |
+| `Cannot load nvcuda.dll` | NVENC requested on a machine without an NVIDIA GPU |
+| `NVENC: … status 15` / "older than this build expects" | Driver below 471.41. It falls back to the readback path automatically; updating the driver restores zero-copy |
+| `Unsupported B frames by RTC` | An encoder produced B-frames, which WHIP refuses. Every path passes `-bf 0`, so this means a new path forgot to |
+| `That window reports no visible area` | The window is minimised. Restore it |
+
+A failure identical across very different GPUs almost always sits above the GPU:
+reachability, configuration, or an argument on the shared list.
 
 ### The GPU path fails to start
 

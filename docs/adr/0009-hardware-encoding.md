@@ -1,6 +1,7 @@
 # 9. Hardware encoding via Windows Graphics Capture and NVENC
 
-- **Status:** accepted, but **disabled by default**
+- **Status:** accepted; its "NVIDIA only" and "LAN only" consequences are superseded by
+  [ADR 0011](0011-hardware-encoding-over-the-internet.md)
 - **Date:** 2026-09-22
 
 ## Context

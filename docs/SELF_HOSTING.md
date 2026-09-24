@@ -191,20 +191,18 @@ stopped using from one that is simply idle right now.
 
 ## Optional: hardware encoding
 
-Off by default. It needs an NVIDIA GPU on the broadcaster's machine and a broadcaster on the
-same network as the server, and it is the one path where those constraints are load-bearing.
-[ADR 0009](adr/0009-hardware-encoding.md) explains what it does and why it is gated.
+Broadcasters opt in with the **Hardware acceleration** checkbox in the share picker. It
+encodes on the GPU (NVENC on NVIDIA, AMF on AMD, Quick Sync on Intel) and publishes over
+WHIP instead of through Chromium. The [README](../README.md#hardware-encoding-whip)
+explains the whole path.
 
-To enable it server-side, set `WHIP_BASE_URL` in `.env` to the ingress endpoint reachable
-from the broadcasting machine:
+**There's nothing to set up.** The SFU accepts WHIP itself at
+`https://<sfu-host>/whip/v1`, which the server derives from `LIVEKIT_WS_URL`. It uses the
+same Caddy route and the same UDP 7882 you've already forwarded. The server only gives
+publish access to whoever holds the stage.
 
-```
-WHIP_BASE_URL=http://<your-server-lan-ip>:8085/w
-```
-
-Deliberately **not** internet-exposed: WHIP ingress is plain HTTP here, and the broadcaster
-is assumed to be on the same LAN. Remote broadcasters use the ordinary in-app path, which
-needs no configuration.
+If it fails for somebody, read their report before changing anything; see the
+[runbook](RUNBOOK.md#hardware-encoding-fails-for-somebody).
 
 ## Keeping it running
 

@@ -69,12 +69,17 @@ A second, optional path encodes on the GPU and never touches Chromium's WebRTC e
 which has no hardware encoder on Windows:
 
 ```
-Windows Graphics Capture ─► D3D11 ─► NVENC ─► ffmpeg ─► WHIP ─► LiveKit Ingress ─► the room
+Windows Graphics Capture ─► D3D11 ─► NVENC / AMF / QSV ─► ffmpeg ─► WHIP ─► LiveKit SFU ─► the room
 ```
 
-It is **off by default**, needs an NVIDIA GPU, and expects the broadcaster on the same LAN
-as the server. [ADR 0009](adr/0009-hardware-encoding.md) covers what it does, what was tried
-first, and why it is gated.
+It's **opt-in**, via a checkbox in the share picker, and works on NVIDIA, AMD and Intel
+GPUs from anywhere. The SFU accepts WHIP natively at `https://<sfu-host>/whip/v1`, so it
+uses the same hostname and the same UDP 7882 as everything else. The server hands out a
+publish-only token, and only to the stage holder. [ADR 0009](adr/0009-hardware-encoding.md)
+covers why Chromium can't do this.
+[ADR 0011](adr/0011-hardware-encoding-over-the-internet.md) covers how it became
+multi-vendor and reachable from anywhere, and why the separate Ingress service it used to
+go through was removed.
 
 ## Request flow
 
@@ -129,8 +134,10 @@ not more safety.
 | 80 | TCP | **no** | LAN redirect only; DNS-01 needs no inbound HTTP |
 | 3000 | TCP | no | Node app — no host port, reached only via Caddy |
 | 7880 | TCP | no | LiveKit signalling, reached only via Caddy |
-| 8085 | TCP | **no** | WHIP ingress — plain HTTP, LAN only |
-| 6379 | TCP | no | Redis, for ingress↔SFU coordination |
+| 6379 | TCP | no | Redis, used by LiveKit; bound to localhost |
+
+Hardware-encoded broadcasts need nothing extra here. They publish over WHIP to the SFU at
+`/whip/v1`, through the same 443 and 7882 as everything else.
 
 ## Capacity
 

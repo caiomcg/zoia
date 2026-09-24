@@ -131,8 +131,13 @@ proxy's address and the limiter would throttle all users as one client.
   this is the wrong architecture.
 - **The router is outside this repo's control.** The port forwards are configured by hand
   and verified per the runbook.
-- **The WHIP ingress is plain HTTP**, which is why it is LAN-only and never forwarded
-  ([ADR 0009](adr/0009-hardware-encoding.md)).
+- **Hardware-encoded broadcasts publish over WHIP**, straight to the SFU at `/whip/v1`
+  on its existing TLS hostname, with media on the existing UDP 7882. No separate port or
+  service is exposed. Publishing needs a LiveKit token that `/api/whip` hands out **only
+  to the current stage holder**: it lasts five minutes, allows publishing only, and is
+  redacted from logs and crash reports. Before this, a separate Ingress endpoint checked
+  only for a session, so any paired device could publish around the stage
+  ([ADR 0011](adr/0011-hardware-encoding-over-the-internet.md)).
 
 ## Stronger options, if wanted later
 

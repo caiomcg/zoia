@@ -96,6 +96,73 @@ Full walkthrough, including DNS, TLS and the router ports that actually matter:
 [docs/SELF_HOSTING.md](docs/SELF_HOSTING.md). Day-to-day operations — revoking access,
 reading crash reports, upgrading — are in [docs/RUNBOOK.md](docs/RUNBOOK.md).
 
+## Hardware encoding (WHIP)
+
+By default the app encodes on the CPU, inside Chromium's WebRTC stack. That works
+everywhere, but Chromium has **no hardware video encoder on Windows** (measured, not
+assumed; see [ADR 0009](docs/adr/0009-hardware-encoding.md)). So a 4K share taxes the CPU
+while the GPU sits idle.
+
+Tick **Hardware acceleration** in the share picker and the app skips Chromium altogether.
+It encodes on the GPU, then ffmpeg publishes the stream over **WHIP**, the WebRTC-HTTP
+Ingestion Protocol. WHIP is plain WebRTC with a simple HTTP handshake, and LiveKit's SFU
+accepts it natively, so the stream goes straight into the room. Viewers notice no
+difference.
+
+```
+ broadcaster                                  your server
+┌─────────────────────────┐  HTTPS (WHIP)   ┌───────────────────────────────┐
+│ window capture (WGC)    │ ──────────────► │ Caddy  sfu.<domain>/whip/v1   │
+│ GPU encoder             │                 │   └─► LiveKit SFU  :7880      │
+│   NVENC / AMF / QSV     │  UDP (media)    │                               │
+│ ffmpeg ──── WHIP ─────► │ ──────────────► │ LiveKit SFU  :7882 ─► room    │
+└─────────────────────────┘                 └───────────────────────────────┘
+```
+
+**Same ports as the in-app path.** WHIP negotiates over the SFU's existing HTTPS host and
+sends media over the same UDP 7882 that every viewer already uses. There's no extra
+forward, no extra service, and no address to configure: the server works out the endpoint
+from `LIVEKIT_WS_URL` (`wss://sfu.example.com` → `https://sfu.example.com/whip/v1`).
+
+| GPU | Encoder | Path |
+|---|---|---|
+| NVIDIA | NVENC | Encoded inside the app. Frames never leave the GPU |
+| AMD | AMF (`h264_amf`) | Frame read back once, then encoded by ffmpeg on the GPU |
+| Intel | Quick Sync (`h264_qsv`) | Same as AMD |
+
+The picker shows which encoder and card it found. The option is off by default, and it
+disables itself on a machine with no hardware encoder.
+
+### How publishing is authorised
+
+1. The broadcaster claims the stage, the same as any share.
+2. The app asks `POST /api/whip`. The server replies **only to whoever holds the stage**,
+   with the endpoint and a five-minute, publish-only LiveKit token.
+3. ffmpeg sends that token as a Bearer header. The SFU checks it and admits the stream as a
+   participant named `<owner>-gpu`, which the stage and every viewer attribute to its
+   owner.
+4. When the broadcast stops, or the stage is released or taken, the server removes that
+   participant.
+
+The token is only ever held by the app's main process. It's redacted from logs and crash
+reports.
+
+### When it fails
+
+A failed hardware broadcast documents itself:
+
+- **On the server.** Every failure is reported with the reason, the exact (redacted)
+  ffmpeg command, the GPU and encoder, and ffmpeg's own output:
+  ```bash
+  docker compose logs app | grep -A40 '\[report\]'
+  ```
+- **On the broadcaster's machine.** `%APPDATA%\Zoia\ffmpeg.log` holds the command and
+  everything ffmpeg printed during the last run.
+
+Ignore `Conversion failed!`: it's ffmpeg's generic last line, and the cause is printed
+just above it. The [runbook](docs/RUNBOOK.md#hardware-encoding-fails-for-somebody) maps
+the common messages to their causes.
+
 ## Distributing builds
 
 Pushing a version tag builds the Windows binaries in CI and attaches them to a GitHub
@@ -110,10 +177,9 @@ Stated plainly, because finding these out later is worse:
 
 - **Windows x64 only.** The audio capture is WASAPI process loopback; there is no
   equivalent on macOS or Linux, and no browser client any more.
-- **Encoding runs on the CPU.** A hardware path exists — Windows Graphics Capture into
-  NVENC, published over WHIP — and it works, but it needs an NVIDIA GPU and is switched off
-  behind a flag while it settles. See
-  [docs/adr/0009-hardware-encoding.md](docs/adr/0009-hardware-encoding.md).
+- **Hardware encoding is opt-in and newer than the rest.** It covers NVIDIA, AMD and
+  Intel GPUs, but only NVIDIA has been confirmed on real hardware. See
+  [above](#hardware-encoding-whip).
 - **One room, one broadcaster.** This is built for a handful of friends, not a platform.
 - **Unsigned binaries.** Code signing costs money this project does not have.
 

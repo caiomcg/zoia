@@ -17,8 +17,9 @@ record that supersedes it, so the history stays legible.
 | [0006](0006-native-desktop-client.md) | A native desktop client, for per-application audio | accepted |
 | [0007](0007-device-pairing.md) | Device pairing, not a key in the binary | accepted, extended by [0010](0010-invites-outside-the-binary.md) |
 | [0008](0008-retire-the-browser-client.md) | Retire the browser client | accepted |
-| [0009](0009-hardware-encoding.md) | Hardware encoding via WGC and NVENC | accepted, **off by default** |
+| [0009](0009-hardware-encoding.md) | Hardware encoding via WGC and NVENC | accepted, partly superseded by [0011](0011-hardware-encoding-over-the-internet.md) |
 | [0010](0010-invites-outside-the-binary.md) | The invitation lives outside the binary | accepted |
+| [0011](0011-hardware-encoding-over-the-internet.md) | Hardware encoding over the internet, on any GPU | accepted |
 
 ## The two that explain the most
 
