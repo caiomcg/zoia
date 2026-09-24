@@ -38,6 +38,22 @@ describe('error reports', () => {
     assert.equal(list[0].message, 'e499', 'the most recent must survive');
   });
 
+  test('a diagnostic context survives long enough to be useful', () => {
+    // This was clipped to 1000 characters, roughly twelve lines, which cut off
+    // everything above ffmpeg's generic final line — the report said
+    // "Conversion failed!" and nothing about why.
+    const store = createReportStore({ logger: quiet() });
+    const log = Array.from({ length: 200 }, (_, i) => `line ${i} of ffmpeg output`).join('\n');
+    store.add(
+      { kind: 'gpu-broadcast-failed', message: 'Conversion failed!', context: log },
+      { id: 'a', name: 'A' },
+    );
+
+    const [entry] = store.list();
+    assert.ok(entry.context.length > 4000, `context was clipped to ${entry.context.length}`);
+    assert.match(entry.context, /line 5 of ffmpeg output/);
+  });
+
   test('an enormous stack is truncated rather than logged whole', () => {
     const store = createReportStore({ logger: quiet() });
     store.add({ message: 'x', stack: 'y'.repeat(50_000) }, { id: 'a', name: 'A' });

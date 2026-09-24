@@ -13,6 +13,15 @@
 
 const MAX_REPORTS = 200;
 const MAX_FIELD = 4000;
+/**
+ * Diagnostics get far more room than a message does.
+ *
+ * This was 1000 characters, about twelve lines of ffmpeg output, which threw
+ * away everything above the generic last line — so a failed GPU broadcast
+ * reported "Conversion failed!" and nothing that said why. The body limit is
+ * 16kb, so this still cannot be used to push anything substantial into memory.
+ */
+const MAX_CONTEXT = 12000;
 
 /** Trims to something loggable, and stringifies whatever odd shape arrived. */
 function clip(value, limit = MAX_FIELD) {
@@ -34,7 +43,7 @@ export function createReportStore({ logger = console, now = () => Date.now() } =
         kind: clip(report?.kind, 40) ?? 'error',
         message: clip(report?.message),
         stack: clip(report?.stack),
-        context: clip(report?.context, 1000),
+        context: clip(report?.context, MAX_CONTEXT),
         appVersion: clip(report?.appVersion, 40),
       };
 

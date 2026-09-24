@@ -36,7 +36,10 @@ export function createApp({
   app.set('trust proxy', config.trustProxy);
   app.disable('x-powered-by');
 
-  app.use(express.json({ limit: '16kb' }));
+  // 32kb rather than 16: a crash report now carries a tail of ffmpeg output,
+  // and JSON escaping of 12k characters of log can pass 16kb on its own. Every
+  // route that accepts a body still requires a session.
+  app.use(express.json({ limit: '32kb' }));
   app.use(express.urlencoded({ extended: false, limit: '16kb' }));
   app.use(cookieParser(config.sessionSecret));
 

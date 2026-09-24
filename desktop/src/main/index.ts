@@ -218,46 +218,91 @@ function registerIpc(): void {
       // for the main process.
       sources.stopWarming();
 
-      if (options.hwnd !== null) {
-        // Native path: WGC captures the window. On an NVIDIA adapter the addon
-        // also encodes it, without the pixels ever leaving the GPU, and ffmpeg
-        // only muxes. On a Radeon or an Intel GPU it hands back raw frames and
-        // ffmpeg encodes them with AMF or Quick Sync — `info.output` says
-        // which, and buildArgs follows it.
-        const info = capture.start(
-          options.hwnd,
-          options.framerate,
-          options.bitrate,
-          (packet) => encoder.writeFrame(packet),
-          (message) =>
-            mainWindow?.webContents.send(IPC.encoderStatus, {
-              running: false,
-              fps: 0,
-              encoder: encoder.encoderInUse(),
-              width: 0,
-              height: 0,
-              error: message,
-            }),
-        );
-        if (info.fallbackReason) {
-          // NVENC was there and declined — almost always a driver older than
-          // the headers this was built against. The broadcast carries on over
-          // the readback path, but the reason belongs in the log rather than
-          // being invisible.
-          console.log('[gpu] NVENC declined, falling back to ffmpeg:', info.fallbackReason);
-        }
-        console.log(`[gpu] capturing ${info.adapter} -> ${info.output} (${info.vendor})`);
-        encoder.start(mainWindow, { ...options, frames: info });
-      } else {
-        encoder.start(mainWindow, { ...options, frames: null });
-      }
-
-      // Only a window carries audio; a screen share is deliberately silent.
-      if (options.withAudio && options.processId !== null) {
-        audioCapture.startCapture(mainWindow, options.processId, encoder.writeAudio);
+      try {
+        return startEncoding(mainWindow, options);
+      } catch (err) {
+        // Capture can refuse before ffmpeg is ever spawned — a window that has
+        // gone, a minimised one, an adapter with no encoder. Those threw
+        // straight back at the renderer and were never reported, so the only
+        // record was whatever the person reading the dialog chose to retype.
+        const error = err instanceof Error ? err : new Error(String(err));
+        void api.report({
+          kind: 'gpu-start-failed',
+          message: error.message,
+          stack: error.stack,
+          context: attemptContext(options),
+        });
+        capture.stop();
+        sources.startWarming();
+        throw error;
       }
     },
   );
+
+  function attemptContext(options: {
+    hwnd: number | null;
+    framerate: number;
+    bitrate: number;
+    withAudio: boolean;
+  }): string {
+    return [
+      `vendor=${gpuStatus.gpuVendor} encoder=${gpuStatus.gpuEncoder}`,
+      `adapter=${gpuStatus.adapter}`,
+      `windowCapture=${gpuStatus.windowCapture} hwnd=${options.hwnd ?? 'screen'}`,
+      `framerate=${options.framerate} bitrate=${options.bitrate} audio=${options.withAudio}`,
+    ].join('\n');
+  }
+
+  function startEncoding(
+    mainWindow: BrowserWindow,
+    options: Omit<encoder.EncoderOptions, 'frames'> & { hwnd: number | null },
+  ): void {
+    if (options.hwnd !== null) {
+      // Native path: WGC captures the window. On an NVIDIA adapter the addon
+      // also encodes it, without the pixels ever leaving the GPU, and ffmpeg
+      // only muxes. On a Radeon or an Intel GPU it hands back raw frames and
+      // ffmpeg encodes them with AMF or Quick Sync — `info.output` says
+      // which, and buildArgs follows it.
+      const info = capture.start(
+        options.hwnd,
+        options.framerate,
+        options.bitrate,
+        (packet) => encoder.writeFrame(packet),
+        (message) =>
+          mainWindow?.webContents.send(IPC.encoderStatus, {
+            running: false,
+            fps: 0,
+            encoder: encoder.encoderInUse(),
+            width: 0,
+            height: 0,
+            error: message,
+          }),
+      );
+      if (info.fallbackReason) {
+        // NVENC was there and declined — almost always a driver older than
+        // the headers this was built against. The broadcast carries on over
+        // the readback path, but the reason belongs in the log rather than
+        // being invisible.
+        console.log('[gpu] NVENC declined, falling back to ffmpeg:', info.fallbackReason);
+      }
+      console.log(`[gpu] capturing ${info.adapter} -> ${info.output} (${info.vendor})`);
+      if (info.fallbackReason) {
+        void api.report({
+          kind: 'gpu-nvenc-fallback',
+          message: info.fallbackReason,
+          context: attemptContext(options),
+        });
+      }
+      encoder.start(mainWindow, { ...options, frames: info });
+    } else {
+      encoder.start(mainWindow, { ...options, frames: null });
+    }
+
+    // Only a window carries audio; a screen share is deliberately silent.
+    if (options.withAudio && options.processId !== null) {
+      audioCapture.startCapture(mainWindow, options.processId, encoder.writeAudio);
+    }
+  }
 
   // ffmpeg can die on its own — a rejected argument, a broken WHIP endpoint —
   // and the capture has to come down with it or it keeps feeding a pipe that

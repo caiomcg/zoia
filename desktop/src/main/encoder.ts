@@ -415,9 +415,34 @@ function logPath(): string {
   return join(app.getPath('userData'), 'ffmpeg.log');
 }
 
-/** Kept small on purpose: this is the tail that gets attached to a report. */
-const RECENT_LINES = 40;
+/** The tail attached to a report. Generous: the server allows 12k characters
+ *  and a truncated log is what made three failures indistinguishable. */
+const RECENT_LINES = 200;
 let recent: string[] = [];
+let lastCommand = '';
+
+/**
+ * ffmpeg's final line is almost always "Conversion failed!", which says
+ * nothing. The cause is one of the lines above it, and the old matcher — any
+ * line containing Error, failed, Invalid or Cannot, last one wins — reliably
+ * picked the useless one. These are the lines that actually carry a reason.
+ */
+const GENERIC = /^(Conversion failed|Error opening output file|Exiting|Terminating)/i;
+
+function bestError(): string | null {
+  for (let i = recent.length - 1; i >= 0; i--) {
+    const line = recent[i]?.trim();
+    if (!line || GENERIC.test(line)) continue;
+    if (
+      /error|failed|invalid|cannot|unsupported|not (yet )?(implemented|supported)|no such/i.test(
+        line,
+      )
+    ) {
+      return line;
+    }
+  }
+  return recent.filter(Boolean).slice(-1)[0] ?? null;
+}
 
 function logLine(line: string): void {
   recent.push(line);
@@ -431,6 +456,7 @@ function logLine(line: string): void {
 
 function startLog(command: string): void {
   recent = [];
+  lastCommand = command;
   try {
     const path = logPath();
     // Truncated per run rather than grown forever: the interesting run is the
@@ -530,10 +556,13 @@ export function start(win: BrowserWindow, options: EncoderOptions): void {
     // with it, since the extracted one-liner has repeatedly been too little
     // to identify the cause.
     if (code !== 0) {
+      // Everything needed to diagnose this without asking anybody to find a
+      // file: the reason, the exact command, and what ffmpeg actually said.
       void api.report({
-        kind: 'ffmpeg-exit',
-        message: lastError ?? `ffmpeg exited with code ${code}`,
-        context: recent.join('\n').slice(-4000),
+        kind: 'gpu-broadcast-failed',
+        message: bestError() ?? lastError ?? `ffmpeg exited with code ${code}`,
+        stack: lastCommand,
+        context: recent.join('\n').slice(-11000),
       });
     }
     if (!win.isDestroyed()) {
