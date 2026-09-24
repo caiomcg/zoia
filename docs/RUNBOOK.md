@@ -410,6 +410,7 @@ above it.
 | `Failed to request url=https://sfu.<domain>/whip/v1` | The SFU rejected the publish token, usually because it expired before the connection finished. Retry; check the server's clock if it keeps happening |
 | `409 not_stage_holder` from `/api/whip` | They lost the stage before publishing started. Claim again |
 | Connects, then no picture | UDP 7882 isn't reaching the server, the same fault viewers would see |
+| No picture, and ffmpeg's `time=` stays frozen (e.g. `00:00:00.07`) under `Timestamps are unset in a packet` | Frames are going out without timestamps. The window-capture path copies the addon's H.264 and needs `-use_wallclock_as_timestamps 1` on that input. No failure report is filed, so read `ffmpeg.log` on their machine |
 | `Unsupported audio channels 1 by RTC` | Mono audio reached the WHIP muxer. The app forces stereo, so this means a new code path forgot `-ac 2` |
 | `Cannot load nvcuda.dll` | NVENC requested on a machine without an NVIDIA GPU |
 | `NVENC: … status 15` / "older than this build expects" | Driver below 471.41. It falls back to the readback path automatically; updating the driver restores zero-copy |
