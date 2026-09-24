@@ -42,23 +42,6 @@ services:
     network_mode: host
     command: redis-server --bind 127.0.0.1 --port 6379 --save "" --appendonly no
 
-  # Accepts NVENC-encoded video over WHIP from the desktop app and republishes
-  # it into the room. Host networking for the same reason as livekit: WebRTC
-  # through Docker's NAT means fighting a second layer of address translation.
-  ingress:
-    image: livekit/ingress:v1.4.3
-    restart: unless-stopped
-    network_mode: host
-    environment:
-      INGRESS_CONFIG_FILE: /etc/ingress.yaml
-      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:?set LIVEKIT_API_KEY in .env}
-      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:?set LIVEKIT_API_SECRET in .env}
-    volumes:
-      - ./ingress.yaml:/etc/ingress.yaml:ro
-    depends_on:
-      - redis
-      - livekit
-
   app:
     build: .
     restart: unless-stopped

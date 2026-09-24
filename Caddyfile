@@ -38,5 +38,9 @@
 
 	# livekit runs in the host network namespace, so it is reached via the
 	# docker bridge gateway rather than a service name.
+	#
+	# This one route also carries hardware-encoded broadcasts: the SFU serves
+	# WHIP itself at /whip/v1, and its media uses the same UDP 7882 as
+	# everything else. See docs/adr/0011-hardware-encoding-over-the-internet.md.
 	reverse_proxy host.docker.internal:7880
 }

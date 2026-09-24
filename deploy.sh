@@ -31,8 +31,14 @@ echo "==> deploying to ${HOST}:${DEST}"
 #   .env          secrets live only on the server
 #   server/data   the invite-key store. --delete without this exclude would
 #                 wipe it and lock out every user, including you.
+#   desktop       the server never runs the desktop app, and the directory
+#                 holds a gitignored .pairing-token (a live credential) plus
+#                 ~400MB of built exes and a vendored ffmpeg once anyone has
+#                 made a build. rsync reads the working tree, not git, so
+#                 .gitignore does not protect any of it.
 rsync -az --delete $DRY_RUN \
   --exclude '.git' \
+  --exclude 'desktop' \
   --exclude 'node_modules' \
   --exclude '.env' \
   --exclude 'server/data' \
@@ -60,7 +66,10 @@ fi
 # the key store, so minting fails with EACCES.
 mkdir -p server/data
 
-docker compose up -d --build
+# --remove-orphans stops containers for services that no longer exist in the
+# compose file. Without it the LiveKit ingress, replaced by the SFU's own
+# WHIP endpoint, would have kept running after it was removed from here.
+docker compose up -d --build --remove-orphans
 docker compose ps
 REMOTE
 
