@@ -199,39 +199,37 @@ function encoderFor(vendor: string): string {
 }
 
 /**
- * Low-latency knobs and the profile, which every vendor spells differently.
+ * Low-latency knobs, which every vendor spells differently.
  *
- * The profile is the one that bit: AMF has no `baseline` at all — its options
- * are main, high, constrained_baseline and constrained_high — so passing the
- * profile NVENC wanted made ffmpeg exit with "Error opening output files:
- * Invalid argument", which reads like a problem with the WHIP endpoint and is
- * not. Checked against the vendored build with -h encoder=h264_amf rather than
- * assumed.
+ * **No `-profile:v` here, deliberately.** It used to pass `baseline` for
+ * "widest decoder support among viewers", and in this ffmpeg build that one
+ * argument fails every encode with
  *
- * constrained_baseline is the AMF equivalent of what the other two get: no
- * B-frames, and decodable by anything.
+ *     Task finished with error code: -22 (Invalid argument)
+ *     Error opening output files: Invalid argument
+ *
+ * which reads like a broken WHIP endpoint and is nothing of the kind. Measured
+ * against the vendored binary: libx264 encodes a test pattern happily with no
+ * profile and fails with `baseline`, `constrained_baseline`, `main` and `high`
+ * alike, so it is `-profile:v` itself this build will not take, not the value.
+ *
+ * It broke GPU sharing on every GPU — Radeon, GTX 1060 and RTX 5090 all
+ * reported the same thing — because it sat on the shared argument list rather
+ * than any one vendor's path.
+ *
+ * Nothing is lost by dropping it. Every viewer is this same app, and Chromium
+ * decodes whatever these encoders pick by default.
  */
 function encoderTuning(encoder: string): string[] {
   switch (encoder) {
     case 'h264_amf':
-      return [
-        '-usage',
-        'ultralowlatency',
-        '-quality',
-        'speed',
-        '-rc',
-        'cbr',
-        '-profile:v',
-        'constrained_baseline',
-        // AMF counts this in frames; above zero buys compression with latency
-        // a viewer feels.
-        '-bf',
-        '0',
-      ];
+      // AMF counts B-frames in frames; above zero buys compression with
+      // latency a viewer feels.
+      return ['-usage', 'ultralowlatency', '-quality', 'speed', '-rc', 'cbr', '-bf', '0'];
     case 'h264_qsv':
-      return ['-preset', 'veryfast', '-look_ahead', '0', '-profile:v', 'baseline', '-bf', '0'];
+      return ['-preset', 'veryfast', '-look_ahead', '0', '-bf', '0'];
     default:
-      return ['-preset', 'p4', '-tune', 'll', '-profile:v', 'baseline', '-bf', '0'];
+      return ['-preset', 'p4', '-tune', 'll', '-bf', '0'];
   }
 }
 
