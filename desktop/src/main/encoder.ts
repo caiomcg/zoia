@@ -532,14 +532,31 @@ export function start(win: BrowserWindow, options: EncoderOptions): void {
   // error it produces — "Error opening output files: Invalid argument" names
   // neither the argument nor the encoder.
   startLog([binary, ...redact(args)].join(' '));
-  child = spawn(binary, args, { windowsHide: true });
+  const proc = spawn(binary, args, { windowsHide: true });
+  child = proc;
+
+  // Every handler below belongs to *this* process, and must do nothing once a
+  // newer one has replaced it.
+  //
+  // They used to act on shared state unconditionally. Restarting a broadcast
+  // (a second click, or a source switch) kills the old ffmpeg and spawns a new
+  // one, and the old process finished dying *afterwards*. Its exit handler then
+  // set `child = null`, orphaning the new ffmpeg so every frame after it was
+  // dropped. It also ran onExit(), which stopped the new capture and released
+  // the new WHIP publisher. And it reported a failure made of the new run's
+  // command and the new run's still-empty log: "ffmpeg exited with code null",
+  // with nothing under it. So a second attempt was killed by the first.
+  const isCurrent = () => child === proc;
 
   // ffmpeg exiting closes this pipe; without a listener the resulting EPIPE
   // is an uncaught exception rather than an event.
-  child.stdin.on('error', () => {});
+  proc.stdin.on('error', () => {});
 
-  child.stderr.setEncoding('utf8');
-  child.stderr.on('data', (chunk: string) => {
+  proc.stderr.setEncoding('utf8');
+  proc.stderr.on('data', (chunk: string) => {
+    // A process on its way out after being replaced has nothing to say about
+    // the run that replaced it.
+    if (!isCurrent()) return;
     // ffmpeg reports progress on stderr; the frame counter is the liveness
     // signal, and anything that looks like a real failure is surfaced.
     if (process.env.ZOIA_FFMPEG_LOG) console.log(`[ffmpeg] ${chunk.trimEnd()}`);
@@ -575,7 +592,13 @@ export function start(win: BrowserWindow, options: EncoderOptions): void {
     }
   });
 
-  child.on('exit', (code) => {
+  proc.on('exit', (code) => {
+    // Not current means stop() replaced or ended it on purpose, since stop()
+    // clears `child` before killing. A deliberate stop is not a failure. It
+    // used to be reported as one ("exited with code null"), including every
+    // time somebody pressed Stop, which buried real reports in noise.
+    if (!isCurrent()) return;
+
     child = null;
     if (watchdog) clearInterval(watchdog);
     watchdog = null;
