@@ -9,7 +9,7 @@ import { createPairingStore } from './pairings.js';
 import { createDeviceStore } from './devices.js';
 import { createTokenIssuer } from './token.js';
 import { createStage } from './stage.js';
-import { createIngressService } from './ingress.js';
+import { createWhipPublisher } from './whip.js';
 import { createReportStore } from './reports.js';
 import { createApp } from './app.js';
 
@@ -38,13 +38,15 @@ const rooms = new RoomServiceClient(
   config.livekit.apiSecret,
 );
 const stage = createStage({ rooms, roomName: config.roomName });
-const ingress = createIngressService({
-  apiUrl: config.livekit.apiUrl,
+// Derived from LIVEKIT_WS_URL: the SFU's own WHIP endpoint on the host clients
+// already connect to. There is no separate address to configure.
+const whip = createWhipPublisher({
   apiKey: config.livekit.apiKey,
   apiSecret: config.livekit.apiSecret,
+  wsUrl: config.livekit.wsUrl,
   roomName: config.roomName,
-  whipBaseUrl: config.whipBaseUrl,
   rooms,
+  stage,
 });
 
 const reports = createReportStore();
@@ -54,7 +56,7 @@ const app = createApp({
   keyStore,
   tokenIssuer,
   stage,
-  ingress,
+  whip,
   reports,
   pairingStore,
   deviceStore,

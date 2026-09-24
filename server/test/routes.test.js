@@ -9,6 +9,7 @@ import { createApp } from '../src/app.js';
 import { createKeyStore, parseKey } from '../src/keys.js';
 import { createTokenIssuer } from '../src/token.js';
 import { createStage } from '../src/stage.js';
+import { createWhipPublisher } from '../src/whip.js';
 
 let dir;
 let keyStore;
@@ -36,6 +37,9 @@ function buildApp(config = {}) {
       if (p) p.permission = { ...p.permission, ...options.permission };
       return p;
     },
+    removeParticipant: async (_room, identity) => {
+      roomsStub.participants = roomsStub.participants.filter((x) => x.identity !== identity);
+    },
   };
 
   const tokenIssuer = createTokenIssuer({
@@ -48,12 +52,22 @@ function buildApp(config = {}) {
   });
 
   const stage = createStage({ rooms: roomsStub, roomName: 'zoia', logger });
+  const whip = createWhipPublisher({
+    apiKey: 'devkey',
+    apiSecret: 'a-secret-long-enough-for-hmac-signing',
+    wsUrl: 'wss://sfu.example.com',
+    roomName: 'zoia',
+    rooms: roomsStub,
+    stage,
+    logger,
+  });
 
   return createApp({
     config: { ...BASE_CONFIG, rateLimit: { windowMs: 60_000, limit: 1000 }, ...config },
     keyStore,
     tokenIssuer,
     stage,
+    whip,
     logger,
   });
 }
@@ -348,5 +362,49 @@ describe('health', () => {
     const res = await request(app).get('/healthz');
     assert.equal(res.status, 200);
     assert.equal(res.body.ok, true);
+  });
+});
+
+describe('publishing over WHIP', () => {
+  async function signedIn(name) {
+    const { rawKey, record } = await keyStore.add({ name });
+    const agent = request.agent(app);
+    await agent.get(`/?k=${encodeURIComponent(rawKey)}`);
+    roomsStub.participants.push({
+      identity: record.id,
+      name,
+      permission: { canPublish: false, canSubscribe: true },
+      tracks: [],
+    });
+    return { agent, record };
+  }
+
+  test('requires a session', async () => {
+    assert.equal((await request(app).post('/api/whip')).status, 401);
+    assert.equal((await request(app).post('/api/whip/release')).status, 401);
+  });
+
+  test('is refused without the stage, so it cannot be used to publish around it', async () => {
+    const { agent } = await signedIn('Alice');
+    const res = await agent.post('/api/whip');
+    assert.equal(res.status, 409);
+    assert.equal(res.body.error, 'not_stage_holder');
+  });
+
+  test('the holder gets the SFU endpoint derived from the configured LiveKit URL', async () => {
+    const { agent } = await signedIn('Alice');
+    assert.equal((await agent.post('/api/stage/claim')).status, 200);
+
+    const res = await agent.post('/api/whip');
+    assert.equal(res.status, 200);
+    assert.equal(res.body.url, 'https://sfu.example.com/whip/v1');
+    assert.match(res.body.token, /^[\w-]+\.[\w-]+\.[\w-]+$/);
+  });
+
+  test('the token never reaches a log line', async () => {
+    const { agent } = await signedIn('Alice');
+    await agent.post('/api/stage/claim');
+    const { body } = await agent.post('/api/whip');
+    assert.ok(!logLines.join('\n').includes(body.token), 'a publish token was logged');
   });
 });

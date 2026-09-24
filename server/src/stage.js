@@ -33,6 +33,8 @@ const VIEW_PERMISSION = {
  */
 const STALE_CLAIM_MS = 20_000;
 
+import { isWhipIdentity, ownerOf, WHIP_SUFFIX } from './whip.js';
+
 export function createStage({ rooms, roomName, logger = console, now = () => Date.now() }) {
   // Claim times are a hint for the staleness check only. Losing them (a
   // restart) makes an idle holder look stale, which errs towards the stage
@@ -49,16 +51,56 @@ export function createStage({ rooms, roomName, logger = console, now = () => Dat
     }
   }
 
-  /** The participant currently permitted to publish, if any. */
+  /**
+   * The person currently permitted to publish, if any.
+   *
+   * A hardware-encoded broadcast publishes from a second participant,
+   * `<id>-gpu`, with publish rights of its own from its WHIP token. Treating
+   * that as a separate holder broke the stage both ways. The human looked
+   * idle, since their own participant publishes nothing while the GPU
+   * participant carries the picture, so after the grace period anyone could
+   * take the stage from someone mid-broadcast. And whichever of the two was
+   * listed first was reported as the holder, so a release could find
+   * "someone else" holding it and refuse. The owner is the holder; their WHIP
+   * participant only counts as proof they are publishing.
+   */
   async function holder() {
     const participants = await listParticipants();
-    const found = participants.find((p) => p.permission?.canPublish);
+    const tracksOf = (identity) =>
+      participants
+        .filter((p) => ownerOf(p.identity) === identity)
+        .reduce((sum, p) => sum + (p.tracks ?? []).length, 0);
+
+    const human = participants.find((p) => !isWhipIdentity(p.identity) && p.permission?.canPublish);
+    // A WHIP publisher whose owner has no publish rights, or has left: the app
+    // crashed and ffmpeg kept going. It is still on stage, as far as anyone
+    // watching can tell, so it still holds the stage for its owner.
+    const orphan = human
+      ? null
+      : participants.find((p) => isWhipIdentity(p.identity) && (p.tracks ?? []).length > 0);
+
+    const found = human ?? orphan;
     if (!found) return null;
+    const identity = ownerOf(found.identity);
+    const owner = participants.find((p) => p.identity === identity);
     return {
-      identity: found.identity,
-      name: found.name || found.identity,
-      publishing: (found.tracks ?? []).length > 0,
+      identity,
+      name: owner?.name || found.name || identity,
+      publishing: tracksOf(identity) > 0,
     };
+  }
+
+  /**
+   * Ends a hardware-encoded broadcast for its owner. Needed wherever the stage
+   * is taken or given up: the WHIP participant's rights come from its token,
+   * not from updateParticipant, so revoking the owner leaves it publishing.
+   */
+  async function dropWhip(identity) {
+    try {
+      await rooms.removeParticipant?.(roomName, `${identity}${WHIP_SUFFIX}`);
+    } catch {
+      // Usually it was never there: most broadcasts are not hardware-encoded.
+    }
   }
 
   async function setPermission(identity, permission) {
@@ -95,6 +137,7 @@ export function createStage({ rooms, roomName, logger = console, now = () => Dat
       if (current && current.identity !== user.id && force) {
         logger.info(`[stage] ${user.name} (${user.id}) took the stage from ${current.identity}`);
         await setPermission(current.identity, VIEW_PERMISSION).catch(() => {});
+        await dropWhip(current.identity);
         claimedAt.delete(current.identity);
       } else if (current && current.identity !== user.id) {
         const since = claimedAt.get(current.identity);
@@ -110,6 +153,7 @@ export function createStage({ rooms, roomName, logger = console, now = () => Dat
         // room for everyone else.
         logger.info(`[stage] taking the stage from idle holder ${current.identity}`);
         await setPermission(current.identity, VIEW_PERMISSION).catch(() => {});
+        await dropWhip(current.identity);
         claimedAt.delete(current.identity);
       }
 
@@ -137,6 +181,7 @@ export function createStage({ rooms, roomName, logger = console, now = () => Dat
       }
 
       await setPermission(user.id, VIEW_PERMISSION).catch(() => {});
+      await dropWhip(user.id);
       logger.info(`[stage] ${user.name} (${user.id}) released the stage`);
       return { ok: true, released: true };
     },

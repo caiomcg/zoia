@@ -11,6 +11,7 @@
 import express from 'express';
 import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
+import { NotStageHolderError } from './whip.js';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -23,7 +24,7 @@ export function createApp({
   keyStore,
   tokenIssuer,
   stage,
-  ingress = null,
+  whip = null,
   reports = null,
   pairingStore = null,
   deviceStore = null,
@@ -143,7 +144,7 @@ export function createApp({
    * The browser client is retired. Sharing one window's own audio needs APIs
    * a page does not get, which is the whole reason the desktop app exists.
    * This host still serves that app's API — pairing, tokens, the stage,
-   * ingress, crash reports — so only the human-facing half is gone.
+   * WHIP publishing, crash reports — so only the human-facing half is gone.
    *
    * /?k=<key> still signs a session in and strips the key from the URL, so it
    * cannot linger in history or a Referer header. Nothing consumes that
@@ -304,21 +305,26 @@ export function createApp({
   // Chromium's own WebRTC encoder is software-only on Windows. Claiming the
   // stage still goes through /api/stage — this only hands out the endpoint.
 
-  const requireIngress = (_req, res, next) =>
-    ingress ? next() : res.status(501).json({ error: 'ingress_not_configured' });
+  const requireWhip = (_req, res, next) =>
+    whip ? next() : res.status(501).json({ error: 'whip_not_configured' });
 
-  app.post('/api/ingress', requireSession, requireIngress, async (req, res) => {
+  // Hardware-encoded broadcasts publish to the SFU over WHIP. The endpoint is
+  // the SFU's own; what this hands out is permission, and only to whoever
+  // holds the stage. See src/whip.js.
+  app.post('/api/whip', requireSession, requireWhip, async (req, res, next) => {
     try {
-      res.json(await ingress.endpointFor(req.user));
+      res.json(await whip.endpointFor(req.user));
     } catch (err) {
-      logger.error(`[ingress] ${err?.message ?? err}`);
-      res.status(502).json({ error: 'ingress_unavailable' });
+      if (err instanceof NotStageHolderError) {
+        return res.status(409).json({ error: 'not_stage_holder' });
+      }
+      next(err);
     }
   });
 
-  app.post('/api/ingress/release', requireSession, requireIngress, async (req, res, next) => {
+  app.post('/api/whip/release', requireSession, requireWhip, async (req, res, next) => {
     try {
-      res.json(await ingress.release(req.user));
+      res.json(await whip.release(req.user));
     } catch (err) {
       next(err);
     }
