@@ -7,9 +7,20 @@
  * Electron *and* in stock Chrome on a machine with an idle RTX 4070, and a
  * live publish reports encoderImplementation "OpenH264". No flag changes it.
  *
- * So this path bypasses Chromium entirely: ffmpeg captures the desktop on the
- * GPU (ddagrab, D3D11), encodes with NVENC, and publishes over WHIP to a
- * LiveKit ingress, which forwards the stream without re-encoding it.
+ * So this path bypasses Chromium entirely and publishes over WHIP to a LiveKit
+ * ingress, which forwards the stream without re-encoding it.
+ *
+ * It is not NVENC-only, despite what this file used to be called. Which
+ * encoder runs depends on the GPU the capture landed on:
+ *
+ *   NVIDIA  the native addon encodes with NVENC and ffmpeg only muxes
+ *   AMD     ffmpeg encodes the frames with h264_amf
+ *   Intel   ffmpeg encodes the frames with h264_qsv
+ *   screen  ffmpeg captures with ddagrab and encodes it itself
+ *
+ * The old name leaked into the IPC channels too, so a Radeon failing to share
+ * said "zoia:nvenc:start" and left somebody reasonably asking why it was
+ * running NVENC at all.
  *
  * Application audio is fed in on stdin as raw PCM from the same WASAPI capture
  * the Chromium path uses, which also fixes audio/video sync: ffmpeg timestamps
@@ -18,11 +29,12 @@
 
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { createServer, type Server, type Socket } from 'node:net';
-import { existsSync } from 'node:fs';
+import { existsSync, appendFileSync, writeFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { app, type BrowserWindow } from 'electron';
+import * as api from './api';
 
-export interface NvencOptions {
+export interface EncoderOptions {
   whipUrl: string;
   framerate: number;
   bitrate: number;
@@ -55,7 +67,7 @@ export interface NvencOptions {
   frames: { width: number; height: number; output: 'h264' | 'bgra'; vendor: string } | null;
 }
 
-export interface NvencStatus {
+export interface EncoderStatus {
   running: boolean;
   fps: number;
   encoder: string;
@@ -238,13 +250,13 @@ function encoderTuning(encoder: string): string[] {
  * unconditionally, which on a Radeon was simply untrue and made the one
  * number worth reading — what is doing the encoding — misleading.
  */
-let currentEncoder = 'h264_nvenc';
+let currentEncoder = 'unknown';
 
 export function encoderInUse(): string {
   return currentEncoder;
 }
 
-function buildArgs(options: NvencOptions): string[] {
+function buildArgs(options: EncoderOptions): string[] {
   const { whipUrl, framerate, bitrate } = options;
   const frames = options.frames;
   // Already-encoded H.264 is muxed straight through. It used to be decoded and
@@ -364,14 +376,14 @@ function startWatchdog(win: BrowserWindow): void {
   watchdog = setInterval(() => {
     if (framesAtLastCheck === frameCount && child) {
       if (!win.isDestroyed()) {
-        win.webContents.send('zoia:nvenc:status', {
+        win.webContents.send('zoia:encoder:status', {
           running: true,
           fps: 0,
           encoder: currentEncoder,
           width: captureWidth,
           height: captureHeight,
           error: 'No new frames — the screen may be static.',
-        } satisfies NvencStatus);
+        } satisfies EncoderStatus);
       }
     }
     framesAtLastCheck = frameCount;
@@ -389,18 +401,75 @@ function startWatchdog(win: BrowserWindow): void {
  */
 let onExit: (() => void) | null = null;
 
+/**
+ * Everything ffmpeg said this run, and the command that started it.
+ *
+ * ffmpeg's stderr used to go to a console nobody can see in a packaged app,
+ * and only a single regex-matched line ever reached the UI. When a broadcast
+ * failed on somebody else's machine the only evidence was that one sentence,
+ * relayed by hand — which is how "Invalid argument" got diagnosed three times
+ * and fixed wrongly twice. The whole of it now goes to a file, and the tail of
+ * it goes to the server when a run fails.
+ */
+function logPath(): string {
+  return join(app.getPath('userData'), 'ffmpeg.log');
+}
+
+/** Kept small on purpose: this is the tail that gets attached to a report. */
+const RECENT_LINES = 40;
+let recent: string[] = [];
+
+function logLine(line: string): void {
+  recent.push(line);
+  if (recent.length > RECENT_LINES) recent.shift();
+  try {
+    appendFileSync(logPath(), `${line}\n`);
+  } catch {
+    // A log that cannot be written must never take the broadcast with it.
+  }
+}
+
+function startLog(command: string): void {
+  recent = [];
+  try {
+    const path = logPath();
+    // Truncated per run rather than grown forever: the interesting run is the
+    // one that just failed, and a tester asked for "the log" should not have
+    // to find the right part of a 50MB file.
+    let previous = '';
+    try {
+      if (statSync(path).size > 0) previous = '';
+    } catch {
+      previous = '';
+    }
+    writeFileSync(path, `${previous}=== ${new Date().toISOString()}\n${command}\n\n`);
+  } catch {
+    // Same: best effort.
+  }
+}
+
+/** Where a tester can find the log, so it can be said out loud in the UI. */
+export function logLocation(): string {
+  return logPath();
+}
+
 export function setOnExit(handler: (() => void) | null): void {
   onExit = handler;
 }
 
-export function start(win: BrowserWindow, options: NvencOptions): void {
+export function start(win: BrowserWindow, options: EncoderOptions): void {
   stop();
   lastError = null;
   frameCount = 0;
 
   if (options.withAudio) startAudioPipe();
   const binary = ffmpegPath();
-  child = spawn(binary, buildArgs(options), { windowsHide: true });
+  const args = buildArgs(options);
+  // The command first, because an argument this rejects is invisible in the
+  // error it produces — "Error opening output files: Invalid argument" names
+  // neither the argument nor the encoder.
+  startLog([binary, ...args].join(' '));
+  child = spawn(binary, args, { windowsHide: true });
 
   // ffmpeg exiting closes this pipe; without a listener the resulting EPIPE
   // is an uncaught exception rather than an event.
@@ -411,6 +480,7 @@ export function start(win: BrowserWindow, options: NvencOptions): void {
     // ffmpeg reports progress on stderr; the frame counter is the liveness
     // signal, and anything that looks like a real failure is surfaced.
     if (process.env.ZOIA_FFMPEG_LOG) console.log(`[ffmpeg] ${chunk.trimEnd()}`);
+    logLine(chunk.trimEnd());
 
     // ffmpeg announces the input stream once; that line carries the real
     // capture resolution, which is the only honest thing to show the user.
@@ -431,14 +501,14 @@ export function start(win: BrowserWindow, options: NvencOptions): void {
     }
 
     if (!win.isDestroyed()) {
-      win.webContents.send('zoia:nvenc:status', {
+      win.webContents.send('zoia:encoder:status', {
         running: true,
         fps: lastFps,
         encoder: currentEncoder,
         width: captureWidth,
         height: captureHeight,
         error: lastError,
-      } satisfies NvencStatus);
+      } satisfies EncoderStatus);
     }
   });
 
@@ -453,15 +523,28 @@ export function start(win: BrowserWindow, options: NvencOptions): void {
     } catch {
       // A cleanup handler that throws must not mask the exit itself.
     }
+
+    // A failed broadcast is not a crash, so nothing here was ever reported —
+    // the one class of failure most likely to happen on hardware nobody
+    // testing this owns. The command and the tail of ffmpeg's own output go
+    // with it, since the extracted one-liner has repeatedly been too little
+    // to identify the cause.
+    if (code !== 0) {
+      void api.report({
+        kind: 'ffmpeg-exit',
+        message: lastError ?? `ffmpeg exited with code ${code}`,
+        context: recent.join('\n').slice(-4000),
+      });
+    }
     if (!win.isDestroyed()) {
-      win.webContents.send('zoia:nvenc:status', {
+      win.webContents.send('zoia:encoder:status', {
         running: false,
         fps: 0,
         encoder: currentEncoder,
         width: 0,
         height: 0,
         error: code === 0 ? null : (lastError ?? `ffmpeg exited with code ${code}`),
-      } satisfies NvencStatus);
+      } satisfies EncoderStatus);
     }
   });
 

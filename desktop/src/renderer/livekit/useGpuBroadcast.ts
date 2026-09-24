@@ -15,18 +15,18 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { NvencStatus, QualityPreset, SourceInfo } from '../../shared/ipc';
+import type { EncoderStatus, QualityPreset, SourceInfo } from '../../shared/ipc';
 
 export type GpuBroadcastState = 'idle' | 'starting' | 'live';
 
 export function useGpuBroadcast() {
   const [state, setState] = useState<GpuBroadcastState>('idle');
-  const [status, setStatus] = useState<NvencStatus | null>(null);
+  const [status, setStatus] = useState<EncoderStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const activeRef = useRef(false);
 
   useEffect(() => {
-    return window.zoia.nvenc.onStatus((next) => {
+    return window.zoia.encoder.onStatus((next) => {
       setStatus(next);
       if (!next.running && activeRef.current) {
         activeRef.current = false;
@@ -38,7 +38,7 @@ export function useGpuBroadcast() {
 
   const stop = useCallback(async () => {
     activeRef.current = false;
-    await window.zoia.nvenc.stop().catch(() => {});
+    await window.zoia.encoder.stop().catch(() => {});
     await window.zoia.ingress.release().catch(() => {});
     setState('idle');
     setStatus(null);
@@ -51,7 +51,7 @@ export function useGpuBroadcast() {
       try {
         const endpoint = await window.zoia.ingress.get();
         const isWindow = source?.kind === 'window';
-        await window.zoia.nvenc.start({
+        await window.zoia.encoder.start({
           whipUrl: endpoint.url,
           framerate: preset.maxFramerate,
           bitrate: preset.maxBitrate,

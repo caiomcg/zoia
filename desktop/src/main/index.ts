@@ -6,7 +6,7 @@ import { INVITE_FILENAME } from './invite';
 import * as api from './api';
 import * as sources from './sources';
 import * as audioCapture from './audio';
-import * as nvenc from './nvenc';
+import * as encoder from './encoder';
 import * as capture from './capture';
 import { IPC } from '../shared/ipc';
 import type { GpuStatus } from '../shared/ipc';
@@ -211,8 +211,8 @@ function registerIpc(): void {
   ipcMain.handle(IPC.renameDevice, (_event, name: string) => api.renameDevice(name));
 
   ipcMain.handle(
-    IPC.nvencStart,
-    (_event, options: Omit<nvenc.NvencOptions, 'frames'> & { hwnd: number | null }) => {
+    IPC.encoderStart,
+    (_event, options: Omit<encoder.EncoderOptions, 'frames'> & { hwnd: number | null }) => {
       if (!mainWindow) return;
       // Refreshing picker thumbnails while live competes with the encoder
       // for the main process.
@@ -228,12 +228,12 @@ function registerIpc(): void {
           options.hwnd,
           options.framerate,
           options.bitrate,
-          (packet) => nvenc.writeFrame(packet),
+          (packet) => encoder.writeFrame(packet),
           (message) =>
-            mainWindow?.webContents.send(IPC.nvencStatus, {
+            mainWindow?.webContents.send(IPC.encoderStatus, {
               running: false,
               fps: 0,
-              encoder: 'nvenc',
+              encoder: encoder.encoderInUse(),
               width: 0,
               height: 0,
               error: message,
@@ -247,14 +247,14 @@ function registerIpc(): void {
           console.log('[gpu] NVENC declined, falling back to ffmpeg:', info.fallbackReason);
         }
         console.log(`[gpu] capturing ${info.adapter} -> ${info.output} (${info.vendor})`);
-        nvenc.start(mainWindow, { ...options, frames: info });
+        encoder.start(mainWindow, { ...options, frames: info });
       } else {
-        nvenc.start(mainWindow, { ...options, frames: null });
+        encoder.start(mainWindow, { ...options, frames: null });
       }
 
       // Only a window carries audio; a screen share is deliberately silent.
       if (options.withAudio && options.processId !== null) {
-        audioCapture.startCapture(mainWindow, options.processId, nvenc.writeAudio);
+        audioCapture.startCapture(mainWindow, options.processId, encoder.writeAudio);
       }
     },
   );
@@ -262,15 +262,15 @@ function registerIpc(): void {
   // ffmpeg can die on its own — a rejected argument, a broken WHIP endpoint —
   // and the capture has to come down with it or it keeps feeding a pipe that
   // is gone.
-  nvenc.setOnExit(() => {
+  encoder.setOnExit(() => {
     capture.stop();
     audioCapture.stopCapture();
     sources.startWarming();
   });
 
-  ipcMain.handle(IPC.nvencStop, () => {
+  ipcMain.handle(IPC.encoderStop, () => {
     capture.stop();
-    nvenc.shutdown();
+    encoder.shutdown();
     audioCapture.stopCapture();
     sources.startWarming();
   });
@@ -380,6 +380,6 @@ app.on('window-all-closed', () => {
   sources.stopWarming();
   audioCapture.stopCapture();
   capture.stop();
-  nvenc.shutdown();
+  encoder.shutdown();
   if (process.platform !== 'darwin') app.quit();
 });

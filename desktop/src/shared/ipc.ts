@@ -152,7 +152,7 @@ export interface IngressEndpoint {
   url: string;
 }
 
-export interface NvencStatus {
+export interface EncoderStatus {
   running: boolean;
   fps: number;
   encoder: string;
@@ -214,9 +214,9 @@ export const IPC = {
   audioChunk: 'zoia:audio:chunk',
   gpuStatus: 'zoia:gpu:status',
   report: 'zoia:report',
-  nvencStart: 'zoia:nvenc:start',
-  nvencStop: 'zoia:nvenc:stop',
-  nvencStatus: 'zoia:nvenc:status',
+  encoderStart: 'zoia:encoder:start',
+  encoderStop: 'zoia:encoder:stop',
+  encoderStatus: 'zoia:encoder:status',
   ingressGet: 'zoia:ingress:get',
   ingressRelease: 'zoia:ingress:release',
   renameDevice: 'zoia:device:rename',

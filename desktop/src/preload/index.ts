@@ -6,7 +6,7 @@
 
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import { IPC } from '../shared/ipc';
-import type { NvencStatus, PairingStatus } from '../shared/ipc';
+import type { EncoderStatus, PairingStatus } from '../shared/ipc';
 import type { ZoiaBridge } from './index.d';
 
 const bridge: ZoiaBridge = {
@@ -37,13 +37,13 @@ const bridge: ZoiaBridge = {
     list: () => ipcRenderer.invoke(IPC.sourcesList),
     select: (source) => ipcRenderer.invoke(IPC.sourcesSelect, source),
   },
-  nvenc: {
-    start: (options) => ipcRenderer.invoke(IPC.nvencStart, options),
-    stop: () => ipcRenderer.invoke(IPC.nvencStop),
+  encoder: {
+    start: (options) => ipcRenderer.invoke(IPC.encoderStart, options),
+    stop: () => ipcRenderer.invoke(IPC.encoderStop),
     onStatus: (cb) => {
-      const listener = (_e: Electron.IpcRendererEvent, status: NvencStatus) => cb(status);
-      ipcRenderer.on(IPC.nvencStatus, listener);
-      return () => ipcRenderer.removeListener(IPC.nvencStatus, listener);
+      const listener = (_e: Electron.IpcRendererEvent, status: EncoderStatus) => cb(status);
+      ipcRenderer.on(IPC.encoderStatus, listener);
+      return () => ipcRenderer.removeListener(IPC.encoderStatus, listener);
     },
   },
   ingress: {

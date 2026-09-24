@@ -418,10 +418,32 @@ class Session {
     if (FAILED(hr)) return HresultMessage("GraphicsCaptureItem::CreateForWindow", hr);
 
     const auto size = item_.Size();
-    // NVENC rejects odd dimensions.
+    // Encoders reject odd dimensions.
     width_ = static_cast<uint32_t>(size.Width) & ~1u;
     height_ = static_cast<uint32_t>(size.Height) & ~1u;
-    if (width_ == 0 || height_ == 0) return "That window has no visible area to capture.";
+
+    // A capture item reports 0x0 for a window that is minimised, and also
+    // briefly for one that has been created but not yet composed. Asking the
+    // window itself is both a fallback and a better answer, since a minimised
+    // window still has a client rect.
+    if (width_ == 0 || height_ == 0) {
+      RECT rect = {};
+      if (GetClientRect(hwnd, &rect)) {
+        width_ = static_cast<uint32_t>(rect.right - rect.left) & ~1u;
+        height_ = static_cast<uint32_t>(rect.bottom - rect.top) & ~1u;
+      }
+    }
+
+    if (width_ == 0 || height_ == 0) {
+      // Naming the numbers, because "no visible area" reads as a bug in this
+      // app when it usually means the window is minimised.
+      char buffer[192];
+      snprintf(buffer, sizeof(buffer),
+               "That window reports no visible area (%ldx%ld). "
+               "If it is minimised, restore it and share again.",
+               static_cast<long>(size.Width), static_cast<long>(size.Height));
+      return buffer;
+    }
 
     if (encode_) {
       const std::string encoderError = encoder_.Start(device_.Get(), width_, height_, fps, bitrate);
