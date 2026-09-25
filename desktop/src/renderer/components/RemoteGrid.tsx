@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import type { RemoteScreen } from '../livekit/useRoom';
 
+export interface LoadingBroadcast {
+  identity: string;
+  name: string;
+}
+
 function RemoteTile({
   screen,
   audioActive,
@@ -66,7 +71,13 @@ function RemoteTile({
   );
 }
 
-export default function RemoteGrid({ screens }: { screens: RemoteScreen[] }) {
+export default function RemoteGrid({
+  screens,
+  loadingBroadcasts = [],
+}: {
+  screens: RemoteScreen[];
+  loadingBroadcasts?: LoadingBroadcast[];
+}) {
   const [audioOwner, setAudioOwner] = useState<string | null>(null);
   const [volumes, setVolumes] = useState<Record<string, number>>({});
 
@@ -84,8 +95,21 @@ export default function RemoteGrid({ screens }: { screens: RemoteScreen[] }) {
     return (
       <section className="stage remote-empty">
         <div className="overlay">
-          <h2>Select a broadcast</h2>
-          <p className="muted">Choose one or more live broadcasts from the room list.</p>
+          {loadingBroadcasts.length > 0 ? (
+            <>
+              <h2>Carregando transmissão…</h2>
+              <p className="muted">
+                {loadingBroadcasts.map((broadcast) => broadcast.name).join(', ')}{' '}
+                {loadingBroadcasts.length === 1 ? 'está' : 'estão'} transmitindo, mas ainda
+                {loadingBroadcasts.length === 1 ? ' está' : ' estão'} carregando.
+              </p>
+            </>
+          ) : (
+            <>
+              <h2>Select a broadcast</h2>
+              <p className="muted">Choose one or more live broadcasts from the room list.</p>
+            </>
+          )}
         </div>
       </section>
     );

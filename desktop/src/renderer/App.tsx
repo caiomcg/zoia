@@ -3,7 +3,7 @@ import Banner from './components/Banner';
 import CameraDialog from './components/CameraDialog';
 import PairingScreen from './components/PairingScreen';
 import Player from './components/Player';
-import RemoteGrid from './components/RemoteGrid';
+import RemoteGrid, { type LoadingBroadcast } from './components/RemoteGrid';
 import Sidebar from './components/Sidebar';
 import SourcePicker from './components/SourcePicker';
 import StatusLight, { type StatusTone } from './components/StatusLight';
@@ -162,11 +162,23 @@ export default function App() {
       : null;
 
   const roomError = show('room', room.error);
+  const roomNotice = show('room-notice', room.roomNotice);
   const broadcastError = show('broadcast', room.broadcastError);
   const gpuError = show('gpu', gpuCast.error);
   const audioWarning = show('audio', room.audioWarning);
   const stageMessage = show('stage', stageError);
   const gpuWarning = gpuLive ? show('gpustatus', gpuCast.status?.error) : null;
+  const activeRemoteIds = new Set(room.remoteScreens.map((screen) => screen.participantIdentity));
+  const loadingBroadcasts: LoadingBroadcast[] = room.members
+    .filter(
+      (member) =>
+        member.isBroadcasting &&
+        !member.isLocal &&
+        room.selectedRemoteIds.has(member.identity) &&
+        !activeRemoteIds.has(member.identity),
+    )
+    .map((member) => ({ identity: member.identity, name: member.name }));
+  const loadingRemoteIds = new Set(loadingBroadcasts.map((broadcast) => broadcast.identity));
 
   return (
     <div className="app">
@@ -200,7 +212,15 @@ export default function App() {
         </div>
 
         <div className="topbar-centre">
-          {isStarting && <span className="muted">Starting…</span>}
+          {room.isReconnecting ? (
+            <span className="connection-message">
+              Reconectando… suas escolhas serão restauradas.
+            </span>
+          ) : isStarting ? (
+            <span className="muted">Starting…</span>
+          ) : room.state === 'connecting' ? (
+            <span className="muted">Conectando…</span>
+          ) : null}
         </div>
 
         <div className="topbar-right">
@@ -253,6 +273,11 @@ export default function App() {
       </header>
 
       {roomError && <Banner onDismiss={() => dismiss('room', roomError)}>{roomError}</Banner>}
+      {roomNotice && (
+        <Banner tone="warn" onDismiss={() => dismiss('room-notice', roomNotice)}>
+          {roomNotice}
+        </Banner>
+      )}
       {broadcastError && (
         <Banner onDismiss={() => dismiss('broadcast', broadcastError)}>{broadcastError}</Banner>
       )}
@@ -285,7 +310,7 @@ export default function App() {
               onSwitch={() => setPickerOpen(true)}
             />
           ) : (
-            <RemoteGrid screens={room.remoteScreens} />
+            <RemoteGrid screens={room.remoteScreens} loadingBroadcasts={loadingBroadcasts} />
           )}
         </main>
 
@@ -294,6 +319,7 @@ export default function App() {
           myName={status.deviceName ?? 'You'}
           onRename={handleRename}
           selectedRemoteIds={room.selectedRemoteIds}
+          loadingRemoteIds={loadingRemoteIds}
           onToggleRemote={(identity) => {
             void room.setRemoteSubscription(identity, !room.selectedRemoteIds.has(identity));
           }}
