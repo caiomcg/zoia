@@ -17,6 +17,28 @@ const $ = (id) => document.getElementById(id);
 const ownerIdentity = (identity) =>
   identity.endsWith(WHIP_SUFFIX) ? identity.slice(0, -WHIP_SUFFIX.length) : identity;
 
+function broadcastMetadata(participant) {
+  try {
+    const value = JSON.parse(participant.metadata || '');
+    return {
+      sourceName:
+        typeof value.sourceName === 'string' && value.sourceName ? value.sourceName : null,
+      sourceKind: ['screen', 'window', 'camera'].includes(value.sourceKind)
+        ? value.sourceKind
+        : null,
+    };
+  } catch {
+    return { sourceName: null, sourceKind: null };
+  }
+}
+
+function sourceLabel(person) {
+  if (!person.sourceName) return null;
+  const kind =
+    person.sourceKind === 'window' ? 'Janela' : person.sourceKind === 'screen' ? 'Tela' : '';
+  return kind ? `${kind}: ${person.sourceName}` : person.sourceName;
+}
+
 async function request(path, options) {
   const response = await fetch(path, { credentials: 'same-origin', ...options });
   if (!response.ok) {
@@ -83,7 +105,16 @@ function refreshBroadcasters() {
     if (!video) continue;
     const ownerId = ownerIdentity(participant.identity);
     const owner = participantForOwner(ownerId) ?? participant;
-    if (!next.has(ownerId)) next.set(ownerId, { id: ownerId, name: owner.name || ownerId });
+    if (!next.has(ownerId)) {
+      const metadata = broadcastMetadata(participant);
+      const ownerMetadata = broadcastMetadata(owner);
+      next.set(ownerId, {
+        id: ownerId,
+        name: owner.name || ownerId,
+        sourceName: metadata.sourceName ?? ownerMetadata.sourceName,
+        sourceKind: metadata.sourceKind ?? ownerMetadata.sourceKind,
+      });
+    }
   }
   state.broadcasters = next;
   for (const id of state.selected) if (!next.has(id)) state.selected.delete(id);
@@ -127,6 +158,9 @@ function renderSidebar() {
     const name = document.createElement('span');
     name.className = 'person-name';
     name.textContent = person.name;
+    const source = document.createElement('small');
+    source.className = 'person-source';
+    source.textContent = sourceLabel(person) ?? '';
     const button = document.createElement('button');
     const watchingThis = state.selected.has(person.id);
     button.className = `watch-button${watchingThis ? ' active' : ''}`;
@@ -135,7 +169,7 @@ function renderSidebar() {
     button.addEventListener('click', () =>
       setSubscribed(person.id, !state.selected.has(person.id)),
     );
-    row.append(dot, name, button);
+    row.append(dot, name, source, button);
     list.append(row);
   }
 }
@@ -201,8 +235,14 @@ function renderGrid() {
     const footer = document.createElement('div');
     footer.className = 'tile-footer';
     const name = document.createElement('span');
-    name.textContent = state.broadcasters.get(identity)?.name ?? identity;
-    footer.append(name);
+    const person = state.broadcasters.get(identity);
+    name.textContent = person?.name ?? identity;
+    const source = document.createElement('small');
+    source.className = 'tile-source';
+    source.textContent = person ? (sourceLabel(person) ?? '') : '';
+    const identityLabel = document.createElement('span');
+    identityLabel.append(name, source);
+    footer.append(identityLabel);
     const tileActions = document.createElement('div');
     tileActions.className = 'tile-actions';
     const focusButton = document.createElement('button');
@@ -267,6 +307,7 @@ async function connect() {
     })
     .on(RoomEvent.TrackSubscribed, refreshBroadcasters)
     .on(RoomEvent.TrackUnsubscribed, refreshBroadcasters)
+    .on(RoomEvent.ParticipantMetadataChanged, refreshBroadcasters)
     .on(RoomEvent.Reconnecting, () => setConnection('Reconectando…', true))
     .on(RoomEvent.Reconnected, () => {
       setConnection('Conectado');
