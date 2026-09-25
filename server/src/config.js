@@ -48,5 +48,9 @@ export function loadConfig(env = process.env) {
     // Cookies must be Secure in production; local development over plain HTTP
     // would otherwise never receive one back.
     secureCookies: (env.SECURE_COOKIES ?? 'true') !== 'false',
+    // Spent when someone joins through /spectator. Never logged.
+    pairingToken: env.PAIRING_TOKEN || '',
+    // The room lives here. This process only serves the page.
+    upstream: env.UPSTREAM_ORIGIN || '',
   };
 }

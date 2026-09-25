@@ -1,0 +1,18 @@
+{
+  "name": "Zoia",
+  "short_name": "Zoia",
+  "description": "Watch a Zoia screen broadcast.",
+  "start_url": "/spectator",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#1a1b1e",
+  "theme_color": "#1a1b1e",
+  "icons": [
+    {
+      "src": "/icon.png",
+      "sizes": "814x815",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

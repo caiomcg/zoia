@@ -14,6 +14,7 @@ import rateLimit from 'express-rate-limit';
 import { NotStageHolderError } from './whip.js';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { attachRoomProxy, cookieForLocal, joinUpstream } from './upstream.js';
 
 const PUBLIC_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'public');
 const COOKIE_NAME = 'zoia_sid';
@@ -43,6 +44,8 @@ export function createApp({
   app.use(express.json({ limit: '32kb' }));
   app.use(express.urlencoded({ extended: false, limit: '16kb' }));
   app.use(cookieParser(config.sessionSecret));
+
+  if (config.upstream) attachRoomProxy(app, config.upstream);
 
   const loginLimiter = rateLimit({
     windowMs: config.rateLimit?.windowMs ?? 60_000,
@@ -159,6 +162,60 @@ export function createApp({
         return res.redirect(302, record ? '/' : '/?error=invalid_key');
       }
       res.sendFile(join(PUBLIC_DIR, 'index.html'));
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  app.get('/spectator', (_req, res) => {
+    res.sendFile(join(PUBLIC_DIR, 'spectator.html'));
+  });
+
+  app.post('/api/spectator/join', loginLimiter, async (req, res, next) => {
+    try {
+      if (!config.pairingToken) {
+        return res.status(503).json({ error: 'spectator_not_configured' });
+      }
+
+      const deviceName = String(req.body?.deviceName ?? '').trim();
+      if (!deviceName) return res.status(400).json({ error: 'device_name_required' });
+      if (deviceName.length > 32) return res.status(400).json({ error: 'name_too_long' });
+
+      if (config.upstream) {
+        const result = await joinUpstream({
+          origin: config.upstream,
+          pairingToken: config.pairingToken,
+          deviceName,
+        });
+        for (const cookie of result.cookies) res.append('Set-Cookie', cookieForLocal(cookie));
+        if (!result.body?.name) {
+          logger.warn(
+            `[spectator] rejected (${result.body?.error ?? result.status}) from ${req.ip}`,
+          );
+        } else {
+          logger.info(`[spectator] ${result.body.name} (${result.body.id}) joined`);
+        }
+        return res.status(result.status).json(result.body);
+      }
+
+      if (!pairingStore || !deviceStore) {
+        return res.status(501).json({ error: 'pairing_not_configured' });
+      }
+
+      const claim = await pairingStore.claimActivation(config.pairingToken);
+      if (!claim.ok) {
+        logger.warn(`[spectator] rejected (${claim.reason}) from ${req.ip}`);
+        return res.status(claim.reason === 'exhausted' ? 409 : 401).json({ error: claim.reason });
+      }
+
+      const { record } = await deviceStore.issue({
+        name: deviceName,
+        pairingId: claim.pairing.id,
+      });
+      setSession(res, 'device', record.id);
+      deviceStore.touch(record.id);
+      logger.info(`[spectator] ${record.name} (${record.id}) joined`);
+      res.json({ name: record.name, id: record.id });
     } catch (err) {
       next(err);
     }
