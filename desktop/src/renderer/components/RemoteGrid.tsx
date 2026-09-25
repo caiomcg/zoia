@@ -1,9 +1,20 @@
 import { useEffect, useRef, useState } from 'react';
 import type { RemoteScreen } from '../livekit/useRoom';
 
-function RemoteTile({ screen }: { screen: RemoteScreen }) {
+function RemoteTile({
+  screen,
+  audioActive,
+  volume,
+  onActivateAudio,
+  onVolumeChange,
+}: {
+  screen: RemoteScreen;
+  audioActive: boolean;
+  volume: number;
+  onActivateAudio: () => void;
+  onVolumeChange: (value: number) => void;
+}) {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const [muted, setMuted] = useState(false);
 
   useEffect(() => {
     const element = videoRef.current;
@@ -11,11 +22,17 @@ function RemoteTile({ screen }: { screen: RemoteScreen }) {
     const tracks = [screen.videoTrack.mediaStreamTrack];
     if (screen.audioTrack) tracks.push(screen.audioTrack.mediaStreamTrack);
     element.srcObject = new MediaStream(tracks);
-    element.muted = muted;
     return () => {
       element.srcObject = null;
     };
-  }, [screen.videoTrack, screen.audioTrack, muted]);
+  }, [screen.videoTrack, screen.audioTrack]);
+
+  useEffect(() => {
+    const element = videoRef.current;
+    if (!element) return;
+    element.muted = !audioActive;
+    element.volume = audioActive ? volume : 0;
+  }, [audioActive, volume]);
 
   return (
     <article className="remote-tile">
@@ -23,7 +40,26 @@ function RemoteTile({ screen }: { screen: RemoteScreen }) {
       <div className="remote-tile-footer">
         <span>{screen.participantName}</span>
         {screen.audioTrack && (
-          <button onClick={() => setMuted((value) => !value)}>{muted ? 'Unmute' : 'Mute'}</button>
+          <div className="remote-audio-controls">
+            <span className={`remote-audio-label${audioActive ? ' active' : ''}`}>
+              {audioActive ? 'Áudio ativo' : 'Áudio desligado'}
+            </span>
+            <button onClick={onActivateAudio}>
+              {audioActive ? 'Silenciar áudio' : 'Ativar áudio'}
+            </button>
+            {audioActive && (
+              <input
+                type="range"
+                min={0}
+                max={1}
+                step={0.01}
+                value={volume}
+                onChange={(event) => onVolumeChange(Number(event.target.value))}
+                className="remote-volume"
+                aria-label={`Volume de ${screen.participantName}`}
+              />
+            )}
+          </div>
         )}
       </div>
     </article>
@@ -31,6 +67,19 @@ function RemoteTile({ screen }: { screen: RemoteScreen }) {
 }
 
 export default function RemoteGrid({ screens }: { screens: RemoteScreen[] }) {
+  const [audioOwner, setAudioOwner] = useState<string | null>(null);
+  const [volumes, setVolumes] = useState<Record<string, number>>({});
+
+  useEffect(() => {
+    const withAudio = screens.find((screen) => screen.audioTrack);
+    setAudioOwner((current) => {
+      if (current && screens.some((screen) => screen.participantIdentity === current)) {
+        return current;
+      }
+      return withAudio?.participantIdentity ?? null;
+    });
+  }, [screens]);
+
   if (screens.length === 0) {
     return (
       <section className="stage remote-empty">
@@ -45,7 +94,23 @@ export default function RemoteGrid({ screens }: { screens: RemoteScreen[] }) {
   return (
     <section className={`remote-grid count-${Math.min(screens.length, 4)}`}>
       {screens.map((screen) => (
-        <RemoteTile key={screen.participantIdentity} screen={screen} />
+        <RemoteTile
+          key={screen.participantIdentity}
+          screen={screen}
+          audioActive={audioOwner === screen.participantIdentity}
+          volume={volumes[screen.participantIdentity] ?? 1}
+          onActivateAudio={() =>
+            setAudioOwner((current) =>
+              current === screen.participantIdentity ? null : screen.participantIdentity,
+            )
+          }
+          onVolumeChange={(value) =>
+            setVolumes((current) => ({
+              ...current,
+              [screen.participantIdentity]: value,
+            }))
+          }
+        />
       ))}
     </section>
   );

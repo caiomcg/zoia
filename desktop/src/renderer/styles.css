@@ -322,6 +322,28 @@ button:disabled {
   font-size: 12px;
 }
 
+.remote-audio-controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.remote-audio-label {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.remote-audio-label.active {
+  color: var(--accent);
+}
+
+.remote-volume {
+  width: 72px;
+  accent-color: var(--accent);
+}
+
 .remote-tile-footer button {
   padding: 3px 7px;
   border: 1px solid #3b414a;
