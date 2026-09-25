@@ -138,8 +138,12 @@ export function useRoom() {
 
   const [state, setState] = useState<ConnectionState>('idle');
   const [error, setError] = useState<string | null>(null);
+  const [isReconnecting, setIsReconnecting] = useState(false);
+  const [roomNotice, setRoomNotice] = useState<string | null>(null);
   const [remoteScreens, setRemoteScreens] = useState<RemoteScreen[]>([]);
   const selectedRemoteIdsRef = useRef<Set<string>>(new Set());
+  const selectionInitializedRef = useRef(false);
+  const broadcastingNamesRef = useRef(new Map<string, string>());
   const [selectedRemoteIds, setSelectedRemoteIds] = useState<Set<string>>(new Set());
   const [participantCount, setParticipantCount] = useState(0);
   const [members, setMembers] = useState<RoomMember[]>([]);
@@ -217,21 +221,22 @@ export function useRoom() {
   const connect = useCallback(
     async (wsUrl: string, token: string, quality?: TokenResult['quality']) => {
       setState('connecting');
+      setIsReconnecting(false);
       setError(null);
+      setRoomNotice(null);
+      selectionInitializedRef.current = false;
       if (quality) qualityRef.current = quality;
 
       const room = new Room({ adaptiveStream: false, dynacast: false });
       roomRef.current = room;
 
-      const refresh = () => {
+      const refresh = (initializeSelection = false) => {
         const screens = findRemoteScreens(room);
         const available = new Set(screens.map((screen) => screen.participantIdentity));
         const nextSelected = new Set(selectedRemoteIdsRef.current);
-        for (const id of available) {
-          if (!selectedRemoteIdsRef.current.has(id)) nextSelected.add(id);
-        }
-        for (const id of nextSelected) {
-          if (!available.has(id)) nextSelected.delete(id);
+        if (initializeSelection && !selectionInitializedRef.current) {
+          for (const id of available) nextSelected.add(id);
+          selectionInitializedRef.current = true;
         }
         selectedRemoteIdsRef.current = nextSelected;
         setSelectedRemoteIds(nextSelected);
@@ -261,36 +266,73 @@ export function useRoom() {
         const ingressOwners = new Set(
           all.filter((m) => m.isIngress).map((m) => ownerIdentity(m.identity)),
         );
-        setMembers(
-          all
-            .filter((m) => !m.isIngress)
-            .map((m) => (ingressOwners.has(m.identity) ? { ...m, isBroadcasting: true } : m)),
+        const nextMembers = all
+          .filter((m) => !m.isIngress)
+          .map((m) => (ingressOwners.has(m.identity) ? { ...m, isBroadcasting: true } : m));
+        broadcastingNamesRef.current = new Map(
+          nextMembers
+            .filter((member) => member.isBroadcasting)
+            .map((member) => [member.identity, member.name]),
         );
+        setMembers(nextMembers);
+      };
+
+      const applyRemoteSubscriptions = () => {
+        for (const participant of room.remoteParticipants.values()) {
+          const subscribed = selectedRemoteIdsRef.current.has(ownerIdentity(participant.identity));
+          for (const publication of [
+            ...participant.videoTrackPublications.values(),
+            ...participant.audioTrackPublications.values(),
+          ]) {
+            try {
+              publication.setSubscribed(subscribed);
+            } catch {
+              // The participant may leave while subscriptions are restored.
+            }
+          }
+        }
       };
 
       room
         // Without this, a rename updated the server record and the person's
         // own footer while every list in every client kept the old name.
-        .on(RoomEvent.ParticipantNameChanged, refresh)
+        .on(RoomEvent.ParticipantNameChanged, () => refresh())
         .on(RoomEvent.DataReceived, (payload, participant) =>
           dataHandlerRef.current?.(payload, participant),
         )
         // Permission changes are how losing the stage arrives: the server
         // revokes canPublish and LiveKit pushes it down live.
-        .on(RoomEvent.ParticipantPermissionsChanged, refresh)
-        .on(RoomEvent.LocalTrackUnpublished, refresh)
-        .on(RoomEvent.TrackSubscribed, refresh)
-        .on(RoomEvent.TrackUnsubscribed, refresh)
-        .on(RoomEvent.ParticipantConnected, refresh)
-        .on(RoomEvent.ParticipantDisconnected, refresh)
-        .on(RoomEvent.Reconnecting, () => setState('connecting'))
+        .on(RoomEvent.ParticipantPermissionsChanged, () => refresh())
+        .on(RoomEvent.LocalTrackUnpublished, () => refresh())
+        .on(RoomEvent.TrackSubscribed, () => refresh())
+        .on(RoomEvent.TrackUnsubscribed, () => refresh())
+        .on(RoomEvent.ParticipantConnected, () => refresh())
+        .on(RoomEvent.ParticipantDisconnected, (participant) => {
+          const ownerId = ownerIdentity(participant.identity);
+          const name = broadcastingNamesRef.current.get(ownerId);
+          refresh();
+          if (name && !broadcastingNamesRef.current.has(ownerId)) {
+            setRoomNotice(`${name} parou de transmitir`);
+          }
+        })
+        .on(RoomEvent.Reconnecting, () => {
+          setIsReconnecting(true);
+          setState('connecting');
+        })
         .on(RoomEvent.Reconnected, () => {
+          setIsReconnecting(false);
           setState('connected');
           refresh();
+          applyRemoteSubscriptions();
         })
         .on(RoomEvent.Disconnected, (reason) => {
+          setIsReconnecting(false);
           setState('disconnected');
-          setError(reason ? `Disconnected: ${reason}` : 'Disconnected');
+          setError(
+            reason
+              ? `Conexão encerrada (${reason}). Verifique a rede e tente novamente.`
+              : 'Conexão encerrada. Verifique a rede e tente novamente.',
+          );
           setBroadcastState('idle');
           localTrackRef.current = null;
           setLocalTrack(null);
@@ -299,10 +341,10 @@ export function useRoom() {
       try {
         await room.connect(wsUrl, token);
         setState('connected');
-        refresh();
+        refresh(true);
       } catch (err) {
         setState('error');
-        setError(err instanceof Error ? err.message : String(err));
+        setError(`Não foi possível conectar: ${err instanceof Error ? err.message : String(err)}`);
       }
     },
     [findRemoteScreens],
@@ -324,7 +366,10 @@ export function useRoom() {
     await roomRef.current?.disconnect();
     roomRef.current = null;
     setState('idle');
+    setIsReconnecting(false);
+    setRoomNotice(null);
     setRemoteScreens([]);
+    selectionInitializedRef.current = false;
     selectedRemoteIdsRef.current = new Set();
     setSelectedRemoteIds(new Set());
   }, []);
@@ -648,6 +693,9 @@ export function useRoom() {
     error,
     remoteScreens,
     selectedRemoteIds,
+    isReconnecting,
+    roomNotice,
+    clearRoomNotice: useCallback(() => setRoomNotice(null), []),
     setRemoteSubscription,
     participantCount,
     members,
