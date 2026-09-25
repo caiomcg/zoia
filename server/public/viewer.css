@@ -164,6 +164,28 @@ button:disabled {
   overflow: auto;
   background: #0b0c0e;
 }
+.grid-toolbar {
+  display: flex;
+  grid-column: 1 / -1;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.grid-toolbar label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.grid-toolbar select {
+  padding: 3px 5px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 11px;
+}
 .tile {
   display: flex;
   flex-direction: column;
@@ -181,6 +203,11 @@ button:disabled {
   object-fit: contain;
   background: #050608;
 }
+.tile.audio-only video {
+  flex: 0 0 0;
+  height: 0;
+  min-height: 0;
+}
 .tile-footer {
   display: flex;
   align-items: center;
@@ -188,6 +215,23 @@ button:disabled {
   gap: 8px;
   padding: 7px 10px;
   font-size: 12px;
+}
+.tile-actions {
+  display: flex;
+  gap: 5px;
+  margin-left: auto;
+}
+.tile-actions button {
+  padding: 3px 6px;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 11px;
+}
+.tile-actions button.active {
+  color: var(--accent);
+  border-color: var(--accent);
 }
 .audio-controls {
   display: flex;

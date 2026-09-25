@@ -7,7 +7,7 @@ import RemoteGrid, { type LoadingBroadcast } from './components/RemoteGrid';
 import Sidebar from './components/Sidebar';
 import SourcePicker from './components/SourcePicker';
 import StatusLight, { type StatusTone } from './components/StatusLight';
-import { useRoom } from './livekit/useRoom';
+import { useRoom, type RemoteQualityMode } from './livekit/useRoom';
 import { useGpuBroadcast } from './livekit/useGpuBroadcast';
 import {
   DEFAULT_PRESET_ID,
@@ -21,6 +21,7 @@ import {
 const PRESET_STORAGE_KEY = 'zoia.qualityPreset';
 const HARDWARE_STORAGE_KEY = 'zoia.hardwareAcceleration';
 const ONBOARDING_STORAGE_KEY = 'zoia.onboardingDismissed';
+const REMOTE_QUALITY_STORAGE_KEY = 'zoia.remoteQuality';
 
 export default function App() {
   const [status, setStatus] = useState<PairingStatus | null>(null);
@@ -29,6 +30,10 @@ export default function App() {
   const [showOnboarding, setShowOnboarding] = useState(
     () => localStorage.getItem(ONBOARDING_STORAGE_KEY) !== 'true',
   );
+  const [remoteQualityMode, setRemoteQualityMode] = useState<RemoteQualityMode>(() =>
+    localStorage.getItem(REMOTE_QUALITY_STORAGE_KEY) === 'low' ? 'low' : 'auto',
+  );
+  const [focusedRemoteId, setFocusedRemoteId] = useState<string | null>(null);
   const [gpu, setGpu] = useState<GpuStatus | null>(null);
   const [stageError, setStageError] = useState<string | null>(null);
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
@@ -81,6 +86,10 @@ export default function App() {
         .then(({ wsUrl, token, quality }) => room.connect(wsUrl, token, quality));
     }
   }, [status?.paired, room]);
+
+  useEffect(() => {
+    room.setRemoteQualityMode(remoteQualityMode);
+  }, [remoteQualityMode, room.setRemoteQualityMode]);
 
   const handleRename = useCallback(
     async (name: string) => {
@@ -328,6 +337,18 @@ export default function App() {
                 setPickerOpen(true);
               }}
               onDismissOnboarding={dismissOnboarding}
+              qualityMode={remoteQualityMode}
+              focusedIdentity={focusedRemoteId}
+              onQualityModeChange={(mode) => {
+                setRemoteQualityMode(mode);
+                localStorage.setItem(REMOTE_QUALITY_STORAGE_KEY, mode);
+                room.setRemoteQualityMode(mode);
+              }}
+              onFocusChange={(identity) => {
+                setFocusedRemoteId(identity);
+                room.setRemoteFocus(identity);
+              }}
+              onToggleAudioOnly={room.setRemoteAudioOnly}
             />
           )}
         </main>

@@ -14,6 +14,7 @@ import {
   Room,
   RoomEvent,
   Track,
+  VideoQuality,
   type RemoteTrack,
 } from 'livekit-client';
 import type { QualityPreset, SourceInfo, TokenResult } from '../../shared/ipc';
@@ -31,12 +32,47 @@ function ownerIdentity(identity: string): string {
   return identity.endsWith(WHIP_SUFFIX) ? identity.slice(0, -WHIP_SUFFIX.length) : identity;
 }
 
+function applyRemoteMediaSettings(
+  room: Room,
+  selected: Set<string>,
+  qualityMode: RemoteQualityMode,
+  focusedIdentity: string | null,
+  audioOnly: Set<string>,
+): void {
+  for (const participant of room.remoteParticipants.values()) {
+    const identity = ownerIdentity(participant.identity);
+    const subscribed = selected.has(identity);
+    const videoSubscribed = subscribed && !audioOnly.has(identity);
+    const quality =
+      qualityMode === 'low' || (focusedIdentity && focusedIdentity !== identity)
+        ? VideoQuality.LOW
+        : VideoQuality.HIGH;
+    for (const publication of participant.videoTrackPublications.values()) {
+      try {
+        publication.setSubscribed(videoSubscribed);
+        publication.setVideoQuality(quality);
+      } catch {
+        // The participant may leave while settings are being applied.
+      }
+    }
+    for (const publication of participant.audioTrackPublications.values()) {
+      try {
+        publication.setSubscribed(subscribed);
+      } catch {
+        // The participant may leave while settings are being applied.
+      }
+    }
+  }
+}
+
 export interface RemoteScreen {
   participantIdentity: string;
   participantName: string;
-  videoTrack: RemoteTrack;
+  videoTrack: RemoteTrack | null;
   audioTrack: RemoteTrack | null;
 }
+
+export type RemoteQualityMode = 'auto' | 'low';
 
 /**
  * Read from the live RTP sender rather than inferred from GPU feature flags:
@@ -142,6 +178,9 @@ export function useRoom() {
   const [roomNotice, setRoomNotice] = useState<string | null>(null);
   const [remoteScreens, setRemoteScreens] = useState<RemoteScreen[]>([]);
   const selectedRemoteIdsRef = useRef<Set<string>>(new Set());
+  const remoteQualityModeRef = useRef<RemoteQualityMode>('auto');
+  const focusedRemoteIdRef = useRef<string | null>(null);
+  const audioOnlyRemoteIdsRef = useRef<Set<string>>(new Set());
   const selectionInitializedRef = useRef(false);
   const broadcastingNamesRef = useRef(new Map<string, string>());
   const [selectedRemoteIds, setSelectedRemoteIds] = useState<Set<string>>(new Set());
@@ -182,12 +221,11 @@ export function useRoom() {
       const videoPub =
         participant.getTrackPublication(Track.Source.ScreenShare) ??
         [...participant.videoTrackPublications.values()].find((pub) => pub.track);
+      const audioPub =
+        participant.getTrackPublication(Track.Source.ScreenShareAudio) ??
+        [...participant.audioTrackPublications.values()].find((pub) => pub.track);
 
-      if (videoPub?.track) {
-        const audioPub =
-          participant.getTrackPublication(Track.Source.ScreenShareAudio) ??
-          [...participant.audioTrackPublications.values()].find((pub) => pub.track);
-
+      if (videoPub?.track || audioPub?.track) {
         // A WHIP publisher carries the name it joined with, so a later rename
         // would leave viewers looking at a stale label. The human it belongs
         // to is in the same room and always current.
@@ -203,7 +241,7 @@ export function useRoom() {
         screens.push({
           participantIdentity: owner.identity,
           participantName: owner.name || owner.identity,
-          videoTrack: videoPub.track,
+          videoTrack: videoPub?.track ?? null,
           audioTrack: audioPub?.track ?? null,
         });
       }
@@ -227,7 +265,7 @@ export function useRoom() {
       selectionInitializedRef.current = false;
       if (quality) qualityRef.current = quality;
 
-      const room = new Room({ adaptiveStream: false, dynacast: false });
+      const room = new Room({ adaptiveStream: true, dynacast: true });
       roomRef.current = room;
 
       const refresh = (initializeSelection = false) => {
@@ -278,19 +316,13 @@ export function useRoom() {
       };
 
       const applyRemoteSubscriptions = () => {
-        for (const participant of room.remoteParticipants.values()) {
-          const subscribed = selectedRemoteIdsRef.current.has(ownerIdentity(participant.identity));
-          for (const publication of [
-            ...participant.videoTrackPublications.values(),
-            ...participant.audioTrackPublications.values(),
-          ]) {
-            try {
-              publication.setSubscribed(subscribed);
-            } catch {
-              // The participant may leave while subscriptions are restored.
-            }
-          }
-        }
+        applyRemoteMediaSettings(
+          room,
+          selectedRemoteIdsRef.current,
+          remoteQualityModeRef.current,
+          focusedRemoteIdRef.current,
+          audioOnlyRemoteIdsRef.current,
+        );
       };
 
       room
@@ -370,6 +402,9 @@ export function useRoom() {
     setRoomNotice(null);
     setRemoteScreens([]);
     selectionInitializedRef.current = false;
+    remoteQualityModeRef.current = 'auto';
+    focusedRemoteIdRef.current = null;
+    audioOnlyRemoteIdsRef.current = new Set();
     selectedRemoteIdsRef.current = new Set();
     setSelectedRemoteIds(new Set());
   }, []);
@@ -380,30 +415,66 @@ export function useRoom() {
       if (!room) return;
       const participant = room.remoteParticipants.get(identity);
       if (!participant) return;
-      const ownerIds = new Set([identity, `${identity}${WHIP_SUFFIX}`]);
-      for (const candidate of room.remoteParticipants.values()) {
-        if (!ownerIds.has(candidate.identity)) continue;
-        for (const publication of candidate.videoTrackPublications.values()) {
-          try {
-            publication.setSubscribed(subscribed);
-          } catch {
-            // The participant may leave while the selection is being applied.
-          }
-        }
-        for (const publication of candidate.audioTrackPublications.values()) {
-          try {
-            publication.setSubscribed(subscribed);
-          } catch {
-            // The participant may leave while the selection is being applied.
-          }
-        }
-      }
       const next = new Set(selectedRemoteIdsRef.current);
       if (subscribed) next.add(identity);
       else next.delete(identity);
       selectedRemoteIdsRef.current = next;
       setSelectedRemoteIds(next);
+      applyRemoteMediaSettings(
+        room,
+        next,
+        remoteQualityModeRef.current,
+        focusedRemoteIdRef.current,
+        audioOnlyRemoteIdsRef.current,
+      );
       setRemoteScreens(findRemoteScreens(room));
+    },
+    [findRemoteScreens],
+  );
+
+  const setRemoteQualityMode = useCallback((mode: RemoteQualityMode) => {
+    remoteQualityModeRef.current = mode;
+    const room = roomRef.current;
+    if (room) {
+      applyRemoteMediaSettings(
+        room,
+        selectedRemoteIdsRef.current,
+        mode,
+        focusedRemoteIdRef.current,
+        audioOnlyRemoteIdsRef.current,
+      );
+    }
+  }, []);
+
+  const setRemoteFocus = useCallback((identity: string | null) => {
+    focusedRemoteIdRef.current = identity;
+    const room = roomRef.current;
+    if (room) {
+      applyRemoteMediaSettings(
+        room,
+        selectedRemoteIdsRef.current,
+        remoteQualityModeRef.current,
+        identity,
+        audioOnlyRemoteIdsRef.current,
+      );
+    }
+  }, []);
+
+  const setRemoteAudioOnly = useCallback(
+    (identity: string, audioOnly: boolean) => {
+      if (audioOnly) audioOnlyRemoteIdsRef.current.add(identity);
+      else audioOnlyRemoteIdsRef.current.delete(identity);
+      const room = roomRef.current;
+      if (room) {
+        applyRemoteMediaSettings(
+          room,
+          selectedRemoteIdsRef.current,
+          remoteQualityModeRef.current,
+          focusedRemoteIdRef.current,
+          audioOnlyRemoteIdsRef.current,
+        );
+        setRemoteScreens(findRemoteScreens(room));
+      }
     },
     [findRemoteScreens],
   );
@@ -697,6 +768,9 @@ export function useRoom() {
     roomNotice,
     clearRoomNotice: useCallback(() => setRoomNotice(null), []),
     setRemoteSubscription,
+    setRemoteQualityMode,
+    setRemoteFocus,
+    setRemoteAudioOnly,
     participantCount,
     members,
     connect,
