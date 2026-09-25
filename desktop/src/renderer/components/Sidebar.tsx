@@ -115,6 +115,7 @@ export default function Sidebar({
   myName,
   onRename,
   selectedRemoteIds,
+  loadingRemoteIds,
   onToggleRemote,
   onWatchAll,
   onWatchNone,
@@ -123,6 +124,7 @@ export default function Sidebar({
   myName: string;
   onRename: (name: string) => Promise<void>;
   selectedRemoteIds: Set<string>;
+  loadingRemoteIds: Set<string>;
   onToggleRemote: (identity: string) => void;
   onWatchAll: () => void;
   onWatchNone: () => void;
@@ -165,6 +167,9 @@ export default function Sidebar({
                 )}
                 <span className="member-name">{m.name}</span>
                 {m.isLocal && <span className="you-tag">you</span>}
+                {!m.isLocal && loadingRemoteIds.has(m.identity) && (
+                  <span className="stream-state">Carregando…</span>
+                )}
                 <span className="live-dot" title="Sharing their screen" />
               </div>
             ))}

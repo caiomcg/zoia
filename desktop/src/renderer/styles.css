@@ -231,6 +231,11 @@ button:disabled {
   font-size: 13px;
 }
 
+.connection-message {
+  color: var(--warn);
+  font-size: 12px;
+}
+
 .room {
   display: flex;
   flex-direction: column;
@@ -893,6 +898,12 @@ button.danger {
 
 .member.live .member-name {
   color: #fff;
+}
+
+.stream-state {
+  margin-left: auto;
+  color: var(--warn);
+  font-size: 11px;
 }
 
 .member-empty {
