@@ -45,9 +45,9 @@ notifications, your music and your other calls stay out of the stream.
  │  camera              │ ─────────────► │    ├── app   (Node)    │ ── pairing, tokens,
  │  app audio (WASAPI)  │                │    └── LiveKit (SFU)   │    the stage
  └──────────────────────┘                └────────────────────────┘
-                                                   │  one stream in,
-                                                   ▼  many out
-                                            viewers (the same app)
+                                                   │  many streams in,
+                                                   ▼  selected streams out
+                                            viewers (desktop app or browser)
 ```
 
 Each broadcaster uploads one stream; the SFU fans each stream out. A mesh would make every
@@ -55,7 +55,7 @@ broadcaster upload once per viewer, which a home connection cannot do past two o
 The ceiling moves to the server's upstream bandwidth — roughly `streams × viewers × 2.5 Mbps` — and that,
 not CPU, is what limits the room.
 
-Longer version, including why the browser client was retired and what the hardware
+Longer version, including the browser viewer and what the hardware
 encoding path does: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Install
@@ -71,6 +71,17 @@ Zoia is **Windows x64 only**, and unsigned — SmartScreen will warn on first ru
 The download itself carries no server and no credentials, so it is the same file for
 everybody and safe to link publicly. The invite is the part that grants access, and the part
 to send privately.
+
+### Watching without installing the app
+
+Friends who only want to watch can open the invite in a supported browser and use the
+viewer page. They can select one or more people in the **Ao vivo** list, use **Assistir todas**
+or **Parar todas**, and choose which stream supplies audio. The viewer also shows each
+source's identity, such as `Janela: Chrome — YouTube`, and offers low-quality, focus and
+audio-only modes for slower connections.
+
+The desktop app is still required for broadcasting, because capturing a window or an
+application's audio uses native Windows APIs.
 
 ## Run your own
 
@@ -175,13 +186,16 @@ how to revoke an invite that escapes.
 
 Stated plainly, because finding these out later is worse:
 
-- **Windows x64 only.** The audio capture is WASAPI process loopback; there is no
-  equivalent on macOS or Linux, and no browser client any more.
+- **Windows x64 for broadcasting.** The audio capture is WASAPI process loopback; there is no
+  equivalent on macOS or Linux. Browser viewing is available on supported desktop and mobile
+  browsers, but browsers cannot broadcast a single application's audio.
 - **Hardware encoding is opt-in and newer than the rest.** It covers NVIDIA, AMD and
   Intel GPUs, but only NVIDIA has been confirmed on real hardware. See
   [above](#hardware-encoding-whip).
 - **One room, many broadcasters.** Each participant can publish one stream; viewers can
   subscribe to one or more streams. This is built for a handful of friends, not a platform.
+- **One audio stream at a time for viewers.** Multiple videos can be visible together, but only
+  one stream is audible by default; each viewer can activate another stream and adjust volume.
 - **Unsigned binaries.** Code signing costs money this project does not have.
 
 ## Documentation

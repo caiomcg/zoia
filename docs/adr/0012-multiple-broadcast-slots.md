@@ -21,7 +21,10 @@ check.
 
 The desktop client keeps remote publications independently selectable. It
 renders selected broadcasts in a grid and unsubscribes from deselected video and
-audio publications to avoid downloading streams the viewer did not choose.
+audio publications to avoid downloading streams the viewer did not choose. The browser viewer
+uses the same selection model. Each publisher advertises a small source label (for example,
+window name or screen name) as LiveKit participant metadata so viewers can distinguish similar
+broadcasts.
 
 ## Consequences
 
@@ -29,5 +32,7 @@ audio publications to avoid downloading streams the viewer did not choose.
 - Each participant remains limited to one application-owned broadcast slot.
 - Viewers can watch one, several, or none of the active broadcasts.
 - Server upstream bandwidth grows with the number of active streams and viewers.
+- Viewers see the broadcaster and source identity, while keeping only one stream's audio active
+  by default; quality, focus and audio-only controls limit unnecessary bandwidth.
 - The old takeover UI and global-holder semantics are no longer part of the
   broadcast flow.
