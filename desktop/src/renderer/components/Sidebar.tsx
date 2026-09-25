@@ -166,6 +166,7 @@ export default function Sidebar({
                   </button>
                 )}
                 <span className="member-name">{m.name}</span>
+                {m.broadcastSource && <span className="broadcast-source">{m.broadcastSource}</span>}
                 {m.isLocal && <span className="you-tag">you</span>}
                 {!m.isLocal && loadingRemoteIds.has(m.identity) && (
                   <span className="stream-state">Carregando…</span>

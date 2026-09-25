@@ -51,7 +51,19 @@ function RemoteTile({
     <article className={`remote-tile${audioOnly ? ' audio-only-tile' : ''}`}>
       <video ref={videoRef} playsInline autoPlay />
       <div className="remote-tile-footer">
-        <span>{screen.participantName}</span>
+        <span>
+          {screen.participantName}
+          {screen.sourceName && (
+            <small className="stream-source">
+              {screen.sourceKind === 'window'
+                ? 'Janela'
+                : screen.sourceKind === 'screen'
+                  ? 'Tela'
+                  : ''}
+              : {screen.sourceName}
+            </small>
+          )}
+        </span>
         <div className="remote-tile-actions">
           <button onClick={onFocus}>{focused ? 'Foco ativo' : 'Focar'}</button>
           {screen.audioTrack && (

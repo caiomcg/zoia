@@ -43,6 +43,8 @@ export interface ZoiaBridge {
       hwnd: number | null;
       /** A screen share is silent; a window share carries that app's audio. */
       withAudio: boolean;
+      sourceName: string;
+      sourceKind: SourceInfo['kind'];
     }): Promise<void>;
     stop(): Promise<void>;
     onStatus(cb: (status: EncoderStatus) => void): () => void;
