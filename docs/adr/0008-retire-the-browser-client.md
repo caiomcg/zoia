@@ -1,6 +1,6 @@
 # 8. Retire the browser client
 
-- **Status:** accepted
+- **Status:** superseded by [ADR 0013](0013-browser-viewer.md)
 - **Date:** 2026-09-22
 - **Follows** [ADR 0006](0006-native-desktop-client.md)
 
