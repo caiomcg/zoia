@@ -6,9 +6,10 @@ Conventions and invariants for anyone — human or agent — working on this rep
 ## What this is
 
 Zoia is a private one-to-many screen broadcast. Everyone who has an invite key joins the
-same room and watches; **anyone may claim the stage** and share a screen, window or tab with
-audio, but only one person at a time. Latency is ~200–500 ms. Access is by per-person invite
-key; there are no roles beyond "has a key".
+same room and watches; **anyone may claim an independent broadcast slot** and share a screen,
+window or tab with audio. Multiple people may stream at the same time, and each viewer chooses
+which broadcasts to watch. Latency is ~200–500 ms. Access is by per-person invite key; there
+are no roles beyond "has a key".
 
 It is three pieces:
 
@@ -66,9 +67,9 @@ and `npm run dev` regenerate it; the Dockerfile runs it at image build.
 ## Invariants — do not break these
 
 1. **Join tokens must never carry `canPublish: true`.** There is one tier of user and nobody
-   is a broadcaster by default. Publishing is granted at runtime by `stage.js`, and only
-   while the stage is free — so single-producer is a server-enforced property, not a UI
-   state. `server/test/token.test.js` and `server/test/stage.test.js` guard this.
+   is a broadcaster by default. Publishing is granted at runtime by `stage.js`, independently
+   per participant and only for that participant's slot. `server/test/token.test.js` and
+   `server/test/stage.test.js` guard this.
 2. **Never log a raw invite key** — not in the app, not in an error message, not in a debug
    branch. Log the `keyId` instead; it is safe and identifies the person.
 3. **Sessions are re-validated against the key store on every request**, not just at login.

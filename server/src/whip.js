@@ -66,7 +66,7 @@ const TOKEN_TTL = '5m';
 
 export class NotStageHolderError extends Error {
   constructor() {
-    super('Only whoever holds the stage can publish.');
+    super('Only a participant with a claimed broadcast slot can publish.');
     this.name = 'NotStageHolderError';
   }
 }
@@ -89,15 +89,14 @@ export function createWhipPublisher({
 
     /**
      * A WHIP endpoint and a token that allows publishing to it, for the stage
-     * holder only.
+     * participant with a claimed broadcast slot only.
      *
      * The old ingress endpoint checked for a session and nothing else, so any
      * paired device could publish over WHIP whether it held the stage or not.
      * The stage was a rule the in-app path obeyed and the hardware path didn't.
      */
     async endpointFor(user) {
-      const holder = await stage.holder();
-      if (!holder || holder.identity !== user.id) throw new NotStageHolderError();
+      if (!(await stage.isBroadcaster(user.id))) throw new NotStageHolderError();
 
       const at = new AccessToken(apiKey, apiSecret, {
         identity: `${user.id}${WHIP_SUFFIX}`,

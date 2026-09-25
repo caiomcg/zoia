@@ -265,13 +265,13 @@ export function createApp({
     }
   });
 
-  // ---- the stage ---------------------------------------------------------
-  // Publishing is a runtime permission, granted only while the stage is free.
+  // ---- broadcast slots ---------------------------------------------------
+  // Publishing is a runtime permission, granted independently per participant.
 
   app.get('/api/stage', requireSession, async (_req, res, next) => {
     try {
       res.json({
-        holder: await stage.holder(),
+        broadcasters: await stage.broadcasters(),
         participants: await stage.participants(),
       });
     } catch (err) {
@@ -281,12 +281,11 @@ export function createApp({
 
   app.post('/api/stage/claim', requireSession, async (req, res, next) => {
     try {
-      // force ends a takeover the holder never answered; see stage.js.
-      const result = await stage.claim(req.user, { force: req.body?.force === true });
+      const result = await stage.claim(req.user);
       if (!result.ok) {
-        return res.status(409).json({ error: 'stage_busy', holder: result.holder });
+        return res.status(409).json({ error: result.reason });
       }
-      res.json({ ok: true, holder: result.holder });
+      res.json({ ok: true, broadcaster: result.broadcaster });
     } catch (err) {
       next(err);
     }
@@ -310,7 +309,7 @@ export function createApp({
 
   // Hardware-encoded broadcasts publish to the SFU over WHIP. The endpoint is
   // the SFU's own; what this hands out is permission, and only to whoever
-  // holds the stage. See src/whip.js.
+  // has claimed their own broadcast slot. See src/whip.js.
   app.post('/api/whip', requireSession, requireWhip, async (req, res, next) => {
     try {
       res.json(await whip.endpointFor(req.user));
