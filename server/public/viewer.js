@@ -7,6 +7,9 @@ const state = {
   audioOwner: null,
   volumes: new Map(),
   broadcasters: new Map(),
+  qualityMode: 'auto',
+  focusedId: null,
+  audioOnly: new Set(),
   noticeTimer: null,
 };
 
@@ -57,6 +60,22 @@ function videoPublication(participant) {
   );
 }
 
+function applyMediaSettings() {
+  for (const participant of state.room.remoteParticipants.values()) {
+    const identity = ownerIdentity(participant.identity);
+    const subscribed = state.selected.has(identity);
+    const videoSubscribed = subscribed && !state.audioOnly.has(identity);
+    const low = state.qualityMode === 'low' || (state.focusedId && state.focusedId !== identity);
+    for (const publication of participant.videoTrackPublications.values()) {
+      publication.setSubscribed(videoSubscribed);
+      publication.setVideoQuality(low ? 0 : 2);
+    }
+    for (const publication of participant.audioTrackPublications.values()) {
+      publication.setSubscribed(subscribed);
+    }
+  }
+}
+
 function refreshBroadcasters() {
   const next = new Map();
   for (const participant of state.room.remoteParticipants.values()) {
@@ -87,12 +106,9 @@ function publicationsFor(ownerId) {
 }
 
 function setSubscribed(identity, subscribed) {
-  const publications = publicationsFor(identity);
-  for (const publication of [publications.video, publications.audio]) {
-    if (publication) publication.setSubscribed(subscribed);
-  }
   if (subscribed) state.selected.add(identity);
   else state.selected.delete(identity);
+  applyMediaSettings();
   renderSidebar();
   renderGrid();
 }
@@ -129,7 +145,7 @@ function renderGrid() {
   const current = new Map();
   for (const identity of state.selected) {
     const publications = publicationsFor(identity);
-    if (publications.video?.track) current.set(identity, publications);
+    if (publications.video?.track || publications.audio?.track) current.set(identity, publications);
   }
   grid.replaceChildren();
   if (current.size === 0) {
@@ -146,13 +162,37 @@ function renderGrid() {
     grid.append(empty);
     return;
   }
+  const toolbar = document.createElement('div');
+  toolbar.className = 'grid-toolbar';
+  const notice = document.createElement('span');
+  notice.textContent = `${current.size} ${current.size === 1 ? 'stream ativa' : 'streams ativas'}${current.size > 1 ? ' · maior consumo de banda' : ''}`;
+  const quality = document.createElement('select');
+  for (const [value, label] of [
+    ['auto', 'Automática'],
+    ['low', 'Baixa'],
+  ]) {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = label;
+    quality.append(option);
+  }
+  quality.value = state.qualityMode;
+  quality.addEventListener('change', () => {
+    state.qualityMode = quality.value;
+    applyMediaSettings();
+  });
+  const qualityLabel = document.createElement('label');
+  qualityLabel.append('Qualidade', quality);
+  toolbar.append(notice, qualityLabel);
+  grid.append(toolbar);
   for (const [identity, publications] of current) {
     const tile = document.createElement('article');
-    tile.className = 'tile';
+    const audioOnly = state.audioOnly.has(identity);
+    tile.className = `tile${audioOnly ? ' audio-only' : ''}`;
     const video = document.createElement('video');
     video.autoplay = true;
     video.playsInline = true;
-    const tracks = [publications.video.track.mediaStreamTrack];
+    const tracks = publications.video?.track ? [publications.video.track.mediaStreamTrack] : [];
     if (publications.audio?.track) tracks.push(publications.audio.track.mediaStreamTrack);
     video.srcObject = new MediaStream(tracks);
     const audioActive = state.audioOwner === identity;
@@ -163,6 +203,29 @@ function renderGrid() {
     const name = document.createElement('span');
     name.textContent = state.broadcasters.get(identity)?.name ?? identity;
     footer.append(name);
+    const tileActions = document.createElement('div');
+    tileActions.className = 'tile-actions';
+    const focusButton = document.createElement('button');
+    focusButton.className = state.focusedId === identity ? 'active' : '';
+    focusButton.textContent = state.focusedId === identity ? 'Foco ativo' : 'Focar';
+    focusButton.addEventListener('click', () => {
+      state.focusedId = state.focusedId === identity ? null : identity;
+      applyMediaSettings();
+      renderGrid();
+    });
+    tileActions.append(focusButton);
+    if (publications.audio?.track) {
+      const audioOnlyButton = document.createElement('button');
+      audioOnlyButton.textContent = audioOnly ? 'Vídeo' : 'Somente áudio';
+      audioOnlyButton.addEventListener('click', () => {
+        if (audioOnly) state.audioOnly.delete(identity);
+        else state.audioOnly.add(identity);
+        applyMediaSettings();
+        renderGrid();
+      });
+      tileActions.append(audioOnlyButton);
+    }
+    footer.append(tileActions);
     if (publications.audio?.track) {
       const controls = document.createElement('div');
       controls.className = 'audio-controls';
@@ -194,7 +257,7 @@ function renderGrid() {
 
 async function connect() {
   const token = await request('/api/token', { method: 'POST' });
-  state.room = new Room({ adaptiveStream: false, dynacast: false });
+  state.room = new Room({ adaptiveStream: true, dynacast: true });
   state.room
     .on(RoomEvent.ParticipantConnected, refreshBroadcasters)
     .on(RoomEvent.ParticipantDisconnected, (participant) => {
@@ -208,14 +271,14 @@ async function connect() {
     .on(RoomEvent.Reconnected, () => {
       setConnection('Conectado');
       refreshBroadcasters();
-      for (const identity of state.selected) setSubscribed(identity, true);
+      applyMediaSettings();
     })
     .on(RoomEvent.Disconnected, () => setConnection('Desconectado', true));
   await state.room.connect(token.wsUrl, token.token);
   setConnection('Conectado');
   refreshBroadcasters();
   for (const person of state.broadcasters.values()) state.selected.add(person.id);
-  for (const identity of state.selected) setSubscribed(identity, true);
+  applyMediaSettings();
   renderSidebar();
   renderGrid();
 }

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { RemoteScreen } from '../livekit/useRoom';
+import type { RemoteQualityMode, RemoteScreen } from '../livekit/useRoom';
 
 export interface LoadingBroadcast {
   identity: string;
@@ -10,21 +10,29 @@ function RemoteTile({
   screen,
   audioActive,
   volume,
+  audioOnly,
+  focused,
   onActivateAudio,
   onVolumeChange,
+  onToggleAudioOnly,
+  onFocus,
 }: {
   screen: RemoteScreen;
   audioActive: boolean;
   volume: number;
+  audioOnly: boolean;
+  focused: boolean;
   onActivateAudio: () => void;
   onVolumeChange: (value: number) => void;
+  onToggleAudioOnly: () => void;
+  onFocus: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
     const element = videoRef.current;
     if (!element) return;
-    const tracks = [screen.videoTrack.mediaStreamTrack];
+    const tracks = screen.videoTrack ? [screen.videoTrack.mediaStreamTrack] : [];
     if (screen.audioTrack) tracks.push(screen.audioTrack.mediaStreamTrack);
     element.srcObject = new MediaStream(tracks);
     return () => {
@@ -40,10 +48,16 @@ function RemoteTile({
   }, [audioActive, volume]);
 
   return (
-    <article className="remote-tile">
+    <article className={`remote-tile${audioOnly ? ' audio-only-tile' : ''}`}>
       <video ref={videoRef} playsInline autoPlay />
       <div className="remote-tile-footer">
         <span>{screen.participantName}</span>
+        <div className="remote-tile-actions">
+          <button onClick={onFocus}>{focused ? 'Foco ativo' : 'Focar'}</button>
+          {screen.audioTrack && (
+            <button onClick={onToggleAudioOnly}>{audioOnly ? 'Vídeo' : 'Somente áudio'}</button>
+          )}
+        </div>
         {screen.audioTrack && (
           <div className="remote-audio-controls">
             <span className={`remote-audio-label${audioActive ? ' active' : ''}`}>
@@ -77,15 +91,26 @@ export default function RemoteGrid({
   showOnboarding = false,
   onStartSharing,
   onDismissOnboarding,
+  qualityMode = 'auto',
+  focusedIdentity = null,
+  onQualityModeChange,
+  onFocusChange,
+  onToggleAudioOnly,
 }: {
   screens: RemoteScreen[];
   loadingBroadcasts?: LoadingBroadcast[];
   showOnboarding?: boolean;
   onStartSharing?: () => void;
   onDismissOnboarding?: () => void;
+  qualityMode?: RemoteQualityMode;
+  focusedIdentity?: string | null;
+  onQualityModeChange?: (mode: RemoteQualityMode) => void;
+  onFocusChange?: (identity: string | null) => void;
+  onToggleAudioOnly?: (identity: string, audioOnly: boolean) => void;
 }) {
   const [audioOwner, setAudioOwner] = useState<string | null>(null);
   const [volumes, setVolumes] = useState<Record<string, number>>({});
+  const [audioOnlyIds, setAudioOnlyIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     const withAudio = screens.find((screen) => screen.audioTrack);
@@ -145,12 +170,30 @@ export default function RemoteGrid({
 
   return (
     <section className={`remote-grid count-${Math.min(screens.length, 4)}`}>
+      <div className="remote-grid-toolbar">
+        <span>
+          {screens.length} {screens.length === 1 ? 'stream ativa' : 'streams ativas'}
+          {screens.length > 1 && ' · maior consumo de banda'}
+        </span>
+        <label>
+          Qualidade
+          <select
+            value={qualityMode}
+            onChange={(event) => onQualityModeChange?.(event.target.value as RemoteQualityMode)}
+          >
+            <option value="auto">Automática</option>
+            <option value="low">Baixa</option>
+          </select>
+        </label>
+      </div>
       {screens.map((screen) => (
         <RemoteTile
           key={screen.participantIdentity}
           screen={screen}
           audioActive={audioOwner === screen.participantIdentity}
           volume={volumes[screen.participantIdentity] ?? 1}
+          audioOnly={audioOnlyIds.has(screen.participantIdentity)}
+          focused={focusedIdentity === screen.participantIdentity}
           onActivateAudio={() =>
             setAudioOwner((current) =>
               current === screen.participantIdentity ? null : screen.participantIdentity,
@@ -161,6 +204,21 @@ export default function RemoteGrid({
               ...current,
               [screen.participantIdentity]: value,
             }))
+          }
+          onToggleAudioOnly={() => {
+            const audioOnly = !audioOnlyIds.has(screen.participantIdentity);
+            setAudioOnlyIds((current) => {
+              const next = new Set(current);
+              if (audioOnly) next.add(screen.participantIdentity);
+              else next.delete(screen.participantIdentity);
+              return next;
+            });
+            onToggleAudioOnly?.(screen.participantIdentity, audioOnly);
+          }}
+          onFocus={() =>
+            onFocusChange?.(
+              focusedIdentity === screen.participantIdentity ? null : screen.participantIdentity,
+            )
           }
         />
       ))}

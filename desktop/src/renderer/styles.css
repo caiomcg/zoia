@@ -315,6 +315,32 @@ button:disabled {
   grid-template-columns: minmax(0, 1fr);
 }
 
+.remote-grid-toolbar {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 2px 2px 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.remote-grid-toolbar label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.remote-grid-toolbar select {
+  padding: 3px 5px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 11px;
+}
+
 .remote-tile {
   min-width: 0;
   min-height: 0;
@@ -334,6 +360,12 @@ button:disabled {
   background: #050608;
 }
 
+.audio-only-tile video {
+  flex: 0 0 0;
+  min-height: 0;
+  height: 0;
+}
+
 .remote-tile-footer {
   display: flex;
   align-items: center;
@@ -342,6 +374,12 @@ button:disabled {
   padding: 7px 10px;
   color: #d7dbe2;
   font-size: 12px;
+}
+
+.remote-tile-actions {
+  display: flex;
+  gap: 5px;
+  margin-left: auto;
 }
 
 .remote-audio-controls {
