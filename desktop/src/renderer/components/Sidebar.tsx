@@ -116,14 +116,20 @@ export default function Sidebar({
   onRename,
   selectedRemoteIds,
   onToggleRemote,
+  onWatchAll,
+  onWatchNone,
 }: {
   members: RoomMember[];
   myName: string;
   onRename: (name: string) => Promise<void>;
   selectedRemoteIds: Set<string>;
   onToggleRemote: (identity: string) => void;
+  onWatchAll: () => void;
+  onWatchNone: () => void;
 }) {
   const broadcasting = members.filter((m) => m.isBroadcasting);
+  const remoteBroadcasting = broadcasting.filter((m) => !m.isLocal);
+  const selectedCount = remoteBroadcasting.filter((m) => selectedRemoteIds.has(m.identity)).length;
   const watching = members.filter((m) => !m.isBroadcasting);
 
   return (
@@ -131,17 +137,31 @@ export default function Sidebar({
       <div className="sidebar-scroll">
         {broadcasting.length > 0 && (
           <section className="member-group">
-            <h2 className="member-heading">Sharing — {broadcasting.length}</h2>
+            <div className="live-heading-row">
+              <h2 className="member-heading">Ao vivo — {broadcasting.length}</h2>
+              {remoteBroadcasting.length > 0 && (
+                <span className="live-count">
+                  Assistindo {selectedCount} de {remoteBroadcasting.length}
+                </span>
+              )}
+            </div>
+            {remoteBroadcasting.length > 1 && (
+              <div className="live-actions">
+                <button onClick={onWatchAll}>Assistir todas</button>
+                <button onClick={onWatchNone}>Parar todas</button>
+              </div>
+            )}
             {broadcasting.map((m) => (
               <div className="member live" key={m.identity}>
                 <Avatar name={m.name} live />
                 {!m.isLocal && (
-                  <input
-                    type="checkbox"
-                    checked={selectedRemoteIds.has(m.identity)}
-                    onChange={() => onToggleRemote(m.identity)}
-                    aria-label={`Watch ${m.name}`}
-                  />
+                  <button
+                    className="watch-button"
+                    onClick={() => onToggleRemote(m.identity)}
+                    aria-pressed={selectedRemoteIds.has(m.identity)}
+                  >
+                    {selectedRemoteIds.has(m.identity) ? 'Parar de assistir' : 'Assistir'}
+                  </button>
                 )}
                 <span className="member-name">{m.name}</span>
                 {m.isLocal && <span className="you-tag">you</span>}
