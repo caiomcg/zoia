@@ -1,6 +1,6 @@
 /**
- * The stage is where single-producer is enforced. These tests cover the cases
- * that would otherwise be discovered by two people trying to broadcast at once.
+ * Broadcast slots are where runtime publish permission is enforced. Different
+ * participants may publish at the same time, but nobody publishes by default.
  */
 
 import { test, describe, beforeEach } from 'node:test';
@@ -38,7 +38,6 @@ beforeEach(() => {
     now: () => clock,
   });
 });
-
 describe('claiming', () => {
   test('an empty stage can be claimed', async () => {
     participants = [participant('alice')];
@@ -49,7 +48,7 @@ describe('claiming', () => {
     assert.equal(updates.at(-1).permission.canPublish, true);
   });
 
-  test('a second person is refused while someone is broadcasting', async () => {
+  test('a second person gets an independent slot while someone is broadcasting', async () => {
     participants = [
       participant('alice', { canPublish: true, name: 'Alice', tracks: [{}] }),
       participant('bob'),
@@ -57,10 +56,10 @@ describe('claiming', () => {
 
     const result = await stage.claim({ id: 'bob', name: 'Bob' });
 
-    assert.equal(result.ok, false);
-    assert.equal(result.reason, 'busy');
-    assert.equal(result.holder.name, 'Alice');
-    assert.equal(updates.length, 0, 'a refused claim must not change any permission');
+    assert.equal(result.ok, true);
+    assert.equal(result.broadcaster.identity, 'bob');
+    assert.equal(updates.at(-1).identity, 'bob');
+    assert.equal(updates.at(-1).permission.canPublish, true);
   });
 
   test('the holder re-claiming is allowed, so a retry is not a lockout', async () => {
@@ -81,46 +80,19 @@ describe('claiming', () => {
       throw new Error('room not found');
     };
     const result = await stage.claim({ id: 'alice', name: 'Alice' });
-    assert.equal(result.ok, true);
+    assert.equal(result.ok, false);
+    assert.equal(result.reason, 'not_in_room');
   });
 });
 
-describe('a holder who never starts', () => {
-  test('cannot be displaced immediately — the picker takes a moment', async () => {
+describe('independent slots', () => {
+  test('one idle claimant does not block another claimant', async () => {
     participants = [participant('alice'), participant('bob')];
     await stage.claim({ id: 'alice', name: 'Alice' });
-
-    const result = await stage.claim({ id: 'bob', name: 'Bob' });
-    assert.equal(result.ok, false, 'a fresh claimant must get time to choose a window');
-  });
-
-  test('is displaced once the grace period passes with nothing published', async () => {
-    participants = [participant('alice'), participant('bob')];
-    await stage.claim({ id: 'alice', name: 'Alice' });
-
-    clock += 21_000;
-    const result = await stage.claim({ id: 'bob', name: 'Bob' });
-
-    assert.equal(result.ok, true, 'a crashed broadcaster must not lock the room');
-    const alice = participants.find((p) => p.identity === 'alice');
-    assert.equal(alice.permission.canPublish, false, 'the stale holder loses publish rights');
-  });
-
-  test('is never displaced while actually publishing', async () => {
-    participants = [participant('alice'), participant('bob')];
-    await stage.claim({ id: 'alice', name: 'Alice' });
-    participants.find((p) => p.identity === 'alice').tracks = [{}];
-
-    clock += 60_000;
-    const result = await stage.claim({ id: 'bob', name: 'Bob' });
-    assert.equal(result.ok, false, 'a live broadcaster must never be interrupted');
-  });
-
-  test('an unknown claim time counts as stale, so a restart cannot wedge it', async () => {
-    // Nobody claimed through this instance; the permission is simply there.
-    participants = [participant('alice', { canPublish: true }), participant('bob')];
     const result = await stage.claim({ id: 'bob', name: 'Bob' });
     assert.equal(result.ok, true);
+    assert.equal(participants.find((p) => p.identity === 'alice').permission.canPublish, true);
+    assert.equal(participants.find((p) => p.identity === 'bob').permission.canPublish, true);
   });
 });
 
@@ -162,16 +134,19 @@ describe('releasing', () => {
 });
 
 describe('reporting', () => {
-  test('holder reflects who may publish, and whether they are live', async () => {
-    participants = [participant('alice', { canPublish: true, name: 'Alice', tracks: [{}] })];
-    const holder = await stage.holder();
-    assert.equal(holder.identity, 'alice');
-    assert.equal(holder.publishing, true);
+  test('broadcasters lists everyone who may publish', async () => {
+    participants = [
+      participant('alice', { canPublish: true, name: 'Alice', tracks: [{}] }),
+      participant('bob', { canPublish: true, name: 'Bob', tracks: [{}] }),
+    ];
+    const broadcasters = await stage.broadcasters();
+    assert.deepEqual(broadcasters.map((b) => b.identity), ['alice', 'bob']);
+    assert.equal(broadcasters[0].publishing, true);
   });
 
-  test('holder is null when nobody may publish', async () => {
+  test('broadcasters is empty when nobody may publish', async () => {
     participants = [participant('alice'), participant('bob')];
-    assert.equal(await stage.holder(), null);
+    assert.deepEqual(await stage.broadcasters(), []);
   });
 
   test('participants lists everyone with their state', async () => {
@@ -191,52 +166,3 @@ describe('reporting', () => {
   });
 });
 
-describe('taking the stage', () => {
-  test('a forced claim displaces a holder who is actively publishing', async () => {
-    participants = [
-      participant('alice', { canPublish: true, tracks: [{ sid: 'TR_1' }] }),
-      participant('bob'),
-    ];
-
-    // Refused without force, because Alice is genuinely broadcasting rather
-    // than sitting idle — this is the case the staleness rule will not cover.
-    const refused = await stage.claim({ id: 'bob', name: 'Bob' });
-    assert.equal(refused.ok, false);
-    assert.equal(refused.holder.identity, 'alice');
-
-    const forced = await stage.claim({ id: 'bob', name: 'Bob' }, { force: true });
-    assert.equal(forced.ok, true);
-    assert.equal((await stage.holder()).identity, 'bob');
-  });
-
-  test('the displaced holder loses publish, so the room stays single-producer', async () => {
-    participants = [
-      participant('alice', { canPublish: true, tracks: [{ sid: 'TR_1' }] }),
-      participant('bob'),
-    ];
-
-    await stage.claim({ id: 'bob', name: 'Bob' }, { force: true });
-
-    const list = await stage.participants();
-    assert.equal(list.find((p) => p.identity === 'alice').canPublish, false);
-    assert.equal(list.filter((p) => p.canPublish).length, 1);
-  });
-
-  test('forcing an empty stage is just a claim', async () => {
-    participants = [participant('alice')];
-    const result = await stage.claim({ id: 'alice', name: 'Alice' }, { force: true });
-    assert.equal(result.ok, true);
-    assert.equal((await stage.holder()).identity, 'alice');
-  });
-
-  test('forcing does not disturb a holder who is already you', async () => {
-    participants = [participant('alice', { canPublish: true, tracks: [{ sid: 'TR_1' }] })];
-    const result = await stage.claim({ id: 'alice', name: 'Alice' }, { force: true });
-    assert.equal(result.ok, true);
-    assert.equal(
-      updates.filter((u) => u.permission.canPublish === false).length,
-      0,
-      'nobody should have been demoted',
-    );
-  });
-});

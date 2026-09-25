@@ -3,9 +3,8 @@ import type { LocalVideoTrack } from 'livekit-client';
 import type { RemoteScreen } from '../livekit/useRoom';
 
 /**
- * Renders whichever video track is relevant right now: this device's own
- * capture while it's broadcasting, otherwise whoever else is. Never both —
- * only one stage-holder can publish at a time, and this mirrors that.
+ * Renders this device's own capture while it is broadcasting. Remote
+ * broadcasts are rendered by RemoteGrid so viewers can watch several at once.
  *
  * Video and audio are combined into one MediaStream and assigned to the
  * element's srcObject directly, rather than calling LiveKit's track.attach()

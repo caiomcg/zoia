@@ -138,7 +138,9 @@ export function useRoom() {
 
   const [state, setState] = useState<ConnectionState>('idle');
   const [error, setError] = useState<string | null>(null);
-  const [remoteScreen, setRemoteScreen] = useState<RemoteScreen | null>(null);
+  const [remoteScreens, setRemoteScreens] = useState<RemoteScreen[]>([]);
+  const selectedRemoteIdsRef = useRef<Set<string>>(new Set());
+  const [selectedRemoteIds, setSelectedRemoteIds] = useState<Set<string>>(new Set());
   const [participantCount, setParticipantCount] = useState(0);
   const [members, setMembers] = useState<RoomMember[]>([]);
   const [broadcastState, setBroadcastState] = useState<BroadcastState>('idle');
@@ -156,7 +158,7 @@ export function useRoom() {
   // Which of the two share controls is lit; they are independent.
   const [sharingKind, setSharingKind] = useState<'screen' | 'camera' | null>(null);
 
-  const findRemoteScreen = useCallback((room: Room): RemoteScreen | null => {
+  const findRemoteScreens = useCallback((room: Room): RemoteScreen[] => {
     // The hardware path publishes over WHIP, which joins as its own
     // participant — and from this app's point of view that participant is
     // *remote*, including on the machine that is doing the broadcasting.
@@ -164,6 +166,7 @@ export function useRoom() {
     // speakers, which is heard as an echo of whatever you are sharing.
     const ownIngress = `${room.localParticipant.identity}${WHIP_SUFFIX}`;
 
+    const screens: RemoteScreen[] = [];
     for (const participant of room.remoteParticipants.values()) {
       if (participant.identity === ownIngress) continue;
       // Where the stream came from decides how it is labelled, and viewers
@@ -193,20 +196,20 @@ export function useRoom() {
                 ? room.localParticipant
                 : participant));
 
-        return {
+        screens.push({
           participantIdentity: owner.identity,
           participantName: owner.name || owner.identity,
           videoTrack: videoPub.track,
           audioTrack: audioPub?.track ?? null,
-        };
+        });
       }
     }
-    return null;
+    return screens;
   }, []);
 
   const dataHandlerRef = useRef<((payload: Uint8Array, from?: Participant) => void) | null>(null);
 
-  /** Registers the takeover handler; useRoom stays unaware of the protocol. */
+  /** Kept for old data-message consumers; broadcasts no longer use takeover. */
   const onData = useCallback((handler: (payload: Uint8Array, from?: Participant) => void) => {
     dataHandlerRef.current = handler;
   }, []);
@@ -221,7 +224,18 @@ export function useRoom() {
       roomRef.current = room;
 
       const refresh = () => {
-        setRemoteScreen(findRemoteScreen(room));
+        const screens = findRemoteScreens(room);
+        const available = new Set(screens.map((screen) => screen.participantIdentity));
+        const nextSelected = new Set(selectedRemoteIdsRef.current);
+        for (const id of available) {
+          if (!selectedRemoteIdsRef.current.has(id)) nextSelected.add(id);
+        }
+        for (const id of nextSelected) {
+          if (!available.has(id)) nextSelected.delete(id);
+        }
+        selectedRemoteIdsRef.current = nextSelected;
+        setSelectedRemoteIds(nextSelected);
+        setRemoteScreens(screens);
         setParticipantCount(room.remoteParticipants.size);
 
         const describe = (p: Participant, isLocal: boolean): RoomMember => ({
@@ -291,7 +305,7 @@ export function useRoom() {
         setError(err instanceof Error ? err.message : String(err));
       }
     },
-    [findRemoteScreen],
+    [findRemoteScreens],
   );
 
   /**
@@ -310,8 +324,41 @@ export function useRoom() {
     await roomRef.current?.disconnect();
     roomRef.current = null;
     setState('idle');
-    setRemoteScreen(null);
+    setRemoteScreens([]);
+    selectedRemoteIdsRef.current = new Set();
+    setSelectedRemoteIds(new Set());
   }, []);
+
+  const setRemoteSubscription = useCallback(async (identity: string, subscribed: boolean) => {
+    const room = roomRef.current;
+    if (!room) return;
+    const participant = room.remoteParticipants.get(identity);
+    if (!participant) return;
+    const ownerIds = new Set([identity, `${identity}${WHIP_SUFFIX}`]);
+    for (const candidate of room.remoteParticipants.values()) {
+      if (!ownerIds.has(candidate.identity)) continue;
+      for (const publication of candidate.videoTrackPublications.values()) {
+        try {
+          publication.setSubscribed(subscribed);
+        } catch {
+          // The participant may leave while the selection is being applied.
+        }
+      }
+      for (const publication of candidate.audioTrackPublications.values()) {
+        try {
+          publication.setSubscribed(subscribed);
+        } catch {
+          // The participant may leave while the selection is being applied.
+        }
+      }
+    }
+    const next = new Set(selectedRemoteIdsRef.current);
+    if (subscribed) next.add(identity);
+    else next.delete(identity);
+    selectedRemoteIdsRef.current = next;
+    setSelectedRemoteIds(next);
+    setRemoteScreens(findRemoteScreens(room));
+  }, [findRemoteScreens]);
 
   /**
    * Ends the local publish and releases the stage, unconditionally — this
@@ -379,9 +426,7 @@ export function useRoom() {
       const claim = await window.zoia.stage.claim();
       if (!claim.ok) {
         setBroadcastState('idle');
-        setBroadcastError(
-          claim.holder ? `${claim.holder.name} is already broadcasting.` : 'The stage is busy.',
-        );
+        setBroadcastError('Could not claim your broadcast slot.');
         return false;
       }
 
@@ -461,9 +506,7 @@ export function useRoom() {
         const claim = await window.zoia.stage.claim();
         if (!claim.ok) {
           setBroadcastState('idle');
-          setBroadcastError(
-            claim.holder ? `${claim.holder.name} is already broadcasting.` : 'The stage is busy.',
-          );
+          setBroadcastError('Could not claim your broadcast slot.');
           return false;
         }
       }
@@ -600,7 +643,9 @@ export function useRoom() {
     room: roomRef,
     state,
     error,
-    remoteScreen,
+    remoteScreens,
+    selectedRemoteIds,
+    setRemoteSubscription,
     participantCount,
     members,
     connect,

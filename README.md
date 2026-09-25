@@ -24,8 +24,8 @@ notifications, your music and your other calls stay out of the stream.
 
 ## What it does
 
-- **Share a window, a screen, or a camera.** One person at a time, with the stage handed
-  around rather than fought over.
+- **Share a window, a screen, or a camera.** Multiple people can share at once, and each
+  viewer chooses which broadcasts to watch.
 - **Send that application's audio, and only that.** Sharing a whole screen is silent on
   purpose — the only audio a screen has is everything at once.
 - **Ask for the stage.** Whoever is sharing can hand over or say no. If they have wandered
@@ -50,9 +50,9 @@ notifications, your music and your other calls stay out of the stream.
                                             viewers (the same app)
 ```
 
-One person uploads a single stream; the SFU fans it out. A mesh would make the broadcaster
-upload once per viewer, which a home connection cannot do past two or three people. The
-ceiling moves to the server's upstream bandwidth — roughly `viewers × 2.5 Mbps` — and that,
+Each broadcaster uploads one stream; the SFU fans each stream out. A mesh would make every
+broadcaster upload once per viewer, which a home connection cannot do past two or three people.
+The ceiling moves to the server's upstream bandwidth — roughly `streams × viewers × 2.5 Mbps` — and that,
 not CPU, is what limits the room.
 
 Longer version, including why the browser client was retired and what the hardware
@@ -135,8 +135,8 @@ disables itself on a machine with no hardware encoder.
 
 ### How publishing is authorised
 
-1. The broadcaster claims the stage, the same as any share.
-2. The app asks `POST /api/whip`. The server replies **only to whoever holds the stage**,
+1. The broadcaster claims their broadcast slot, the same as any share.
+2. The app asks `POST /api/whip`. The server replies **only to the participant who owns that slot**,
    with the endpoint and a five-minute, publish-only LiveKit token.
 3. ffmpeg sends that token as a Bearer header. The SFU checks it and admits the stream as a
    participant named `<owner>-gpu`, which the stage and every viewer attribute to its
@@ -180,7 +180,8 @@ Stated plainly, because finding these out later is worse:
 - **Hardware encoding is opt-in and newer than the rest.** It covers NVIDIA, AMD and
   Intel GPUs, but only NVIDIA has been confirmed on real hardware. See
   [above](#hardware-encoding-whip).
-- **One room, one broadcaster.** This is built for a handful of friends, not a platform.
+- **One room, many broadcasters.** Each participant can publish one stream; viewers can
+  subscribe to one or more streams. This is built for a handful of friends, not a platform.
 - **Unsigned binaries.** Code signing costs money this project does not have.
 
 ## Documentation
