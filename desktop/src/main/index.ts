@@ -214,6 +214,8 @@ function registerIpc(): void {
       _event,
       options: Omit<encoder.EncoderOptions, 'frames' | 'whipUrl' | 'whipToken' | 'gpuVendor'> & {
         hwnd: number | null;
+        sourceName: string;
+        sourceKind: string;
       },
     ) => {
       if (!mainWindow) return;
@@ -225,7 +227,10 @@ function registerIpc(): void {
         // Fetched here, not in the renderer: the WHIP token is a credential
         // to publish into the room, and the renderer never needs one. The
         // server only answers for a participant with a claimed broadcast slot.
-        const whip = await api.whipGet();
+        const whip = await api.whipGet({
+          sourceName: options.sourceName,
+          sourceKind: options.sourceKind,
+        });
         return startEncoding(mainWindow, { ...options, whipUrl: whip.url, whipToken: whip.token });
       } catch (err) {
         // Capture can refuse before ffmpeg is ever spawned — a window that has
@@ -251,6 +256,8 @@ function registerIpc(): void {
     framerate: number;
     bitrate: number;
     withAudio: boolean;
+    sourceName?: string;
+    sourceKind?: string;
   }): string {
     return [
       `vendor=${gpuStatus.gpuVendor} encoder=${gpuStatus.gpuEncoder}`,

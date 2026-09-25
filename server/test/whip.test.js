@@ -104,6 +104,22 @@ describe('publishing is for the stage holder only', () => {
     assert.ok(claims.exp - claims.nbf <= 10 * 60, `lives ${claims.exp - claims.nbf}s`);
   });
 
+  test('the publisher token carries the shared source identity', async () => {
+    holder = { identity: 'me', name: 'Me', publishing: false };
+    const claims = decode(
+      (
+        await whip.endpointFor(
+          { id: 'me', name: 'Me' },
+          { sourceName: 'Chrome — YouTube', sourceKind: 'window' },
+        )
+      ).token,
+    );
+    assert.deepEqual(JSON.parse(claims.metadata), {
+      sourceName: 'Chrome — YouTube',
+      sourceKind: 'window',
+    });
+  });
+
   test('release removes the publisher, and a second release is harmless', async () => {
     assert.deepEqual(await whip.release({ id: 'me' }), { ok: true, released: true });
     assert.deepEqual(removed, [`me${WHIP_SUFFIX}`]);

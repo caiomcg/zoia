@@ -95,14 +95,22 @@ export function createWhipPublisher({
      * paired device could publish over WHIP whether it held the stage or not.
      * The stage was a rule the in-app path obeyed and the hardware path didn't.
      */
-    async endpointFor(user) {
+    async endpointFor(user, broadcast = {}) {
       if (!(await stage.isBroadcaster(user.id))) throw new NotStageHolderError();
+
+      const sourceName =
+        typeof broadcast.sourceName === 'string' ? broadcast.sourceName.trim().slice(0, 200) : '';
+      const sourceKind =
+        broadcast.sourceKind === 'window' || broadcast.sourceKind === 'screen'
+          ? broadcast.sourceKind
+          : 'screen';
 
       const at = new AccessToken(apiKey, apiSecret, {
         identity: `${user.id}${WHIP_SUFFIX}`,
         name: user.name,
         ttl: TOKEN_TTL,
       });
+      at.metadata = JSON.stringify({ sourceName: sourceName || 'Tela', sourceKind });
       at.addGrant({
         roomJoin: true,
         room: roomName,

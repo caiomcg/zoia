@@ -999,6 +999,16 @@ button.danger {
   color: #fff;
 }
 
+.broadcast-source,
+.stream-source {
+  color: #9ba3af;
+  font-size: 12px;
+  font-weight: 400;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .stream-state {
   margin-left: auto;
   color: var(--warn);

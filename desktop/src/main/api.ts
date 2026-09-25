@@ -79,8 +79,11 @@ export function getToken() {
  * Where to publish a hardware-encoded broadcast, and a token to do it with.
  * The server only answers for a participant with its own broadcast slot.
  */
-export function whipGet() {
-  return call<WhipEndpoint>('/api/whip', { method: 'POST' });
+export function whipGet(source?: { sourceName?: string; sourceKind?: string }) {
+  return call<WhipEndpoint>('/api/whip', {
+    method: 'POST',
+    body: JSON.stringify(source ?? {}),
+  });
 }
 
 /** Removes this device's WHIP publisher from the room, if it is still there. */

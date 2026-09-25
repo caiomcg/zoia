@@ -314,6 +314,21 @@ button:disabled {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+.person-source,
+.tile-source {
+  color: var(--muted);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tile-footer > span:first-child {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
 @media (max-width: 700px) {
   .room-body {
     flex-direction: column;

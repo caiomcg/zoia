@@ -312,7 +312,7 @@ export function createApp({
   // has claimed their own broadcast slot. See src/whip.js.
   app.post('/api/whip', requireSession, requireWhip, async (req, res, next) => {
     try {
-      res.json(await whip.endpointFor(req.user));
+      res.json(await whip.endpointFor(req.user, req.body));
     } catch (err) {
       if (err instanceof NotStageHolderError) {
         return res.status(409).json({ error: 'not_stage_holder' });

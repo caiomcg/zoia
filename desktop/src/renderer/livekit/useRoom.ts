@@ -70,6 +70,8 @@ export interface RemoteScreen {
   participantName: string;
   videoTrack: RemoteTrack | null;
   audioTrack: RemoteTrack | null;
+  sourceName: string | null;
+  sourceKind: 'screen' | 'window' | 'camera' | null;
 }
 
 export type RemoteQualityMode = 'auto' | 'low';
@@ -101,6 +103,38 @@ export interface RoomMember {
    * would otherwise show up as a second, duplicate person in the list.
    */
   isIngress: boolean;
+  broadcastSource: string | null;
+}
+
+function broadcastMetadata(participant: Participant): {
+  sourceName: string | null;
+  sourceKind: 'screen' | 'window' | 'camera' | null;
+} {
+  try {
+    const value = JSON.parse(participant.metadata || '') as {
+      sourceName?: unknown;
+      sourceKind?: unknown;
+    };
+    return {
+      sourceName:
+        typeof value.sourceName === 'string' && value.sourceName ? value.sourceName : null,
+      sourceKind:
+        value.sourceKind === 'screen' ||
+        value.sourceKind === 'window' ||
+        value.sourceKind === 'camera'
+          ? value.sourceKind
+          : null,
+    };
+  } catch {
+    return { sourceName: null, sourceKind: null };
+  }
+}
+
+function sourceLabel(sourceName: string | null, sourceKind: string | null): string | null {
+  if (!sourceName) return null;
+  if (sourceKind === 'window') return `Janela: ${sourceName}`;
+  if (sourceKind === 'screen') return `Tela: ${sourceName}`;
+  return sourceName;
 }
 
 export type ConnectionState = 'idle' | 'connecting' | 'connected' | 'error' | 'disconnected';
@@ -243,6 +277,10 @@ export function useRoom() {
           participantName: owner.name || owner.identity,
           videoTrack: videoPub?.track ?? null,
           audioTrack: audioPub?.track ?? null,
+          sourceName:
+            broadcastMetadata(participant).sourceName ?? broadcastMetadata(owner).sourceName,
+          sourceKind:
+            broadcastMetadata(participant).sourceKind ?? broadcastMetadata(owner).sourceKind,
         });
       }
     }
@@ -292,6 +330,10 @@ export function useRoom() {
           // so they can be folded back into that person rather than listed
           // as someone else.
           isIngress: p.identity.endsWith(WHIP_SUFFIX),
+          broadcastSource: sourceLabel(
+            broadcastMetadata(p).sourceName,
+            broadcastMetadata(p).sourceKind,
+          ),
         });
 
         const all = [
@@ -304,9 +346,22 @@ export function useRoom() {
         const ingressOwners = new Set(
           all.filter((m) => m.isIngress).map((m) => ownerIdentity(m.identity)),
         );
+        const ingressSources = new Map(
+          all
+            .filter((m) => m.isIngress && m.broadcastSource)
+            .map((m) => [ownerIdentity(m.identity), m.broadcastSource as string]),
+        );
         const nextMembers = all
           .filter((m) => !m.isIngress)
-          .map((m) => (ingressOwners.has(m.identity) ? { ...m, isBroadcasting: true } : m));
+          .map((m) =>
+            ingressOwners.has(m.identity)
+              ? {
+                  ...m,
+                  isBroadcasting: true,
+                  broadcastSource: ingressSources.get(m.identity) ?? m.broadcastSource,
+                }
+              : m,
+          );
         broadcastingNamesRef.current = new Map(
           nextMembers
             .filter((member) => member.isBroadcasting)
@@ -329,6 +384,7 @@ export function useRoom() {
         // Without this, a rename updated the server record and the person's
         // own footer while every list in every client kept the old name.
         .on(RoomEvent.ParticipantNameChanged, () => refresh())
+        .on(RoomEvent.ParticipantMetadataChanged, () => refresh())
         .on(RoomEvent.DataReceived, (payload, participant) =>
           dataHandlerRef.current?.(payload, participant),
         )
@@ -493,6 +549,7 @@ export function useRoom() {
     if (room && track) {
       await room.localParticipant.unpublishTrack(track, true).catch(() => {});
     }
+    if (room) await room.localParticipant.setMetadata('').catch(() => {});
     track?.mediaStreamTrack.stop();
     localTrackRef.current = null;
     setLocalTrack(null);
@@ -548,7 +605,6 @@ export function useRoom() {
         setBroadcastError('Could not claim your broadcast slot.');
         return false;
       }
-
       try {
         setSharingKind('camera');
         const stream = await navigator.mediaDevices.getUserMedia(constraints);
@@ -557,6 +613,9 @@ export function useRoom() {
 
         const room = roomRef.current;
         if (!room) throw new Error('Not connected to the room.');
+        await room.localParticipant.setMetadata(
+          JSON.stringify({ sourceName: 'Câmera', sourceKind: 'camera' }),
+        );
 
         // 'motion' rather than 'detail': a camera image is moving video, not
         // text, and the encoder should favour frame rate over sharpness.
@@ -666,6 +725,9 @@ export function useRoom() {
 
         const room = roomRef.current;
         if (!room) throw new Error('Not connected to the room.');
+        await room.localParticipant.setMetadata(
+          JSON.stringify({ sourceName: source.name, sourceKind: source.kind }),
+        );
 
         // Without an explicit encoding, LiveKit falls back to a conservative
         // default bitrate meant for camera video — on a desktop/text-heavy
