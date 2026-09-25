@@ -283,19 +283,17 @@ describe('the stage', () => {
     assert.equal(holder.permission.canPublish, true);
   });
 
-  test('a second claimant is refused with 409 and told who holds it', async () => {
+  test('a second claimant gets an independent publish slot', async () => {
     const { agent: alice } = await signedIn('Alice');
     const { agent: bob, record: bobRecord } = await signedIn('Bob');
 
     await alice.post('/api/stage/claim');
     const res = await bob.post('/api/stage/claim');
 
-    assert.equal(res.status, 409);
-    assert.equal(res.body.error, 'stage_busy');
-    assert.equal(res.body.holder.name, 'Alice');
+    assert.equal(res.status, 200);
 
     const bobState = roomsStub.participants.find((p) => p.identity === bobRecord.id);
-    assert.equal(bobState.permission.canPublish, false, 'a refused claim must grant nothing');
+    assert.equal(bobState.permission.canPublish, true, 'the second claimant gets publish rights');
   });
 
   test('releasing frees it for someone else', async () => {
@@ -308,14 +306,14 @@ describe('the stage', () => {
     assert.equal((await bob.post('/api/stage/claim')).status, 200);
   });
 
-  test('reports the holder and everyone present', async () => {
+  test('reports broadcasters and everyone present', async () => {
     const { agent: alice } = await signedIn('Alice');
     await signedIn('Bob');
     await alice.post('/api/stage/claim');
 
     const res = await alice.get('/api/stage');
     assert.equal(res.status, 200);
-    assert.equal(res.body.holder.name, 'Alice');
+    assert.equal(res.body.broadcasters[0].name, 'Alice');
     assert.equal(res.body.participants.length, 2);
   });
 });

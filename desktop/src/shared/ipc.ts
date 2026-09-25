@@ -44,7 +44,7 @@ export interface StageHolder {
 }
 
 export interface StageState {
-  holder: StageHolder | null;
+  broadcasters: StageHolder[];
   participants: Array<{
     identity: string;
     name: string;
@@ -56,8 +56,7 @@ export interface StageState {
 
 export interface ClaimResult {
   ok: boolean;
-  /** Present when ok is false: who currently holds the stage. */
-  holder: StageHolder | null;
+  broadcaster?: StageHolder;
 }
 
 /**

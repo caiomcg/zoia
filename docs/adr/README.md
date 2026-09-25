@@ -20,6 +20,7 @@ record that supersedes it, so the history stays legible.
 | [0009](0009-hardware-encoding.md) | Hardware encoding via WGC and NVENC | accepted, partly superseded by [0011](0011-hardware-encoding-over-the-internet.md) |
 | [0010](0010-invites-outside-the-binary.md) | The invitation lives outside the binary | accepted |
 | [0011](0011-hardware-encoding-over-the-internet.md) | Hardware encoding over the internet, on any GPU | accepted |
+| [0012](0012-multiple-broadcast-slots.md) | Multiple independent broadcast slots | accepted |
 
 ## The two that explain the most
 
