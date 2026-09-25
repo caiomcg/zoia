@@ -69,7 +69,7 @@ describe('publishing is for the stage holder only', () => {
           removed.push(identity);
         },
       },
-      stage: { holder: async () => holder },
+      stage: { isBroadcaster: async (identity) => holder?.identity === identity },
       logger: quiet,
     });
   });
@@ -145,20 +145,19 @@ describe('the stage sees a WHIP publisher as its owner', () => {
     });
   });
 
-  test('the holder is the person, not their publisher', async () => {
-    // Listed first on purpose: the old holder() took whichever came first.
+  test('a WHIP publisher is attributed to the person, not a duplicate', async () => {
     participants = [
       person(`alice${WHIP_SUFFIX}`, { canPublish: true, tracks: ['video'] }),
       person('alice', { canPublish: true }),
     ];
-    const h = await stage.holder();
-    assert.equal(h.identity, 'alice');
+    const list = await stage.broadcasters();
+    assert.deepEqual(
+      list.map((b) => b.identity),
+      ['alice'],
+    );
   });
 
-  test('a GPU broadcast counts as publishing, so it cannot be taken as idle', async () => {
-    // The person's own participant publishes nothing while the GPU one
-    // carries the picture. Without this, someone mid-broadcast looked idle
-    // and could lose the stage once the grace period passed.
+  test('a GPU broadcast counts as publishing for its owner', async () => {
     participants = [
       person('alice', { canPublish: true }),
       person(`alice${WHIP_SUFFIX}`, { canPublish: true, tracks: ['video'] }),
@@ -166,9 +165,8 @@ describe('the stage sees a WHIP publisher as its owner', () => {
     ];
     clock += 24 * 60 * 60 * 1000;
     const result = await stage.claim({ id: 'bob', name: 'bob' });
-    assert.equal(result.ok, false);
-    assert.equal(result.holder.identity, 'alice');
-    assert.equal(result.holder.publishing, true);
+    assert.equal(result.ok, true);
+    assert.equal((await stage.broadcasters()).find((b) => b.identity === 'alice').publishing, true);
   });
 
   test('releasing the stage ends the GPU broadcast too', async () => {
@@ -181,17 +179,15 @@ describe('the stage sees a WHIP publisher as its owner', () => {
     assert.deepEqual(removed, [`alice${WHIP_SUFFIX}`]);
   });
 
-  test('taking the stage by force ends the old holder’s GPU broadcast', async () => {
-    // Its rights come from its token, so revoking the owner alone would leave
-    // it publishing over whoever took the stage.
+  test('claiming another slot does not end an existing GPU broadcast', async () => {
     participants = [
       person('alice', { canPublish: true }),
       person(`alice${WHIP_SUFFIX}`, { canPublish: true, tracks: ['video'] }),
       person('bob'),
     ];
-    const result = await stage.claim({ id: 'bob', name: 'bob' }, { force: true });
+    const result = await stage.claim({ id: 'bob', name: 'bob' });
     assert.equal(result.ok, true);
-    assert.ok(removed.includes(`alice${WHIP_SUFFIX}`));
+    assert.deepEqual(removed, []);
   });
 
   test('a publisher whose app died still holds the stage for its owner', async () => {

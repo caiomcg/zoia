@@ -224,7 +224,7 @@ function registerIpc(): void {
       try {
         // Fetched here, not in the renderer: the WHIP token is a credential
         // to publish into the room, and the renderer never needs one. The
-        // server only answers for whoever holds the stage.
+        // server only answers for a participant with a claimed broadcast slot.
         const whip = await api.whipGet();
         return startEncoding(mainWindow, { ...options, whipUrl: whip.url, whipToken: whip.token });
       } catch (err) {

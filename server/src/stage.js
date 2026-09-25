@@ -1,15 +1,15 @@
 /**
- * The stage: who is allowed to broadcast right now.
+ * Runtime publish permissions for the room.
  *
  * Everyone joins with `canPublish: false`. Claiming the stage asks the server
- * to grant that permission, and LiveKit pushes the change to the client live —
- * no reconnect, no second token. Releasing revokes it again.
+ * to grant that permission, and LiveKit pushes the change to the client live.
+ * Different participants may claim slots at the same time.
  *
- * Single-producer is enforced here and by LiveKit, not by the UI. A client that
- * skips the claim call still cannot publish, because its permission says so.
+ * A client that skips the claim call still cannot publish, because its
+ * permission says so.
  *
  * State is derived from LiveKit's own participant list rather than tracked
- * separately, so a broadcaster who closes their laptop cannot leave the stage
+ * separately, so a broadcaster who closes their laptop cannot leave a slot
  * locked behind them.
  */
 
@@ -26,10 +26,8 @@ const VIEW_PERMISSION = {
 };
 
 /**
- * How long a holder may sit on the stage without publishing anything before
- * someone else may take it. Covers the window between claiming and choosing a
- * window in the browser's picker, and the case where a broadcaster's client
- * dies without releasing.
+ * How long a claimed slot may sit without publishing before it is considered
+ * stale. This covers the window between claiming and choosing a source.
  */
 const STALE_CLAIM_MS = 20_000;
 
@@ -52,7 +50,7 @@ export function createStage({ rooms, roomName, logger = console, now = () => Dat
   }
 
   /**
-   * The person currently permitted to publish, if any.
+   * All people currently permitted to publish, if any.
    *
    * A hardware-encoded broadcast publishes from a second participant,
    * `<id>-gpu`, with publish rights of its own from its WHIP token. Treating
@@ -64,30 +62,35 @@ export function createStage({ rooms, roomName, logger = console, now = () => Dat
    * "someone else" holding it and refuse. The owner is the holder; their WHIP
    * participant only counts as proof they are publishing.
    */
-  async function holder() {
+  async function broadcasters() {
     const participants = await listParticipants();
-    const tracksOf = (identity) =>
+    const identities = new Set(
       participants
-        .filter((p) => ownerOf(p.identity) === identity)
-        .reduce((sum, p) => sum + (p.tracks ?? []).length, 0);
-
-    const human = participants.find((p) => !isWhipIdentity(p.identity) && p.permission?.canPublish);
-    // A WHIP publisher whose owner has no publish rights, or has left: the app
-    // crashed and ffmpeg kept going. It is still on stage, as far as anyone
-    // watching can tell, so it still holds the stage for its owner.
-    const orphan = human
-      ? null
-      : participants.find((p) => isWhipIdentity(p.identity) && (p.tracks ?? []).length > 0);
-
-    const found = human ?? orphan;
-    if (!found) return null;
-    const identity = ownerOf(found.identity);
-    const owner = participants.find((p) => p.identity === identity);
-    return {
-      identity,
-      name: owner?.name || found.name || identity,
-      publishing: tracksOf(identity) > 0,
-    };
+        .filter((p) => !isWhipIdentity(p.identity))
+        .map((p) => p.identity)
+        .concat(
+          participants
+            .filter((p) => isWhipIdentity(p.identity) && (p.tracks ?? []).length > 0)
+            .map((p) => ownerOf(p.identity)),
+        ),
+    );
+    return [...identities]
+      .map((identity) => {
+        const owner = participants.find((p) => p.identity === identity);
+        const related = participants.filter((p) => ownerOf(p.identity) === identity);
+        const permitted = Boolean(owner?.permission?.canPublish);
+        const publishing = related.some((p) => (p.tracks ?? []).length > 0);
+        const whipPublishing = related.some(
+          (p) => isWhipIdentity(p.identity) && (p.tracks ?? []).length > 0,
+        );
+        if (!permitted && !whipPublishing) return null;
+        return {
+          identity,
+          name: owner?.name || related[0]?.name || identity,
+          publishing: publishing || whipPublishing,
+        };
+      })
+      .filter(Boolean);
   }
 
   /**
@@ -108,7 +111,17 @@ export function createStage({ rooms, roomName, logger = console, now = () => Dat
   }
 
   return {
-    holder,
+    broadcasters,
+
+    // Kept for integrations that have not migrated yet. New code should use
+    // broadcasters(), since there may be more than one result.
+    async holder() {
+      return (await broadcasters())[0] ?? null;
+    },
+
+    async isBroadcaster(identity) {
+      return (await broadcasters()).some((b) => b.identity === identity);
+    },
 
     async participants() {
       const list = await listParticipants();
@@ -122,67 +135,37 @@ export function createStage({ rooms, roomName, logger = console, now = () => Dat
     },
 
     /**
-     * Grants publish rights, if the stage is free. Returns the current holder
-     * when it is not, so the caller can say who has it.
-     *
-     * `force` is the end of the takeover flow: the asker has already waited
-     * out the grace period without the holder answering, which is what
-     * happens when someone leaves a machine broadcasting and walks away. It
-     * is not a privilege — anyone in the room may do it, and the holder is
-     * told — so it cannot be used to gain rights nobody else has.
+     * Grants publish rights to this participant. Other participants' slots
+     * are independent and remain untouched.
      */
-    async claim(user, { force = false } = {}) {
-      const current = await holder();
-
-      if (current && current.identity !== user.id && force) {
-        logger.info(`[stage] ${user.name} (${user.id}) took the stage from ${current.identity}`);
-        await setPermission(current.identity, VIEW_PERMISSION).catch(() => {});
-        await dropWhip(current.identity);
-        claimedAt.delete(current.identity);
-      } else if (current && current.identity !== user.id) {
-        const since = claimedAt.get(current.identity);
-        const stale =
-          !current.publishing && (since === undefined || now() - since > STALE_CLAIM_MS);
-
-        if (!stale) {
-          return { ok: false, reason: 'busy', holder: current };
-        }
-
-        // The holder has permission but is publishing nothing and has had long
-        // enough to start. Take it, so a crashed broadcaster cannot lock the
-        // room for everyone else.
-        logger.info(`[stage] taking the stage from idle holder ${current.identity}`);
-        await setPermission(current.identity, VIEW_PERMISSION).catch(() => {});
-        await dropWhip(current.identity);
-        claimedAt.delete(current.identity);
+    async claim(user) {
+      const current = (await listParticipants()).find((p) => p.identity === user.id);
+      if (!current) return { ok: false, reason: 'not_in_room' };
+      const existing = (await broadcasters()).find((b) => b.identity === user.id);
+      if (existing?.publishing) return { ok: true, broadcaster: existing };
+      const since = claimedAt.get(user.id);
+      if (existing && since !== undefined && now() - since <= STALE_CLAIM_MS) {
+        return { ok: true, broadcaster: existing };
       }
-
       await setPermission(user.id, PUBLISH_PERMISSION);
       claimedAt.set(user.id, now());
-      logger.info(`[stage] ${user.name} (${user.id}) claimed the stage`);
-      return { ok: true, holder: { identity: user.id, name: user.name } };
+      logger.info(`[stage] ${user.name} (${user.id}) claimed a broadcast slot`);
+      return { ok: true, broadcaster: { identity: user.id, name: user.name, publishing: false } };
     },
 
     async release(user) {
       claimedAt.delete(user.id);
 
-      let current = null;
       try {
-        current = await holder();
+        const active = (await broadcasters()).some((b) => b.identity === user.id);
+        if (!active) return { ok: true, released: false };
       } catch {
-        // If the room cannot be listed, still try to drop the permission
-        // below rather than leaving the caller holding the stage.
+        // Still attempt the revoke: leaving a permission behind is worse than
+        // an idempotent update against a participant that already left.
       }
-
-      // Releasing when you do not hold it is a no-op, not an error: it keeps
-      // client cleanup paths idempotent.
-      if (current && current.identity !== user.id) {
-        return { ok: true, released: false };
-      }
-
       await setPermission(user.id, VIEW_PERMISSION).catch(() => {});
       await dropWhip(user.id);
-      logger.info(`[stage] ${user.name} (${user.id}) released the stage`);
+      logger.info(`[stage] ${user.name} (${user.id}) released their broadcast slot`);
       return { ok: true, released: true };
     },
 

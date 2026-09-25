@@ -3,13 +3,12 @@ import Banner from './components/Banner';
 import CameraDialog from './components/CameraDialog';
 import PairingScreen from './components/PairingScreen';
 import Player from './components/Player';
+import RemoteGrid from './components/RemoteGrid';
 import Sidebar from './components/Sidebar';
 import SourcePicker from './components/SourcePicker';
 import StatusLight, { type StatusTone } from './components/StatusLight';
-import { IncomingTakeover, OutgoingTakeover } from './components/TakeoverPrompts';
 import { useRoom } from './livekit/useRoom';
 import { useGpuBroadcast } from './livekit/useGpuBroadcast';
-import { useTakeover } from './livekit/useTakeover';
 import {
   DEFAULT_PRESET_ID,
   QUALITY_PRESETS,
@@ -53,15 +52,6 @@ export default function App() {
 
   const isLive = room.broadcastState === 'live' || gpuCast.state === 'live';
   const isStarting = room.broadcastState === 'starting' || gpuCast.state === 'starting';
-
-  // Granted means the holder stepped aside, so the stage is free to claim.
-  const takeover = useTakeover(room.room, {
-    onGranted: () => setPickerOpen(true),
-  });
-
-  useEffect(() => {
-    room.onData(takeover.handleData);
-  }, [room, takeover.handleData]);
 
   useEffect(() => {
     window.zoia.pairing.status().then(setStatus);
@@ -125,9 +115,7 @@ export default function App() {
     if (!switching) {
       const claim = await window.zoia.stage.claim();
       if (!claim.ok) {
-        setStageError(
-          claim.holder ? `${claim.holder.name} is already sharing.` : 'The stage is busy.',
-        );
+        setStageError('Could not claim your broadcast slot.');
         return;
       }
     }
@@ -145,23 +133,9 @@ export default function App() {
     if (room.broadcastState !== 'idle') await room.stopBroadcast();
   }
 
-  /** Takes the stage outright, once asking has not been answered. */
-  async function takeStage() {
-    takeover.cancelRequest();
-    const claim = await window.zoia.stage.claim(true);
-    if (!claim.ok) {
-      setStageError('The stage could not be taken.');
-      return;
-    }
-    setStageError(null);
-    setPickerOpen(true);
-  }
-
   const stats = room.videoStats;
   const encodingLive = Boolean(stats && (stats.fps > 0 || stats.kbps > 0));
   const gpuLive = gpuCast.state === 'live';
-  const holder = room.remoteScreen;
-
   const cameraLive = room.broadcastState === 'live' && room.sharingKind === 'camera';
   const screenLive = isLive && !cameraLive;
 
@@ -226,17 +200,7 @@ export default function App() {
         </div>
 
         <div className="topbar-centre">
-          {holder && !isLive ? (
-            <button
-              className="primary"
-              disabled={Boolean(takeover.outgoing)}
-              onClick={() => takeover.request(holder.participantName)}
-            >
-              Ask to share
-            </button>
-          ) : (
-            isStarting && <span className="muted">Starting…</span>
-          )}
+          {isStarting && <span className="muted">Starting…</span>}
         </div>
 
         <div className="topbar-right">
@@ -288,24 +252,6 @@ export default function App() {
         </div>
       </header>
 
-      {takeover.incoming && (
-        <IncomingTakeover
-          request={takeover.incoming}
-          onRespond={(accept) => {
-            takeover.respond(accept);
-            if (accept) void stopSharing();
-          }}
-        />
-      )}
-
-      {takeover.outgoing && (
-        <OutgoingTakeover
-          request={takeover.outgoing}
-          onTake={() => void takeStage()}
-          onCancel={takeover.cancelRequest}
-        />
-      )}
-
       {roomError && <Banner onDismiss={() => dismiss('room', roomError)}>{roomError}</Banner>}
       {broadcastError && (
         <Banner onDismiss={() => dismiss('broadcast', broadcastError)}>{broadcastError}</Banner>
@@ -327,22 +273,30 @@ export default function App() {
 
       <div className="body">
         <main className="main">
-          <Player
-            remoteScreen={room.remoteScreen}
-            localTrack={room.localTrack}
-            audioLevel={room.audioLevel}
-            canMonitor={room.canMonitor}
-            setMonitorGain={room.setMonitorGain}
-            gpuBroadcasting={gpuLive}
-            onStop={isLive ? () => void stopSharing() : undefined}
-            onSwitch={isLive ? () => setPickerOpen(true) : undefined}
-          />
+          {isLive ? (
+            <Player
+              remoteScreen={null}
+              localTrack={room.localTrack}
+              audioLevel={room.audioLevel}
+              canMonitor={room.canMonitor}
+              setMonitorGain={room.setMonitorGain}
+              gpuBroadcasting={gpuLive}
+              onStop={() => void stopSharing()}
+              onSwitch={() => setPickerOpen(true)}
+            />
+          ) : (
+            <RemoteGrid screens={room.remoteScreens} />
+          )}
         </main>
 
         <Sidebar
           members={room.members}
           myName={status.deviceName ?? 'You'}
           onRename={handleRename}
+          selectedRemoteIds={room.selectedRemoteIds}
+          onToggleRemote={(identity) => {
+            void room.setRemoteSubscription(identity, !room.selectedRemoteIds.has(identity));
+          }}
         />
       </div>
 

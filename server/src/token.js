@@ -4,8 +4,8 @@
  * This module is the security boundary. Everyone joins with `canPublish: false`
  * — there is one tier of user, and nobody is a broadcaster by default.
  *
- * Publishing is granted later, at runtime, by `stage.js`, which checks that the
- * stage is free before raising a participant's permission. LiveKit validates
+ * Publishing is granted later, at runtime, by `stage.js`, which raises only
+ * that participant's permission. LiveKit validates
  * the resulting permission on every publish attempt, so a client that skips the
  * claim call, or edits the page's JavaScript, still cannot publish.
  *
@@ -58,7 +58,7 @@ export function createTokenIssuer({
         roomJoin: true,
         room: roomName,
         // Nobody joins as a broadcaster. Publishing is granted at runtime by
-        // stage.js, and only when the stage is free.
+        // stage.js, and only after that participant claims a broadcast slot.
         canPublish: false,
         canSubscribe: true,
         // Data messages carry presence and stage chatter between clients.

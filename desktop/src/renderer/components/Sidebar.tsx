@@ -114,10 +114,14 @@ export default function Sidebar({
   members,
   myName,
   onRename,
+  selectedRemoteIds,
+  onToggleRemote,
 }: {
   members: RoomMember[];
   myName: string;
   onRename: (name: string) => Promise<void>;
+  selectedRemoteIds: Set<string>;
+  onToggleRemote: (identity: string) => void;
 }) {
   const broadcasting = members.filter((m) => m.isBroadcasting);
   const watching = members.filter((m) => !m.isBroadcasting);
@@ -131,6 +135,14 @@ export default function Sidebar({
             {broadcasting.map((m) => (
               <div className="member live" key={m.identity}>
                 <Avatar name={m.name} live />
+                {!m.isLocal && (
+                  <input
+                    type="checkbox"
+                    checked={selectedRemoteIds.has(m.identity)}
+                    onChange={() => onToggleRemote(m.identity)}
+                    aria-label={`Watch ${m.name}`}
+                  />
+                )}
                 <span className="member-name">{m.name}</span>
                 {m.isLocal && <span className="you-tag">you</span>}
                 <span className="live-dot" title="Sharing their screen" />

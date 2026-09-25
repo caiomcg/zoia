@@ -25,7 +25,7 @@ export interface ZoiaBridge {
   };
   stage: {
     get(): Promise<StageState>;
-    /** force ends a takeover the holder never answered. */
+    /** Kept as an optional compatibility argument; broadcasts are independent. */
     claim(force?: boolean): Promise<ClaimResult>;
     release(): Promise<{ ok: boolean; released?: boolean }>;
   };
