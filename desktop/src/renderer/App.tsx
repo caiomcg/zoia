@@ -297,6 +297,20 @@ export default function App() {
           onToggleRemote={(identity) => {
             void room.setRemoteSubscription(identity, !room.selectedRemoteIds.has(identity));
           }}
+          onWatchAll={() => {
+            void Promise.all(
+              room.members
+                .filter((member) => member.isBroadcasting && !member.isLocal)
+                .map((member) => room.setRemoteSubscription(member.identity, true)),
+            );
+          }}
+          onWatchNone={() => {
+            void Promise.all(
+              room.members
+                .filter((member) => member.isBroadcasting && !member.isLocal)
+                .map((member) => room.setRemoteSubscription(member.identity, false)),
+            );
+          }}
         />
       </div>
 

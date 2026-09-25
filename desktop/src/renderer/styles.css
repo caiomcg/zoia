@@ -357,6 +357,43 @@ button:disabled {
   position: relative;
 }
 
+.live-heading-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.live-count {
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.live-actions {
+  display: flex;
+  gap: 6px;
+  margin: -2px 0 8px;
+}
+
+.live-actions button,
+.watch-button {
+  padding: 4px 7px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.live-actions button:hover,
+.watch-button:hover,
+.watch-button[aria-pressed='true'] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 /* Flex column rather than a grid: with auto rows the two lines were placed
    in separate stretched tracks, so they sat apart instead of together in the
    middle of the picture. */
