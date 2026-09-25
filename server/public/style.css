@@ -1,0 +1,345 @@
+:root {
+  --bg: #1a1b1e;
+  --surface: #232428;
+  --raised: #313338;
+  --border: #35373c;
+  --text: #f2f3f5;
+  --muted: #949ba4;
+  --accent: #5865f2;
+  --accent-hover: #4752c4;
+  --live: #23a55a;
+  --danger: #da373c;
+  --radius: 8px;
+  --bar: 52px;
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font:
+    15px/1.5 system-ui,
+    -apple-system,
+    'Segoe UI',
+    sans-serif;
+}
+
+button,
+input {
+  font: inherit;
+  color: inherit;
+}
+
+.screen {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  height: 100dvh;
+}
+
+.screen[hidden] {
+  display: none;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.error {
+  color: var(--danger);
+  margin: 12px 0 0;
+}
+
+.primary,
+.ghost {
+  border: 0;
+  border-radius: var(--radius);
+  min-height: 44px;
+  padding: 0 16px;
+  cursor: pointer;
+}
+
+.primary {
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+
+.primary:hover {
+  background: var(--accent-hover);
+}
+
+.primary:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.ghost {
+  background: transparent;
+  color: var(--text);
+}
+
+.ghost:hover {
+  background: var(--raised);
+}
+
+#login {
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  padding-top: max(24px, env(safe-area-inset-top));
+}
+
+.card {
+  width: min(420px, 100%);
+  padding: 28px 24px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  text-align: center;
+}
+
+.logo {
+  width: min(220px, 70vw);
+  height: auto;
+}
+
+.card p {
+  margin: 0 0 18px;
+}
+
+#login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+#name-input,
+#key-input {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+#key-input:focus {
+  outline: 2px solid var(--accent);
+  border-color: transparent;
+}
+
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: var(--bar);
+  padding: 8px 12px;
+  padding-top: max(8px, env(safe-area-inset-top));
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.brand-logo {
+  height: 22px;
+  width: auto;
+}
+
+.pill {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--raised);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.pill.live {
+  background: color-mix(in srgb, var(--live) 25%, transparent);
+  color: var(--live);
+}
+
+.pill.error {
+  color: var(--danger);
+  margin: 0;
+}
+
+.spacer {
+  flex: 1;
+}
+
+#whoami {
+  max-width: 30vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.player {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  background: #000;
+}
+
+video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #000;
+}
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  text-align: center;
+  background: rgb(0 0 0 / 55%);
+}
+
+.overlay[hidden] {
+  display: none;
+}
+
+.overlay-inner {
+  max-width: 36ch;
+}
+
+.overlay h2 {
+  margin: 0 0 8px;
+  font-size: 1.25rem;
+  font-weight: 650;
+}
+
+.unmute {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 2;
+  min-height: 48px;
+  padding: 0 22px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.controls {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  padding-bottom: max(10px, env(safe-area-inset-bottom));
+  background: linear-gradient(transparent, rgb(0 0 0 / 72%));
+  opacity: 1;
+  transition: opacity 0.2s ease;
+}
+
+.player.idle .controls {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.icon {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: #fff;
+  cursor: pointer;
+}
+
+.icon svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.icon svg path:first-child {
+  fill: currentColor;
+  stroke: none;
+}
+
+.icon .cross {
+  display: none;
+}
+
+.icon.muted .wave {
+  display: none;
+}
+
+.icon.muted .cross {
+  display: inline;
+}
+
+.volume {
+  width: 96px;
+  accent-color: #fff;
+}
+
+.now-playing {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  color: #fff;
+}
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: max(24px, env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  margin: 0;
+  padding: 10px 14px;
+  max-width: min(420px, calc(100% - 32px));
+  background: var(--raised);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 40%);
+}
+
+@media (pointer: coarse) {
+  .volume {
+    display: none;
+  }
+}

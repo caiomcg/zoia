@@ -6,7 +6,7 @@
 
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import request from 'supertest';
@@ -40,8 +40,7 @@ function build() {
 }
 
 describe('the retired web client', () => {
-  test('the page carries no client script, so there is nothing to run', () => {
-    assert.ok(!existsSync(join(PUBLIC_DIR, 'app.js')), 'app.js must not come back');
+  test('the landing page carries no client script', () => {
     assert.ok(!/<script/i.test(html), 'the landing page must not load any script');
   });
 

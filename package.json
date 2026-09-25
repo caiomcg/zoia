@@ -10,6 +10,9 @@
   "scripts": {
     "start": "node server/src/index.js",
     "dev": "node --watch server/src/index.js",
+    "vendor": "node scripts/vendor.js",
+    "prestart": "npm run vendor",
+    "predev": "npm run vendor",
     "test": "node --test server/test/*.test.js",
     "test:coverage": "node --test --experimental-test-coverage server/test/*.test.js",
     "lint": "eslint .",
@@ -24,6 +27,7 @@
     "cookie-parser": "^1.4.7",
     "express": "^5.1.0",
     "express-rate-limit": "^8.1.0",
+    "livekit-client": "^2.22.3",
     "livekit-server-sdk": "^2.13.1"
   },
   "devDependencies": {

@@ -65,7 +65,8 @@ const app = createApp({
 app.listen(config.port, () => {
   console.log(`[zoia] listening on :${config.port}`);
   console.log(`[zoia] public host  ${config.publicHost}`);
-  console.log(`[zoia] livekit ws   ${config.livekit.wsUrl}`);
+  if (config.upstream) console.log(`[zoia] room server  ${config.upstream}`);
+  else console.log(`[zoia] livekit ws   ${config.livekit.wsUrl}`);
   console.log(`[zoia] room         ${config.roomName}`);
   if (config.trustProxy === 0) {
     console.warn('[zoia] TRUST_PROXY is 0 — behind a reverse proxy this breaks rate limiting');

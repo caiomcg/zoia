@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#1a1b1e" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta
+      name="description"
+      content="Watch a Zoia screen broadcast. This page cannot share a screen."
+    />
+    <title>Zoia</title>
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" href="/icon.png" />
+    <link rel="apple-touch-icon" href="/icon.png" />
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <main id="login" class="screen" hidden>
+      <div class="card">
+        <h1><img src="/logo.png" alt="Zoia" class="logo" /></h1>
+        <p class="muted">Choose the name you want in the room. This page only watches.</p>
+        <form id="login-form" autocomplete="off">
+          <label class="sr-only" for="name-input">Name</label>
+          <input
+            id="name-input"
+            name="name"
+            type="text"
+            placeholder="Your name"
+            maxlength="32"
+            autocomplete="nickname"
+            required
+          />
+          <button type="submit" class="primary">Join</button>
+        </form>
+        <p id="login-error" class="error" role="alert" hidden></p>
+      </div>
+    </main>
+
+    <div id="room" class="screen" hidden>
+      <header class="bar">
+        <img src="/logo.png" alt="Zoia" class="brand-logo" />
+        <span id="status" class="pill">connecting…</span>
+        <span class="spacer"></span>
+        <span id="whoami" class="muted"></span>
+        <button id="logout" class="ghost" type="button">Sign out</button>
+      </header>
+
+      <section id="player" class="player">
+        <!-- playsinline keeps iOS from forcing the native fullscreen player.
+             Audio and video share one MediaStream so mute and volume apply
+             to both; LiveKit's attach() would replace the stream per track
+             and drop the audio. -->
+        <video id="video" playsinline autoplay></video>
+
+        <div id="overlay" class="overlay">
+          <div class="overlay-inner">
+            <h2 id="overlay-title">Connecting…</h2>
+            <p id="overlay-text" class="muted"></p>
+            <button id="overlay-action" class="primary" type="button" hidden></button>
+          </div>
+        </div>
+
+        <button id="unmute" class="unmute" type="button" hidden>Tap for sound</button>
+
+        <div id="controls" class="controls">
+          <button id="mute" class="icon" type="button" aria-label="Mute">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 9v6h4l5 4V5L8 9H4z" />
+              <path class="wave" d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12" />
+              <path class="cross" d="M16.5 9.5l5 5m0-5l-5 5" />
+            </svg>
+          </button>
+          <input
+            id="volume"
+            class="volume"
+            type="range"
+            min="0"
+            max="1"
+            step="0.01"
+            value="1"
+            aria-label="Volume"
+          />
+          <span id="now-playing" class="now-playing"></span>
+          <span class="spacer"></span>
+          <button id="fullscreen" class="icon" type="button" aria-label="Fullscreen">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M8 3H5a2 2 0 0 0-2 2v3m13-5h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3m13 5h3a2 2 0 0 0 2-2v-3"
+              />
+            </svg>
+          </button>
+        </div>
+      </section>
+    </div>
+
+    <p id="toast" class="toast" role="status" hidden></p>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
