@@ -50,6 +50,7 @@ export default function App() {
 
   const room = useRoom();
   const gpuCast = useGpuBroadcast();
+  const { setRemoteQualityMode: applyRemoteQualityMode } = room;
 
   // The rest of the app still thinks in terms of which path is publishing.
   const mode: BroadcastMode = hardware ? 'gpu' : 'window';
@@ -88,8 +89,8 @@ export default function App() {
   }, [status?.paired, room]);
 
   useEffect(() => {
-    room.setRemoteQualityMode(remoteQualityMode);
-  }, [remoteQualityMode, room.setRemoteQualityMode]);
+    applyRemoteQualityMode(remoteQualityMode);
+  }, [remoteQualityMode, applyRemoteQualityMode]);
 
   const handleRename = useCallback(
     async (name: string) => {
