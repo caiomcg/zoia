@@ -80,42 +80,45 @@ export default function PairingScreen({
 
         {status.needsInvite ? (
           <>
+            <p className="onboarding-step">Passo 1 de 2</p>
+            <h1>Cole ou abra seu convite</h1>
             <p className="muted">
-              Zoia needs an invite before it can connect. Whoever runs the server you are joining
-              can generate one.
+              Use o arquivo <code>zoia-invite.json</code> enviado pela pessoa que criou a sala.
             </p>
 
             <div className="invite-drop">
-              <p>Drop your {'zoia-invite.json'} here</p>
+              <p>Arraste seu convite para cá</p>
               <button onClick={handleChoose} disabled={busy}>
-                Choose invite file…
+                Abrir arquivo de convite…
               </button>
             </div>
           </>
         ) : (
           <>
-            <p className="muted">This machine has not joined yet.</p>
+            <p className="onboarding-step">Passo 2 de 2</p>
+            <h1>Entre na sala</h1>
+            <p className="muted">Confirme seu nome e entre para assistir ou compartilhar.</p>
 
             <div className="invite-target">
-              <span className="muted">Joining</span>
+              <span className="muted">Sala</span>
               <strong>{status.serverUrl}</strong>
             </div>
 
-            <label htmlFor="device-name">Name for this device (optional)</label>
+            <label htmlFor="device-name">Seu nome (opcional)</label>
             <input
               id="device-name"
-              placeholder="e.g. Living room PC"
+              placeholder="ex.: Alice"
               value={deviceName}
               onChange={(e) => setDeviceName(e.target.value)}
               disabled={busy}
             />
 
             <button className="primary" onClick={handlePair} disabled={busy}>
-              {busy ? 'Pairing…' : 'Pair this device'}
+              {busy ? 'Entrando…' : 'Entrar na sala'}
             </button>
 
             <button className="link" onClick={handleChoose} disabled={busy}>
-              Use a different invite
+              Usar outro convite
             </button>
           </>
         )}

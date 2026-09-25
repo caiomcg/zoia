@@ -14,6 +14,7 @@ import {
   Room,
   RoomEvent,
   Track,
+  VideoQuality,
   type RemoteTrack,
 } from 'livekit-client';
 import type { QualityPreset, SourceInfo, TokenResult } from '../../shared/ipc';
@@ -31,12 +32,49 @@ function ownerIdentity(identity: string): string {
   return identity.endsWith(WHIP_SUFFIX) ? identity.slice(0, -WHIP_SUFFIX.length) : identity;
 }
 
+function applyRemoteMediaSettings(
+  room: Room,
+  selected: Set<string>,
+  qualityMode: RemoteQualityMode,
+  focusedIdentity: string | null,
+  audioOnly: Set<string>,
+): void {
+  for (const participant of room.remoteParticipants.values()) {
+    const identity = ownerIdentity(participant.identity);
+    const subscribed = selected.has(identity);
+    const videoSubscribed = subscribed && !audioOnly.has(identity);
+    const quality =
+      qualityMode === 'low' || (focusedIdentity && focusedIdentity !== identity)
+        ? VideoQuality.LOW
+        : VideoQuality.HIGH;
+    for (const publication of participant.videoTrackPublications.values()) {
+      try {
+        publication.setSubscribed(videoSubscribed);
+        publication.setVideoQuality(quality);
+      } catch {
+        // The participant may leave while settings are being applied.
+      }
+    }
+    for (const publication of participant.audioTrackPublications.values()) {
+      try {
+        publication.setSubscribed(subscribed);
+      } catch {
+        // The participant may leave while settings are being applied.
+      }
+    }
+  }
+}
+
 export interface RemoteScreen {
   participantIdentity: string;
   participantName: string;
-  videoTrack: RemoteTrack;
+  videoTrack: RemoteTrack | null;
   audioTrack: RemoteTrack | null;
+  sourceName: string | null;
+  sourceKind: 'screen' | 'window' | 'camera' | null;
 }
+
+export type RemoteQualityMode = 'auto' | 'low';
 
 /**
  * Read from the live RTP sender rather than inferred from GPU feature flags:
@@ -65,6 +103,38 @@ export interface RoomMember {
    * would otherwise show up as a second, duplicate person in the list.
    */
   isIngress: boolean;
+  broadcastSource: string | null;
+}
+
+function broadcastMetadata(participant: Participant): {
+  sourceName: string | null;
+  sourceKind: 'screen' | 'window' | 'camera' | null;
+} {
+  try {
+    const value = JSON.parse(participant.metadata || '') as {
+      sourceName?: unknown;
+      sourceKind?: unknown;
+    };
+    return {
+      sourceName:
+        typeof value.sourceName === 'string' && value.sourceName ? value.sourceName : null,
+      sourceKind:
+        value.sourceKind === 'screen' ||
+        value.sourceKind === 'window' ||
+        value.sourceKind === 'camera'
+          ? value.sourceKind
+          : null,
+    };
+  } catch {
+    return { sourceName: null, sourceKind: null };
+  }
+}
+
+function sourceLabel(sourceName: string | null, sourceKind: string | null): string | null {
+  if (!sourceName) return null;
+  if (sourceKind === 'window') return `Janela: ${sourceName}`;
+  if (sourceKind === 'screen') return `Tela: ${sourceName}`;
+  return sourceName;
 }
 
 export type ConnectionState = 'idle' | 'connecting' | 'connected' | 'error' | 'disconnected';
@@ -138,7 +208,16 @@ export function useRoom() {
 
   const [state, setState] = useState<ConnectionState>('idle');
   const [error, setError] = useState<string | null>(null);
-  const [remoteScreen, setRemoteScreen] = useState<RemoteScreen | null>(null);
+  const [isReconnecting, setIsReconnecting] = useState(false);
+  const [roomNotice, setRoomNotice] = useState<string | null>(null);
+  const [remoteScreens, setRemoteScreens] = useState<RemoteScreen[]>([]);
+  const selectedRemoteIdsRef = useRef<Set<string>>(new Set());
+  const remoteQualityModeRef = useRef<RemoteQualityMode>('auto');
+  const focusedRemoteIdRef = useRef<string | null>(null);
+  const audioOnlyRemoteIdsRef = useRef<Set<string>>(new Set());
+  const selectionInitializedRef = useRef(false);
+  const broadcastingNamesRef = useRef(new Map<string, string>());
+  const [selectedRemoteIds, setSelectedRemoteIds] = useState<Set<string>>(new Set());
   const [participantCount, setParticipantCount] = useState(0);
   const [members, setMembers] = useState<RoomMember[]>([]);
   const [broadcastState, setBroadcastState] = useState<BroadcastState>('idle');
@@ -156,7 +235,7 @@ export function useRoom() {
   // Which of the two share controls is lit; they are independent.
   const [sharingKind, setSharingKind] = useState<'screen' | 'camera' | null>(null);
 
-  const findRemoteScreen = useCallback((room: Room): RemoteScreen | null => {
+  const findRemoteScreens = useCallback((room: Room): RemoteScreen[] => {
     // The hardware path publishes over WHIP, which joins as its own
     // participant — and from this app's point of view that participant is
     // *remote*, including on the machine that is doing the broadcasting.
@@ -164,6 +243,7 @@ export function useRoom() {
     // speakers, which is heard as an echo of whatever you are sharing.
     const ownIngress = `${room.localParticipant.identity}${WHIP_SUFFIX}`;
 
+    const screens: RemoteScreen[] = [];
     for (const participant of room.remoteParticipants.values()) {
       if (participant.identity === ownIngress) continue;
       // Where the stream came from decides how it is labelled, and viewers
@@ -175,12 +255,11 @@ export function useRoom() {
       const videoPub =
         participant.getTrackPublication(Track.Source.ScreenShare) ??
         [...participant.videoTrackPublications.values()].find((pub) => pub.track);
+      const audioPub =
+        participant.getTrackPublication(Track.Source.ScreenShareAudio) ??
+        [...participant.audioTrackPublications.values()].find((pub) => pub.track);
 
-      if (videoPub?.track) {
-        const audioPub =
-          participant.getTrackPublication(Track.Source.ScreenShareAudio) ??
-          [...participant.audioTrackPublications.values()].find((pub) => pub.track);
-
+      if (videoPub?.track || audioPub?.track) {
         // A WHIP publisher carries the name it joined with, so a later rename
         // would leave viewers looking at a stale label. The human it belongs
         // to is in the same room and always current.
@@ -193,20 +272,24 @@ export function useRoom() {
                 ? room.localParticipant
                 : participant));
 
-        return {
+        screens.push({
           participantIdentity: owner.identity,
           participantName: owner.name || owner.identity,
-          videoTrack: videoPub.track,
+          videoTrack: videoPub?.track ?? null,
           audioTrack: audioPub?.track ?? null,
-        };
+          sourceName:
+            broadcastMetadata(participant).sourceName ?? broadcastMetadata(owner).sourceName,
+          sourceKind:
+            broadcastMetadata(participant).sourceKind ?? broadcastMetadata(owner).sourceKind,
+        });
       }
     }
-    return null;
+    return screens;
   }, []);
 
   const dataHandlerRef = useRef<((payload: Uint8Array, from?: Participant) => void) | null>(null);
 
-  /** Registers the takeover handler; useRoom stays unaware of the protocol. */
+  /** Kept for old data-message consumers; broadcasts no longer use takeover. */
   const onData = useCallback((handler: (payload: Uint8Array, from?: Participant) => void) => {
     dataHandlerRef.current = handler;
   }, []);
@@ -214,14 +297,26 @@ export function useRoom() {
   const connect = useCallback(
     async (wsUrl: string, token: string, quality?: TokenResult['quality']) => {
       setState('connecting');
+      setIsReconnecting(false);
       setError(null);
+      setRoomNotice(null);
+      selectionInitializedRef.current = false;
       if (quality) qualityRef.current = quality;
 
-      const room = new Room({ adaptiveStream: false, dynacast: false });
+      const room = new Room({ adaptiveStream: true, dynacast: true });
       roomRef.current = room;
 
-      const refresh = () => {
-        setRemoteScreen(findRemoteScreen(room));
+      const refresh = (initializeSelection = false) => {
+        const screens = findRemoteScreens(room);
+        const available = new Set(screens.map((screen) => screen.participantIdentity));
+        const nextSelected = new Set(selectedRemoteIdsRef.current);
+        if (initializeSelection && !selectionInitializedRef.current) {
+          for (const id of available) nextSelected.add(id);
+          selectionInitializedRef.current = true;
+        }
+        selectedRemoteIdsRef.current = nextSelected;
+        setSelectedRemoteIds(nextSelected);
+        setRemoteScreens(screens);
         setParticipantCount(room.remoteParticipants.size);
 
         const describe = (p: Participant, isLocal: boolean): RoomMember => ({
@@ -235,6 +330,10 @@ export function useRoom() {
           // so they can be folded back into that person rather than listed
           // as someone else.
           isIngress: p.identity.endsWith(WHIP_SUFFIX),
+          broadcastSource: sourceLabel(
+            broadcastMetadata(p).sourceName,
+            broadcastMetadata(p).sourceKind,
+          ),
         });
 
         const all = [
@@ -247,36 +346,81 @@ export function useRoom() {
         const ingressOwners = new Set(
           all.filter((m) => m.isIngress).map((m) => ownerIdentity(m.identity)),
         );
-        setMembers(
+        const ingressSources = new Map(
           all
-            .filter((m) => !m.isIngress)
-            .map((m) => (ingressOwners.has(m.identity) ? { ...m, isBroadcasting: true } : m)),
+            .filter((m) => m.isIngress && m.broadcastSource)
+            .map((m) => [ownerIdentity(m.identity), m.broadcastSource as string]),
+        );
+        const nextMembers = all
+          .filter((m) => !m.isIngress)
+          .map((m) =>
+            ingressOwners.has(m.identity)
+              ? {
+                  ...m,
+                  isBroadcasting: true,
+                  broadcastSource: ingressSources.get(m.identity) ?? m.broadcastSource,
+                }
+              : m,
+          );
+        broadcastingNamesRef.current = new Map(
+          nextMembers
+            .filter((member) => member.isBroadcasting)
+            .map((member) => [member.identity, member.name]),
+        );
+        setMembers(nextMembers);
+      };
+
+      const applyRemoteSubscriptions = () => {
+        applyRemoteMediaSettings(
+          room,
+          selectedRemoteIdsRef.current,
+          remoteQualityModeRef.current,
+          focusedRemoteIdRef.current,
+          audioOnlyRemoteIdsRef.current,
         );
       };
 
       room
         // Without this, a rename updated the server record and the person's
         // own footer while every list in every client kept the old name.
-        .on(RoomEvent.ParticipantNameChanged, refresh)
+        .on(RoomEvent.ParticipantNameChanged, () => refresh())
+        .on(RoomEvent.ParticipantMetadataChanged, () => refresh())
         .on(RoomEvent.DataReceived, (payload, participant) =>
           dataHandlerRef.current?.(payload, participant),
         )
         // Permission changes are how losing the stage arrives: the server
         // revokes canPublish and LiveKit pushes it down live.
-        .on(RoomEvent.ParticipantPermissionsChanged, refresh)
-        .on(RoomEvent.LocalTrackUnpublished, refresh)
-        .on(RoomEvent.TrackSubscribed, refresh)
-        .on(RoomEvent.TrackUnsubscribed, refresh)
-        .on(RoomEvent.ParticipantConnected, refresh)
-        .on(RoomEvent.ParticipantDisconnected, refresh)
-        .on(RoomEvent.Reconnecting, () => setState('connecting'))
+        .on(RoomEvent.ParticipantPermissionsChanged, () => refresh())
+        .on(RoomEvent.LocalTrackUnpublished, () => refresh())
+        .on(RoomEvent.TrackSubscribed, () => refresh())
+        .on(RoomEvent.TrackUnsubscribed, () => refresh())
+        .on(RoomEvent.ParticipantConnected, () => refresh())
+        .on(RoomEvent.ParticipantDisconnected, (participant) => {
+          const ownerId = ownerIdentity(participant.identity);
+          const name = broadcastingNamesRef.current.get(ownerId);
+          refresh();
+          if (name && !broadcastingNamesRef.current.has(ownerId)) {
+            setRoomNotice(`${name} parou de transmitir`);
+          }
+        })
+        .on(RoomEvent.Reconnecting, () => {
+          setIsReconnecting(true);
+          setState('connecting');
+        })
         .on(RoomEvent.Reconnected, () => {
+          setIsReconnecting(false);
           setState('connected');
           refresh();
+          applyRemoteSubscriptions();
         })
         .on(RoomEvent.Disconnected, (reason) => {
+          setIsReconnecting(false);
           setState('disconnected');
-          setError(reason ? `Disconnected: ${reason}` : 'Disconnected');
+          setError(
+            reason
+              ? `Conexão encerrada (${reason}). Verifique a rede e tente novamente.`
+              : 'Conexão encerrada. Verifique a rede e tente novamente.',
+          );
           setBroadcastState('idle');
           localTrackRef.current = null;
           setLocalTrack(null);
@@ -285,13 +429,13 @@ export function useRoom() {
       try {
         await room.connect(wsUrl, token);
         setState('connected');
-        refresh();
+        refresh(true);
       } catch (err) {
         setState('error');
-        setError(err instanceof Error ? err.message : String(err));
+        setError(`Não foi possível conectar: ${err instanceof Error ? err.message : String(err)}`);
       }
     },
-    [findRemoteScreen],
+    [findRemoteScreens],
   );
 
   /**
@@ -310,8 +454,86 @@ export function useRoom() {
     await roomRef.current?.disconnect();
     roomRef.current = null;
     setState('idle');
-    setRemoteScreen(null);
+    setIsReconnecting(false);
+    setRoomNotice(null);
+    setRemoteScreens([]);
+    selectionInitializedRef.current = false;
+    remoteQualityModeRef.current = 'auto';
+    focusedRemoteIdRef.current = null;
+    audioOnlyRemoteIdsRef.current = new Set();
+    selectedRemoteIdsRef.current = new Set();
+    setSelectedRemoteIds(new Set());
   }, []);
+
+  const setRemoteSubscription = useCallback(
+    async (identity: string, subscribed: boolean) => {
+      const room = roomRef.current;
+      if (!room) return;
+      const participant = room.remoteParticipants.get(identity);
+      if (!participant) return;
+      const next = new Set(selectedRemoteIdsRef.current);
+      if (subscribed) next.add(identity);
+      else next.delete(identity);
+      selectedRemoteIdsRef.current = next;
+      setSelectedRemoteIds(next);
+      applyRemoteMediaSettings(
+        room,
+        next,
+        remoteQualityModeRef.current,
+        focusedRemoteIdRef.current,
+        audioOnlyRemoteIdsRef.current,
+      );
+      setRemoteScreens(findRemoteScreens(room));
+    },
+    [findRemoteScreens],
+  );
+
+  const setRemoteQualityMode = useCallback((mode: RemoteQualityMode) => {
+    remoteQualityModeRef.current = mode;
+    const room = roomRef.current;
+    if (room) {
+      applyRemoteMediaSettings(
+        room,
+        selectedRemoteIdsRef.current,
+        mode,
+        focusedRemoteIdRef.current,
+        audioOnlyRemoteIdsRef.current,
+      );
+    }
+  }, []);
+
+  const setRemoteFocus = useCallback((identity: string | null) => {
+    focusedRemoteIdRef.current = identity;
+    const room = roomRef.current;
+    if (room) {
+      applyRemoteMediaSettings(
+        room,
+        selectedRemoteIdsRef.current,
+        remoteQualityModeRef.current,
+        identity,
+        audioOnlyRemoteIdsRef.current,
+      );
+    }
+  }, []);
+
+  const setRemoteAudioOnly = useCallback(
+    (identity: string, audioOnly: boolean) => {
+      if (audioOnly) audioOnlyRemoteIdsRef.current.add(identity);
+      else audioOnlyRemoteIdsRef.current.delete(identity);
+      const room = roomRef.current;
+      if (room) {
+        applyRemoteMediaSettings(
+          room,
+          selectedRemoteIdsRef.current,
+          remoteQualityModeRef.current,
+          focusedRemoteIdRef.current,
+          audioOnlyRemoteIdsRef.current,
+        );
+        setRemoteScreens(findRemoteScreens(room));
+      }
+    },
+    [findRemoteScreens],
+  );
 
   /**
    * Ends the local publish and releases the stage, unconditionally — this
@@ -327,6 +549,7 @@ export function useRoom() {
     if (room && track) {
       await room.localParticipant.unpublishTrack(track, true).catch(() => {});
     }
+    if (room) await room.localParticipant.setMetadata('').catch(() => {});
     track?.mediaStreamTrack.stop();
     localTrackRef.current = null;
     setLocalTrack(null);
@@ -379,12 +602,9 @@ export function useRoom() {
       const claim = await window.zoia.stage.claim();
       if (!claim.ok) {
         setBroadcastState('idle');
-        setBroadcastError(
-          claim.holder ? `${claim.holder.name} is already broadcasting.` : 'The stage is busy.',
-        );
+        setBroadcastError('Could not claim your broadcast slot.');
         return false;
       }
-
       try {
         setSharingKind('camera');
         const stream = await navigator.mediaDevices.getUserMedia(constraints);
@@ -393,6 +613,9 @@ export function useRoom() {
 
         const room = roomRef.current;
         if (!room) throw new Error('Not connected to the room.');
+        await room.localParticipant.setMetadata(
+          JSON.stringify({ sourceName: 'Câmera', sourceKind: 'camera' }),
+        );
 
         // 'motion' rather than 'detail': a camera image is moving video, not
         // text, and the encoder should favour frame rate over sharpness.
@@ -461,9 +684,7 @@ export function useRoom() {
         const claim = await window.zoia.stage.claim();
         if (!claim.ok) {
           setBroadcastState('idle');
-          setBroadcastError(
-            claim.holder ? `${claim.holder.name} is already broadcasting.` : 'The stage is busy.',
-          );
+          setBroadcastError('Could not claim your broadcast slot.');
           return false;
         }
       }
@@ -504,6 +725,9 @@ export function useRoom() {
 
         const room = roomRef.current;
         if (!room) throw new Error('Not connected to the room.');
+        await room.localParticipant.setMetadata(
+          JSON.stringify({ sourceName: source.name, sourceKind: source.kind }),
+        );
 
         // Without an explicit encoding, LiveKit falls back to a conservative
         // default bitrate meant for camera video — on a desktop/text-heavy
@@ -600,7 +824,15 @@ export function useRoom() {
     room: roomRef,
     state,
     error,
-    remoteScreen,
+    remoteScreens,
+    selectedRemoteIds,
+    isReconnecting,
+    roomNotice,
+    clearRoomNotice: useCallback(() => setRoomNotice(null), []),
+    setRemoteSubscription,
+    setRemoteQualityMode,
+    setRemoteFocus,
+    setRemoteAudioOnly,
     participantCount,
     members,
     connect,

@@ -25,7 +25,7 @@ export interface ZoiaBridge {
   };
   stage: {
     get(): Promise<StageState>;
-    /** force ends a takeover the holder never answered. */
+    /** Kept as an optional compatibility argument; broadcasts are independent. */
     claim(force?: boolean): Promise<ClaimResult>;
     release(): Promise<{ ok: boolean; released?: boolean }>;
   };
@@ -43,6 +43,8 @@ export interface ZoiaBridge {
       hwnd: number | null;
       /** A screen share is silent; a window share carries that app's audio. */
       withAudio: boolean;
+      sourceName: string;
+      sourceKind: SourceInfo['kind'];
     }): Promise<void>;
     stop(): Promise<void>;
     onStatus(cb: (status: EncoderStatus) => void): () => void;

@@ -98,6 +98,23 @@ body {
 .pairing-card h1 {
   margin: 0 0 4px;
 }
+
+.onboarding-step {
+  margin: 0 0 4px;
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.pairing-card code {
+  padding: 1px 4px;
+  color: var(--text);
+  background: var(--bg);
+  border-radius: 3px;
+  font-size: 12px;
+}
 .pairing-card label {
   display: block;
   margin: 16px 0 6px;
@@ -231,6 +248,11 @@ button:disabled {
   font-size: 13px;
 }
 
+.connection-message {
+  color: var(--warn);
+  font-size: 12px;
+}
+
 .room {
   display: flex;
   flex-direction: column;
@@ -279,6 +301,159 @@ button:disabled {
   object-fit: contain;
 }
 
+.remote-grid {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  padding: 10px;
+  overflow: auto;
+  background: #0b0c0e;
+}
+
+.remote-grid.count-1 {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.remote-grid-toolbar {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 2px 2px 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.remote-grid-toolbar label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.remote-grid-toolbar select {
+  padding: 3px 5px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 11px;
+}
+
+.remote-tile {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid #282c32;
+  border-radius: 8px;
+  background: #111317;
+}
+
+.remote-tile video {
+  width: 100%;
+  min-height: 0;
+  flex: 1;
+  object-fit: contain;
+  background: #050608;
+}
+
+.audio-only-tile video {
+  flex: 0 0 0;
+  min-height: 0;
+  height: 0;
+}
+
+.remote-tile-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 10px;
+  color: #d7dbe2;
+  font-size: 12px;
+}
+
+.remote-tile-actions {
+  display: flex;
+  gap: 5px;
+  margin-left: auto;
+}
+
+.remote-audio-controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.remote-audio-label {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.remote-audio-label.active {
+  color: var(--accent);
+}
+
+.remote-volume {
+  width: 72px;
+  accent-color: var(--accent);
+}
+
+.remote-tile-footer button {
+  padding: 3px 7px;
+  border: 1px solid #3b414a;
+  border-radius: 4px;
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
+}
+
+.remote-empty {
+  position: relative;
+}
+
+.live-heading-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.live-count {
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.live-actions {
+  display: flex;
+  gap: 6px;
+  margin: -2px 0 8px;
+}
+
+.live-actions button,
+.watch-button {
+  padding: 4px 7px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.live-actions button:hover,
+.watch-button:hover,
+.watch-button[aria-pressed='true'] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 /* Flex column rather than a grid: with auto rows the two lines were placed
    in separate stretched tracks, so they sat apart instead of together in the
    middle of the picture. */
@@ -301,6 +476,50 @@ button:disabled {
 
 .overlay h2 {
   margin: 0;
+}
+
+.onboarding-card {
+  width: min(420px, 100%);
+  padding: 24px;
+  text-align: left;
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 12px 40px rgb(0 0 0 / 35%);
+}
+
+.onboarding-card h2 {
+  margin: 0 0 6px;
+}
+
+.onboarding-card .muted {
+  margin: 0;
+}
+
+.onboarding-list {
+  display: grid;
+  gap: 6px;
+  margin: 16px 0;
+  padding-left: 22px;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.onboarding-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.onboarding-actions .link {
+  padding: 5px 8px;
+  color: var(--muted);
+  background: transparent;
+  border-color: transparent;
+}
+
+.onboarding-actions .link:hover {
+  color: var(--text);
 }
 
 button.danger {
@@ -778,6 +997,22 @@ button.danger {
 
 .member.live .member-name {
   color: #fff;
+}
+
+.broadcast-source,
+.stream-source {
+  color: #9ba3af;
+  font-size: 12px;
+  font-weight: 400;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stream-state {
+  margin-left: auto;
+  color: var(--warn);
+  font-size: 11px;
 }
 
 .member-empty {

@@ -1,12 +1,9 @@
-/**
- * The browser client is retired, but this host still serves the desktop app's
- * API. These tests hold that line from both sides: nothing app-like comes
- * back to a browser, and everything the desktop depends on still answers.
- */
+/** The browser client is a viewer-only surface. It may subscribe to LiveKit,
+ * but it must not grow desktop publishing controls or credentials. */
 
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import request from 'supertest';
@@ -39,22 +36,27 @@ function build() {
   });
 }
 
-describe('the retired web client', () => {
-  test('the page carries no client script, so there is nothing to run', () => {
-    assert.ok(!existsSync(join(PUBLIC_DIR, 'app.js')), 'app.js must not come back');
-    assert.ok(!/<script/i.test(html), 'the landing page must not load any script');
+describe('the browser viewer', () => {
+  test('the page loads the viewer and LiveKit client', () => {
+    assert.match(html, /<script type="module" src="viewer\.js"><\/script>/);
+    assert.match(readFileSync(join(PUBLIC_DIR, 'viewer.js'), 'utf8'), /livekit-client/);
+    assert.doesNotMatch(readFileSync(join(PUBLIC_DIR, 'viewer.js'), 'utf8'), /canPublish/);
   });
 
-  test('it points at the repository rather than pretending to be an app', () => {
-    assert.match(html, /github\.com\/caiomcg\/zoia/, 'the repository link must be present');
-    assert.ok(!/livekit/i.test(html), 'no trace of the client stack should remain');
+  test('the page explains the viewer flow', () => {
+    assert.match(html, /Chave do convite/);
+    assert.match(html, /Ao vivo/);
+    assert.match(html, /Assistir todas/);
+    assert.match(html, /Parar todas/);
   });
 
-  test('a browser gets the static page, not an application', async () => {
+  test('a browser gets the viewer shell and its static assets', async () => {
     const res = await request(build()).get('/');
     assert.equal(res.status, 200);
     assert.match(res.headers['content-type'], /html/);
-    assert.ok(!/<script/i.test(res.text));
+    assert.match(res.text, /viewer\.js/);
+    assert.equal((await request(build()).get('/viewer.js')).status, 200);
+    assert.equal((await request(build()).get('/viewer.css')).status, 200);
   });
 
   test('the desktop API is untouched, since the app still depends on it', async () => {

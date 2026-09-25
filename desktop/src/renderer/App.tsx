@@ -3,13 +3,12 @@ import Banner from './components/Banner';
 import CameraDialog from './components/CameraDialog';
 import PairingScreen from './components/PairingScreen';
 import Player from './components/Player';
+import RemoteGrid, { type LoadingBroadcast } from './components/RemoteGrid';
 import Sidebar from './components/Sidebar';
 import SourcePicker from './components/SourcePicker';
 import StatusLight, { type StatusTone } from './components/StatusLight';
-import { IncomingTakeover, OutgoingTakeover } from './components/TakeoverPrompts';
-import { useRoom } from './livekit/useRoom';
+import { useRoom, type RemoteQualityMode } from './livekit/useRoom';
 import { useGpuBroadcast } from './livekit/useGpuBroadcast';
-import { useTakeover } from './livekit/useTakeover';
 import {
   DEFAULT_PRESET_ID,
   QUALITY_PRESETS,
@@ -21,11 +20,20 @@ import {
 
 const PRESET_STORAGE_KEY = 'zoia.qualityPreset';
 const HARDWARE_STORAGE_KEY = 'zoia.hardwareAcceleration';
+const ONBOARDING_STORAGE_KEY = 'zoia.onboardingDismissed';
+const REMOTE_QUALITY_STORAGE_KEY = 'zoia.remoteQuality';
 
 export default function App() {
   const [status, setStatus] = useState<PairingStatus | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [cameraOpen, setCameraOpen] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(
+    () => localStorage.getItem(ONBOARDING_STORAGE_KEY) !== 'true',
+  );
+  const [remoteQualityMode, setRemoteQualityMode] = useState<RemoteQualityMode>(() =>
+    localStorage.getItem(REMOTE_QUALITY_STORAGE_KEY) === 'low' ? 'low' : 'auto',
+  );
+  const [focusedRemoteId, setFocusedRemoteId] = useState<string | null>(null);
   const [gpu, setGpu] = useState<GpuStatus | null>(null);
   const [stageError, setStageError] = useState<string | null>(null);
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
@@ -42,6 +50,7 @@ export default function App() {
 
   const room = useRoom();
   const gpuCast = useGpuBroadcast();
+  const { setRemoteQualityMode: applyRemoteQualityMode } = room;
 
   // The rest of the app still thinks in terms of which path is publishing.
   const mode: BroadcastMode = hardware ? 'gpu' : 'window';
@@ -53,15 +62,6 @@ export default function App() {
 
   const isLive = room.broadcastState === 'live' || gpuCast.state === 'live';
   const isStarting = room.broadcastState === 'starting' || gpuCast.state === 'starting';
-
-  // Granted means the holder stepped aside, so the stage is free to claim.
-  const takeover = useTakeover(room.room, {
-    onGranted: () => setPickerOpen(true),
-  });
-
-  useEffect(() => {
-    room.onData(takeover.handleData);
-  }, [room, takeover.handleData]);
 
   useEffect(() => {
     window.zoia.pairing.status().then(setStatus);
@@ -87,6 +87,10 @@ export default function App() {
         .then(({ wsUrl, token, quality }) => room.connect(wsUrl, token, quality));
     }
   }, [status?.paired, room]);
+
+  useEffect(() => {
+    applyRemoteQualityMode(remoteQualityMode);
+  }, [remoteQualityMode, applyRemoteQualityMode]);
 
   const handleRename = useCallback(
     async (name: string) => {
@@ -125,9 +129,7 @@ export default function App() {
     if (!switching) {
       const claim = await window.zoia.stage.claim();
       if (!claim.ok) {
-        setStageError(
-          claim.holder ? `${claim.holder.name} is already sharing.` : 'The stage is busy.',
-        );
+        setStageError('Could not claim your broadcast slot.');
         return;
       }
     }
@@ -145,23 +147,9 @@ export default function App() {
     if (room.broadcastState !== 'idle') await room.stopBroadcast();
   }
 
-  /** Takes the stage outright, once asking has not been answered. */
-  async function takeStage() {
-    takeover.cancelRequest();
-    const claim = await window.zoia.stage.claim(true);
-    if (!claim.ok) {
-      setStageError('The stage could not be taken.');
-      return;
-    }
-    setStageError(null);
-    setPickerOpen(true);
-  }
-
   const stats = room.videoStats;
   const encodingLive = Boolean(stats && (stats.fps > 0 || stats.kbps > 0));
   const gpuLive = gpuCast.state === 'live';
-  const holder = room.remoteScreen;
-
   const cameraLive = room.broadcastState === 'live' && room.sharingKind === 'camera';
   const screenLive = isLive && !cameraLive;
 
@@ -188,11 +176,28 @@ export default function App() {
       : null;
 
   const roomError = show('room', room.error);
+  const roomNotice = show('room-notice', room.roomNotice);
   const broadcastError = show('broadcast', room.broadcastError);
   const gpuError = show('gpu', gpuCast.error);
   const audioWarning = show('audio', room.audioWarning);
   const stageMessage = show('stage', stageError);
   const gpuWarning = gpuLive ? show('gpustatus', gpuCast.status?.error) : null;
+  const activeRemoteIds = new Set(room.remoteScreens.map((screen) => screen.participantIdentity));
+  const loadingBroadcasts: LoadingBroadcast[] = room.members
+    .filter(
+      (member) =>
+        member.isBroadcasting &&
+        !member.isLocal &&
+        room.selectedRemoteIds.has(member.identity) &&
+        !activeRemoteIds.has(member.identity),
+    )
+    .map((member) => ({ identity: member.identity, name: member.name }));
+  const loadingRemoteIds = new Set(loadingBroadcasts.map((broadcast) => broadcast.identity));
+
+  function dismissOnboarding() {
+    setShowOnboarding(false);
+    localStorage.setItem(ONBOARDING_STORAGE_KEY, 'true');
+  }
 
   return (
     <div className="app">
@@ -226,17 +231,15 @@ export default function App() {
         </div>
 
         <div className="topbar-centre">
-          {holder && !isLive ? (
-            <button
-              className="primary"
-              disabled={Boolean(takeover.outgoing)}
-              onClick={() => takeover.request(holder.participantName)}
-            >
-              Ask to share
-            </button>
-          ) : (
-            isStarting && <span className="muted">Starting…</span>
-          )}
+          {room.isReconnecting ? (
+            <span className="connection-message">
+              Reconectando… suas escolhas serão restauradas.
+            </span>
+          ) : isStarting ? (
+            <span className="muted">Starting…</span>
+          ) : room.state === 'connecting' ? (
+            <span className="muted">Conectando…</span>
+          ) : null}
         </div>
 
         <div className="topbar-right">
@@ -288,25 +291,12 @@ export default function App() {
         </div>
       </header>
 
-      {takeover.incoming && (
-        <IncomingTakeover
-          request={takeover.incoming}
-          onRespond={(accept) => {
-            takeover.respond(accept);
-            if (accept) void stopSharing();
-          }}
-        />
-      )}
-
-      {takeover.outgoing && (
-        <OutgoingTakeover
-          request={takeover.outgoing}
-          onTake={() => void takeStage()}
-          onCancel={takeover.cancelRequest}
-        />
-      )}
-
       {roomError && <Banner onDismiss={() => dismiss('room', roomError)}>{roomError}</Banner>}
+      {roomNotice && (
+        <Banner tone="warn" onDismiss={() => dismiss('room-notice', roomNotice)}>
+          {roomNotice}
+        </Banner>
+      )}
       {broadcastError && (
         <Banner onDismiss={() => dismiss('broadcast', broadcastError)}>{broadcastError}</Banner>
       )}
@@ -327,22 +317,66 @@ export default function App() {
 
       <div className="body">
         <main className="main">
-          <Player
-            remoteScreen={room.remoteScreen}
-            localTrack={room.localTrack}
-            audioLevel={room.audioLevel}
-            canMonitor={room.canMonitor}
-            setMonitorGain={room.setMonitorGain}
-            gpuBroadcasting={gpuLive}
-            onStop={isLive ? () => void stopSharing() : undefined}
-            onSwitch={isLive ? () => setPickerOpen(true) : undefined}
-          />
+          {isLive ? (
+            <Player
+              remoteScreen={null}
+              localTrack={room.localTrack}
+              audioLevel={room.audioLevel}
+              canMonitor={room.canMonitor}
+              setMonitorGain={room.setMonitorGain}
+              gpuBroadcasting={gpuLive}
+              onStop={() => void stopSharing()}
+              onSwitch={() => setPickerOpen(true)}
+            />
+          ) : (
+            <RemoteGrid
+              screens={room.remoteScreens}
+              loadingBroadcasts={loadingBroadcasts}
+              showOnboarding={showOnboarding && room.state === 'connected'}
+              onStartSharing={() => {
+                dismissOnboarding();
+                setPickerOpen(true);
+              }}
+              onDismissOnboarding={dismissOnboarding}
+              qualityMode={remoteQualityMode}
+              focusedIdentity={focusedRemoteId}
+              onQualityModeChange={(mode) => {
+                setRemoteQualityMode(mode);
+                localStorage.setItem(REMOTE_QUALITY_STORAGE_KEY, mode);
+                room.setRemoteQualityMode(mode);
+              }}
+              onFocusChange={(identity) => {
+                setFocusedRemoteId(identity);
+                room.setRemoteFocus(identity);
+              }}
+              onToggleAudioOnly={room.setRemoteAudioOnly}
+            />
+          )}
         </main>
 
         <Sidebar
           members={room.members}
           myName={status.deviceName ?? 'You'}
           onRename={handleRename}
+          selectedRemoteIds={room.selectedRemoteIds}
+          loadingRemoteIds={loadingRemoteIds}
+          onToggleRemote={(identity) => {
+            void room.setRemoteSubscription(identity, !room.selectedRemoteIds.has(identity));
+          }}
+          onWatchAll={() => {
+            void Promise.all(
+              room.members
+                .filter((member) => member.isBroadcasting && !member.isLocal)
+                .map((member) => room.setRemoteSubscription(member.identity, true)),
+            );
+          }}
+          onWatchNone={() => {
+            void Promise.all(
+              room.members
+                .filter((member) => member.isBroadcasting && !member.isLocal)
+                .map((member) => room.setRemoteSubscription(member.identity, false)),
+            );
+          }}
         />
       </div>
 

@@ -77,10 +77,13 @@ export function getToken() {
 
 /**
  * Where to publish a hardware-encoded broadcast, and a token to do it with.
- * The server only answers for whoever holds the stage; see server/src/whip.js.
+ * The server only answers for a participant with its own broadcast slot.
  */
-export function whipGet() {
-  return call<WhipEndpoint>('/api/whip', { method: 'POST' });
+export function whipGet(source?: { sourceName?: string; sourceKind?: string }) {
+  return call<WhipEndpoint>('/api/whip', {
+    method: 'POST',
+    body: JSON.stringify(source ?? {}),
+  });
 }
 
 /** Removes this device's WHIP publisher from the room, if it is still there. */
@@ -115,19 +118,19 @@ export function stageGet() {
   return call<StageState>('/api/stage');
 }
 
-/** A 409 (stage busy) is an expected outcome, not a failure — it carries the holder. */
-export async function stageClaim(force = false): Promise<ClaimResult> {
+export async function stageClaim(_force = false): Promise<ClaimResult> {
   try {
-    const result = await call<{ ok: true; holder: ClaimResult['holder'] }>('/api/stage/claim', {
-      method: 'POST',
-      body: JSON.stringify({ force }),
-      headers: { 'content-type': 'application/json' },
-    });
-    return { ok: true, holder: result.holder };
+    const result = await call<{ ok: true; broadcaster: NonNullable<ClaimResult['broadcaster']> }>(
+      '/api/stage/claim',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+      },
+    );
+    return { ok: true, broadcaster: result.broadcaster };
   } catch (err) {
     if (err instanceof ApiError && err.status === 409) {
-      const body = err.body as { holder?: ClaimResult['holder'] };
-      return { ok: false, holder: body.holder ?? null };
+      return { ok: false };
     }
     throw err;
   }

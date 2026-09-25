@@ -6,14 +6,16 @@ Conventions and invariants for anyone — human or agent — working on this rep
 ## What this is
 
 Zoia is a private one-to-many screen broadcast. Everyone who has an invite key joins the
-same room and watches; **anyone may claim the stage** and share a screen, window or tab with
-audio, but only one person at a time. Latency is ~200–500 ms. Access is by per-person invite
-key; there are no roles beyond "has a key".
+same room and watches; **anyone may claim an independent broadcast slot** and share a screen,
+window or tab with audio. Multiple people may stream at the same time, and each viewer chooses
+which broadcasts to watch. Latency is ~200–500 ms. Access is by per-person invite key; there
+are no roles beyond "has a key".
 
 It is three pieces:
 
-1. **LiveKit** — a self-hosted SFU. The host uploads one stream; LiveKit fans it out. It
-   does no transcoding, so it is cheap on CPU and expensive on upstream bandwidth.
+1. **LiveKit** — a self-hosted SFU. Each broadcaster uploads one stream; LiveKit fans
+   every active stream out to the viewers who selected it. It does no transcoding, so it
+   is cheap on CPU and expensive on upstream bandwidth.
 2. **This Node app** — serves the page, authenticates people against the invite-key store,
    and mints short-lived LiveKit tokens whose grants encode the person's role.
 3. **Caddy**, running on the same VM — terminates TLS for exactly two hostnames and nothing
@@ -59,16 +61,16 @@ and `npm run dev` regenerate it; the Dockerfile runs it at image build.
 | `server/src/stage.js` | Who may broadcast right now — **the security boundary** |
 | `server/src/config.js` | Env parsing and validation, fail-fast on startup |
 | `server/bin/keytool.js` | CLI over `keys.js` |
-| `server/public/` | The browser app (no build step, plain ESM) |
+| `server/public/` | The login page and viewer app (no build step, plain ESM) |
 | `server/data/keys.json` | Key store. Server-only, gitignored, never deployed over |
 | `docs/adr/` | Architecture decision records |
 
 ## Invariants — do not break these
 
 1. **Join tokens must never carry `canPublish: true`.** There is one tier of user and nobody
-   is a broadcaster by default. Publishing is granted at runtime by `stage.js`, and only
-   while the stage is free — so single-producer is a server-enforced property, not a UI
-   state. `server/test/token.test.js` and `server/test/stage.test.js` guard this.
+   is a broadcaster by default. Publishing is granted at runtime by `stage.js`, independently
+   per participant and only for that participant's slot. `server/test/token.test.js` and
+   `server/test/stage.test.js` guard this.
 2. **Never log a raw invite key** — not in the app, not in an error message, not in a debug
    branch. Log the `keyId` instead; it is safe and identifies the person.
 3. **Sessions are re-validated against the key store on every request**, not just at login.
@@ -102,6 +104,11 @@ These each cost hours if forgotten, and all of them fail in ways that look like 
   runbook.
 - **LAN hairpin**: if the router won't route a LAN client to the public hostname, the host PC
   can't reach the app. Fix with a local DNS override, not with code.
+- **Browser viewers**: the invite can be opened in a browser for watching only. The desktop
+  app is still required to capture a screen, window, camera or application audio.
+- **Viewer bandwidth**: selecting several broadcasts downloads several independent streams.
+  Use the viewer's automatic/low quality, focus, or audio-only controls when needed. Only one
+  stream's audio is active by default to avoid an unintelligible mix.
 
 ## Conventions
 

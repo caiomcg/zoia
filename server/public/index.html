@@ -1,95 +1,64 @@
 <!doctype html>
-<html lang="en">
+<html lang="pt-BR">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Zoia</title>
+    <title>Zoia — assistir</title>
     <link rel="icon" href="icon.png" />
-    <meta name="robots" content="noindex" />
-    <meta
-      name="description"
-      content="Zoia is a self-hosted screen sharing app for Windows. This address serves the desktop app; there is nothing to use in a browser."
-    />
-    <style>
-      /* Self-contained on purpose: this page outlives the client it replaced,
-         and should not depend on a stylesheet that may be deleted with it. */
-      :root {
-        color-scheme: dark;
-        --bg: #1a1b1e;
-        --text: #f2f3f5;
-        --muted: #949ba4;
-        --accent: #5865f2;
-      }
-
-      * {
-        box-sizing: border-box;
-      }
-
-      html,
-      body {
-        height: 100%;
-        margin: 0;
-      }
-
-      body {
-        display: flex;
-        flex-direction: column;
-        gap: 22px;
-        align-items: center;
-        justify-content: center;
-        padding: 32px;
-        font:
-          15px/1.6 system-ui,
-          -apple-system,
-          'Segoe UI',
-          sans-serif;
-        color: var(--text);
-        text-align: center;
-        background: var(--bg);
-      }
-
-      img {
-        width: min(320px, 74vw);
-        height: auto;
-        user-select: none;
-      }
-
-      p {
-        max-width: 44ch;
-        margin: 0;
-        color: var(--muted);
-      }
-
-      a.repo {
-        display: inline-block;
-        padding: 10px 18px;
-        font-weight: 600;
-        color: #fff;
-        text-decoration: none;
-        background: var(--accent);
-        border-radius: 8px;
-      }
-
-      a.repo:hover {
-        background: #4752c4;
-      }
-
-      footer {
-        font-size: 13px;
-        color: var(--muted);
-      }
-    </style>
+    <link rel="stylesheet" href="viewer.css" />
   </head>
   <body>
-    <img src="logo.png" alt="Zoia" draggable="false" />
+    <main id="login-screen" class="screen login-screen" hidden>
+      <img class="logo" src="logo.png" alt="Zoia" draggable="false" />
+      <h1>Entre na sala</h1>
+      <p class="muted">Cole o convite recebido para assistir às transmissões.</p>
+      <form id="login-form" class="login-form">
+        <label for="invite-key">Chave do convite</label>
+        <input id="invite-key" name="key" autocomplete="off" required />
+        <button class="primary" type="submit">Entrar</button>
+      </form>
+      <p id="login-error" class="error" role="alert" hidden></p>
+    </main>
 
-    <p>
-      Zoia is a desktop app for sharing a screen, a window or a camera with a few friends &mdash;
-      along with that application&rsquo;s own sound. There is nothing to use here in a browser.
-    </p>
+    <main id="loading-screen" class="screen" aria-live="polite">
+      <p>Conectando à sala…</p>
+    </main>
 
-    <a class="repo" href="https://github.com/caiomcg/zoia" rel="noopener">View the repository</a>
+    <main id="room-screen" class="room" hidden>
+      <header class="topbar">
+        <div class="brand-wrap">
+          <img class="brand" src="logo.png" alt="Zoia" draggable="false" />
+          <span id="connection-status" class="status">Conectando…</span>
+        </div>
+        <span id="room-name" class="muted">Sala Zoia</span>
+        <button id="logout" class="small-button" type="button">Sair</button>
+      </header>
 
-    <footer>Self-hosted. Windows only.</footer>
+      <p id="room-message" class="room-message" role="status" hidden></p>
+
+      <div class="room-body">
+        <section id="grid" class="grid">
+          <div class="empty-state">
+            <h1>Ninguém está transmitindo</h1>
+            <p class="muted">Quando alguém compartilhar a tela, ela aparecerá aqui.</p>
+          </div>
+        </section>
+
+        <aside class="sidebar">
+          <div class="sidebar-heading">
+            <h2>Ao vivo</h2>
+            <span id="watching-count" class="muted">Assistindo 0 de 0</span>
+          </div>
+          <div class="live-actions">
+            <button id="watch-all" class="small-button" type="button">Assistir todas</button>
+            <button id="watch-none" class="small-button" type="button">Parar todas</button>
+          </div>
+          <div id="live-list" class="live-list"></div>
+          <p id="no-live" class="muted">Nenhuma transmissão no momento.</p>
+        </aside>
+      </div>
+    </main>
+
+    <script type="module" src="viewer.js"></script>
   </body>
 </html>

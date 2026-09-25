@@ -60,6 +60,8 @@ export function useGpuBroadcast() {
           processId: isWindow ? source.processId : null,
           hwnd: isWindow ? source.hwnd : null,
           withAudio: isWindow,
+          sourceName: source?.name ?? 'Tela',
+          sourceKind: source?.kind ?? 'screen',
         });
         activeRef.current = true;
         setState('live');
