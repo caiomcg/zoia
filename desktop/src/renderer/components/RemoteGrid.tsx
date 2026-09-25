@@ -74,9 +74,15 @@ function RemoteTile({
 export default function RemoteGrid({
   screens,
   loadingBroadcasts = [],
+  showOnboarding = false,
+  onStartSharing,
+  onDismissOnboarding,
 }: {
   screens: RemoteScreen[];
   loadingBroadcasts?: LoadingBroadcast[];
+  showOnboarding?: boolean;
+  onStartSharing?: () => void;
+  onDismissOnboarding?: () => void;
 }) {
   const [audioOwner, setAudioOwner] = useState<string | null>(null);
   const [volumes, setVolumes] = useState<Record<string, number>>({});
@@ -104,6 +110,28 @@ export default function RemoteGrid({
                 {loadingBroadcasts.length === 1 ? ' está' : ' estão'} carregando.
               </p>
             </>
+          ) : showOnboarding ? (
+            <div className="onboarding-card">
+              <p className="onboarding-step">Você entrou na sala</p>
+              <h2>Pronto para começar</h2>
+              <p className="muted">
+                Assista a uma transmissão ao vivo pela lista ao lado ou compartilhe sua tela.
+              </p>
+              <ol className="onboarding-list">
+                <li>
+                  Clique em <strong>Compartilhar</strong>.
+                </li>
+                <li>Escolha uma janela ou tela.</li>
+              </ol>
+              <div className="onboarding-actions">
+                <button className="primary" onClick={onStartSharing}>
+                  Compartilhar tela
+                </button>
+                <button className="link" onClick={onDismissOnboarding}>
+                  Agora não
+                </button>
+              </div>
+            </div>
           ) : (
             <>
               <h2>Select a broadcast</h2>
