@@ -20,11 +20,15 @@ import {
 
 const PRESET_STORAGE_KEY = 'zoia.qualityPreset';
 const HARDWARE_STORAGE_KEY = 'zoia.hardwareAcceleration';
+const ONBOARDING_STORAGE_KEY = 'zoia.onboardingDismissed';
 
 export default function App() {
   const [status, setStatus] = useState<PairingStatus | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [cameraOpen, setCameraOpen] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(
+    () => localStorage.getItem(ONBOARDING_STORAGE_KEY) !== 'true',
+  );
   const [gpu, setGpu] = useState<GpuStatus | null>(null);
   const [stageError, setStageError] = useState<string | null>(null);
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
@@ -180,6 +184,11 @@ export default function App() {
     .map((member) => ({ identity: member.identity, name: member.name }));
   const loadingRemoteIds = new Set(loadingBroadcasts.map((broadcast) => broadcast.identity));
 
+  function dismissOnboarding() {
+    setShowOnboarding(false);
+    localStorage.setItem(ONBOARDING_STORAGE_KEY, 'true');
+  }
+
   return (
     <div className="app">
       <header className="topbar">
@@ -310,7 +319,16 @@ export default function App() {
               onSwitch={() => setPickerOpen(true)}
             />
           ) : (
-            <RemoteGrid screens={room.remoteScreens} loadingBroadcasts={loadingBroadcasts} />
+            <RemoteGrid
+              screens={room.remoteScreens}
+              loadingBroadcasts={loadingBroadcasts}
+              showOnboarding={showOnboarding && room.state === 'connected'}
+              onStartSharing={() => {
+                dismissOnboarding();
+                setPickerOpen(true);
+              }}
+              onDismissOnboarding={dismissOnboarding}
+            />
           )}
         </main>
 
