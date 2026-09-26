@@ -324,6 +324,15 @@ button:disabled {
   min-width: 0;
 }
 
+.spotlight:fullscreen {
+  background: #000;
+}
+
+.spotlight:fullscreen .remote-tile {
+  border: none;
+  border-radius: 0;
+}
+
 /* Floats over the bottom of the picture, raised clear of the player's own
    controls (the local overlay bar, or a remote tile's footer). Only the
    thumbnails and the toggle take clicks; the gaps fall through to the video. */
@@ -995,10 +1004,78 @@ button.danger {
 
 .sidebar {
   display: flex;
+  flex: 0 0 auto;
   flex-direction: column;
   width: 240px;
   background: var(--surface);
   border-left: 1px solid var(--border);
+  transition: width 0.15s ease;
+}
+
+.sidebar-header {
+  display: flex;
+  justify-content: flex-start;
+  padding: 8px 8px 0;
+}
+
+.sidebar-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  color: var(--muted);
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.sidebar-toggle:hover {
+  color: var(--text);
+  background: var(--surface-2);
+}
+
+/* Collapsed: avatars only. The live ring on an avatar still says who is
+   sharing; names are in each row's tooltip. */
+.sidebar.collapsed {
+  width: 56px;
+}
+
+.sidebar.collapsed .sidebar-header {
+  justify-content: center;
+  padding: 8px 0 0;
+}
+
+.sidebar.collapsed .sidebar-scroll {
+  padding: 8px 0;
+}
+
+.sidebar.collapsed .member-heading {
+  height: 1px;
+  margin: 4px 12px 8px;
+  overflow: hidden;
+  font-size: 0;
+  background: var(--border);
+}
+
+.sidebar.collapsed .member {
+  justify-content: center;
+  padding: 5px 0;
+}
+
+.sidebar.collapsed .member-name,
+.sidebar.collapsed .you-tag,
+.sidebar.collapsed .stream-state,
+.sidebar.collapsed .live-dot,
+.sidebar.collapsed .member-empty {
+  display: none;
+}
+
+.sidebar.collapsed .sidebar-footer {
+  justify-content: center;
+  padding: 10px 0;
 }
 
 .sidebar-scroll {
