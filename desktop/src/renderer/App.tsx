@@ -322,8 +322,9 @@ export default function App() {
             local={
               isLive
                 ? {
-                    stage: (
+                    renderStage: (fullscreen) => (
                       <Player
+                        fullscreen={fullscreen}
                         remoteScreen={null}
                         localTrack={room.localTrack}
                         audioLevel={room.audioLevel}

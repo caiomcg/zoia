@@ -5,21 +5,22 @@ import Avatar from './Avatar';
 import { IconFullscreen, IconVolume } from './Player';
 
 /**
- * Every broadcast in the room, laid out one of three ways:
+ * Every broadcast in the room, laid out one of two ways:
  *
  * - spotlight: one large, the rest as thumbnails;
- * - pair: two side by side, the rest as thumbnails;
- * - mosaic: all of them in a grid.
+ * - mosaic: all of them large. Two sit side by side with a draggable split;
+ *   more form a grid.
  *
- * What is shown large is pinned. A broadcast that starts later joins the
- * thumbnails rather than taking a large slot; clicking a thumbnail is what
- * moves it up, displacing whichever large one was chosen longest ago.
+ * In the spotlight, what is shown large is pinned: a broadcast that starts
+ * later joins the thumbnails, and clicking a thumbnail is what moves it up.
  *
- * The thumbnail strip floats over the bottom of the picture, clear of the
- * player's controls, and can be tucked away. Side by side, the split between
- * the two is draggable. Fullscreen is per tile: one broadcast fills the screen,
- * and leaving it lands back in whichever layout was chosen. Large tiles ask for the high
- * simulcast layer, thumbnails for the low one (see setRemoteFocus).
+ * Fullscreen shows one broadcast, with the others still in the thumbnail strip
+ * over it; clicking one swaps it in. Leaving fullscreen lands back in whichever
+ * layout was chosen. After a few still seconds the overlays and the cursor fade.
+ *
+ * The strip floats over the bottom of the picture, clear of the player's
+ * controls, and can be tucked away. Large tiles ask for the high simulcast
+ * layer, thumbnails for the low one (see setRemoteFocus).
  *
  * Volume and mute are kept per person, here rather than in the tile, so they
  * survive a tile moving between the strip and a large slot.
@@ -28,7 +29,7 @@ import { IconFullscreen, IconVolume } from './Player';
 /** Stands in for "your own broadcast" wherever a broadcast identity goes. */
 export const LOCAL_SPOTLIGHT = '__local__';
 
-export type LayoutMode = 'spotlight' | 'pair' | 'mosaic';
+export type LayoutMode = 'spotlight' | 'mosaic';
 
 const LAYOUT_KEY = 'zoia.layout';
 const STRIP_HIDDEN_KEY = 'zoia.thumbnailsHidden';
@@ -50,7 +51,7 @@ function readSplit(): number {
 }
 
 /**
- * Fullscreen for one element, and whether the viewer has gone still in it.
+ * Fullscreen for the stage area, and whether the viewer has gone still in it.
  * After a few still seconds the controls and cursor get out of the way; any
  * movement brings them back.
  */
@@ -161,16 +162,6 @@ const LAYOUTS: Array<{ mode: LayoutMode; label: string; icon: ReactNode }> = [
     ),
   },
   {
-    mode: 'pair',
-    label: 'Lado a lado',
-    icon: (
-      <Icon>
-        <rect x="2.5" y="6" width="8.5" height="12" rx="1.5" />
-        <rect x="13" y="6" width="8.5" height="12" rx="1.5" />
-      </Icon>
-    ),
-  },
-  {
     mode: 'mosaic',
     label: 'Mosaico',
     icon: (
@@ -207,18 +198,18 @@ function RemoteTile({
   onAudioChange,
   qualityMode,
   onQualityModeChange,
+  isFullscreen,
+  onToggleFullscreen,
 }: {
   screen: RemoteScreen;
   audio: AudioSetting;
   onAudioChange: (next: AudioSetting) => void;
   qualityMode: RemoteQualityMode;
   onQualityModeChange?: (mode: RemoteQualityMode) => void;
+  isFullscreen: boolean;
+  onToggleFullscreen: () => void;
 }) {
-  const tileRef = useRef<HTMLElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
-  const fullscreen = useFullscreen(tileRef);
-  const { isFullscreen } = fullscreen;
-  const onToggleFullscreen = () => void fullscreen.toggle();
   const { volume, muted } = audio;
   useMediaStream(videoRef, screen.videoTrack, screen.audioTrack);
 
@@ -230,7 +221,7 @@ function RemoteTile({
   }, [muted, volume]);
 
   return (
-    <article className={`remote-tile${fullscreen.idle ? ' idle' : ''}`} ref={tileRef}>
+    <article className="remote-tile">
       <video ref={videoRef} playsInline autoPlay onDoubleClick={onToggleFullscreen} />
       <div className="remote-tile-footer">
         <span className="remote-tile-who">
@@ -336,7 +327,11 @@ export default function RemoteGrid({
 }: {
   screens: RemoteScreen[];
   /** Present while this device is broadcasting. */
-  local?: { stage: ReactNode; track: LocalVideoTrack | null; name: string };
+  local?: {
+    renderStage: (fullscreen: { active: boolean; toggle: () => void }) => ReactNode;
+    track: LocalVideoTrack | null;
+    name: string;
+  };
   /** Called with the remote broadcasts shown large, which get full quality. */
   onFocusChange: (identities: string[]) => void;
   loadingBroadcasts?: LoadingBroadcast[];
@@ -347,10 +342,12 @@ export default function RemoteGrid({
   onQualityModeChange?: (mode: RemoteQualityMode) => void;
 }) {
   const [mode, setMode] = useState<LayoutMode>(() =>
-    readStored(LAYOUT_KEY, ['spotlight', 'pair', 'mosaic'], 'spotlight'),
+    // 'pair' was a layout of its own; mosaic now does side by side.
+    readStored(LAYOUT_KEY, ['spotlight', 'mosaic', 'pair'], 'spotlight') === 'spotlight'
+      ? 'spotlight'
+      : 'mosaic',
   );
-  // Large slots, most recently chosen first. May hold more than the layout
-  // shows, so switching spotlight → pair brings the previous pick back.
+  // Spotlight picks, most recently chosen first.
   const [pinned, setPinned] = useState<string[]>([]);
   const [audio, setAudio] = useState<Record<string, AudioSetting>>({});
   const [stripHidden, setStripHidden] = useState(
@@ -359,6 +356,10 @@ export default function RemoteGrid({
   const [split, setSplit] = useState(readSplit);
   const mainsRef = useRef<HTMLDivElement>(null);
   const draggingRef = useRef(false);
+  const areaRef = useRef<HTMLDivElement>(null);
+  const fullscreen = useFullscreen(areaRef);
+  // Which broadcast fills the screen while fullscreen; null otherwise.
+  const [fullscreenId, setFullscreenId] = useState<string | null>(null);
 
   const hasLocal = Boolean(local);
   const candidates = [
@@ -367,32 +368,36 @@ export default function RemoteGrid({
   ];
   const livePinned = pinned.filter((id) => candidates.includes(id));
 
+  const spotlightId = livePinned[0] ?? candidates[0] ?? null;
+  // The fullscreen broadcast ended: show whatever the layout would lead with.
+  const fullId = fullscreen.isFullscreen
+    ? fullscreenId && candidates.includes(fullscreenId)
+      ? fullscreenId
+      : spotlightId
+    : null;
+
   let mains: string[];
-  if (mode === 'mosaic') {
-    mains = candidates;
-  } else {
-    const capacity = mode === 'pair' ? 2 : 1;
-    mains = livePinned.slice(0, capacity);
-    for (const id of candidates) {
-      if (mains.length >= capacity) break;
-      if (!mains.includes(id)) mains.push(id);
-    }
-  }
-  const mainsKey = mains.join('|');
+  if (fullId) mains = [fullId];
+  else if (mode === 'mosaic') mains = candidates;
+  else mains = spotlightId ? [spotlightId] : [];
   const remoteMains = mains.filter((id) => id !== LOCAL_SPOTLIGHT);
   // The first large remote broadcast is heard by default; others start muted
   // until someone turns them up, and from then on keep what they were given.
   const primaryRemote = remoteMains[0] ?? null;
 
-  // Pin what is shown, so a newcomer sorting ahead of it cannot take its slot.
+  // Pin the spotlight, so a newcomer sorting ahead of it cannot take its slot.
   useEffect(() => {
-    if (mode === 'mosaic' || mainsKey === '') return;
-    setPinned((current) => {
-      const shown = mainsKey.split('|');
-      const next = [...shown, ...current.filter((id) => !shown.includes(id))];
-      return next.join('|') === current.join('|') ? current : next;
-    });
-  }, [mode, mainsKey]);
+    if (!spotlightId) return;
+    setPinned((current) =>
+      current[0] === spotlightId
+        ? current
+        : [spotlightId, ...current.filter((id) => id !== spotlightId)],
+    );
+  }, [spotlightId]);
+
+  useEffect(() => {
+    if (!fullscreen.isFullscreen) setFullscreenId(null);
+  }, [fullscreen.isFullscreen]);
 
   // Going live puts your own preview first.
   useEffect(() => {
@@ -401,8 +406,7 @@ export default function RemoteGrid({
     }
   }, [hasLocal]);
 
-  const focusKey =
-    mode === 'mosaic' && remoteMains.length > MOSAIC_HIGH_LIMIT ? '' : remoteMains.join('|');
+  const focusKey = remoteMains.length > MOSAIC_HIGH_LIMIT ? '' : remoteMains.join('|');
   useEffect(() => {
     onFocusChange(focusKey ? focusKey.split('|') : []);
   }, [focusKey, onFocusChange]);
@@ -427,7 +431,17 @@ export default function RemoteGrid({
   }
 
   function promote(id: string) {
-    setPinned((current) => [id, ...current.filter((other) => other !== id)]);
+    if (fullId) setFullscreenId(id);
+    else setPinned((current) => [id, ...current.filter((other) => other !== id)]);
+  }
+
+  function toggleFullscreenFor(id: string) {
+    if (fullscreen.isFullscreen) {
+      void fullscreen.toggle();
+    } else {
+      setFullscreenId(id);
+      void fullscreen.toggle();
+    }
   }
 
   function audioFor(id: string): AudioSetting {
@@ -481,13 +495,17 @@ export default function RemoteGrid({
   }
 
   const screenById = new Map(screens.map((screen) => [screen.participantIdentity, screen]));
-  const thumbs = mode === 'mosaic' ? [] : candidates.filter((id) => !mains.includes(id));
-  const loadingThumbs = mode === 'mosaic' ? [] : loadingBroadcasts;
+  const showStrip = Boolean(fullId) || mode === 'spotlight';
+  const thumbs = showStrip ? candidates.filter((id) => !mains.includes(id)) : [];
+  const loadingThumbs = showStrip ? loadingBroadcasts : [];
   const stripCount = thumbs.length + loadingThumbs.length;
   const columns = mains.length <= 1 ? 1 : mains.length <= 4 ? 2 : 3;
 
   function renderTile(id: string) {
-    if (id === LOCAL_SPOTLIGHT) return local?.stage ?? null;
+    const toggle = () => toggleFullscreenFor(id);
+    if (id === LOCAL_SPOTLIGHT) {
+      return local?.renderStage({ active: fullscreen.isFullscreen, toggle }) ?? null;
+    }
     const screen = screenById.get(id);
     if (!screen) return null;
     return (
@@ -497,11 +515,13 @@ export default function RemoteGrid({
         onAudioChange={(next) => setAudio((current) => ({ ...current, [id]: next }))}
         qualityMode={qualityMode}
         onQualityModeChange={onQualityModeChange}
+        isFullscreen={fullscreen.isFullscreen}
+        onToggleFullscreen={toggle}
       />
     );
   }
 
-  const paired = mode === 'pair' && mains.length === 2;
+  const paired = !fullId && mode === 'mosaic' && mains.length === 2;
   const [left, right] = mains;
 
   const mainsView = paired ? (
@@ -550,10 +570,10 @@ export default function RemoteGrid({
 
   return (
     <section className="broadcast-layout">
-      <div className="stage-area">
+      <div className={`stage-area${fullscreen.idle ? ' idle' : ''}`} ref={areaRef}>
         {mainsView}
 
-        {candidates.length > 1 && (
+        {candidates.length > 1 && !fullId && (
           <div className="layout-switch" role="group" aria-label="Layout">
             {LAYOUTS.map((layout) => (
               <button
