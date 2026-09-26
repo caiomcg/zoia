@@ -20,10 +20,12 @@ Join tokens remain subscribe-only; `stage.js` grants and revokes publish rights
 for the requesting participant only. The WHIP path applies the same per-owner
 check.
 
-The desktop client keeps remote publications independently selectable. It
-renders selected broadcasts in a grid and unsubscribes from deselected video and
-audio publications to avoid downloading streams the viewer did not choose. The browser viewer
-uses the same selection model. Each publisher advertises a small source label (for example,
+The desktop client shows one broadcast in a spotlight and every other one as a
+small thumbnail along the bottom, labelled with the sharer's avatar and source
+name. A broadcast that starts later joins the strip rather than taking the
+picture; clicking a thumbnail moves it up. Only the spotlight plays audio and
+requests the high simulcast layer, so thumbnails cost little. The browser viewer
+keeps an explicit selection model, and unsubscribes from deselected broadcasts. Each publisher advertises a small source label (for example,
 window name or screen name) as LiveKit participant metadata so viewers can distinguish similar
 broadcasts.
 
@@ -33,7 +35,8 @@ broadcasts.
 - Each participant remains limited to one application-owned broadcast slot.
 - Viewers can watch one, several, or none of the active broadcasts.
 - Server upstream bandwidth grows with the number of active streams and viewers.
-- Viewers see the broadcaster and source identity, while keeping only one stream's audio active
-  by default; quality, focus and audio-only controls limit unnecessary bandwidth.
+- Viewers see the broadcaster and source identity, and hear only the spotlight.
+- Hardware (WHIP) broadcasts publish a single layer, so their thumbnails are not
+  cheaper than the spotlight; only in-app broadcasts benefit from the low layer.
 - The old takeover UI and global-holder semantics are no longer part of the
   broadcast flow.

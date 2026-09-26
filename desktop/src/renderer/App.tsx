@@ -3,7 +3,7 @@ import Banner from './components/Banner';
 import CameraDialog from './components/CameraDialog';
 import PairingScreen from './components/PairingScreen';
 import Player from './components/Player';
-import RemoteGrid, { type LoadingBroadcast } from './components/RemoteGrid';
+import RemoteGrid, { LOCAL_SPOTLIGHT, type LoadingBroadcast } from './components/RemoteGrid';
 import Sidebar from './components/Sidebar';
 import SourcePicker from './components/SourcePicker';
 import StatusLight, { type StatusTone } from './components/StatusLight';
@@ -33,7 +33,8 @@ export default function App() {
   const [remoteQualityMode, setRemoteQualityMode] = useState<RemoteQualityMode>(() =>
     localStorage.getItem(REMOTE_QUALITY_STORAGE_KEY) === 'low' ? 'low' : 'auto',
   );
-  const [focusedRemoteId, setFocusedRemoteId] = useState<string | null>(null);
+  // What the viewer clicked into the spotlight; null means "the default".
+  const [spotlightChoice, setSpotlightChoice] = useState<string | null>(null);
   const [gpu, setGpu] = useState<GpuStatus | null>(null);
   const [stageError, setStageError] = useState<string | null>(null);
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
@@ -50,7 +51,7 @@ export default function App() {
 
   const room = useRoom();
   const gpuCast = useGpuBroadcast();
-  const { setRemoteQualityMode: applyRemoteQualityMode } = room;
+  const { setRemoteQualityMode: applyRemoteQualityMode, setRemoteFocus } = room;
 
   // The rest of the app still thinks in terms of which path is publishing.
   const mode: BroadcastMode = hardware ? 'gpu' : 'window';
@@ -62,6 +63,29 @@ export default function App() {
 
   const isLive = room.broadcastState === 'live' || gpuCast.state === 'live';
   const isStarting = room.broadcastState === 'starting' || gpuCast.state === 'starting';
+
+  // Your own preview leads while you are live, otherwise the first broadcast
+  // does. A choice sticks until its broadcast ends; later broadcasts join the
+  // thumbnail strip instead of taking the picture.
+  const chosenIsLive =
+    spotlightChoice === LOCAL_SPOTLIGHT
+      ? isLive
+      : room.remoteScreens.some((screen) => screen.participantIdentity === spotlightChoice);
+  const spotlight = chosenIsLive
+    ? spotlightChoice
+    : isLive
+      ? LOCAL_SPOTLIGHT
+      : (room.remoteScreens[0]?.participantIdentity ?? null);
+
+  // Going live, or stopping, returns the spotlight to its default.
+  useEffect(() => {
+    setSpotlightChoice(null);
+  }, [isLive]);
+
+  // Only the spotlight asks for full quality; thumbnails take the low layer.
+  useEffect(() => {
+    setRemoteFocus(spotlight ?? LOCAL_SPOTLIGHT);
+  }, [spotlight, setRemoteFocus]);
 
   useEffect(() => {
     window.zoia.pairing.status().then(setStatus);
@@ -316,71 +340,52 @@ export default function App() {
       )}
 
       <div className="body">
-        <main className={`main${isLive && room.remoteScreens.length > 0 ? ' with-remote' : ''}`}>
-          {isLive && (
-            <Player
-              remoteScreen={null}
-              localTrack={room.localTrack}
-              audioLevel={room.audioLevel}
-              canMonitor={room.canMonitor}
-              setMonitorGain={room.setMonitorGain}
-              gpuBroadcasting={gpuLive}
-              onStop={() => void stopSharing()}
-              onSwitch={() => setPickerOpen(true)}
-            />
-          )}
-          {/* Broadcasting yourself is no reason to stop seeing everyone else:
-              while live, the grid sits under your own preview whenever anyone
-              else is on. */}
-          {(!isLive || room.remoteScreens.length > 0) && (
-            <RemoteGrid
-              screens={room.remoteScreens}
-              loadingBroadcasts={loadingBroadcasts}
-              showOnboarding={showOnboarding && room.state === 'connected'}
-              onStartSharing={() => {
-                dismissOnboarding();
-                setPickerOpen(true);
-              }}
-              onDismissOnboarding={dismissOnboarding}
-              qualityMode={remoteQualityMode}
-              focusedIdentity={focusedRemoteId}
-              onQualityModeChange={(mode) => {
-                setRemoteQualityMode(mode);
-                localStorage.setItem(REMOTE_QUALITY_STORAGE_KEY, mode);
-                room.setRemoteQualityMode(mode);
-              }}
-              onFocusChange={(identity) => {
-                setFocusedRemoteId(identity);
-                room.setRemoteFocus(identity);
-              }}
-              onToggleAudioOnly={room.setRemoteAudioOnly}
-            />
-          )}
+        <main className="main">
+          <RemoteGrid
+            screens={room.remoteScreens}
+            spotlight={spotlight}
+            onSpotlight={setSpotlightChoice}
+            local={
+              isLive
+                ? {
+                    stage: (
+                      <Player
+                        remoteScreen={null}
+                        localTrack={room.localTrack}
+                        audioLevel={room.audioLevel}
+                        canMonitor={room.canMonitor}
+                        setMonitorGain={room.setMonitorGain}
+                        gpuBroadcasting={gpuLive}
+                        onStop={() => void stopSharing()}
+                        onSwitch={() => setPickerOpen(true)}
+                      />
+                    ),
+                    track: room.localTrack,
+                    name: status.deviceName ?? 'You',
+                  }
+                : undefined
+            }
+            loadingBroadcasts={loadingBroadcasts}
+            showOnboarding={showOnboarding && room.state === 'connected'}
+            onStartSharing={() => {
+              dismissOnboarding();
+              setPickerOpen(true);
+            }}
+            onDismissOnboarding={dismissOnboarding}
+            qualityMode={remoteQualityMode}
+            onQualityModeChange={(mode) => {
+              setRemoteQualityMode(mode);
+              localStorage.setItem(REMOTE_QUALITY_STORAGE_KEY, mode);
+              room.setRemoteQualityMode(mode);
+            }}
+          />
         </main>
 
         <Sidebar
           members={room.members}
           myName={status.deviceName ?? 'You'}
           onRename={handleRename}
-          selectedRemoteIds={room.selectedRemoteIds}
           loadingRemoteIds={loadingRemoteIds}
-          onToggleRemote={(identity) => {
-            void room.setRemoteSubscription(identity, !room.selectedRemoteIds.has(identity));
-          }}
-          onWatchAll={() => {
-            void Promise.all(
-              room.members
-                .filter((member) => member.isBroadcasting && !member.isLocal)
-                .map((member) => room.setRemoteSubscription(member.identity, true)),
-            );
-          }}
-          onWatchNone={() => {
-            void Promise.all(
-              room.members
-                .filter((member) => member.isBroadcasting && !member.isLocal)
-                .map((member) => room.setRemoteSubscription(member.identity, false)),
-            );
-          }}
         />
       </div>
 
