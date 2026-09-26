@@ -20,7 +20,9 @@ Join tokens remain subscribe-only; `stage.js` grants and revokes publish rights
 for the requesting participant only. The WHIP path applies the same per-owner
 check.
 
-The desktop client shows one broadcast in a spotlight and every other one as a
+Nothing opens by itself: someone joining sees a dark stage and every broadcast
+as a blurred, silent thumbnail, and chooses to watch one or only to listen to
+it. Volume starts at half. The desktop client shows one broadcast in a spotlight and every other one as a
 small thumbnail along the bottom, labelled with the sharer's avatar and source
 name. A broadcast that starts later joins the strip rather than taking the
 picture; clicking a thumbnail moves it up. The alternative is a mosaic: two

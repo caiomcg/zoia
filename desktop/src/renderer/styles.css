@@ -434,24 +434,56 @@ button:disabled {
   background: var(--accent);
 }
 
+/* Pointer away from the picture: the controls tuck away and the thumbnails
+   sit low. Pointer on it: the controls come up, and push the thumbnails up
+   above them so neither covers the other. */
+.stage-area .thumb-overlay {
+  transition:
+    bottom 0.15s ease,
+    opacity 0.2s ease;
+}
+
+.stage-area .player-controls,
+.stage-area .live-controls {
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.stage-area:hover .thumb-overlay,
+.stage-area:focus-within .thumb-overlay {
+  bottom: 60px;
+}
+
+.stage-area:hover .remote-tile-footer,
+.stage-area:hover .player-controls,
+.stage-area:hover .live-controls,
+.stage-area .player-controls:focus-within,
+.stage-area .live-controls:focus-within {
+  opacity: 1;
+}
+
 /* Fullscreen and untouched for a few seconds: everything laid over the
    picture fades out, the cursor included, until the mouse moves. */
-.stage-area .thumb-overlay,
 .stage-area .layout-switch {
   transition: opacity 0.2s ease;
 }
 
-.stage-area.idle {
-  cursor: none;
+/* Children set their own cursors (pointer on buttons, col-resize on the
+   split), so the whole subtree is told, not just the area. */
+.stage-area.idle,
+.stage-area.idle * {
+  cursor: none !important;
 }
 
 .stage-area.idle .thumb-overlay,
 .stage-area.idle .layout-switch,
 .stage-area.idle .remote-tile-footer,
-.stage-area.idle .remote-tile:hover .remote-tile-footer,
+.stage-area.idle:hover .remote-tile-footer,
 .stage-area.idle .remote-tile:focus-within .remote-tile-footer,
 .stage-area.idle .player-controls,
-.stage-area.idle .live-controls {
+.stage-area.idle:hover .player-controls,
+.stage-area.idle .live-controls,
+.stage-area.idle:hover .live-controls {
   opacity: 0;
   pointer-events: none;
 }
@@ -462,7 +494,7 @@ button:disabled {
 .thumb-overlay {
   position: absolute;
   right: 12px;
-  bottom: 60px;
+  bottom: 12px;
   left: 12px;
   z-index: 2;
   display: flex;
@@ -505,28 +537,87 @@ button:disabled {
   position: relative;
   flex: 0 0 176px;
   height: 99px;
-  padding: 0;
   overflow: hidden;
   background: #050608;
   border: 1px solid rgb(255 255 255 / 0.18);
   border-radius: 8px;
   box-shadow: 0 4px 14px rgb(0 0 0 / 0.5);
-  cursor: pointer;
 }
 
-.thumb:hover:not(:disabled) {
+.thumb:hover,
+.thumb.listening {
   border-color: var(--accent);
 }
 
-.thumb:disabled {
+.thumb-watch {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  padding: 0;
+  overflow: hidden;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.thumb-watch:disabled {
   cursor: default;
 }
 
+/* Blurred: a hint of what is on, not a picture to watch. Scaled a touch so
+   the blur does not soften the edges into the frame. */
 .thumb video {
   display: block;
   width: 100%;
   height: 100%;
   object-fit: cover;
+  filter: blur(6px) brightness(0.8);
+  transform: scale(1.08);
+}
+
+.thumb-actions {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.thumb:hover .thumb-actions,
+.thumb:focus-within .thumb-actions,
+.thumb.listening .thumb-actions {
+  opacity: 1;
+}
+
+.thumb-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  color: #fff;
+  background: rgb(0 0 0 / 0.65);
+  border: 1px solid rgb(255 255 255 / 0.2);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.thumb-action:hover {
+  background: rgb(0 0 0 / 0.85);
+}
+
+.thumb-action.active {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.thumb-action svg {
+  width: 16px;
+  height: 16px;
 }
 
 .thumb-label {
@@ -567,13 +658,24 @@ button:disabled {
   display: block;
 }
 
-.remote-audio-controls select {
-  padding: 3px 5px;
-  color: var(--text);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 4px;
+/* On by default; turning it off greys it out and asks for the low layer. */
+.remote-tile-footer .hq-toggle {
+  height: 24px;
+  padding: 0 7px;
   font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: rgb(255 255 255 / 0.4);
+  background: transparent;
+  border: 1px solid rgb(255 255 255 / 0.25);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.remote-tile-footer .hq-toggle.active {
+  color: #fff;
+  background: var(--accent);
+  border-color: var(--accent);
 }
 
 .remote-tile {
@@ -616,7 +718,6 @@ button:disabled {
   transition: opacity 0.15s ease;
 }
 
-.remote-tile:hover .remote-tile-footer,
 .remote-tile:focus-within .remote-tile-footer {
   opacity: 1;
 }
