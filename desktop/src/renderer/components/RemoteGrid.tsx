@@ -2,15 +2,46 @@ import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'rea
 import type { LocalVideoTrack, RemoteTrack } from 'livekit-client';
 import type { RemoteQualityMode, RemoteScreen } from '../livekit/useRoom';
 import Avatar from './Avatar';
+import { IconVolume } from './Player';
 
 /**
  * One broadcast in the spotlight, every other one as a small thumbnail along
  * the bottom. A broadcast that starts later joins the strip rather than taking
  * over the picture; clicking a thumbnail is what moves it up.
  *
- * Only the spotlight plays audio and asks for full quality. Thumbnails are
- * muted and, through setRemoteFocus, request the lowest simulcast layer.
+ * The strip floats over the bottom of the picture, clear of the player's
+ * controls, and can be tucked away. Only the spotlight plays audio and asks for
+ * full quality. Thumbnails are muted and, through setRemoteFocus, request the
+ * low simulcast layer.
  */
+
+const STRIP_HIDDEN_KEY = 'zoia.thumbnailsHidden';
+
+function readStripHidden(): boolean {
+  try {
+    return localStorage.getItem(STRIP_HIDDEN_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+function IconChevron({ up }: { up: boolean }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="16"
+      height="16"
+      aria-hidden="true"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d={up ? 'M6 15l6-6 6 6' : 'M6 9l6 6 6-6'} />
+    </svg>
+  );
+}
 
 /** Stands in for "your own broadcast" wherever a spotlight identity goes. */
 export const LOCAL_SPOTLIGHT = '__local__';
@@ -81,8 +112,13 @@ function SpotlightTile({
         <div className="remote-audio-controls">
           {screen.audioTrack && (
             <>
-              <button onClick={() => setMuted((current) => !current)}>
-                {muted ? 'Ativar áudio' : 'Silenciar'}
+              <button
+                className="icon-button"
+                onClick={() => setMuted((current) => !current)}
+                title={muted ? 'Ativar áudio' : 'Silenciar'}
+                aria-label={muted ? 'Ativar áudio' : 'Silenciar'}
+              >
+                <IconVolume muted={muted || volume === 0} />
               </button>
               {!muted && (
                 <input
@@ -98,14 +134,18 @@ function SpotlightTile({
               )}
             </>
           )}
-          <select
-            value={qualityMode}
-            onChange={(event) => onQualityModeChange?.(event.target.value as RemoteQualityMode)}
-            aria-label="Qualidade"
-          >
-            <option value="auto">Qualidade automática</option>
-            <option value="low">Qualidade baixa</option>
-          </select>
+          {/* A hardware (WHIP) broadcast has one layer; offering a choice that
+              changes nothing would be a lie. */}
+          {screen.simulcast && (
+            <select
+              value={qualityMode}
+              onChange={(event) => onQualityModeChange?.(event.target.value as RemoteQualityMode)}
+              aria-label="Qualidade"
+            >
+              <option value="auto">Qualidade automática</option>
+              <option value="low">Qualidade baixa</option>
+            </select>
+          )}
         </div>
       </div>
     </article>
@@ -162,6 +202,19 @@ export default function RemoteGrid({
   qualityMode?: RemoteQualityMode;
   onQualityModeChange?: (mode: RemoteQualityMode) => void;
 }) {
+  const [stripHidden, setStripHidden] = useState(readStripHidden);
+
+  function toggleStrip() {
+    setStripHidden((current) => {
+      try {
+        localStorage.setItem(STRIP_HIDDEN_KEY, String(!current));
+      } catch {
+        // Remembering the choice is a convenience; the toggle still works.
+      }
+      return !current;
+    });
+  }
+
   if (screens.length === 0 && !local) {
     return (
       <section className="stage remote-empty">
@@ -213,6 +266,8 @@ export default function RemoteGrid({
   const showLocalThumb = Boolean(local) && Boolean(main);
   const hasStrip = others.length > 0 || showLocalThumb || loadingBroadcasts.length > 0;
 
+  const stripCount = others.length + (showLocalThumb ? 1 : 0) + loadingBroadcasts.length;
+
   return (
     <section className="broadcast-layout">
       <div className="spotlight">
@@ -226,37 +281,50 @@ export default function RemoteGrid({
         ) : (
           local?.stage
         )}
-      </div>
 
-      {hasStrip && (
-        <div className="thumb-strip">
-          {showLocalThumb && local && (
-            <Thumbnail
-              name={local.name}
-              label="Sua transmissão"
-              video={local.track}
-              onSelect={() => onSpotlight(LOCAL_SPOTLIGHT)}
-            />
-          )}
-          {others.map((screen) => (
-            <Thumbnail
-              key={screen.participantIdentity}
-              name={screen.participantName}
-              label={sourceText(screen.sourceName, screen.sourceKind)}
-              video={screen.videoTrack}
-              onSelect={() => onSpotlight(screen.participantIdentity)}
-            />
-          ))}
-          {loadingBroadcasts.map((broadcast) => (
-            <Thumbnail
-              key={broadcast.identity}
-              name={broadcast.name}
-              label="Carregando…"
-              video={null}
-            />
-          ))}
-        </div>
-      )}
+        {hasStrip && (
+          <div className={`thumb-overlay${stripHidden ? ' collapsed' : ''}`}>
+            <button
+              className="thumb-toggle"
+              onClick={toggleStrip}
+              aria-expanded={!stripHidden}
+              title={stripHidden ? 'Mostrar transmissões' : 'Ocultar transmissões'}
+            >
+              <IconChevron up={stripHidden} />
+              {stripHidden ? `${stripCount}` : null}
+            </button>
+            {!stripHidden && (
+              <div className="thumb-strip">
+                {showLocalThumb && local && (
+                  <Thumbnail
+                    name={local.name}
+                    label="Sua transmissão"
+                    video={local.track}
+                    onSelect={() => onSpotlight(LOCAL_SPOTLIGHT)}
+                  />
+                )}
+                {others.map((screen) => (
+                  <Thumbnail
+                    key={screen.participantIdentity}
+                    name={screen.participantName}
+                    label={sourceText(screen.sourceName, screen.sourceKind)}
+                    video={screen.videoTrack}
+                    onSelect={() => onSpotlight(screen.participantIdentity)}
+                  />
+                ))}
+                {loadingBroadcasts.map((broadcast) => (
+                  <Thumbnail
+                    key={broadcast.identity}
+                    name={broadcast.name}
+                    label="Carregando…"
+                    video={null}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </section>
   );
 }
