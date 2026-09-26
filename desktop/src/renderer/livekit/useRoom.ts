@@ -36,21 +36,22 @@ function ownerIdentity(identity: string): string {
 function applyRemoteMediaSettings(
   room: Room,
   selected: Set<string>,
-  qualityMode: RemoteQualityMode,
-  // Broadcasts shown large. null means no layout has said yet: everything high.
+  // Broadcasts that get the high layer. null means no layout has said yet:
+  // everything high.
   focused: ReadonlySet<string> | null,
+  // Broadcasts whose video the server should stop forwarding for now. Their
+  // audio keeps flowing; thumbnails resume video only to take a snapshot.
+  paused: ReadonlySet<string>,
 ): void {
   for (const participant of room.remoteParticipants.values()) {
     const identity = ownerIdentity(participant.identity);
     const subscribed = selected.has(identity);
-    const quality =
-      qualityMode === 'low' || (focused && !focused.has(identity))
-        ? VideoQuality.LOW
-        : VideoQuality.HIGH;
+    const quality = focused && !focused.has(identity) ? VideoQuality.LOW : VideoQuality.HIGH;
     for (const publication of participant.videoTrackPublications.values()) {
       try {
         publication.setSubscribed(subscribed);
         publication.setVideoQuality(quality);
+        if (subscribed) publication.setEnabled(!paused.has(identity));
       } catch {
         // The participant may leave while settings are being applied.
       }
@@ -82,8 +83,6 @@ export interface RemoteScreen {
  * asking for a lower quality does nothing. Costs the broadcaster ~400 kbps.
  */
 const LOW_LAYER = [ScreenSharePresets.h360fps15];
-
-export type RemoteQualityMode = 'auto' | 'low';
 
 /**
  * Read from the live RTP sender rather than inferred from GPU feature flags:
@@ -221,7 +220,7 @@ export function useRoom() {
   const [roomNotice, setRoomNotice] = useState<string | null>(null);
   const [remoteScreens, setRemoteScreens] = useState<RemoteScreen[]>([]);
   const selectedRemoteIdsRef = useRef<Set<string>>(new Set());
-  const remoteQualityModeRef = useRef<RemoteQualityMode>('auto');
+  const pausedRemoteIdsRef = useRef<ReadonlySet<string>>(new Set());
   const focusedRemoteIdsRef = useRef<ReadonlySet<string> | null>(null);
   // Owners who were publishing at the last refresh. Whoever appears in the
   // next one and not here started broadcasting since, and is watched by default.
@@ -333,8 +332,8 @@ export function useRoom() {
         applyRemoteMediaSettings(
           room,
           nextSelected,
-          remoteQualityModeRef.current,
           focusedRemoteIdsRef.current,
+          pausedRemoteIdsRef.current,
         );
         setRemoteScreens(findRemoteScreens(room));
         setParticipantCount(room.remoteParticipants.size);
@@ -466,26 +465,13 @@ export function useRoom() {
     setRoomNotice(null);
     setRemoteScreens([]);
     knownBroadcastersRef.current = new Set();
-    remoteQualityModeRef.current = 'auto';
+    pausedRemoteIdsRef.current = new Set();
     focusedRemoteIdsRef.current = null;
     selectedRemoteIdsRef.current = new Set();
     setSelectedRemoteIds(new Set());
   }, []);
 
-  const setRemoteQualityMode = useCallback((mode: RemoteQualityMode) => {
-    remoteQualityModeRef.current = mode;
-    const room = roomRef.current;
-    if (room) {
-      applyRemoteMediaSettings(
-        room,
-        selectedRemoteIdsRef.current,
-        mode,
-        focusedRemoteIdsRef.current,
-      );
-    }
-  }, []);
-
-  /** The broadcasts shown large get the high layer; everything else, the low. */
+  /** The broadcasts shown large with HQ on get the high layer; the rest, the low. */
   const setRemoteFocus = useCallback((identities: readonly string[]) => {
     const focused = new Set(identities);
     focusedRemoteIdsRef.current = focused;
@@ -494,8 +480,23 @@ export function useRoom() {
       applyRemoteMediaSettings(
         room,
         selectedRemoteIdsRef.current,
-        remoteQualityModeRef.current,
         focused,
+        pausedRemoteIdsRef.current,
+      );
+    }
+  }, []);
+
+  /** Stops video (not audio) for these broadcasts until they are unpaused. */
+  const setRemotePaused = useCallback((identities: readonly string[]) => {
+    const paused = new Set(identities);
+    pausedRemoteIdsRef.current = paused;
+    const room = roomRef.current;
+    if (room) {
+      applyRemoteMediaSettings(
+        room,
+        selectedRemoteIdsRef.current,
+        focusedRemoteIdsRef.current,
+        paused,
       );
     }
   }, []);
@@ -796,7 +797,7 @@ export function useRoom() {
     isReconnecting,
     roomNotice,
     clearRoomNotice: useCallback(() => setRoomNotice(null), []),
-    setRemoteQualityMode,
+    setRemotePaused,
     setRemoteFocus,
     participantCount,
     members,
