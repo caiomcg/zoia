@@ -13,16 +13,24 @@
  * locked behind them.
  */
 
+/*
+ * LiveKit replaces a participant's permission wholesale; a field left out is
+ * false. canUpdateMetadata must be restated here or a claim silently takes
+ * away what the join token granted, and the client's setMetadata (the source
+ * label) and setName (a rename) are refused from then on.
+ */
 const PUBLISH_PERMISSION = {
   canSubscribe: true,
   canPublish: true,
   canPublishData: true,
+  canUpdateMetadata: true,
 };
 
 const VIEW_PERMISSION = {
   canSubscribe: true,
   canPublish: false,
   canPublishData: true,
+  canUpdateMetadata: true,
 };
 
 /**
