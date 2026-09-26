@@ -301,38 +301,102 @@ button:disabled {
   object-fit: contain;
 }
 
-.remote-grid {
+/* ---- broadcasts: one in the spotlight, the rest along the bottom -------- */
+
+.broadcast-layout {
+  flex: 1;
+  min-width: 0;
   min-height: 0;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  display: flex;
+  flex-direction: column;
   gap: 10px;
-  padding: 10px;
-  overflow: auto;
-  background: #0b0c0e;
 }
 
-.remote-grid.count-1 {
-  grid-template-columns: minmax(0, 1fr);
+.spotlight {
+  flex: 1;
+  min-height: 0;
+  display: flex;
 }
 
-.remote-grid-toolbar {
-  grid-column: 1 / -1;
+.spotlight > * {
+  flex: 1;
+  min-width: 0;
+}
+
+.thumb-strip {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.thumb {
+  position: relative;
+  flex: 0 0 176px;
+  height: 99px;
+  padding: 0;
+  overflow: hidden;
+  background: #050608;
+  border: 1px solid #282c32;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.thumb:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.thumb:disabled {
+  cursor: default;
+}
+
+.thumb video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.thumb-label {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 2px 2px 0;
-  color: var(--muted);
+  gap: 6px;
+  padding: 14px 7px 6px;
+  color: #fff;
   font-size: 11px;
+  text-align: left;
+  background: linear-gradient(transparent, rgb(0 0 0 / 0.8));
 }
 
-.remote-grid-toolbar label {
+.thumb-label > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.thumb .avatar {
+  width: 20px;
+  height: 20px;
+  font-size: 8px;
+}
+
+.remote-tile-who {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 8px;
+  min-width: 0;
 }
 
-.remote-grid-toolbar select {
+.remote-tile-who .stream-source {
+  display: block;
+}
+
+.remote-audio-controls select {
   padding: 3px 5px;
   color: var(--text);
   background: var(--surface);
@@ -360,12 +424,6 @@ button:disabled {
   background: #050608;
 }
 
-.audio-only-tile video {
-  flex: 0 0 0;
-  min-height: 0;
-  height: 0;
-}
-
 .remote-tile-footer {
   display: flex;
   align-items: center;
@@ -376,27 +434,12 @@ button:disabled {
   font-size: 12px;
 }
 
-.remote-tile-actions {
-  display: flex;
-  gap: 5px;
-  margin-left: auto;
-}
-
 .remote-audio-controls {
   display: flex;
   align-items: center;
   justify-content: flex-end;
   gap: 6px;
   flex-wrap: wrap;
-}
-
-.remote-audio-label {
-  color: var(--muted);
-  font-size: 11px;
-}
-
-.remote-audio-label.active {
-  color: var(--accent);
 }
 
 .remote-volume {
@@ -415,43 +458,6 @@ button:disabled {
 
 .remote-empty {
   position: relative;
-}
-
-.live-heading-row {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.live-count {
-  color: var(--muted);
-  font-size: 11px;
-  white-space: nowrap;
-}
-
-.live-actions {
-  display: flex;
-  gap: 6px;
-  margin: -2px 0 8px;
-}
-
-.live-actions button,
-.watch-button {
-  padding: 4px 7px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  color: var(--muted);
-  background: transparent;
-  cursor: pointer;
-  font-size: 11px;
-}
-
-.live-actions button:hover,
-.watch-button:hover,
-.watch-button[aria-pressed='true'] {
-  border-color: var(--accent);
-  color: var(--accent);
 }
 
 /* Flex column rather than a grid: with auto rows the two lines were placed
@@ -932,16 +938,6 @@ button.danger {
   padding: 12px;
 }
 
-/* Live with others on: your own preview on top, everyone else beneath it. */
-.main.with-remote {
-  flex-direction: column;
-  gap: 10px;
-}
-
-.main.with-remote .remote-grid {
-  flex: 0 0 42%;
-}
-
 .main .stage {
   flex: 1;
   overflow: hidden;
@@ -1009,7 +1005,6 @@ button.danger {
   color: #fff;
 }
 
-.broadcast-source,
 .stream-source {
   color: #9ba3af;
   font-size: 12px;
