@@ -23,7 +23,9 @@ check.
 The desktop client shows one broadcast in a spotlight and every other one as a
 small thumbnail along the bottom, labelled with the sharer's avatar and source
 name. A broadcast that starts later joins the strip rather than taking the
-picture; clicking a thumbnail moves it up. Only the spotlight plays audio and
+picture; clicking a thumbnail moves it up. Viewers can switch to two broadcasts
+side by side, or to a mosaic of all of them; volume and mute are kept per person
+across those moves. Only the spotlight plays audio and
 requests the high simulcast layer, so thumbnails cost little. The browser viewer
 keeps an explicit selection model, and unsubscribes from deselected broadcasts. Each publisher advertises a small source label (for example,
 window name or screen name) as LiveKit participant metadata so viewers can distinguish similar

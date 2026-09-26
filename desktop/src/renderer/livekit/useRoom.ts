@@ -37,13 +37,14 @@ function applyRemoteMediaSettings(
   room: Room,
   selected: Set<string>,
   qualityMode: RemoteQualityMode,
-  focusedIdentity: string | null,
+  // Broadcasts shown large. null means no layout has said yet: everything high.
+  focused: ReadonlySet<string> | null,
 ): void {
   for (const participant of room.remoteParticipants.values()) {
     const identity = ownerIdentity(participant.identity);
     const subscribed = selected.has(identity);
     const quality =
-      qualityMode === 'low' || (focusedIdentity && focusedIdentity !== identity)
+      qualityMode === 'low' || (focused && !focused.has(identity))
         ? VideoQuality.LOW
         : VideoQuality.HIGH;
     for (const publication of participant.videoTrackPublications.values()) {
@@ -221,7 +222,7 @@ export function useRoom() {
   const [remoteScreens, setRemoteScreens] = useState<RemoteScreen[]>([]);
   const selectedRemoteIdsRef = useRef<Set<string>>(new Set());
   const remoteQualityModeRef = useRef<RemoteQualityMode>('auto');
-  const focusedRemoteIdRef = useRef<string | null>(null);
+  const focusedRemoteIdsRef = useRef<ReadonlySet<string> | null>(null);
   // Owners who were publishing at the last refresh. Whoever appears in the
   // next one and not here started broadcasting since, and is watched by default.
   const knownBroadcastersRef = useRef<Set<string>>(new Set());
@@ -333,7 +334,7 @@ export function useRoom() {
           room,
           nextSelected,
           remoteQualityModeRef.current,
-          focusedRemoteIdRef.current,
+          focusedRemoteIdsRef.current,
         );
         setRemoteScreens(findRemoteScreens(room));
         setParticipantCount(room.remoteParticipants.size);
@@ -466,7 +467,7 @@ export function useRoom() {
     setRemoteScreens([]);
     knownBroadcastersRef.current = new Set();
     remoteQualityModeRef.current = 'auto';
-    focusedRemoteIdRef.current = null;
+    focusedRemoteIdsRef.current = null;
     selectedRemoteIdsRef.current = new Set();
     setSelectedRemoteIds(new Set());
   }, []);
@@ -479,20 +480,22 @@ export function useRoom() {
         room,
         selectedRemoteIdsRef.current,
         mode,
-        focusedRemoteIdRef.current,
+        focusedRemoteIdsRef.current,
       );
     }
   }, []);
 
-  const setRemoteFocus = useCallback((identity: string | null) => {
-    focusedRemoteIdRef.current = identity;
+  /** The broadcasts shown large get the high layer; everything else, the low. */
+  const setRemoteFocus = useCallback((identities: readonly string[]) => {
+    const focused = new Set(identities);
+    focusedRemoteIdsRef.current = focused;
     const room = roomRef.current;
     if (room) {
       applyRemoteMediaSettings(
         room,
         selectedRemoteIdsRef.current,
         remoteQualityModeRef.current,
-        identity,
+        focused,
       );
     }
   }, []);
