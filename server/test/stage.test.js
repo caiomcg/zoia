@@ -96,6 +96,22 @@ describe('independent slots', () => {
   });
 });
 
+describe('metadata rights', () => {
+  // LiveKit replaces the whole permission, so anything not restated is lost.
+  // Losing canUpdateMetadata breaks the source label and renames mid-broadcast.
+  test('claiming keeps the right to update your own metadata', async () => {
+    participants = [participant('alice')];
+    await stage.claim({ id: 'alice', name: 'Alice' });
+    assert.equal(updates.at(-1).permission.canUpdateMetadata, true);
+  });
+
+  test('releasing keeps it too', async () => {
+    participants = [participant('alice', { canPublish: true })];
+    await stage.release({ id: 'alice', name: 'Alice' });
+    assert.equal(updates.at(-1).permission.canUpdateMetadata, true);
+  });
+});
+
 describe('releasing', () => {
   test('the holder can release, and permission is revoked', async () => {
     participants = [participant('alice', { canPublish: true })];
