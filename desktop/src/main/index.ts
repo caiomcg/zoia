@@ -195,7 +195,7 @@ function registerIpc(): void {
   ipcMain.handle(IPC.gpuStatus, () => gpuStatus);
 
   ipcMain.handle(IPC.stageGet, () => api.stageGet());
-  ipcMain.handle(IPC.stageClaim, (_event, force?: boolean) => api.stageClaim(force === true));
+  ipcMain.handle(IPC.stageClaim, () => api.stageClaim());
   ipcMain.handle(IPC.stageRelease, () => api.stageRelease());
 
   ipcMain.handle(IPC.sourcesList, () => sources.listSources());

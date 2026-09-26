@@ -129,7 +129,7 @@ export default function App() {
     if (!switching) {
       const claim = await window.zoia.stage.claim();
       if (!claim.ok) {
-        setStageError('Could not claim your broadcast slot.');
+        setStageError('Não foi possível iniciar sua transmissão.');
         return;
       }
     }
@@ -316,8 +316,8 @@ export default function App() {
       )}
 
       <div className="body">
-        <main className="main">
-          {isLive ? (
+        <main className={`main${isLive && room.remoteScreens.length > 0 ? ' with-remote' : ''}`}>
+          {isLive && (
             <Player
               remoteScreen={null}
               localTrack={room.localTrack}
@@ -328,7 +328,11 @@ export default function App() {
               onStop={() => void stopSharing()}
               onSwitch={() => setPickerOpen(true)}
             />
-          ) : (
+          )}
+          {/* Broadcasting yourself is no reason to stop seeing everyone else:
+              while live, the grid sits under your own preview whenever anyone
+              else is on. */}
+          {(!isLive || room.remoteScreens.length > 0) && (
             <RemoteGrid
               screens={room.remoteScreens}
               loadingBroadcasts={loadingBroadcasts}

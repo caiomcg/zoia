@@ -171,8 +171,8 @@ export default function RemoteGrid({
             </div>
           ) : (
             <>
-              <h2>Select a broadcast</h2>
-              <p className="muted">Choose one or more live broadcasts from the room list.</p>
+              <h2>Escolha uma transmissão</h2>
+              <p className="muted">Selecione uma ou mais transmissões ao vivo na lista ao lado.</p>
             </>
           )}
         </div>
