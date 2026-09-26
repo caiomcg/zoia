@@ -438,6 +438,7 @@ function Thumbnail({
   listening = false,
   onWatch,
   onToggleListen,
+  onStop,
 }: {
   name: string;
   label: string;
@@ -457,6 +458,8 @@ function Thumbnail({
   listening?: boolean;
   onWatch?: () => void;
   onToggleListen?: () => void;
+  /** Your own preview: stop sharing, right from the strip. */
+  onStop?: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   useMediaStream(videoRef, liveVideo, null);
@@ -519,6 +522,18 @@ function Thumbnail({
               <IconHeadphones />
             </button>
           )}
+          {onStop && (
+            <button
+              className="thumb-action danger"
+              onClick={onStop}
+              title="Parar de compartilhar"
+              aria-label="Parar de compartilhar"
+            >
+              <Icon>
+                <rect x="6" y="6" width="12" height="12" rx="1.5" />
+              </Icon>
+            </button>
+          )}
         </div>
       )}
     </div>
@@ -541,6 +556,7 @@ export default function RemoteGrid({
     renderStage: (fullscreen: { active: boolean; toggle: () => void }) => ReactNode;
     track: LocalVideoTrack | null;
     name: string;
+    onStop: () => void;
   };
   /** Called with the remote broadcasts shown large, which get full quality. */
   onFocusChange: (identities: string[]) => void;
@@ -970,6 +986,7 @@ export default function RemoteGrid({
                         label="Sua transmissão"
                         liveVideo={local?.track ?? null}
                         onWatch={() => watch(id)}
+                        onStop={local?.onStop}
                       />
                     );
                   }
