@@ -59,7 +59,7 @@ function IconHeadphones() {
   );
 }
 
-function IconFullscreen({ active }: { active: boolean }) {
+export function IconFullscreen({ active }: { active: boolean }) {
   return (
     <svg
       viewBox="0 0 24 24"

@@ -85,6 +85,35 @@ function RenameField({
   );
 }
 
+const COLLAPSED_KEY = 'zoia.sidebarCollapsed';
+
+function readCollapsed(): boolean {
+  try {
+    return localStorage.getItem(COLLAPSED_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+function IconPanel({ collapsed }: { collapsed: boolean }) {
+  // Points the way the panel will move: out when collapsed, in when open.
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="16"
+      height="16"
+      aria-hidden="true"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d={collapsed ? 'M15 6l-6 6 6 6' : 'M9 6l6 6-6 6'} />
+    </svg>
+  );
+}
+
 export default function Sidebar({
   members,
   myName,
@@ -98,15 +127,41 @@ export default function Sidebar({
 }) {
   const broadcasting = members.filter((m) => m.isBroadcasting);
   const watching = members.filter((m) => !m.isBroadcasting);
+  // Collapsed keeps only the avatars; names move into tooltips.
+  const [collapsed, setCollapsed] = useState(readCollapsed);
+
+  function toggleCollapsed() {
+    setCollapsed((current) => {
+      try {
+        localStorage.setItem(COLLAPSED_KEY, String(!current));
+      } catch {
+        // Remembering is a convenience; the toggle still works.
+      }
+      return !current;
+    });
+  }
+
+  const label = (m: RoomMember) => (m.isLocal ? `${m.name} (você)` : m.name);
 
   return (
-    <aside className="sidebar">
+    <aside className={`sidebar${collapsed ? ' collapsed' : ''}`}>
+      <div className="sidebar-header">
+        <button
+          className="sidebar-toggle"
+          onClick={toggleCollapsed}
+          aria-expanded={!collapsed}
+          title={collapsed ? 'Expandir lista' : 'Recolher lista'}
+          aria-label={collapsed ? 'Expandir lista' : 'Recolher lista'}
+        >
+          <IconPanel collapsed={collapsed} />
+        </button>
+      </div>
       <div className="sidebar-scroll">
         {broadcasting.length > 0 && (
           <section className="member-group">
             <h2 className="member-heading">Ao vivo — {broadcasting.length}</h2>
             {broadcasting.map((m) => (
-              <div className="member live" key={m.identity}>
+              <div className="member live" key={m.identity} title={label(m)}>
                 <Avatar name={m.name} live />
                 <span className="member-name">{m.name}</span>
                 {m.isLocal && <span className="you-tag">you</span>}
@@ -123,7 +178,7 @@ export default function Sidebar({
           <h2 className="member-heading">In room — {watching.length}</h2>
           {watching.length === 0 && <p className="member-empty">Nobody else is here yet.</p>}
           {watching.map((m) => (
-            <div className="member" key={m.identity}>
+            <div className="member" key={m.identity} title={label(m)}>
               <Avatar name={m.name} live={false} />
               <span className="member-name">{m.name}</span>
               {m.isLocal && <span className="you-tag">you</span>}
@@ -132,9 +187,9 @@ export default function Sidebar({
         </section>
       </div>
 
-      <div className="sidebar-footer">
+      <div className="sidebar-footer" title={collapsed ? myName : undefined}>
         <Avatar name={myName} live={false} />
-        <RenameField current={myName} onRename={onRename} />
+        {!collapsed && <RenameField current={myName} onRename={onRename} />}
       </div>
     </aside>
   );

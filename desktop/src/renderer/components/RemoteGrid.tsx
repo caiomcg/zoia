@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'rea
 import type { LocalVideoTrack, RemoteTrack } from 'livekit-client';
 import type { RemoteQualityMode, RemoteScreen } from '../livekit/useRoom';
 import Avatar from './Avatar';
-import { IconVolume } from './Player';
+import { IconFullscreen, IconVolume } from './Player';
 
 /**
  * One broadcast in the spotlight, every other one as a small thumbnail along
@@ -79,10 +79,14 @@ function SpotlightTile({
   screen,
   qualityMode,
   onQualityModeChange,
+  isFullscreen,
+  onToggleFullscreen,
 }: {
   screen: RemoteScreen;
   qualityMode: RemoteQualityMode;
   onQualityModeChange?: (mode: RemoteQualityMode) => void;
+  isFullscreen: boolean;
+  onToggleFullscreen: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [muted, setMuted] = useState(false);
@@ -98,7 +102,7 @@ function SpotlightTile({
 
   return (
     <article className="remote-tile">
-      <video ref={videoRef} playsInline autoPlay />
+      <video ref={videoRef} playsInline autoPlay onDoubleClick={onToggleFullscreen} />
       <div className="remote-tile-footer">
         <span className="remote-tile-who">
           <Avatar name={screen.participantName} live />
@@ -112,26 +116,33 @@ function SpotlightTile({
         <div className="remote-audio-controls">
           {screen.audioTrack && (
             <>
+              {/* Muting only drops the slider to zero; unmuting restores the
+                  level it had, or full volume if it was already at zero. */}
               <button
                 className="icon-button"
-                onClick={() => setMuted((current) => !current)}
+                onClick={() => {
+                  if (muted && volume === 0) setVolume(1);
+                  setMuted((current) => !current);
+                }}
                 title={muted ? 'Ativar áudio' : 'Silenciar'}
                 aria-label={muted ? 'Ativar áudio' : 'Silenciar'}
               >
                 <IconVolume muted={muted || volume === 0} />
               </button>
-              {!muted && (
-                <input
-                  type="range"
-                  min={0}
-                  max={1}
-                  step={0.01}
-                  value={volume}
-                  onChange={(event) => setVolume(Number(event.target.value))}
-                  className="remote-volume"
-                  aria-label={`Volume de ${screen.participantName}`}
-                />
-              )}
+              <input
+                type="range"
+                min={0}
+                max={1}
+                step={0.01}
+                value={muted ? 0 : volume}
+                onChange={(event) => {
+                  const value = Number(event.target.value);
+                  setVolume(value);
+                  setMuted(value === 0);
+                }}
+                className="remote-volume"
+                aria-label={`Volume de ${screen.participantName}`}
+              />
             </>
           )}
           {/* A hardware (WHIP) broadcast has one layer; offering a choice that
@@ -146,6 +157,14 @@ function SpotlightTile({
               <option value="low">Qualidade baixa</option>
             </select>
           )}
+          <button
+            className="icon-button"
+            onClick={onToggleFullscreen}
+            title={isFullscreen ? 'Sair da tela cheia' : 'Tela cheia'}
+            aria-label={isFullscreen ? 'Sair da tela cheia' : 'Tela cheia'}
+          >
+            <IconFullscreen active={isFullscreen} />
+          </button>
         </div>
       </div>
     </article>
@@ -203,6 +222,28 @@ export default function RemoteGrid({
   onQualityModeChange?: (mode: RemoteQualityMode) => void;
 }) {
   const [stripHidden, setStripHidden] = useState(readStripHidden);
+  // Fullscreen takes the whole spotlight, not just the video, so the
+  // thumbnails and the tile's controls come along.
+  const spotlightRef = useRef<HTMLDivElement>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  useEffect(() => {
+    const handler = () =>
+      setIsFullscreen(
+        document.fullscreenElement === spotlightRef.current && Boolean(spotlightRef.current),
+      );
+    document.addEventListener('fullscreenchange', handler);
+    return () => document.removeEventListener('fullscreenchange', handler);
+  }, []);
+
+  async function toggleFullscreen() {
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen();
+      else await spotlightRef.current?.requestFullscreen();
+    } catch {
+      // Refused (no user gesture, or policy); the layout simply stays put.
+    }
+  }
 
   function toggleStrip() {
     setStripHidden((current) => {
@@ -270,13 +311,15 @@ export default function RemoteGrid({
 
   return (
     <section className="broadcast-layout">
-      <div className="spotlight">
+      <div className="spotlight" ref={spotlightRef}>
         {main ? (
           <SpotlightTile
             key={main.participantIdentity}
             screen={main}
             qualityMode={qualityMode}
             onQualityModeChange={onQualityModeChange}
+            isFullscreen={isFullscreen}
+            onToggleFullscreen={() => void toggleFullscreen()}
           />
         ) : (
           local?.stage
