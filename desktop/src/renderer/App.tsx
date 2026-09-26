@@ -82,6 +82,13 @@ export default function App() {
     setSpotlightChoice(null);
   }, [isLive]);
 
+  // Pin whatever is showing. The default is "the first broadcast", and a
+  // newcomer can sort ahead of the one on screen; pinned, they only ever join
+  // the strip. A pin is dropped above once its broadcast ends.
+  useEffect(() => {
+    if (spotlight !== null && spotlight !== spotlightChoice) setSpotlightChoice(spotlight);
+  }, [spotlight, spotlightChoice]);
+
   // Only the spotlight asks for full quality; thumbnails take the low layer.
   useEffect(() => {
     setRemoteFocus(spotlight ?? LOCAL_SPOTLIGHT);

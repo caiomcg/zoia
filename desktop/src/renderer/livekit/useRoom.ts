@@ -13,6 +13,7 @@ import {
   LocalVideoTrack,
   Room,
   RoomEvent,
+  ScreenSharePresets,
   Track,
   VideoQuality,
   type RemoteTrack,
@@ -70,7 +71,16 @@ export interface RemoteScreen {
   audioTrack: RemoteTrack | null;
   sourceName: string | null;
   sourceKind: 'screen' | 'window' | 'camera' | null;
+  /** False for a WHIP (hardware) broadcast: one layer, so quality cannot change. */
+  simulcast: boolean;
 }
+
+/**
+ * The one extra layer every in-app broadcast sends. Thumbnails and the "low"
+ * quality setting take it; without it there is only the full stream, and
+ * asking for a lower quality does nothing. Costs the broadcaster ~400 kbps.
+ */
+const LOW_LAYER = [ScreenSharePresets.h360fps15];
 
 export type RemoteQualityMode = 'auto' | 'low';
 
@@ -280,6 +290,7 @@ export function useRoom() {
             broadcastMetadata(participant).sourceName ?? broadcastMetadata(owner).sourceName,
           sourceKind:
             broadcastMetadata(participant).sourceKind ?? broadcastMetadata(owner).sourceKind,
+          simulcast: Boolean(videoPub?.simulcasted),
         });
       }
     }
@@ -576,7 +587,8 @@ export function useRoom() {
 
         await room.localParticipant.publishTrack(local, {
           source: Track.Source.ScreenShare,
-          simulcast: false,
+          simulcast: true,
+          screenShareSimulcastLayers: LOW_LAYER,
           videoEncoding: { maxBitrate: 2_500_000, maxFramerate: 30 },
           stream: 'screen',
         });
@@ -691,7 +703,8 @@ export function useRoom() {
         };
         await room.localParticipant.publishTrack(track, {
           source: Track.Source.ScreenShare,
-          simulcast: false,
+          simulcast: true,
+          screenShareSimulcastLayers: LOW_LAYER,
           degradationPreference: 'maintain-resolution',
           videoEncoding: encoding,
           screenShareEncoding: encoding,

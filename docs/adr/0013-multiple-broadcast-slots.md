@@ -36,7 +36,12 @@ broadcasts.
 - Viewers can watch one, several, or none of the active broadcasts.
 - Server upstream bandwidth grows with the number of active streams and viewers.
 - Viewers see the broadcaster and source identity, and hear only the spotlight.
+- In-app broadcasts publish simulcast with one extra 360p/15 fps layer, which
+  thumbnails and the "low quality" setting use. It costs each broadcaster about
+  400 kbps of upload and a second encode.
 - Hardware (WHIP) broadcasts publish a single layer, so their thumbnails are not
-  cheaper than the spotlight; only in-app broadcasts benefit from the low layer.
+  cheaper than the spotlight, and the quality setting is hidden for them.
+- A new broadcast joins the thumbnail strip; the spotlight never moves on its own
+  while what it shows is still live.
 - The old takeover UI and global-holder semantics are no longer part of the
   broadcast flow.

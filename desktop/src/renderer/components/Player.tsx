@@ -13,7 +13,7 @@ import type { RemoteScreen } from '../livekit/useRoom';
  * since video is attached before it.
  */
 
-function IconVolume({ muted }: { muted: boolean }) {
+export function IconVolume({ muted }: { muted: boolean }) {
   return (
     <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
       <path
