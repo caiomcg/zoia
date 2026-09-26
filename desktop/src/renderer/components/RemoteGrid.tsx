@@ -1,140 +1,168 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
+import type { LocalVideoTrack, RemoteTrack } from 'livekit-client';
 import type { RemoteQualityMode, RemoteScreen } from '../livekit/useRoom';
+import Avatar from './Avatar';
+
+/**
+ * One broadcast in the spotlight, every other one as a small thumbnail along
+ * the bottom. A broadcast that starts later joins the strip rather than taking
+ * over the picture; clicking a thumbnail is what moves it up.
+ *
+ * Only the spotlight plays audio and asks for full quality. Thumbnails are
+ * muted and, through setRemoteFocus, request the lowest simulcast layer.
+ */
+
+/** Stands in for "your own broadcast" wherever a spotlight identity goes. */
+export const LOCAL_SPOTLIGHT = '__local__';
 
 export interface LoadingBroadcast {
   identity: string;
   name: string;
 }
 
-function RemoteTile({
-  screen,
-  audioActive,
-  volume,
-  audioOnly,
-  focused,
-  onActivateAudio,
-  onVolumeChange,
-  onToggleAudioOnly,
-  onFocus,
-}: {
-  screen: RemoteScreen;
-  audioActive: boolean;
-  volume: number;
-  audioOnly: boolean;
-  focused: boolean;
-  onActivateAudio: () => void;
-  onVolumeChange: (value: number) => void;
-  onToggleAudioOnly: () => void;
-  onFocus: () => void;
-}) {
-  const videoRef = useRef<HTMLVideoElement>(null);
+function sourceText(sourceName: string | null, sourceKind: RemoteScreen['sourceKind']): string {
+  if (sourceName) return sourceName;
+  if (sourceKind === 'camera') return 'Câmera';
+  if (sourceKind === 'window') return 'Janela';
+  return 'Tela';
+}
 
+function useMediaStream(
+  ref: RefObject<HTMLVideoElement | null>,
+  video: RemoteTrack | LocalVideoTrack | null,
+  audio: RemoteTrack | null,
+) {
   useEffect(() => {
-    const element = videoRef.current;
+    const element = ref.current;
     if (!element) return;
-    const tracks = screen.videoTrack ? [screen.videoTrack.mediaStreamTrack] : [];
-    if (screen.audioTrack) tracks.push(screen.audioTrack.mediaStreamTrack);
-    element.srcObject = new MediaStream(tracks);
+    const tracks = video ? [video.mediaStreamTrack] : [];
+    if (audio) tracks.push(audio.mediaStreamTrack);
+    element.srcObject = tracks.length > 0 ? new MediaStream(tracks) : null;
     return () => {
       element.srcObject = null;
     };
-  }, [screen.videoTrack, screen.audioTrack]);
+  }, [ref, video, audio]);
+}
+
+function SpotlightTile({
+  screen,
+  qualityMode,
+  onQualityModeChange,
+}: {
+  screen: RemoteScreen;
+  qualityMode: RemoteQualityMode;
+  onQualityModeChange?: (mode: RemoteQualityMode) => void;
+}) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [muted, setMuted] = useState(false);
+  const [volume, setVolume] = useState(1);
+  useMediaStream(videoRef, screen.videoTrack, screen.audioTrack);
 
   useEffect(() => {
     const element = videoRef.current;
     if (!element) return;
-    element.muted = !audioActive;
-    element.volume = audioActive ? volume : 0;
-  }, [audioActive, volume]);
+    element.muted = muted;
+    element.volume = volume;
+  }, [muted, volume]);
 
   return (
-    <article className={`remote-tile${audioOnly ? ' audio-only-tile' : ''}`}>
+    <article className="remote-tile">
       <video ref={videoRef} playsInline autoPlay />
       <div className="remote-tile-footer">
-        <span>
-          {screen.participantName}
-          {screen.sourceName && (
+        <span className="remote-tile-who">
+          <Avatar name={screen.participantName} live />
+          <span>
+            {screen.participantName}
             <small className="stream-source">
-              {screen.sourceKind === 'window'
-                ? 'Janela'
-                : screen.sourceKind === 'screen'
-                  ? 'Tela'
-                  : ''}
-              : {screen.sourceName}
+              {sourceText(screen.sourceName, screen.sourceKind)}
             </small>
-          )}
+          </span>
         </span>
-        <div className="remote-tile-actions">
-          <button onClick={onFocus}>{focused ? 'Foco ativo' : 'Focar'}</button>
+        <div className="remote-audio-controls">
           {screen.audioTrack && (
-            <button onClick={onToggleAudioOnly}>{audioOnly ? 'Vídeo' : 'Somente áudio'}</button>
+            <>
+              <button onClick={() => setMuted((current) => !current)}>
+                {muted ? 'Ativar áudio' : 'Silenciar'}
+              </button>
+              {!muted && (
+                <input
+                  type="range"
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  value={volume}
+                  onChange={(event) => setVolume(Number(event.target.value))}
+                  className="remote-volume"
+                  aria-label={`Volume de ${screen.participantName}`}
+                />
+              )}
+            </>
           )}
+          <select
+            value={qualityMode}
+            onChange={(event) => onQualityModeChange?.(event.target.value as RemoteQualityMode)}
+            aria-label="Qualidade"
+          >
+            <option value="auto">Qualidade automática</option>
+            <option value="low">Qualidade baixa</option>
+          </select>
         </div>
-        {screen.audioTrack && (
-          <div className="remote-audio-controls">
-            <span className={`remote-audio-label${audioActive ? ' active' : ''}`}>
-              {audioActive ? 'Áudio ativo' : 'Áudio desligado'}
-            </span>
-            <button onClick={onActivateAudio}>
-              {audioActive ? 'Silenciar áudio' : 'Ativar áudio'}
-            </button>
-            {audioActive && (
-              <input
-                type="range"
-                min={0}
-                max={1}
-                step={0.01}
-                value={volume}
-                onChange={(event) => onVolumeChange(Number(event.target.value))}
-                className="remote-volume"
-                aria-label={`Volume de ${screen.participantName}`}
-              />
-            )}
-          </div>
-        )}
       </div>
     </article>
   );
 }
 
+function Thumbnail({
+  name,
+  label,
+  video,
+  onSelect,
+}: {
+  name: string;
+  label: string;
+  video: RemoteTrack | LocalVideoTrack | null;
+  onSelect?: () => void;
+}) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  useMediaStream(videoRef, video, null);
+
+  return (
+    <button className="thumb" onClick={onSelect} disabled={!onSelect} title={`${name} — ${label}`}>
+      <video ref={videoRef} playsInline autoPlay muted />
+      <span className="thumb-label">
+        <Avatar name={name} live />
+        <span>{label}</span>
+      </span>
+    </button>
+  );
+}
+
 export default function RemoteGrid({
   screens,
+  spotlight,
+  onSpotlight,
+  local,
   loadingBroadcasts = [],
   showOnboarding = false,
   onStartSharing,
   onDismissOnboarding,
   qualityMode = 'auto',
-  focusedIdentity = null,
   onQualityModeChange,
-  onFocusChange,
-  onToggleAudioOnly,
 }: {
   screens: RemoteScreen[];
+  /** A remote identity, LOCAL_SPOTLIGHT, or null when there is nothing to show. */
+  spotlight: string | null;
+  onSpotlight: (identity: string) => void;
+  /** Present while this device is broadcasting. */
+  local?: { stage: ReactNode; track: LocalVideoTrack | null; name: string };
   loadingBroadcasts?: LoadingBroadcast[];
   showOnboarding?: boolean;
   onStartSharing?: () => void;
   onDismissOnboarding?: () => void;
   qualityMode?: RemoteQualityMode;
-  focusedIdentity?: string | null;
   onQualityModeChange?: (mode: RemoteQualityMode) => void;
-  onFocusChange?: (identity: string | null) => void;
-  onToggleAudioOnly?: (identity: string, audioOnly: boolean) => void;
 }) {
-  const [audioOwner, setAudioOwner] = useState<string | null>(null);
-  const [volumes, setVolumes] = useState<Record<string, number>>({});
-  const [audioOnlyIds, setAudioOnlyIds] = useState<Set<string>>(new Set());
-
-  useEffect(() => {
-    const withAudio = screens.find((screen) => screen.audioTrack);
-    setAudioOwner((current) => {
-      if (current && screens.some((screen) => screen.participantIdentity === current)) {
-        return current;
-      }
-      return withAudio?.participantIdentity ?? null;
-    });
-  }, [screens]);
-
-  if (screens.length === 0) {
+  if (screens.length === 0 && !local) {
     return (
       <section className="stage remote-empty">
         <div className="overlay">
@@ -171,8 +199,8 @@ export default function RemoteGrid({
             </div>
           ) : (
             <>
-              <h2>Escolha uma transmissão</h2>
-              <p className="muted">Selecione uma ou mais transmissões ao vivo na lista ao lado.</p>
+              <h2>Ninguém está transmitindo</h2>
+              <p className="muted">Quando alguém compartilhar, a transmissão aparece aqui.</p>
             </>
           )}
         </div>
@@ -180,60 +208,55 @@ export default function RemoteGrid({
     );
   }
 
+  const main = screens.find((screen) => screen.participantIdentity === spotlight);
+  const others = screens.filter((screen) => screen !== main);
+  const showLocalThumb = Boolean(local) && Boolean(main);
+  const hasStrip = others.length > 0 || showLocalThumb || loadingBroadcasts.length > 0;
+
   return (
-    <section className={`remote-grid count-${Math.min(screens.length, 4)}`}>
-      <div className="remote-grid-toolbar">
-        <span>
-          {screens.length} {screens.length === 1 ? 'stream ativa' : 'streams ativas'}
-          {screens.length > 1 && ' · maior consumo de banda'}
-        </span>
-        <label>
-          Qualidade
-          <select
-            value={qualityMode}
-            onChange={(event) => onQualityModeChange?.(event.target.value as RemoteQualityMode)}
-          >
-            <option value="auto">Automática</option>
-            <option value="low">Baixa</option>
-          </select>
-        </label>
+    <section className="broadcast-layout">
+      <div className="spotlight">
+        {main ? (
+          <SpotlightTile
+            key={main.participantIdentity}
+            screen={main}
+            qualityMode={qualityMode}
+            onQualityModeChange={onQualityModeChange}
+          />
+        ) : (
+          local?.stage
+        )}
       </div>
-      {screens.map((screen) => (
-        <RemoteTile
-          key={screen.participantIdentity}
-          screen={screen}
-          audioActive={audioOwner === screen.participantIdentity}
-          volume={volumes[screen.participantIdentity] ?? 1}
-          audioOnly={audioOnlyIds.has(screen.participantIdentity)}
-          focused={focusedIdentity === screen.participantIdentity}
-          onActivateAudio={() =>
-            setAudioOwner((current) =>
-              current === screen.participantIdentity ? null : screen.participantIdentity,
-            )
-          }
-          onVolumeChange={(value) =>
-            setVolumes((current) => ({
-              ...current,
-              [screen.participantIdentity]: value,
-            }))
-          }
-          onToggleAudioOnly={() => {
-            const audioOnly = !audioOnlyIds.has(screen.participantIdentity);
-            setAudioOnlyIds((current) => {
-              const next = new Set(current);
-              if (audioOnly) next.add(screen.participantIdentity);
-              else next.delete(screen.participantIdentity);
-              return next;
-            });
-            onToggleAudioOnly?.(screen.participantIdentity, audioOnly);
-          }}
-          onFocus={() =>
-            onFocusChange?.(
-              focusedIdentity === screen.participantIdentity ? null : screen.participantIdentity,
-            )
-          }
-        />
-      ))}
+
+      {hasStrip && (
+        <div className="thumb-strip">
+          {showLocalThumb && local && (
+            <Thumbnail
+              name={local.name}
+              label="Sua transmissão"
+              video={local.track}
+              onSelect={() => onSpotlight(LOCAL_SPOTLIGHT)}
+            />
+          )}
+          {others.map((screen) => (
+            <Thumbnail
+              key={screen.participantIdentity}
+              name={screen.participantName}
+              label={sourceText(screen.sourceName, screen.sourceKind)}
+              video={screen.videoTrack}
+              onSelect={() => onSpotlight(screen.participantIdentity)}
+            />
+          ))}
+          {loadingBroadcasts.map((broadcast) => (
+            <Thumbnail
+              key={broadcast.identity}
+              name={broadcast.name}
+              label="Carregando…"
+              video={null}
+            />
+          ))}
+        </div>
+      )}
     </section>
   );
 }
