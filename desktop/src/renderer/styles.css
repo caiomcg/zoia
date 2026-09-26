@@ -671,6 +671,11 @@ button:disabled {
   border-color: var(--accent);
 }
 
+.thumb-action.danger {
+  background: var(--danger);
+  border-color: var(--danger);
+}
+
 .thumb-action svg {
   width: 16px;
   height: 16px;
