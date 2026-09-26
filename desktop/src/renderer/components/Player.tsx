@@ -106,6 +106,7 @@ export default function Player({
   gpuBroadcasting = false,
   onStop,
   onSwitch,
+  fullscreen,
 }: {
   remoteScreen: RemoteScreen | null;
   localTrack: LocalVideoTrack | null;
@@ -120,6 +121,12 @@ export default function Player({
   /** Shown floating over the picture while this device is the one sharing. */
   onStop?: () => void;
   onSwitch?: () => void;
+  /**
+   * When the player sits in a layout, the layout owns fullscreen, so the other
+   * broadcasts' thumbnails can come along. Without it, the player goes
+   * fullscreen on its own.
+   */
+  fullscreen?: { active: boolean; toggle: () => void };
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const stageRef = useRef<HTMLElement>(null);
@@ -275,11 +282,11 @@ export default function Player({
 
           <button
             className="icon-button"
-            onClick={() => void toggleFullscreen()}
-            title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
-            aria-label={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+            onClick={() => (fullscreen ? fullscreen.toggle() : void toggleFullscreen())}
+            title={(fullscreen?.active ?? isFullscreen) ? 'Exit fullscreen' : 'Fullscreen'}
+            aria-label={(fullscreen?.active ?? isFullscreen) ? 'Exit fullscreen' : 'Fullscreen'}
           >
-            <IconFullscreen active={isFullscreen} />
+            <IconFullscreen active={fullscreen?.active ?? isFullscreen} />
           </button>
         </div>
       )}

@@ -385,9 +385,14 @@ button:disabled {
   background: var(--accent);
 }
 
-/* Fullscreen is one tile at a time; leaving it returns to the layout. */
-.remote-tile:fullscreen {
+/* Fullscreen shows one broadcast, with the others still in the strip over
+   it. Leaving it returns to the layout. */
+.stage-area:fullscreen {
   background: #000;
+}
+
+.stage-area:fullscreen .remote-tile,
+.stage-area:fullscreen .stage {
   border: none;
   border-radius: 0;
 }
@@ -429,15 +434,24 @@ button:disabled {
   background: var(--accent);
 }
 
-/* Fullscreen and untouched for a few seconds: the controls fade out, the
-   cursor too, until the mouse moves. */
-.remote-tile.idle {
+/* Fullscreen and untouched for a few seconds: everything laid over the
+   picture fades out, the cursor included, until the mouse moves. */
+.stage-area .thumb-overlay,
+.stage-area .layout-switch {
+  transition: opacity 0.2s ease;
+}
+
+.stage-area.idle {
   cursor: none;
 }
 
-.remote-tile.idle .remote-tile-footer,
-.remote-tile.idle:hover .remote-tile-footer,
-.remote-tile.idle:focus-within .remote-tile-footer {
+.stage-area.idle .thumb-overlay,
+.stage-area.idle .layout-switch,
+.stage-area.idle .remote-tile-footer,
+.stage-area.idle .remote-tile:hover .remote-tile-footer,
+.stage-area.idle .remote-tile:focus-within .remote-tile-footer,
+.stage-area.idle .player-controls,
+.stage-area.idle .live-controls {
   opacity: 0;
   pointer-events: none;
 }
