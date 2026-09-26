@@ -328,6 +328,7 @@ export default function App() {
                       />
                     ),
                     track: room.localTrack,
+                    onStop: () => void stopSharing(),
                     name: status.deviceName ?? 'You',
                   }
                 : undefined
