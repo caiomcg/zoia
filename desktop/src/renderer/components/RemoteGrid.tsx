@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'rea
 import type { LocalVideoTrack, RemoteTrack } from 'livekit-client';
 import type { RemoteQualityMode, RemoteScreen } from '../livekit/useRoom';
 import Avatar from './Avatar';
-import { IconFullscreen, IconVolume } from './Player';
+import { IconFullscreen, IconHeadphones, IconVolume } from './Player';
 
 /**
  * Every broadcast in the room, laid out one of two ways:
@@ -11,8 +11,11 @@ import { IconFullscreen, IconVolume } from './Player';
  * - mosaic: all of them large. Two sit side by side with a draggable split;
  *   more form a grid.
  *
- * In the spotlight, what is shown large is pinned: a broadcast that starts
- * later joins the thumbnails, and clicking a thumbnail is what moves it up.
+ * Nothing opens by itself. Someone joining sees a dark stage and every
+ * broadcast as a blurred, silent thumbnail; they choose to watch one (it goes
+ * large, with sound) or only to listen to it (it stays a thumbnail, and its
+ * audio plays). A broadcast that starts later joins the thumbnails too. In the
+ * spotlight, watching replaces what is large; in the mosaic, it adds to it.
  *
  * Fullscreen shows one broadcast, with the others still in the thumbnail strip
  * over it; clicking one swaps it in. Leaving fullscreen lands back in whichever
@@ -33,6 +36,8 @@ export type LayoutMode = 'spotlight' | 'mosaic';
 
 const LAYOUT_KEY = 'zoia.layout';
 const STRIP_HIDDEN_KEY = 'zoia.thumbnailsHidden';
+/** Where a broadcast's volume starts. Full volume on arrival was a jump scare. */
+const DEFAULT_VOLUME = 0.5;
 /** Past this many large tiles, each is small enough that the low layer does. */
 const MOSAIC_HIGH_LIMIT = 4;
 /** In fullscreen, overlays fade after this long without the mouse moving. */
@@ -200,6 +205,7 @@ function RemoteTile({
   onQualityModeChange,
   isFullscreen,
   onToggleFullscreen,
+  onClose,
 }: {
   screen: RemoteScreen;
   audio: AudioSetting;
@@ -208,6 +214,8 @@ function RemoteTile({
   onQualityModeChange?: (mode: RemoteQualityMode) => void;
   isFullscreen: boolean;
   onToggleFullscreen: () => void;
+  /** Stop watching: the broadcast goes back to the thumbnails. */
+  onClose: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const { volume, muted } = audio;
@@ -266,14 +274,18 @@ function RemoteTile({
           {/* A hardware (WHIP) broadcast has one layer; offering a choice that
               changes nothing would be a lie. */}
           {screen.simulcast && (
-            <select
-              value={qualityMode}
-              onChange={(event) => onQualityModeChange?.(event.target.value as RemoteQualityMode)}
-              aria-label="Qualidade"
+            <button
+              className={`hq-toggle${qualityMode === 'auto' ? ' active' : ''}`}
+              onClick={() => onQualityModeChange?.(qualityMode === 'auto' ? 'low' : 'auto')}
+              aria-pressed={qualityMode === 'auto'}
+              title={
+                qualityMode === 'auto'
+                  ? 'Alta qualidade ativada — clique para economizar banda'
+                  : 'Qualidade baixa — clique para voltar à alta qualidade'
+              }
             >
-              <option value="auto">Qualidade automática</option>
-              <option value="low">Qualidade baixa</option>
-            </select>
+              HQ
+            </button>
           )}
           <button
             className="icon-button"
@@ -283,6 +295,18 @@ function RemoteTile({
           >
             <IconFullscreen active={isFullscreen} />
           </button>
+          {!isFullscreen && (
+            <button
+              className="icon-button"
+              onClick={onClose}
+              title="Parar de assistir"
+              aria-label="Parar de assistir"
+            >
+              <Icon>
+                <path d="M6 6l12 12M18 6L6 18" />
+              </Icon>
+            </button>
+          )}
         </div>
       </div>
     </article>
@@ -293,24 +317,68 @@ function Thumbnail({
   name,
   label,
   video,
-  onSelect,
+  audioTrack = null,
+  audio,
+  listening = false,
+  onWatch,
+  onToggleListen,
 }: {
   name: string;
   label: string;
   video: RemoteTrack | LocalVideoTrack | null;
-  onSelect?: () => void;
+  audioTrack?: RemoteTrack | null;
+  audio?: AudioSetting;
+  listening?: boolean;
+  onWatch?: () => void;
+  onToggleListen?: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
-  useMediaStream(videoRef, video, null);
+  // A thumbnail carries sound only while someone chose to listen to it.
+  useMediaStream(videoRef, video, listening ? audioTrack : null);
+
+  useEffect(() => {
+    const element = videoRef.current;
+    if (!element) return;
+    element.muted = !listening || Boolean(audio?.muted);
+    element.volume = audio?.volume ?? DEFAULT_VOLUME;
+  }, [listening, audio?.muted, audio?.volume]);
 
   return (
-    <button className="thumb" onClick={onSelect} disabled={!onSelect} title={`${name} — ${label}`}>
-      <video ref={videoRef} playsInline autoPlay muted />
-      <span className="thumb-label">
-        <Avatar name={name} live />
-        <span>{label}</span>
-      </span>
-    </button>
+    <div className={`thumb${listening ? ' listening' : ''}`} title={`${name} — ${label}`}>
+      <button
+        className="thumb-watch"
+        onClick={onWatch}
+        disabled={!onWatch}
+        aria-label={`Assistir ${name}`}
+      >
+        <video ref={videoRef} playsInline autoPlay muted />
+        <span className="thumb-label">
+          <Avatar name={name} live />
+          <span>{label}</span>
+        </span>
+      </button>
+      {onWatch && (
+        <div className="thumb-actions">
+          <button className="thumb-action" onClick={onWatch} title="Assistir" aria-label="Assistir">
+            <Icon>
+              <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" />
+              <circle cx="12" cy="12" r="3" />
+            </Icon>
+          </button>
+          {audioTrack && onToggleListen && (
+            <button
+              className={`thumb-action${listening ? ' active' : ''}`}
+              onClick={onToggleListen}
+              aria-pressed={listening}
+              title={listening ? 'Parar de ouvir' : 'Somente ouvir'}
+              aria-label={listening ? 'Parar de ouvir' : 'Somente ouvir'}
+            >
+              <IconHeadphones />
+            </button>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -368,7 +436,8 @@ export default function RemoteGrid({
   ];
   const livePinned = pinned.filter((id) => candidates.includes(id));
 
-  const spotlightId = livePinned[0] ?? candidates[0] ?? null;
+  // What the viewer chose to watch. Nothing, until they choose.
+  const spotlightId = livePinned[0] ?? null;
   // The fullscreen broadcast ended: show whatever the layout would lead with.
   const fullId = fullscreen.isFullscreen
     ? fullscreenId && candidates.includes(fullscreenId)
@@ -378,22 +447,11 @@ export default function RemoteGrid({
 
   let mains: string[];
   if (fullId) mains = [fullId];
-  else if (mode === 'mosaic') mains = candidates;
+  else if (mode === 'mosaic') mains = livePinned;
   else mains = spotlightId ? [spotlightId] : [];
   const remoteMains = mains.filter((id) => id !== LOCAL_SPOTLIGHT);
-  // The first large remote broadcast is heard by default; others start muted
-  // until someone turns them up, and from then on keep what they were given.
-  const primaryRemote = remoteMains[0] ?? null;
-
-  // Pin the spotlight, so a newcomer sorting ahead of it cannot take its slot.
-  useEffect(() => {
-    if (!spotlightId) return;
-    setPinned((current) =>
-      current[0] === spotlightId
-        ? current
-        : [spotlightId, ...current.filter((id) => id !== spotlightId)],
-    );
-  }, [spotlightId]);
+  // Broadcasts the viewer only listens to: they stay thumbnails, with sound.
+  const [listening, setListening] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (!fullscreen.isFullscreen) setFullscreenId(null);
@@ -430,9 +488,31 @@ export default function RemoteGrid({
     });
   }
 
-  function promote(id: string) {
+  function watch(id: string) {
     if (fullId) setFullscreenId(id);
-    else setPinned((current) => [id, ...current.filter((other) => other !== id)]);
+    else if (mode === 'mosaic')
+      setPinned((current) => [...current.filter((other) => other !== id), id]);
+    else setPinned([id]);
+    // Watching includes the sound; listening-only no longer applies.
+    setListening((current) => {
+      if (!current.has(id)) return current;
+      const next = new Set(current);
+      next.delete(id);
+      return next;
+    });
+  }
+
+  function stopWatching(id: string) {
+    setPinned((current) => current.filter((other) => other !== id));
+  }
+
+  function toggleListen(id: string) {
+    setListening((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   }
 
   function toggleFullscreenFor(id: string) {
@@ -445,7 +525,7 @@ export default function RemoteGrid({
   }
 
   function audioFor(id: string): AudioSetting {
-    return audio[id] ?? { volume: 1, muted: id !== primaryRemote };
+    return audio[id] ?? { volume: DEFAULT_VOLUME, muted: false };
   }
 
   if (candidates.length === 0) {
@@ -495,9 +575,9 @@ export default function RemoteGrid({
   }
 
   const screenById = new Map(screens.map((screen) => [screen.participantIdentity, screen]));
-  const showStrip = Boolean(fullId) || mode === 'spotlight';
-  const thumbs = showStrip ? candidates.filter((id) => !mains.includes(id)) : [];
-  const loadingThumbs = showStrip ? loadingBroadcasts : [];
+  // Everything not shown large is a thumbnail, in either layout.
+  const thumbs = candidates.filter((id) => !mains.includes(id));
+  const loadingThumbs = loadingBroadcasts;
   const stripCount = thumbs.length + loadingThumbs.length;
   const columns = mains.length <= 1 ? 1 : mains.length <= 4 ? 2 : 3;
 
@@ -517,6 +597,7 @@ export default function RemoteGrid({
         onQualityModeChange={onQualityModeChange}
         isFullscreen={fullscreen.isFullscreen}
         onToggleFullscreen={toggle}
+        onClose={() => stopWatching(id)}
       />
     );
   }
@@ -524,49 +605,68 @@ export default function RemoteGrid({
   const paired = !fullId && mode === 'mosaic' && mains.length === 2;
   const [left, right] = mains;
 
-  const mainsView = paired ? (
-    <div className="mains paired" ref={mainsRef}>
-      <div className="tile-slot" key={left} style={{ flexBasis: `${split * 100}%` }}>
-        {renderTile(left!)}
-      </div>
-      <div
-        className="splitter"
-        role="separator"
-        aria-orientation="vertical"
-        aria-valuemin={SPLIT_MIN * 100}
-        aria-valuemax={SPLIT_MAX * 100}
-        aria-valuenow={Math.round(split * 100)}
-        title="Arraste para redimensionar · clique duplo para dividir ao meio"
-        onPointerDown={(event) => {
-          draggingRef.current = true;
-          event.currentTarget.setPointerCapture(event.pointerId);
-        }}
-        onPointerMove={(event) => {
-          if (draggingRef.current) dragSplit(event.clientX);
-        }}
-        onPointerUp={(event) => {
-          draggingRef.current = false;
-          event.currentTarget.releasePointerCapture(event.pointerId);
-          store(SPLIT_KEY, String(split));
-        }}
-        onDoubleClick={() => {
-          setSplit(0.5);
-          store(SPLIT_KEY, '0.5');
-        }}
-      />
-      <div className="tile-slot" key={right} style={{ flexBasis: `${(1 - split) * 100}%` }}>
-        {renderTile(right!)}
-      </div>
-    </div>
-  ) : (
-    <div className={`mains cols-${columns}`}>
-      {mains.map((id) => (
-        <div className="tile-slot" key={id}>
-          {renderTile(id)}
+  const mainsView =
+    mains.length === 0 ? (
+      // Nothing chosen yet: a dark stage, the way in to sharing, and the
+      // broadcasts waiting below.
+      <section className="stage remote-empty">
+        <div className="overlay">
+          <h2>Escolha uma transmissão</h2>
+          <p className="muted">
+            Assista ou apenas ouça uma das transmissões abaixo, ou compartilhe a sua.
+          </p>
+          {!local && onStartSharing && (
+            <div className="onboarding-actions">
+              <button className="primary" onClick={onStartSharing}>
+                Compartilhar tela
+              </button>
+            </div>
+          )}
         </div>
-      ))}
-    </div>
-  );
+      </section>
+    ) : paired ? (
+      <div className="mains paired" ref={mainsRef}>
+        <div className="tile-slot" key={left} style={{ flexBasis: `${split * 100}%` }}>
+          {renderTile(left!)}
+        </div>
+        <div
+          className="splitter"
+          role="separator"
+          aria-orientation="vertical"
+          aria-valuemin={SPLIT_MIN * 100}
+          aria-valuemax={SPLIT_MAX * 100}
+          aria-valuenow={Math.round(split * 100)}
+          title="Arraste para redimensionar · clique duplo para dividir ao meio"
+          onPointerDown={(event) => {
+            draggingRef.current = true;
+            event.currentTarget.setPointerCapture(event.pointerId);
+          }}
+          onPointerMove={(event) => {
+            if (draggingRef.current) dragSplit(event.clientX);
+          }}
+          onPointerUp={(event) => {
+            draggingRef.current = false;
+            event.currentTarget.releasePointerCapture(event.pointerId);
+            store(SPLIT_KEY, String(split));
+          }}
+          onDoubleClick={() => {
+            setSplit(0.5);
+            store(SPLIT_KEY, '0.5');
+          }}
+        />
+        <div className="tile-slot" key={right} style={{ flexBasis: `${(1 - split) * 100}%` }}>
+          {renderTile(right!)}
+        </div>
+      </div>
+    ) : (
+      <div className={`mains cols-${columns}`}>
+        {mains.map((id) => (
+          <div className="tile-slot" key={id}>
+            {renderTile(id)}
+          </div>
+        ))}
+      </div>
+    );
 
   return (
     <section className="broadcast-layout">
@@ -613,7 +713,7 @@ export default function RemoteGrid({
                         name={local?.name ?? ''}
                         label="Sua transmissão"
                         video={local?.track ?? null}
-                        onSelect={() => promote(id)}
+                        onWatch={() => watch(id)}
                       />
                     );
                   }
@@ -625,7 +725,11 @@ export default function RemoteGrid({
                       name={screen.participantName}
                       label={sourceText(screen.sourceName, screen.sourceKind)}
                       video={screen.videoTrack}
-                      onSelect={() => promote(id)}
+                      audioTrack={screen.audioTrack}
+                      audio={audioFor(id)}
+                      listening={listening.has(id)}
+                      onWatch={() => watch(id)}
+                      onToggleListen={() => toggleListen(id)}
                     />
                   );
                 })}
