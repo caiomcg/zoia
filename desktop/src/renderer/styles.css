@@ -313,6 +313,7 @@ button:disabled {
 }
 
 .spotlight {
+  position: relative;
   flex: 1;
   min-height: 0;
   display: flex;
@@ -323,12 +324,49 @@ button:disabled {
   min-width: 0;
 }
 
+/* Floats over the bottom of the picture, raised clear of the player's own
+   controls (the local overlay bar, or a remote tile's footer). Only the
+   thumbnails and the toggle take clicks; the gaps fall through to the video. */
+.thumb-overlay {
+  position: absolute;
+  right: 12px;
+  bottom: 60px;
+  left: 12px;
+  z-index: 2;
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.thumb-overlay > * {
+  pointer-events: auto;
+}
+
 .thumb-strip {
-  flex: 0 0 auto;
   display: flex;
   gap: 8px;
+  min-width: 0;
   overflow-x: auto;
-  padding-bottom: 2px;
+}
+
+.thumb-toggle {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 8px;
+  color: #fff;
+  font-size: 11px;
+  background: rgb(0 0 0 / 0.6);
+  border: 1px solid rgb(255 255 255 / 0.15);
+  border-radius: 14px;
+  cursor: pointer;
+}
+
+.thumb-toggle:hover {
+  background: rgb(0 0 0 / 0.8);
 }
 
 .thumb {
@@ -338,8 +376,9 @@ button:disabled {
   padding: 0;
   overflow: hidden;
   background: #050608;
-  border: 1px solid #282c32;
+  border: 1px solid rgb(255 255 255 / 0.18);
   border-radius: 8px;
+  box-shadow: 0 4px 14px rgb(0 0 0 / 0.5);
   cursor: pointer;
 }
 
