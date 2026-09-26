@@ -932,6 +932,16 @@ button.danger {
   padding: 12px;
 }
 
+/* Live with others on: your own preview on top, everyone else beneath it. */
+.main.with-remote {
+  flex-direction: column;
+  gap: 10px;
+}
+
+.main.with-remote .remote-grid {
+  flex: 0 0 42%;
+}
+
 .main .stage {
   flex: 1;
   overflow: hidden;
@@ -1270,67 +1280,6 @@ button.danger {
 
 .status-light.idle .status-dot {
   background: var(--muted);
-}
-
-/* ---- taking the stage ---------------------------------------------------- */
-
-.takeover {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  padding: 6px 12px;
-  font-size: 12px;
-  background: var(--surface-2);
-  border-bottom: 1px solid var(--border);
-}
-
-.takeover-body {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.takeover-actions {
-  display: flex;
-  gap: 6px;
-}
-
-/* Quiet by default: this interrupts whatever someone was doing, so it should
-   read as a line of text with two small actions rather than a dialog. */
-.takeover-actions button {
-  padding: 3px 10px;
-  font-size: 12px;
-  font-weight: 500;
-  background: transparent;
-  border-radius: 5px;
-}
-
-.takeover-actions button:hover:not(:disabled) {
-  background: var(--raised);
-}
-
-.takeover-actions button.primary {
-  color: #fff;
-  background: var(--accent);
-}
-
-.takeover-actions button.danger {
-  color: #fff;
-  background: var(--danger);
-}
-
-.takeover-actions button:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
-.takeover.incoming {
-  box-shadow: inset 2px 0 0 var(--accent);
-}
-
-.takeover.outgoing {
-  box-shadow: inset 2px 0 0 var(--warn);
 }
 
 /* ---- share controls ------------------------------------------------------ */
