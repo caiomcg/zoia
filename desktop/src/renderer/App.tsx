@@ -7,7 +7,7 @@ import RemoteGrid, { type LoadingBroadcast } from './components/RemoteGrid';
 import Sidebar from './components/Sidebar';
 import SourcePicker from './components/SourcePicker';
 import StatusLight, { type StatusTone } from './components/StatusLight';
-import { useRoom, type RemoteQualityMode } from './livekit/useRoom';
+import { useRoom } from './livekit/useRoom';
 import { useGpuBroadcast } from './livekit/useGpuBroadcast';
 import {
   DEFAULT_PRESET_ID,
@@ -21,7 +21,6 @@ import {
 const PRESET_STORAGE_KEY = 'zoia.qualityPreset';
 const HARDWARE_STORAGE_KEY = 'zoia.hardwareAcceleration';
 const ONBOARDING_STORAGE_KEY = 'zoia.onboardingDismissed';
-const REMOTE_QUALITY_STORAGE_KEY = 'zoia.remoteQuality';
 
 export default function App() {
   const [status, setStatus] = useState<PairingStatus | null>(null);
@@ -29,9 +28,6 @@ export default function App() {
   const [cameraOpen, setCameraOpen] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(
     () => localStorage.getItem(ONBOARDING_STORAGE_KEY) !== 'true',
-  );
-  const [remoteQualityMode, setRemoteQualityMode] = useState<RemoteQualityMode>(() =>
-    localStorage.getItem(REMOTE_QUALITY_STORAGE_KEY) === 'low' ? 'low' : 'auto',
   );
   const [gpu, setGpu] = useState<GpuStatus | null>(null);
   const [stageError, setStageError] = useState<string | null>(null);
@@ -49,7 +45,7 @@ export default function App() {
 
   const room = useRoom();
   const gpuCast = useGpuBroadcast();
-  const { setRemoteQualityMode: applyRemoteQualityMode, setRemoteFocus } = room;
+  const { setRemoteFocus, setRemotePaused } = room;
 
   // The rest of the app still thinks in terms of which path is publishing.
   const mode: BroadcastMode = hardware ? 'gpu' : 'window';
@@ -86,10 +82,6 @@ export default function App() {
         .then(({ wsUrl, token, quality }) => room.connect(wsUrl, token, quality));
     }
   }, [status?.paired, room]);
-
-  useEffect(() => {
-    applyRemoteQualityMode(remoteQualityMode);
-  }, [remoteQualityMode, applyRemoteQualityMode]);
 
   const handleRename = useCallback(
     async (name: string) => {
@@ -347,12 +339,7 @@ export default function App() {
               setPickerOpen(true);
             }}
             onDismissOnboarding={dismissOnboarding}
-            qualityMode={remoteQualityMode}
-            onQualityModeChange={(mode) => {
-              setRemoteQualityMode(mode);
-              localStorage.setItem(REMOTE_QUALITY_STORAGE_KEY, mode);
-              room.setRemoteQualityMode(mode);
-            }}
+            onPausedChange={setRemotePaused}
           />
         </main>
 

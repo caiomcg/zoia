@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import type { LocalVideoTrack, RemoteTrack } from 'livekit-client';
-import type { RemoteQualityMode, RemoteScreen } from '../livekit/useRoom';
+import type { RemoteScreen } from '../livekit/useRoom';
 import Avatar from './Avatar';
 import { IconFullscreen, IconHeadphones, IconVolume } from './Player';
 
@@ -36,6 +36,19 @@ export type LayoutMode = 'spotlight' | 'mosaic';
 
 const LAYOUT_KEY = 'zoia.layout';
 const STRIP_HIDDEN_KEY = 'zoia.thumbnailsHidden';
+/**
+ * Thumbnails are snapshots, not video: a blurred live picture still cost a
+ * download and a decode per broadcast. The server stops forwarding a
+ * thumbnail's video, and resumes it this often just long enough for a frame.
+ */
+const SNAPSHOT_INTERVAL_MS = 60_000;
+/** How often to look for thumbnails whose snapshot is due. */
+const SNAPSHOT_CHECK_MS = 5_000;
+/** Give up on a snapshot this long after asking; try again next interval. */
+const SNAPSHOT_TIMEOUT_MS = 5_000;
+const SNAPSHOT_WIDTH = 320;
+const SNAPSHOT_HEIGHT = 180;
+
 /** Where a broadcast's volume starts. Full volume on arrival was a jump scare. */
 const DEFAULT_VOLUME = 0.5;
 /** Past this many large tiles, each is small enough that the low layer does. */
@@ -201,8 +214,8 @@ function RemoteTile({
   screen,
   audio,
   onAudioChange,
-  qualityMode,
-  onQualityModeChange,
+  hq,
+  onToggleHq,
   isFullscreen,
   onToggleFullscreen,
   onClose,
@@ -210,8 +223,9 @@ function RemoteTile({
   screen: RemoteScreen;
   audio: AudioSetting;
   onAudioChange: (next: AudioSetting) => void;
-  qualityMode: RemoteQualityMode;
-  onQualityModeChange?: (mode: RemoteQualityMode) => void;
+  /** This broadcast's own quality: HQ on takes the high layer. */
+  hq: boolean;
+  onToggleHq: () => void;
   isFullscreen: boolean;
   onToggleFullscreen: () => void;
   /** Stop watching: the broadcast goes back to the thumbnails. */
@@ -275,11 +289,11 @@ function RemoteTile({
               changes nothing would be a lie. */}
           {screen.simulcast && (
             <button
-              className={`hq-toggle${qualityMode === 'auto' ? ' active' : ''}`}
-              onClick={() => onQualityModeChange?.(qualityMode === 'auto' ? 'low' : 'auto')}
-              aria-pressed={qualityMode === 'auto'}
+              className={`hq-toggle${hq ? ' active' : ''}`}
+              onClick={onToggleHq}
+              aria-pressed={hq}
               title={
-                qualityMode === 'auto'
+                hq
                   ? 'Alta qualidade ativada — clique para economizar banda'
                   : 'Qualidade baixa — clique para voltar à alta qualidade'
               }
@@ -313,35 +327,143 @@ function RemoteTile({
   );
 }
 
+/**
+ * Grabs one frame of a remote video track as a small JPEG. The track has
+ * just been resumed; grabFrame waits for the next frame to arrive, so the
+ * picture is current. No video element is involved, so nothing is decoded
+ * for display and nothing needs to be on the page.
+ */
+function useSnapshot(
+  track: RemoteTrack | null,
+  capture: boolean,
+  onCaptured: (url: string | null) => void,
+) {
+  const onCapturedRef = useRef(onCaptured);
+  useEffect(() => {
+    onCapturedRef.current = onCaptured;
+  });
+
+  useEffect(() => {
+    if (!capture) return;
+    // Nothing to take (an audio-only broadcast): report, so it is not retried
+    // until the next interval, and its video is not left unpaused.
+    if (!track || typeof ImageCapture === 'undefined') {
+      onCapturedRef.current(null);
+      return;
+    }
+    let done = false;
+    const finish = (url: string | null) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      onCapturedRef.current(url);
+    };
+    const timer = setTimeout(() => finish(null), SNAPSHOT_TIMEOUT_MS);
+
+    // Chromium implements grabFrame; TypeScript's DOM types stop at takePhoto.
+    const capturer = new ImageCapture(track.mediaStreamTrack) as ImageCapture & {
+      grabFrame(): Promise<ImageBitmap>;
+    };
+    capturer
+      .grabFrame()
+      .then((frame) => {
+        const canvas = document.createElement('canvas');
+        canvas.width = SNAPSHOT_WIDTH;
+        canvas.height = SNAPSHOT_HEIGHT;
+        const context = canvas.getContext('2d');
+        if (!context || !frame.width || !frame.height) {
+          frame.close();
+          return finish(null);
+        }
+        // Cover, like the thumbnail does: crop rather than letterbox.
+        const scale = Math.max(SNAPSHOT_WIDTH / frame.width, SNAPSHOT_HEIGHT / frame.height);
+        const width = frame.width * scale;
+        const height = frame.height * scale;
+        context.drawImage(
+          frame,
+          (SNAPSHOT_WIDTH - width) / 2,
+          (SNAPSHOT_HEIGHT - height) / 2,
+          width,
+          height,
+        );
+        frame.close();
+        finish(canvas.toDataURL('image/jpeg', 0.7));
+      })
+      .catch(() => finish(null));
+
+    return () => {
+      done = true;
+      clearTimeout(timer);
+    };
+  }, [capture, track]);
+}
+
+/**
+ * The sound of a broadcast someone only listens to. Lives outside the
+ * thumbnail, so tucking the strip away does not silence it.
+ */
+function ListenAudio({ track, audio }: { track: RemoteTrack; audio: AudioSetting }) {
+  const ref = useRef<HTMLAudioElement>(null);
+
+  useEffect(() => {
+    const element = ref.current;
+    if (!element) return;
+    element.srcObject = new MediaStream([track.mediaStreamTrack]);
+    return () => {
+      element.srcObject = null;
+    };
+  }, [track]);
+
+  useEffect(() => {
+    const element = ref.current;
+    if (!element) return;
+    element.muted = audio.muted;
+    element.volume = audio.volume;
+  }, [audio.muted, audio.volume]);
+
+  return <audio ref={ref} autoPlay />;
+}
+
 function Thumbnail({
   name,
   label,
-  video,
+  liveVideo = null,
+  snapshot = null,
+  captureTrack = null,
+  capture = false,
+  onCaptured,
   audioTrack = null,
   audio,
+  onAudioChange,
   listening = false,
   onWatch,
   onToggleListen,
 }: {
   name: string;
   label: string;
-  video: RemoteTrack | LocalVideoTrack | null;
+  /**
+   * Live video: your own preview (it costs no bandwidth), or a broadcast
+   * someone is listening to. Everything else shows a snapshot.
+   */
+  liveVideo?: LocalVideoTrack | RemoteTrack | null;
+  /** A remote broadcast shows its latest snapshot instead of live video. */
+  snapshot?: string | null;
+  captureTrack?: RemoteTrack | null;
+  capture?: boolean;
+  onCaptured?: (url: string | null) => void;
   audioTrack?: RemoteTrack | null;
   audio?: AudioSetting;
+  onAudioChange?: (next: AudioSetting) => void;
   listening?: boolean;
   onWatch?: () => void;
   onToggleListen?: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
-  // A thumbnail carries sound only while someone chose to listen to it.
-  useMediaStream(videoRef, video, listening ? audioTrack : null);
+  useMediaStream(videoRef, liveVideo, null);
+  useSnapshot(captureTrack, capture, (url) => onCaptured?.(url));
 
-  useEffect(() => {
-    const element = videoRef.current;
-    if (!element) return;
-    element.muted = !listening || Boolean(audio?.muted);
-    element.volume = audio?.volume ?? DEFAULT_VOLUME;
-  }, [listening, audio?.muted, audio?.volume]);
+  const volume = audio?.volume ?? DEFAULT_VOLUME;
+  const muted = Boolean(audio?.muted);
 
   return (
     <div className={`thumb${listening ? ' listening' : ''}`} title={`${name} — ${label}`}>
@@ -351,12 +473,33 @@ function Thumbnail({
         disabled={!onWatch}
         aria-label={`Assistir ${name}`}
       >
-        <video ref={videoRef} playsInline autoPlay muted />
+        {liveVideo ? (
+          <video className="thumb-live" ref={videoRef} playsInline autoPlay muted />
+        ) : snapshot ? (
+          <img src={snapshot} alt="" />
+        ) : (
+          <span className="thumb-blank" />
+        )}
         <span className="thumb-label">
           <Avatar name={name} live />
           <span>{label}</span>
         </span>
       </button>
+      {listening && onAudioChange && (
+        <input
+          type="range"
+          min={0}
+          max={1}
+          step={0.01}
+          value={muted ? 0 : volume}
+          onChange={(event) => {
+            const value = Number(event.target.value);
+            onAudioChange({ volume: value, muted: value === 0 });
+          }}
+          className="thumb-volume"
+          aria-label={`Volume de ${name}`}
+        />
+      )}
       {onWatch && (
         <div className="thumb-actions">
           <button className="thumb-action" onClick={onWatch} title="Assistir" aria-label="Assistir">
@@ -390,8 +533,7 @@ export default function RemoteGrid({
   showOnboarding = false,
   onStartSharing,
   onDismissOnboarding,
-  qualityMode = 'auto',
-  onQualityModeChange,
+  onPausedChange,
 }: {
   screens: RemoteScreen[];
   /** Present while this device is broadcasting. */
@@ -406,8 +548,8 @@ export default function RemoteGrid({
   showOnboarding?: boolean;
   onStartSharing?: () => void;
   onDismissOnboarding?: () => void;
-  qualityMode?: RemoteQualityMode;
-  onQualityModeChange?: (mode: RemoteQualityMode) => void;
+  /** Called with the remote broadcasts whose video should not be forwarded. */
+  onPausedChange: (identities: string[]) => void;
 }) {
   const [mode, setMode] = useState<LayoutMode>(() =>
     // 'pair' was a layout of its own; mosaic now does side by side.
@@ -452,6 +594,13 @@ export default function RemoteGrid({
   const remoteMains = mains.filter((id) => id !== LOCAL_SPOTLIGHT);
   // Broadcasts the viewer only listens to: they stay thumbnails, with sound.
   const [listening, setListening] = useState<Set<string>>(new Set());
+  // Broadcasts this viewer turned HQ off for. Per broadcast, not room-wide.
+  const [lowQuality, setLowQuality] = useState<Set<string>>(new Set());
+  // Latest thumbnail picture per broadcast, and which are being taken now.
+  const [snapshots, setSnapshots] = useState<Record<string, { url: string | null; at: number }>>(
+    {},
+  );
+  const [capturing, setCapturing] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (!fullscreen.isFullscreen) setFullscreenId(null);
@@ -464,10 +613,68 @@ export default function RemoteGrid({
     }
   }, [hasLocal]);
 
-  const focusKey = remoteMains.length > MOSAIC_HIGH_LIMIT ? '' : remoteMains.join('|');
+  const hqMains = remoteMains.filter((id) => !lowQuality.has(id));
+  const focusKey = hqMains.length > MOSAIC_HIGH_LIMIT ? '' : hqMains.join('|');
   useEffect(() => {
     onFocusChange(focusKey ? focusKey.split('|') : []);
   }, [focusKey, onFocusChange]);
+
+  // Every remote broadcast not shown large is a thumbnail: its video is paused
+  // on the server, except for the moment a snapshot is being taken. With the
+  // strip tucked away no snapshot can be taken, so all of them stay paused.
+  // A broadcast being listened to is exempt: its thumbnail plays live.
+  const remoteThumbKey = screens
+    .map((screen) => screen.participantIdentity)
+    .filter((id) => !mains.includes(id) && !listening.has(id))
+    .join('|');
+  const pausedKey = (remoteThumbKey ? remoteThumbKey.split('|') : [])
+    .filter((id) => stripHidden || !capturing.has(id))
+    .join('|');
+  useEffect(() => {
+    onPausedChange(pausedKey ? pausedKey.split('|') : []);
+  }, [pausedKey, onPausedChange]);
+
+  const snapshotsRef = useRef(snapshots);
+  useEffect(() => {
+    snapshotsRef.current = snapshots;
+  }, [snapshots]);
+
+  useEffect(() => {
+    const due = remoteThumbKey ? remoteThumbKey.split('|') : [];
+    if (stripHidden) {
+      setCapturing((current) => (current.size === 0 ? current : new Set()));
+      return;
+    }
+    const tick = () => {
+      const now = Date.now();
+      setCapturing((current) => {
+        const next = new Set([...current].filter((id) => due.includes(id)));
+        for (const id of due) {
+          const last = snapshotsRef.current[id]?.at ?? 0;
+          if (now - last >= SNAPSHOT_INTERVAL_MS) next.add(id);
+        }
+        const same = next.size === current.size && [...next].every((id) => current.has(id));
+        return same ? current : next;
+      });
+    };
+    tick();
+    const timer = setInterval(tick, SNAPSHOT_CHECK_MS);
+    return () => clearInterval(timer);
+  }, [remoteThumbKey, stripHidden]);
+
+  function captured(id: string, url: string | null) {
+    setSnapshots((current) => ({
+      ...current,
+      // A failed grab keeps the last picture, and waits a full interval.
+      [id]: { url: url ?? current[id]?.url ?? null, at: Date.now() },
+    }));
+    setCapturing((current) => {
+      if (!current.has(id)) return current;
+      const next = new Set(current);
+      next.delete(id);
+      return next;
+    });
+  }
 
   function dragSplit(clientX: number) {
     const rect = mainsRef.current?.getBoundingClientRect();
@@ -507,12 +714,21 @@ export default function RemoteGrid({
   }
 
   function toggleListen(id: string) {
+    const starting = !listening.has(id);
     setListening((current) => {
       const next = new Set(current);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+      if (starting) next.add(id);
+      else next.delete(id);
       return next;
     });
+    // Choosing to listen means hearing it, whatever it was left at before.
+    if (starting) {
+      setAudio((current) => {
+        const setting = current[id];
+        if (!setting?.muted && (setting?.volume ?? DEFAULT_VOLUME) > 0) return current;
+        return { ...current, [id]: { volume: setting?.volume || DEFAULT_VOLUME, muted: false } };
+      });
+    }
   }
 
   function toggleFullscreenFor(id: string) {
@@ -522,6 +738,11 @@ export default function RemoteGrid({
       setFullscreenId(id);
       void fullscreen.toggle();
     }
+  }
+
+  function rank(id: string): number {
+    if (listening.has(id)) return 0;
+    return id === LOCAL_SPOTLIGHT ? 1 : 2;
   }
 
   function audioFor(id: string): AudioSetting {
@@ -576,7 +797,11 @@ export default function RemoteGrid({
 
   const screenById = new Map(screens.map((screen) => [screen.participantIdentity, screen]));
   // Everything not shown large is a thumbnail, in either layout.
-  const thumbs = candidates.filter((id) => !mains.includes(id));
+  // Listened-to broadcasts lead the strip, then your own, then the rest. Your
+  // own broadcast never leaves the strip, even while it is also large.
+  const thumbs = candidates
+    .filter((id) => id === LOCAL_SPOTLIGHT || !mains.includes(id))
+    .sort((a, b) => rank(a) - rank(b));
   const loadingThumbs = loadingBroadcasts;
   const stripCount = thumbs.length + loadingThumbs.length;
   const columns = mains.length <= 1 ? 1 : mains.length <= 4 ? 2 : 3;
@@ -584,7 +809,24 @@ export default function RemoteGrid({
   function renderTile(id: string) {
     const toggle = () => toggleFullscreenFor(id);
     if (id === LOCAL_SPOTLIGHT) {
-      return local?.renderStage({ active: fullscreen.isFullscreen, toggle }) ?? null;
+      // Your own broadcast can leave the large view, but not the strip.
+      return (
+        <div className="local-slot">
+          {local?.renderStage({ active: fullscreen.isFullscreen, toggle })}
+          {!fullscreen.isFullscreen && (
+            <button
+              className="tile-close"
+              onClick={() => stopWatching(id)}
+              title="Tirar da visualização"
+              aria-label="Tirar da visualização"
+            >
+              <Icon>
+                <path d="M6 6l12 12M18 6L6 18" />
+              </Icon>
+            </button>
+          )}
+        </div>
+      );
     }
     const screen = screenById.get(id);
     if (!screen) return null;
@@ -593,8 +835,15 @@ export default function RemoteGrid({
         screen={screen}
         audio={audioFor(id)}
         onAudioChange={(next) => setAudio((current) => ({ ...current, [id]: next }))}
-        qualityMode={qualityMode}
-        onQualityModeChange={onQualityModeChange}
+        hq={!lowQuality.has(id)}
+        onToggleHq={() =>
+          setLowQuality((current) => {
+            const next = new Set(current);
+            if (next.has(id)) next.delete(id);
+            else next.add(id);
+            return next;
+          })
+        }
         isFullscreen={fullscreen.isFullscreen}
         onToggleFullscreen={toggle}
         onClose={() => stopWatching(id)}
@@ -673,6 +922,13 @@ export default function RemoteGrid({
       <div className={`stage-area${fullscreen.idle ? ' idle' : ''}`} ref={areaRef}>
         {mainsView}
 
+        {[...listening]
+          .filter((id) => !mains.includes(id))
+          .map((id) => {
+            const track = screenById.get(id)?.audioTrack;
+            return track ? <ListenAudio key={id} track={track} audio={audioFor(id)} /> : null;
+          })}
+
         {candidates.length > 1 && !fullId && (
           <div className="layout-switch" role="group" aria-label="Layout">
             {LAYOUTS.map((layout) => (
@@ -712,7 +968,7 @@ export default function RemoteGrid({
                         key={id}
                         name={local?.name ?? ''}
                         label="Sua transmissão"
-                        video={local?.track ?? null}
+                        liveVideo={local?.track ?? null}
                         onWatch={() => watch(id)}
                       />
                     );
@@ -724,9 +980,14 @@ export default function RemoteGrid({
                       key={id}
                       name={screen.participantName}
                       label={sourceText(screen.sourceName, screen.sourceKind)}
-                      video={screen.videoTrack}
+                      liveVideo={listening.has(id) ? screen.videoTrack : null}
+                      snapshot={snapshots[id]?.url ?? null}
+                      captureTrack={screen.videoTrack}
+                      capture={capturing.has(id)}
+                      onCaptured={(url) => captured(id, url)}
                       audioTrack={screen.audioTrack}
                       audio={audioFor(id)}
+                      onAudioChange={(next) => setAudio((current) => ({ ...current, [id]: next }))}
                       listening={listening.has(id)}
                       onWatch={() => watch(id)}
                       onToggleListen={() => toggleListen(id)}
@@ -734,12 +995,7 @@ export default function RemoteGrid({
                   );
                 })}
                 {loadingThumbs.map((broadcast) => (
-                  <Thumbnail
-                    key={broadcast.identity}
-                    name={broadcast.name}
-                    label="Carregando…"
-                    video={null}
-                  />
+                  <Thumbnail key={broadcast.identity} name={broadcast.name} label="Carregando…" />
                 ))}
               </div>
             )}
