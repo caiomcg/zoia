@@ -13,14 +13,15 @@ record that supersedes it, so the history stays legible.
 | [0002](0002-invite-keys-over-shared-password.md) | Per-person invite keys, not a shared password | accepted, extended by [0007](0007-device-pairing.md) |
 | [0003](0003-npm-as-front-door.md) | Reuse an existing reverse proxy as the front door | superseded by [0004](0004-isolated-caddy-front-end.md) |
 | [0004](0004-isolated-caddy-front-end.md) | An isolated Caddy front end on the VM | accepted |
-| [0005](0005-one-tier-claimable-stage.md) | One tier of user, with a claimable stage | accepted |
+| [0005](0005-one-tier-claimable-stage.md) | One tier of user, with a claimable stage | accepted, stage superseded by [0013](0013-multiple-broadcast-slots.md) |
 | [0006](0006-native-desktop-client.md) | A native desktop client, for per-application audio | accepted |
 | [0007](0007-device-pairing.md) | Device pairing, not a key in the binary | accepted, extended by [0010](0010-invites-outside-the-binary.md) |
 | [0008](0008-retire-the-browser-client.md) | Retire the browser client | accepted |
 | [0009](0009-hardware-encoding.md) | Hardware encoding via WGC and NVENC | accepted, partly superseded by [0011](0011-hardware-encoding-over-the-internet.md) |
 | [0010](0010-invites-outside-the-binary.md) | The invitation lives outside the binary | accepted |
 | [0011](0011-hardware-encoding-over-the-internet.md) | Hardware encoding over the internet, on any GPU | accepted |
-| [0012](0012-multiple-broadcast-slots.md) | Multiple independent broadcast slots | accepted |
+| [0013](0013-multiple-broadcast-slots.md) | Multiple independent broadcast slots | accepted |
+| [0014](0014-browser-viewer.md) | Restore a viewer-only browser client | accepted |
 
 ## The two that explain the most
 

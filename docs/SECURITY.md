@@ -93,7 +93,8 @@ survive in browser history, the URL bar, or a `Referer` header sent to some othe
 
 **Every token is issued subscribe-only** — `canPublish: false` — regardless of any stored
 role ([ADR 0005](adr/0005-one-tier-claimable-stage.md)). Publishing is granted at runtime,
-by the server, only while the stage is free, and LiveKit validates that grant server-side on
+by the server, only to the participant who claimed their own broadcast slot
+([ADR 0013](adr/0013-multiple-broadcast-slots.md)), and LiveKit validates that grant server-side on
 every publish attempt.
 
 So a client editing its own JavaScript achieves nothing: it holds a token that says it may
