@@ -37,19 +37,17 @@ function applyRemoteMediaSettings(
   selected: Set<string>,
   qualityMode: RemoteQualityMode,
   focusedIdentity: string | null,
-  audioOnly: Set<string>,
 ): void {
   for (const participant of room.remoteParticipants.values()) {
     const identity = ownerIdentity(participant.identity);
     const subscribed = selected.has(identity);
-    const videoSubscribed = subscribed && !audioOnly.has(identity);
     const quality =
       qualityMode === 'low' || (focusedIdentity && focusedIdentity !== identity)
         ? VideoQuality.LOW
         : VideoQuality.HIGH;
     for (const publication of participant.videoTrackPublications.values()) {
       try {
-        publication.setSubscribed(videoSubscribed);
+        publication.setSubscribed(subscribed);
         publication.setVideoQuality(quality);
       } catch {
         // The participant may leave while settings are being applied.
@@ -214,7 +212,6 @@ export function useRoom() {
   const selectedRemoteIdsRef = useRef<Set<string>>(new Set());
   const remoteQualityModeRef = useRef<RemoteQualityMode>('auto');
   const focusedRemoteIdRef = useRef<string | null>(null);
-  const audioOnlyRemoteIdsRef = useRef<Set<string>>(new Set());
   // Owners who were publishing at the last refresh. Whoever appears in the
   // next one and not here started broadcasting since, and is watched by default.
   const knownBroadcastersRef = useRef<Set<string>>(new Set());
@@ -326,7 +323,6 @@ export function useRoom() {
           nextSelected,
           remoteQualityModeRef.current,
           focusedRemoteIdRef.current,
-          audioOnlyRemoteIdsRef.current,
         );
         setRemoteScreens(findRemoteScreens(room));
         setParticipantCount(room.remoteParticipants.size);
@@ -460,33 +456,9 @@ export function useRoom() {
     knownBroadcastersRef.current = new Set();
     remoteQualityModeRef.current = 'auto';
     focusedRemoteIdRef.current = null;
-    audioOnlyRemoteIdsRef.current = new Set();
     selectedRemoteIdsRef.current = new Set();
     setSelectedRemoteIds(new Set());
   }, []);
-
-  const setRemoteSubscription = useCallback(
-    async (identity: string, subscribed: boolean) => {
-      const room = roomRef.current;
-      if (!room) return;
-      const participant = room.remoteParticipants.get(identity);
-      if (!participant) return;
-      const next = new Set(selectedRemoteIdsRef.current);
-      if (subscribed) next.add(identity);
-      else next.delete(identity);
-      selectedRemoteIdsRef.current = next;
-      setSelectedRemoteIds(next);
-      applyRemoteMediaSettings(
-        room,
-        next,
-        remoteQualityModeRef.current,
-        focusedRemoteIdRef.current,
-        audioOnlyRemoteIdsRef.current,
-      );
-      setRemoteScreens(findRemoteScreens(room));
-    },
-    [findRemoteScreens],
-  );
 
   const setRemoteQualityMode = useCallback((mode: RemoteQualityMode) => {
     remoteQualityModeRef.current = mode;
@@ -497,7 +469,6 @@ export function useRoom() {
         selectedRemoteIdsRef.current,
         mode,
         focusedRemoteIdRef.current,
-        audioOnlyRemoteIdsRef.current,
       );
     }
   }, []);
@@ -511,29 +482,9 @@ export function useRoom() {
         selectedRemoteIdsRef.current,
         remoteQualityModeRef.current,
         identity,
-        audioOnlyRemoteIdsRef.current,
       );
     }
   }, []);
-
-  const setRemoteAudioOnly = useCallback(
-    (identity: string, audioOnly: boolean) => {
-      if (audioOnly) audioOnlyRemoteIdsRef.current.add(identity);
-      else audioOnlyRemoteIdsRef.current.delete(identity);
-      const room = roomRef.current;
-      if (room) {
-        applyRemoteMediaSettings(
-          room,
-          selectedRemoteIdsRef.current,
-          remoteQualityModeRef.current,
-          focusedRemoteIdRef.current,
-          audioOnlyRemoteIdsRef.current,
-        );
-        setRemoteScreens(findRemoteScreens(room));
-      }
-    },
-    [findRemoteScreens],
-  );
 
   /**
    * Ends the local publish and releases the stage, unconditionally — this
@@ -829,10 +780,8 @@ export function useRoom() {
     isReconnecting,
     roomNotice,
     clearRoomNotice: useCallback(() => setRoomNotice(null), []),
-    setRemoteSubscription,
     setRemoteQualityMode,
     setRemoteFocus,
-    setRemoteAudioOnly,
     participantCount,
     members,
     connect,
