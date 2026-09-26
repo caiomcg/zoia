@@ -327,14 +327,15 @@ own address instead, the override will not be consulted.
 
 ### Somebody cannot start sharing
 
-Publishing is a server-side permission, granted only while the stage is free. If the share
-button does nothing:
+Publishing is a server-side permission, granted per person when they claim their own
+broadcast slot. Anyone may broadcast alongside anyone else; nobody waits for a turn. See
+[ADR 0013](adr/0013-multiple-broadcast-slots.md). If the share button does nothing:
 
-1. **Somebody else holds the stage.** Only one person broadcasts at a time. Ask for it — the
-   holder can hand over, and if they have wandered off it can be taken after thirty seconds.
-2. **A previous broadcaster's machine died without releasing.** This resolves itself: the
-   stage is derived from LiveKit's participant list, not stored, so a participant who has
-   gone simply is not in it. See [ADR 0005](adr/0005-one-tier-claimable-stage.md).
+1. **They are not connected to the room yet.** A claim from someone LiveKit does not list is
+   refused with `409 not_in_room`. Wait for the app to show it is connected, or reconnect.
+2. **The source label, or a rename, is refused mid-broadcast.** The server replaces the whole
+   LiveKit permission on claim; `stage.js` must restate `canUpdateMetadata` or the client
+   loses it. `server/test/stage.test.js` guards this.
 3. **The device was revoked.** Their next request returns 401 and the app says so. Check
    `device:list`.
 
@@ -408,7 +409,7 @@ above it.
 |---|---|
 | `Connection to tcp://…:8085 failed: Error number -138` | An old build publishing to the removed Ingress at a LAN address. Update the app |
 | `Failed to request url=https://sfu.<domain>/whip/v1` | The SFU rejected the publish token, usually because it expired before the connection finished. Retry; check the server's clock if it keeps happening |
-| `409 not_stage_holder` from `/api/whip` | They lost the stage before publishing started. Claim again |
+| `409 not_stage_holder` from `/api/whip` | They released their slot, or never claimed one, before publishing started. Claim again |
 | Connects, then no picture | UDP 7882 isn't reaching the server, the same fault viewers would see |
 | No picture, and ffmpeg's `time=` stays frozen (e.g. `00:00:00.07`) under `Timestamps are unset in a packet` | Frames are going out without timestamps. The window-capture path copies the addon's H.264 and needs `-use_wallclock_as_timestamps 1` on that input. No failure report is filed, so read `ffmpeg.log` on their machine |
 | `Unsupported audio channels 1 by RTC` | Mono audio reached the WHIP muxer. The app forces stereo, so this means a new code path forgot `-ac 2` |

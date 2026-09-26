@@ -1,8 +1,8 @@
 # Contributing
 
 Thanks for looking. This is a small project with a small surface, so the bar is less about
-process and more about not breaking the two things it guarantees: that only one person can
-broadcast at a time, and that sharing one application does not leak the rest of the machine.
+process and more about not breaking the two things it guarantees: that nobody can
+broadcast without claiming a slot from the server, and that sharing one application does not leak the rest of the machine.
 
 ## Getting set up
 
