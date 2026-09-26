@@ -44,7 +44,7 @@ export function IconVolume({ muted }: { muted: boolean }) {
   );
 }
 
-function IconHeadphones() {
+export function IconHeadphones() {
   return (
     <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none">
       <path
