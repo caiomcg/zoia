@@ -338,22 +338,56 @@ button:disabled {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
-.mains > * {
+.tile-slot {
   min-width: 0;
   min-height: 0;
   display: flex;
 }
 
-.mains > * > * {
+.tile-slot > * {
   flex: 1;
   min-width: 0;
 }
 
-.stage-area:fullscreen {
-  background: #000;
+/* Side by side: two slots and a draggable divider between them. */
+.mains.paired {
+  display: flex;
+  gap: 0;
 }
 
-.stage-area:fullscreen .remote-tile {
+.mains.paired > .tile-slot {
+  flex-grow: 0;
+  flex-shrink: 1;
+}
+
+.splitter {
+  position: relative;
+  flex: 0 0 10px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.splitter::after {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 4px;
+  height: 40px;
+  content: '';
+  background: var(--border);
+  border-radius: 2px;
+  transform: translate(-50%, -50%);
+  transition: background 0.15s ease;
+}
+
+.splitter:hover::after,
+.splitter:active::after {
+  background: var(--accent);
+}
+
+/* Fullscreen is one tile at a time; leaving it returns to the layout. */
+.remote-tile:fullscreen {
+  background: #000;
   border: none;
   border-radius: 0;
 }
@@ -395,24 +429,15 @@ button:disabled {
   background: var(--accent);
 }
 
-/* Fullscreen and untouched for a few seconds: everything laid over the
-   picture fades out, the cursor included, until the mouse moves. */
-.stage-area .thumb-overlay,
-.stage-area .layout-switch {
-  transition: opacity 0.2s ease;
-}
-
-.stage-area.idle {
+/* Fullscreen and untouched for a few seconds: the controls fade out, the
+   cursor too, until the mouse moves. */
+.remote-tile.idle {
   cursor: none;
 }
 
-.stage-area.idle .thumb-overlay,
-.stage-area.idle .layout-switch,
-.stage-area.idle .remote-tile-footer,
-.stage-area.idle .remote-tile:hover .remote-tile-footer,
-.stage-area.idle .remote-tile:focus-within .remote-tile-footer,
-.stage-area.idle .player-controls,
-.stage-area.idle .live-controls {
+.remote-tile.idle .remote-tile-footer,
+.remote-tile.idle:hover .remote-tile-footer,
+.remote-tile.idle:focus-within .remote-tile-footer {
   opacity: 0;
   pointer-events: none;
 }

@@ -16,7 +16,9 @@ import { IconFullscreen, IconVolume } from './Player';
  * moves it up, displacing whichever large one was chosen longest ago.
  *
  * The thumbnail strip floats over the bottom of the picture, clear of the
- * player's controls, and can be tucked away. Large tiles ask for the high
+ * player's controls, and can be tucked away. Side by side, the split between
+ * the two is draggable. Fullscreen is per tile: one broadcast fills the screen,
+ * and leaving it lands back in whichever layout was chosen. Large tiles ask for the high
  * simulcast layer, thumbnails for the low one (see setRemoteFocus).
  *
  * Volume and mute are kept per person, here rather than in the tile, so they
@@ -34,6 +36,66 @@ const STRIP_HIDDEN_KEY = 'zoia.thumbnailsHidden';
 const MOSAIC_HIGH_LIMIT = 4;
 /** In fullscreen, overlays fade after this long without the mouse moving. */
 const FULLSCREEN_IDLE_MS = 5000;
+const SPLIT_KEY = 'zoia.pairSplit';
+const SPLIT_MIN = 0.2;
+const SPLIT_MAX = 0.8;
+
+function readSplit(): number {
+  try {
+    const value = Number(localStorage.getItem(SPLIT_KEY));
+    return value >= SPLIT_MIN && value <= SPLIT_MAX ? value : 0.5;
+  } catch {
+    return 0.5;
+  }
+}
+
+/**
+ * Fullscreen for one element, and whether the viewer has gone still in it.
+ * After a few still seconds the controls and cursor get out of the way; any
+ * movement brings them back.
+ */
+function useFullscreen(ref: RefObject<HTMLElement | null>) {
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [idle, setIdle] = useState(false);
+
+  useEffect(() => {
+    const handler = () =>
+      setIsFullscreen(Boolean(ref.current) && document.fullscreenElement === ref.current);
+    document.addEventListener('fullscreenchange', handler);
+    return () => document.removeEventListener('fullscreenchange', handler);
+  }, [ref]);
+
+  useEffect(() => {
+    const element = ref.current;
+    if (!isFullscreen || !element) {
+      setIdle(false);
+      return;
+    }
+    let timer = setTimeout(() => setIdle(true), FULLSCREEN_IDLE_MS);
+    const wake = () => {
+      setIdle(false);
+      clearTimeout(timer);
+      timer = setTimeout(() => setIdle(true), FULLSCREEN_IDLE_MS);
+    };
+    const events = ['mousemove', 'mousedown', 'keydown'] as const;
+    for (const name of events) element.addEventListener(name, wake);
+    return () => {
+      clearTimeout(timer);
+      for (const name of events) element.removeEventListener(name, wake);
+    };
+  }, [isFullscreen, ref]);
+
+  async function toggle() {
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen();
+      else await ref.current?.requestFullscreen();
+    } catch {
+      // Refused (no user gesture, or policy); the layout simply stays put.
+    }
+  }
+
+  return { isFullscreen, idle, toggle };
+}
 
 function readStored<T extends string>(key: string, allowed: readonly T[], fallback: T): T {
   try {
@@ -145,18 +207,18 @@ function RemoteTile({
   onAudioChange,
   qualityMode,
   onQualityModeChange,
-  isFullscreen,
-  onToggleFullscreen,
 }: {
   screen: RemoteScreen;
   audio: AudioSetting;
   onAudioChange: (next: AudioSetting) => void;
   qualityMode: RemoteQualityMode;
   onQualityModeChange?: (mode: RemoteQualityMode) => void;
-  isFullscreen: boolean;
-  onToggleFullscreen: () => void;
 }) {
+  const tileRef = useRef<HTMLElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const fullscreen = useFullscreen(tileRef);
+  const { isFullscreen } = fullscreen;
+  const onToggleFullscreen = () => void fullscreen.toggle();
   const { volume, muted } = audio;
   useMediaStream(videoRef, screen.videoTrack, screen.audioTrack);
 
@@ -168,7 +230,7 @@ function RemoteTile({
   }, [muted, volume]);
 
   return (
-    <article className="remote-tile">
+    <article className={`remote-tile${fullscreen.idle ? ' idle' : ''}`} ref={tileRef}>
       <video ref={videoRef} playsInline autoPlay onDoubleClick={onToggleFullscreen} />
       <div className="remote-tile-footer">
         <span className="remote-tile-who">
@@ -294,11 +356,9 @@ export default function RemoteGrid({
   const [stripHidden, setStripHidden] = useState(
     () => readStored(STRIP_HIDDEN_KEY, ['true', 'false'], 'false') === 'true',
   );
-  // Fullscreen takes the whole stage area, not one video, so the layout, the
-  // thumbnails and each tile's controls come along.
-  const areaRef = useRef<HTMLDivElement>(null);
-  const [isFullscreen, setIsFullscreen] = useState(false);
-  const [idle, setIdle] = useState(false);
+  const [split, setSplit] = useState(readSplit);
+  const mainsRef = useRef<HTMLDivElement>(null);
+  const draggingRef = useRef(false);
 
   const hasLocal = Boolean(local);
   const candidates = [
@@ -347,45 +407,11 @@ export default function RemoteGrid({
     onFocusChange(focusKey ? focusKey.split('|') : []);
   }, [focusKey, onFocusChange]);
 
-  useEffect(() => {
-    const handler = () =>
-      setIsFullscreen(Boolean(areaRef.current) && document.fullscreenElement === areaRef.current);
-    document.addEventListener('fullscreenchange', handler);
-    return () => document.removeEventListener('fullscreenchange', handler);
-  }, []);
-
-  // Fullscreen is for watching: after a few still seconds the thumbnails,
-  // controls and cursor get out of the way, and any movement brings them back.
-  useEffect(() => {
-    const area = areaRef.current;
-    if (!isFullscreen || !area) {
-      setIdle(false);
-      return;
-    }
-    let timer = setTimeout(() => setIdle(true), FULLSCREEN_IDLE_MS);
-    const wake = () => {
-      setIdle(false);
-      clearTimeout(timer);
-      timer = setTimeout(() => setIdle(true), FULLSCREEN_IDLE_MS);
-    };
-    area.addEventListener('mousemove', wake);
-    area.addEventListener('mousedown', wake);
-    area.addEventListener('keydown', wake);
-    return () => {
-      clearTimeout(timer);
-      area.removeEventListener('mousemove', wake);
-      area.removeEventListener('mousedown', wake);
-      area.removeEventListener('keydown', wake);
-    };
-  }, [isFullscreen]);
-
-  async function toggleFullscreen() {
-    try {
-      if (document.fullscreenElement) await document.exitFullscreen();
-      else await areaRef.current?.requestFullscreen();
-    } catch {
-      // Refused (no user gesture, or policy); the layout simply stays put.
-    }
+  function dragSplit(clientX: number) {
+    const rect = mainsRef.current?.getBoundingClientRect();
+    if (!rect || rect.width === 0) return;
+    const ratio = (clientX - rect.left) / rect.width;
+    setSplit(Math.min(SPLIT_MAX, Math.max(SPLIT_MIN, ratio)));
   }
 
   function chooseLayout(next: LayoutMode) {
@@ -460,30 +486,72 @@ export default function RemoteGrid({
   const stripCount = thumbs.length + loadingThumbs.length;
   const columns = mains.length <= 1 ? 1 : mains.length <= 4 ? 2 : 3;
 
-  function renderMain(id: string) {
-    if (id === LOCAL_SPOTLIGHT) {
-      return <div key={id}>{local?.stage}</div>;
-    }
+  function renderTile(id: string) {
+    if (id === LOCAL_SPOTLIGHT) return local?.stage ?? null;
     const screen = screenById.get(id);
     if (!screen) return null;
     return (
       <RemoteTile
-        key={id}
         screen={screen}
         audio={audioFor(id)}
         onAudioChange={(next) => setAudio((current) => ({ ...current, [id]: next }))}
         qualityMode={qualityMode}
         onQualityModeChange={onQualityModeChange}
-        isFullscreen={isFullscreen}
-        onToggleFullscreen={() => void toggleFullscreen()}
       />
     );
   }
 
+  const paired = mode === 'pair' && mains.length === 2;
+  const [left, right] = mains;
+
+  const mainsView = paired ? (
+    <div className="mains paired" ref={mainsRef}>
+      <div className="tile-slot" key={left} style={{ flexBasis: `${split * 100}%` }}>
+        {renderTile(left!)}
+      </div>
+      <div
+        className="splitter"
+        role="separator"
+        aria-orientation="vertical"
+        aria-valuemin={SPLIT_MIN * 100}
+        aria-valuemax={SPLIT_MAX * 100}
+        aria-valuenow={Math.round(split * 100)}
+        title="Arraste para redimensionar · clique duplo para dividir ao meio"
+        onPointerDown={(event) => {
+          draggingRef.current = true;
+          event.currentTarget.setPointerCapture(event.pointerId);
+        }}
+        onPointerMove={(event) => {
+          if (draggingRef.current) dragSplit(event.clientX);
+        }}
+        onPointerUp={(event) => {
+          draggingRef.current = false;
+          event.currentTarget.releasePointerCapture(event.pointerId);
+          store(SPLIT_KEY, String(split));
+        }}
+        onDoubleClick={() => {
+          setSplit(0.5);
+          store(SPLIT_KEY, '0.5');
+        }}
+      />
+      <div className="tile-slot" key={right} style={{ flexBasis: `${(1 - split) * 100}%` }}>
+        {renderTile(right!)}
+      </div>
+    </div>
+  ) : (
+    <div className={`mains cols-${columns}`}>
+      {mains.map((id) => (
+        <div className="tile-slot" key={id}>
+          {renderTile(id)}
+        </div>
+      ))}
+    </div>
+  );
+
   return (
     <section className="broadcast-layout">
-      <div className={`stage-area${idle ? ' idle' : ''}`} ref={areaRef}>
-        <div className={`mains cols-${columns}`}>{mains.map(renderMain)}</div>
+      <div className="stage-area">
+        {mainsView}
 
         {candidates.length > 1 && (
           <div className="layout-switch" role="group" aria-label="Layout">
