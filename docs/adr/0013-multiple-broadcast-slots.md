@@ -1,8 +1,9 @@
-# ADR 0012 — Multiple independent broadcast slots
+# ADR 0013 — Multiple independent broadcast slots
 
 ## Status
 
-accepted
+accepted. Supersedes the single-holder stage of [ADR 0005](0005-one-tier-claimable-stage.md);
+its one tier of user still stands.
 
 ## Context
 

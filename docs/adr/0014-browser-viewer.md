@@ -1,4 +1,4 @@
-# 13. Restore a viewer-only browser client
+# 14. Restore a viewer-only browser client
 
 - **Status:** accepted
 - **Date:** 2026-09-25
