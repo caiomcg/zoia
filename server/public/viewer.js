@@ -88,12 +88,17 @@ function applyMediaSettings() {
     const subscribed = state.selected.has(identity);
     const videoSubscribed = subscribed && !state.audioOnly.has(identity);
     const low = state.qualityMode === 'low' || (state.focusedId && state.focusedId !== identity);
-    for (const publication of participant.videoTrackPublications.values()) {
-      publication.setSubscribed(videoSubscribed);
-      publication.setVideoQuality(low ? 0 : 2);
-    }
-    for (const publication of participant.audioTrackPublications.values()) {
-      publication.setSubscribed(subscribed);
+    // A participant can leave while this runs; that must not stop the rest.
+    try {
+      for (const publication of participant.videoTrackPublications.values()) {
+        publication.setSubscribed(videoSubscribed);
+        publication.setVideoQuality(low ? 0 : 2);
+      }
+      for (const publication of participant.audioTrackPublications.values()) {
+        publication.setSubscribed(subscribed);
+      }
+    } catch {
+      // Nothing to settle for someone who is gone.
     }
   }
 }
@@ -116,8 +121,14 @@ function refreshBroadcasters() {
       });
     }
   }
+  // Someone who started broadcasting since the last refresh is watched by
+  // default; a broadcast the viewer turned off stays off.
+  for (const id of next.keys()) if (!state.broadcasters.has(id)) state.selected.add(id);
   state.broadcasters = next;
   for (const id of state.selected) if (!next.has(id)) state.selected.delete(id);
+  // LiveKit auto-subscribes to every new publication; this is what keeps a
+  // deselected broadcast from being downloaded anyway.
+  applyMediaSettings();
   renderSidebar();
   renderGrid();
 }
@@ -305,6 +316,8 @@ async function connect() {
       refreshBroadcasters();
       showMessage(`${name} saiu da sala`);
     })
+    .on(RoomEvent.TrackPublished, refreshBroadcasters)
+    .on(RoomEvent.TrackUnpublished, refreshBroadcasters)
     .on(RoomEvent.TrackSubscribed, refreshBroadcasters)
     .on(RoomEvent.TrackUnsubscribed, refreshBroadcasters)
     .on(RoomEvent.ParticipantMetadataChanged, refreshBroadcasters)
@@ -312,16 +325,11 @@ async function connect() {
     .on(RoomEvent.Reconnected, () => {
       setConnection('Conectado');
       refreshBroadcasters();
-      applyMediaSettings();
     })
     .on(RoomEvent.Disconnected, () => setConnection('Desconectado', true));
   await state.room.connect(token.wsUrl, token.token);
   setConnection('Conectado');
   refreshBroadcasters();
-  for (const person of state.broadcasters.values()) state.selected.add(person.id);
-  applyMediaSettings();
-  renderSidebar();
-  renderGrid();
 }
 
 async function start() {
