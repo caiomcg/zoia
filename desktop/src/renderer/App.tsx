@@ -3,7 +3,7 @@ import Banner from './components/Banner';
 import CameraDialog from './components/CameraDialog';
 import PairingScreen from './components/PairingScreen';
 import Player from './components/Player';
-import RemoteGrid, { LOCAL_SPOTLIGHT, type LoadingBroadcast } from './components/RemoteGrid';
+import RemoteGrid, { type LoadingBroadcast } from './components/RemoteGrid';
 import Sidebar from './components/Sidebar';
 import SourcePicker from './components/SourcePicker';
 import StatusLight, { type StatusTone } from './components/StatusLight';
@@ -33,8 +33,6 @@ export default function App() {
   const [remoteQualityMode, setRemoteQualityMode] = useState<RemoteQualityMode>(() =>
     localStorage.getItem(REMOTE_QUALITY_STORAGE_KEY) === 'low' ? 'low' : 'auto',
   );
-  // What the viewer clicked into the spotlight; null means "the default".
-  const [spotlightChoice, setSpotlightChoice] = useState<string | null>(null);
   const [gpu, setGpu] = useState<GpuStatus | null>(null);
   const [stageError, setStageError] = useState<string | null>(null);
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
@@ -63,36 +61,6 @@ export default function App() {
 
   const isLive = room.broadcastState === 'live' || gpuCast.state === 'live';
   const isStarting = room.broadcastState === 'starting' || gpuCast.state === 'starting';
-
-  // Your own preview leads while you are live, otherwise the first broadcast
-  // does. A choice sticks until its broadcast ends; later broadcasts join the
-  // thumbnail strip instead of taking the picture.
-  const chosenIsLive =
-    spotlightChoice === LOCAL_SPOTLIGHT
-      ? isLive
-      : room.remoteScreens.some((screen) => screen.participantIdentity === spotlightChoice);
-  const spotlight = chosenIsLive
-    ? spotlightChoice
-    : isLive
-      ? LOCAL_SPOTLIGHT
-      : (room.remoteScreens[0]?.participantIdentity ?? null);
-
-  // Going live, or stopping, returns the spotlight to its default.
-  useEffect(() => {
-    setSpotlightChoice(null);
-  }, [isLive]);
-
-  // Pin whatever is showing. The default is "the first broadcast", and a
-  // newcomer can sort ahead of the one on screen; pinned, they only ever join
-  // the strip. A pin is dropped above once its broadcast ends.
-  useEffect(() => {
-    if (spotlight !== null && spotlight !== spotlightChoice) setSpotlightChoice(spotlight);
-  }, [spotlight, spotlightChoice]);
-
-  // Only the spotlight asks for full quality; thumbnails take the low layer.
-  useEffect(() => {
-    setRemoteFocus(spotlight ?? LOCAL_SPOTLIGHT);
-  }, [spotlight, setRemoteFocus]);
 
   useEffect(() => {
     window.zoia.pairing.status().then(setStatus);
@@ -350,8 +318,7 @@ export default function App() {
         <main className="main">
           <RemoteGrid
             screens={room.remoteScreens}
-            spotlight={spotlight}
-            onSpotlight={setSpotlightChoice}
+            onFocusChange={setRemoteFocus}
             local={
               isLive
                 ? {
