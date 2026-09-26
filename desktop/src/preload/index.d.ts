@@ -25,8 +25,7 @@ export interface ZoiaBridge {
   };
   stage: {
     get(): Promise<StageState>;
-    /** Kept as an optional compatibility argument; broadcasts are independent. */
-    claim(force?: boolean): Promise<ClaimResult>;
+    claim(): Promise<ClaimResult>;
     release(): Promise<{ ok: boolean; released?: boolean }>;
   };
   sources: {

@@ -30,7 +30,7 @@ const bridge: ZoiaBridge = {
   },
   stage: {
     get: () => ipcRenderer.invoke(IPC.stageGet),
-    claim: (force) => ipcRenderer.invoke(IPC.stageClaim, force),
+    claim: () => ipcRenderer.invoke(IPC.stageClaim),
     release: () => ipcRenderer.invoke(IPC.stageRelease),
   },
   sources: {

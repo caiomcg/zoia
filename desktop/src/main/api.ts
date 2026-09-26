@@ -118,7 +118,7 @@ export function stageGet() {
   return call<StageState>('/api/stage');
 }
 
-export async function stageClaim(_force = false): Promise<ClaimResult> {
+export async function stageClaim(): Promise<ClaimResult> {
   try {
     const result = await call<{ ok: true; broadcaster: NonNullable<ClaimResult['broadcaster']> }>(
       '/api/stage/claim',

@@ -170,15 +170,6 @@ export interface EncoderStatus {
 /** Which encoding path a broadcast uses. */
 export type BroadcastMode = 'gpu' | 'window';
 
-/**
- * Messages exchanged directly between clients over LiveKit's data channel.
- * The token already grants canPublishData, so this needs no server round trip.
- */
-export type RoomMessage =
-  | { type: 'takeover-request'; from: string; fromName: string }
-  | { type: 'takeover-granted'; to: string }
-  | { type: 'takeover-denied'; to: string };
-
 export interface GpuStatus {
   /** False only when no hardware adapter was found at all. */
   hardwareEncoder: boolean;

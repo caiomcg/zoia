@@ -215,7 +215,9 @@ export function useRoom() {
   const remoteQualityModeRef = useRef<RemoteQualityMode>('auto');
   const focusedRemoteIdRef = useRef<string | null>(null);
   const audioOnlyRemoteIdsRef = useRef<Set<string>>(new Set());
-  const selectionInitializedRef = useRef(false);
+  // Owners who were publishing at the last refresh. Whoever appears in the
+  // next one and not here started broadcasting since, and is watched by default.
+  const knownBroadcastersRef = useRef<Set<string>>(new Set());
   const broadcastingNamesRef = useRef(new Map<string, string>());
   const [selectedRemoteIds, setSelectedRemoteIds] = useState<Set<string>>(new Set());
   const [participantCount, setParticipantCount] = useState(0);
@@ -287,36 +289,46 @@ export function useRoom() {
     return screens;
   }, []);
 
-  const dataHandlerRef = useRef<((payload: Uint8Array, from?: Participant) => void) | null>(null);
-
-  /** Kept for old data-message consumers; broadcasts no longer use takeover. */
-  const onData = useCallback((handler: (payload: Uint8Array, from?: Participant) => void) => {
-    dataHandlerRef.current = handler;
-  }, []);
-
   const connect = useCallback(
     async (wsUrl: string, token: string, quality?: TokenResult['quality']) => {
       setState('connecting');
       setIsReconnecting(false);
       setError(null);
       setRoomNotice(null);
-      selectionInitializedRef.current = false;
+      knownBroadcastersRef.current = new Set();
       if (quality) qualityRef.current = quality;
 
       const room = new Room({ adaptiveStream: true, dynacast: true });
       roomRef.current = room;
 
-      const refresh = (initializeSelection = false) => {
-        const screens = findRemoteScreens(room);
-        const available = new Set(screens.map((screen) => screen.participantIdentity));
-        const nextSelected = new Set(selectedRemoteIdsRef.current);
-        if (initializeSelection && !selectionInitializedRef.current) {
-          for (const id of available) nextSelected.add(id);
-          selectionInitializedRef.current = true;
+      const refresh = () => {
+        // Judged by publications, not tracks: a broadcast this viewer chose
+        // not to watch has no subscribed track, and must not look new again.
+        const publishing = new Set<string>();
+        for (const participant of room.remoteParticipants.values()) {
+          const owner = ownerIdentity(participant.identity);
+          if (owner === room.localParticipant.identity) continue;
+          if (participant.trackPublications.size > 0) publishing.add(owner);
         }
+        const nextSelected = new Set<string>();
+        for (const id of publishing) {
+          if (selectedRemoteIdsRef.current.has(id) || !knownBroadcastersRef.current.has(id)) {
+            nextSelected.add(id);
+          }
+        }
+        knownBroadcastersRef.current = publishing;
         selectedRemoteIdsRef.current = nextSelected;
         setSelectedRemoteIds(nextSelected);
-        setRemoteScreens(screens);
+        // LiveKit auto-subscribes to every new publication. Settling it here
+        // is what keeps a deselected broadcast from being downloaded anyway.
+        applyRemoteMediaSettings(
+          room,
+          nextSelected,
+          remoteQualityModeRef.current,
+          focusedRemoteIdRef.current,
+          audioOnlyRemoteIdsRef.current,
+        );
+        setRemoteScreens(findRemoteScreens(room));
         setParticipantCount(room.remoteParticipants.size);
 
         const describe = (p: Participant, isLocal: boolean): RoomMember => ({
@@ -370,28 +382,17 @@ export function useRoom() {
         setMembers(nextMembers);
       };
 
-      const applyRemoteSubscriptions = () => {
-        applyRemoteMediaSettings(
-          room,
-          selectedRemoteIdsRef.current,
-          remoteQualityModeRef.current,
-          focusedRemoteIdRef.current,
-          audioOnlyRemoteIdsRef.current,
-        );
-      };
-
       room
         // Without this, a rename updated the server record and the person's
         // own footer while every list in every client kept the old name.
         .on(RoomEvent.ParticipantNameChanged, () => refresh())
         .on(RoomEvent.ParticipantMetadataChanged, () => refresh())
-        .on(RoomEvent.DataReceived, (payload, participant) =>
-          dataHandlerRef.current?.(payload, participant),
-        )
         // Permission changes are how losing the stage arrives: the server
         // revokes canPublish and LiveKit pushes it down live.
         .on(RoomEvent.ParticipantPermissionsChanged, () => refresh())
         .on(RoomEvent.LocalTrackUnpublished, () => refresh())
+        .on(RoomEvent.TrackPublished, () => refresh())
+        .on(RoomEvent.TrackUnpublished, () => refresh())
         .on(RoomEvent.TrackSubscribed, () => refresh())
         .on(RoomEvent.TrackUnsubscribed, () => refresh())
         .on(RoomEvent.ParticipantConnected, () => refresh())
@@ -411,7 +412,6 @@ export function useRoom() {
           setIsReconnecting(false);
           setState('connected');
           refresh();
-          applyRemoteSubscriptions();
         })
         .on(RoomEvent.Disconnected, (reason) => {
           setIsReconnecting(false);
@@ -429,7 +429,7 @@ export function useRoom() {
       try {
         await room.connect(wsUrl, token);
         setState('connected');
-        refresh(true);
+        refresh();
       } catch (err) {
         setState('error');
         setError(`Não foi possível conectar: ${err instanceof Error ? err.message : String(err)}`);
@@ -457,7 +457,7 @@ export function useRoom() {
     setIsReconnecting(false);
     setRoomNotice(null);
     setRemoteScreens([]);
-    selectionInitializedRef.current = false;
+    knownBroadcastersRef.current = new Set();
     remoteQualityModeRef.current = 'auto';
     focusedRemoteIdRef.current = null;
     audioOnlyRemoteIdsRef.current = new Set();
@@ -602,7 +602,7 @@ export function useRoom() {
       const claim = await window.zoia.stage.claim();
       if (!claim.ok) {
         setBroadcastState('idle');
-        setBroadcastError('Could not claim your broadcast slot.');
+        setBroadcastError('Não foi possível iniciar sua transmissão.');
         return false;
       }
       try {
@@ -684,7 +684,7 @@ export function useRoom() {
         const claim = await window.zoia.stage.claim();
         if (!claim.ok) {
           setBroadcastState('idle');
-          setBroadcastError('Could not claim your broadcast slot.');
+          setBroadcastError('Não foi possível iniciar sua transmissão.');
           return false;
         }
       }
@@ -837,7 +837,6 @@ export function useRoom() {
     members,
     connect,
     disconnect,
-    onData,
     setDisplayName,
     broadcastState,
     broadcastError,
