@@ -304,6 +304,14 @@ function buildArgs(options: EncoderOptions): string[] {
             'h264',
             '-framerate',
             String(framerate),
+            // A bare H.264 bitstream carries no timestamps, and -framerate does
+            // not supply them under -c:v copy: every packet reached the SFU
+            // stamped 0.07s, so viewers decoded nothing while ffmpeg and the
+            // SFU both looked healthy. Stamp each frame as it arrives — window
+            // capture is event-driven, so frames come at the pace of redraws
+            // and a nominal rate would drift from real time anyway.
+            '-use_wallclock_as_timestamps',
+            '1',
             '-thread_queue_size',
             '64',
             '-i',
