@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { QUALITY_PRESETS, type SourceInfo } from '../../shared/ipc';
+import { findLeagueSources, isLeagueClient, isLeagueGame } from '../../shared/league';
 
 /**
  * Quality lives here rather than in the top bar because this is the moment it
@@ -59,6 +60,9 @@ export default function SourcePicker({
     };
   }, []);
 
+  const league = useMemo(() => findLeagueSources(sources ?? []), [sources]);
+  const hasLeague = Boolean(league.game || league.client);
+
   const filtered = useMemo(() => {
     if (!sources) return [];
     const q = query.trim().toLowerCase();
@@ -86,6 +90,30 @@ export default function SourcePicker({
 
         {sources && (
           <div className="picker-body">
+            {hasLeague && (
+              <section className="picker-league-section">
+                <div className="picker-league-banner">
+                  <div className="picker-league-info">
+                    <div className="picker-league-badge">
+                      <span className="picker-league-icon">🎮</span>
+                      <strong>League of Legends</strong>
+                    </div>
+                    <p className="picker-league-status">
+                      {league.game
+                        ? 'Partida em andamento • Optando pelo jogo (alterna para o cliente após a partida)'
+                        : 'Seleção de Campeões / Cliente • Alternará para o jogo quando a partida começar'}
+                    </p>
+                  </div>
+                  <button
+                    className="picker-league-button"
+                    onClick={() => onPick((league.game ?? league.client)!)}
+                  >
+                    Transmitir LoL
+                  </button>
+                </div>
+              </section>
+            )}
+
             {screens.length > 0 && (
               <section>
                 <h3>Screens</h3>
@@ -132,6 +160,9 @@ export default function SourcePicker({
 }
 
 function SourceTile({ source, onClick }: { source: SourceInfo; onClick: () => void }) {
+  const isGame = isLeagueGame(source);
+  const isClient = isLeagueClient(source);
+
   return (
     <button className="picker-tile" onClick={onClick} title={source.name}>
       {source.thumbnailDataUrl ? (
@@ -140,6 +171,8 @@ function SourceTile({ source, onClick }: { source: SourceInfo; onClick: () => vo
         <div className="picker-tile-blank" />
       )}
       <span>{source.name}</span>
+      {isGame && <em className="picker-tile-badge">LoL • Partida</em>}
+      {isClient && <em className="picker-tile-badge">LoL • Cliente / Seleção</em>}
       {source.kind === 'window' && source.processId === null && (
         <em className="picker-tile-warn">audio unavailable</em>
       )}

@@ -17,20 +17,14 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { EncoderStatus, QualityPreset, SourceInfo } from '../../shared/ipc';
+import {
+  findLeagueSources,
+  isLeagueClient,
+  isLeagueSource,
+  resolveLeagueTarget,
+} from '../../shared/league';
 
 export type GpuBroadcastState = 'idle' | 'starting' | 'live';
-
-const LEAGUE_CLIENT_EXECUTABLE = 'leagueclient.exe';
-const LEAGUE_GAME_EXECUTABLE = 'league of legends.exe';
-
-function executableName(source: SourceInfo): string {
-  const path = source.processPath?.replaceAll('\\', '/');
-  return path?.slice(path.lastIndexOf('/') + 1).toLowerCase() ?? '';
-}
-
-function isLeagueSource(source: SourceInfo, executable: string): boolean {
-  return source.kind === 'window' && executableName(source) === executable;
-}
 
 export function useGpuBroadcast() {
   const [state, setState] = useState<GpuBroadcastState>('idle');
@@ -38,7 +32,11 @@ export function useGpuBroadcast() {
   const [error, setError] = useState<string | null>(null);
   const activeRef = useRef(false);
   const activeSourceRef = useRef<SourceInfo | null>(null);
-  const leagueClientRef = useRef<SourceInfo | null>(null);
+  const leagueFollowRef = useRef<{
+    client: SourceInfo | null;
+    current: SourceInfo;
+    preset: QualityPreset;
+  } | null>(null);
   const presetRef = useRef<QualityPreset | null>(null);
   const switchingRef = useRef(false);
   const startRef = useRef<
@@ -48,7 +46,30 @@ export function useGpuBroadcast() {
   useEffect(() => {
     return window.zoia.encoder.onStatus((next) => {
       setStatus(next);
-      if (!next.running && activeRef.current) {
+      if (!next.running && activeRef.current && !switchingRef.current) {
+        // If encoder stopped and League is active (e.g. game closed),
+        // try to switch back to client instead of going idle immediately.
+        if (leagueFollowRef.current && startRef.current && presetRef.current) {
+          void (async () => {
+            for (let attempt = 0; attempt < 15; attempt += 1) {
+              const currentSources = await window.zoia.sources.list().catch(() => []);
+              const target = resolveLeagueTarget(currentSources, leagueFollowRef.current?.client);
+              if (target && target.id !== activeSourceRef.current?.id) {
+                if (leagueFollowRef.current) {
+                  leagueFollowRef.current.current = target;
+                  if (isLeagueClient(target)) leagueFollowRef.current.client = target;
+                }
+                await startRef.current!(presetRef.current!, target);
+                return;
+              }
+              await new Promise((r) => setTimeout(r, 500));
+            }
+            activeRef.current = false;
+            setState('idle');
+            if (next.error) setError(next.error);
+          })();
+          return;
+        }
         activeRef.current = false;
         setState('idle');
         if (next.error) setError(next.error);
@@ -59,7 +80,7 @@ export function useGpuBroadcast() {
   const stop = useCallback(async () => {
     activeRef.current = false;
     activeSourceRef.current = null;
-    leagueClientRef.current = null;
+    leagueFollowRef.current = null;
     await window.zoia.encoder.stop().catch(() => {});
     setState('idle');
     setStatus(null);
@@ -70,12 +91,22 @@ export function useGpuBroadcast() {
       setError(null);
       setState('starting');
       presetRef.current = preset;
-      activeSourceRef.current = source;
-      if (source && isLeagueSource(source, LEAGUE_CLIENT_EXECUTABLE)) {
-        leagueClientRef.current = source;
-      } else if (!source || !isLeagueSource(source, LEAGUE_GAME_EXECUTABLE)) {
-        leagueClientRef.current = null;
+
+      if (source && isLeagueSource(source)) {
+        const allSources = await window.zoia.sources.list().catch(() => []);
+        const { game, client } = findLeagueSources(allSources);
+        const target = game ?? client ?? source;
+        leagueFollowRef.current = {
+          client: client ?? (isLeagueClient(source) ? source : null),
+          current: target,
+          preset,
+        };
+        source = target;
+      } else {
+        leagueFollowRef.current = null;
       }
+
+      activeSourceRef.current = source;
       try {
         const isWindow = source?.kind === 'window';
         await window.zoia.encoder.start({
@@ -85,8 +116,8 @@ export function useGpuBroadcast() {
           // whole screen sends no audio: the alternative is capturing the
           // whole system, which means every notification and every other app
           // going out too.
-          processId: isWindow ? source.processId : null,
-          hwnd: isWindow ? source.hwnd : null,
+          processId: isWindow && source ? source.processId : null,
+          hwnd: isWindow && source ? source.hwnd : null,
           withAudio: isWindow,
           sourceName: source?.name ?? 'Screen',
           sourceKind: source?.kind ?? 'screen',
@@ -111,20 +142,22 @@ export function useGpuBroadcast() {
     let disposed = false;
 
     const followLeagueWindow = async () => {
-      const current = activeSourceRef.current;
-      const client = leagueClientRef.current;
-      if (!activeRef.current || !current || !client || switchingRef.current) return;
+      const follow = leagueFollowRef.current;
+      if (!activeRef.current || !follow || switchingRef.current) return;
 
       const sources = await window.zoia.sources.list().catch(() => []);
       if (disposed) return;
 
-      const game = sources.find((source) => isLeagueSource(source, LEAGUE_GAME_EXECUTABLE));
-      const launcher =
-        sources.find((source) => isLeagueSource(source, LEAGUE_CLIENT_EXECUTABLE)) ?? client;
-      const target = game ?? launcher;
-      if (!target || target.id === current.id || !startRef.current || !presetRef.current) return;
+      const { game, client } = findLeagueSources(sources);
+      if (client) {
+        follow.client = client;
+      }
+      const target = game ?? client ?? follow.client;
+      if (!target || target.id === follow.current.id || !startRef.current || !presetRef.current)
+        return;
 
       switchingRef.current = true;
+      follow.current = target;
       try {
         await window.zoia.encoder.stop().catch(() => {});
         await startRef.current(presetRef.current, target);

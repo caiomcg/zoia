@@ -2,6 +2,7 @@
 
 - **Status:** accepted
 - **Date:** 2026-09-27
+- **Superseded by:** [ADR 0022](0022-unified-league-streaming.md)
 
 ## Context
 
