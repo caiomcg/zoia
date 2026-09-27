@@ -1,7 +1,7 @@
 {
-  "version": "0.3.12",
+  "version": "0.3.13",
   "updateType": "asar",
-  "artifactUrl": "https://github.com/caiomcg/zoia/releases/download/v0.3.12/Zoia-OTA-0.3.12.asar",
-  "sha256": "071e85a7f8d8adc756560339deb965c9046d1f9fe1b01d7b73b2e8f59f4b133b",
-  "notes": "Zoia now speaks English, Spanish and Portuguese, following your system language or your choice in Settings. Closing the window now quits by default."
+  "artifactUrl": "https://github.com/caiomcg/zoia/releases/download/v0.3.13/Zoia-OTA-0.3.13.asar",
+  "sha256": "b9e76e13c1ad7bad7bd3553655c286122f2b9e2c6b0a3edb04fe5d76176ec371",
+  "notes": "The watching eye sits on the avatar, and the Screen and Camera buttons fit in every language."
 }
