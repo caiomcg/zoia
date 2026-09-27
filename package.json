@@ -1,6 +1,6 @@
 {
   "name": "zoia",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "private": true,
   "description": "Private one-to-many screen broadcast over a self-hosted LiveKit SFU.",
   "type": "module",
