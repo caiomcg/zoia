@@ -252,10 +252,24 @@ function encoderTuning(encoder: string): string[] {
   switch (encoder) {
     case 'h264_amf':
       // AMF counts B-frames in frames; above zero buys compression with
-      // latency a viewer feels.
-      return ['-usage', 'ultralowlatency', '-quality', 'speed', '-rc', 'cbr', '-bf', '0'];
+      // latency a viewer feels. forced_idr and header_spacing ensure every
+      // keyframe is an IDR and repeats SPS/PPS for WebRTC decoders.
+      return [
+        '-usage',
+        'ultralowlatency',
+        '-quality',
+        'speed',
+        '-rc',
+        'cbr',
+        '-bf',
+        '0',
+        '-forced_idr',
+        '1',
+        '-header_spacing',
+        '0',
+      ];
     case 'h264_qsv':
-      return ['-preset', 'veryfast', '-look_ahead', '0', '-bf', '0'];
+      return ['-preset', 'veryfast', '-look_ahead', '0', '-bf', '0', '-forced_idr', '1'];
     case 'libx264':
       // Ultra-low latency software fallback for CPU encoding.
       return ['-preset', 'ultrafast', '-tune', 'zerolatency', '-bf', '0'];
@@ -385,6 +399,9 @@ function buildArgs(options: EncoderOptions): string[] {
           String(Math.floor(bitrate / 2)),
           '-g',
           String(framerate * 2),
+          // Inject SPS/PPS before every keyframe so late-joining WebRTC viewers can decode immediately
+          '-bsf:v',
+          'dump_extra=freq=keyframe',
         ]),
 
     // Stereo, explicitly: the WHIP muxer refuses anything else with
