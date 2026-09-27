@@ -9,6 +9,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   type Participant,
+  DisconnectReason,
   LocalAudioTrack,
   LocalVideoTrack,
   Room,
@@ -447,16 +448,26 @@ export function useRoom() {
             setRoomNotice(`${name} parou de transmitir`);
           }
         })
+        // Every handler below first checks this is still the current room: a
+        // room being left (on a channel switch) can emit after its successor
+        // has connected, and must not knock that one back to "disconnected".
         .on(RoomEvent.Reconnecting, () => {
+          if (roomRef.current !== room) return;
           setIsReconnecting(true);
           setState('connecting');
         })
         .on(RoomEvent.Reconnected, () => {
+          if (roomRef.current !== room) return;
           setIsReconnecting(false);
           setState('connected');
           refresh();
         })
         .on(RoomEvent.Disconnected, (reason) => {
+          if (roomRef.current !== room) return;
+          // Leaving on purpose is not a lost connection: disconnect() already
+          // puts the state back to idle. Reporting it flashed a red
+          // "connection lost" banner, and the top bar's state, on every switch.
+          if (reason === DisconnectReason.CLIENT_INITIATED) return;
           setIsReconnecting(false);
           setState('disconnected');
           setError(
@@ -494,8 +505,11 @@ export function useRoom() {
   }, []);
 
   const disconnect = useCallback(async () => {
-    await roomRef.current?.disconnect();
+    // Forgotten before leaving, so the room's own events during the leave are
+    // recognised as stale and ignored.
+    const leaving = roomRef.current;
     roomRef.current = null;
+    await leaving?.disconnect();
     setState('idle');
     setIsReconnecting(false);
     setRoomNotice(null);
