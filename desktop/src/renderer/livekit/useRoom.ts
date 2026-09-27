@@ -20,6 +20,12 @@ import {
   type RemoteTrack,
 } from 'livekit-client';
 import type { QualityPreset, SourceInfo, TokenResult } from '../../shared/ipc';
+import {
+  findLeagueSources,
+  isLeagueClient,
+  isLeagueSource,
+  resolveLeagueTarget,
+} from '../../shared/league';
 import { createCaptureAudioTrack, type CaptureTrackHandle } from '../audio/capture-track';
 import { WATCHING_ATTRIBUTE, isWatching, watchingValue } from './watching';
 
@@ -29,18 +35,6 @@ import { WATCHING_ATTRIBUTE, isWatching, watchingValue } from './watching';
  * this is how the client knows whose picture it is.
  */
 export const WHIP_SUFFIX = '-gpu';
-
-const LEAGUE_CLIENT_EXECUTABLE = 'leagueclient.exe';
-const LEAGUE_GAME_EXECUTABLE = 'league of legends.exe';
-
-function executableName(source: SourceInfo): string {
-  const path = source.processPath?.replaceAll('\\', '/');
-  return path?.slice(path.lastIndexOf('/') + 1).toLowerCase() ?? '';
-}
-
-function isLeagueSource(source: SourceInfo, executable: string): boolean {
-  return source.kind === 'window' && executableName(source) === executable;
-}
 
 /** The person a WHIP publisher belongs to, or the identity unchanged. */
 function ownerIdentity(identity: string): string {
@@ -55,7 +49,7 @@ function ownerIdentity(identity: string): string {
  */
 async function replacementWindow(original: SourceInfo): Promise<SourceInfo | null> {
   const originalName = original.name.trim().toLocaleLowerCase();
-  const leagueSource = /league|riot/.test(originalName);
+  const leagueSource = isLeagueSource(original) || /league|riot/.test(originalName);
 
   for (let attempt = 0; attempt < 12; attempt += 1) {
     const sources = await window.zoia.sources.list().catch(() => []);
@@ -65,7 +59,7 @@ async function replacementWindow(original: SourceInfo): Promise<SourceInfo | nul
       const name = candidate.name.trim().toLocaleLowerCase();
       // The HWND changes during the LoL client -> game handoff, and the game
       // can also have a different PID. Its window title still identifies it.
-      if (leagueSource && /league|riot/.test(name)) return true;
+      if (leagueSource && (isLeagueSource(candidate) || /league|riot/.test(name))) return true;
       // For ordinary applications, prefer the same process or title. This
       // also handles apps that recreate their main window during an update.
       return (
@@ -276,7 +270,7 @@ export function useRoom() {
     ((source: SourceInfo, preset?: QualityPreset) => Promise<boolean>) | null
   >(null);
   const leagueFollowRef = useRef<{
-    client: SourceInfo;
+    client: SourceInfo | null;
     current: SourceInfo;
     preset?: QualityPreset;
   } | null>(null);
@@ -776,15 +770,28 @@ export function useRoom() {
       setBroadcastState('starting');
 
       if (!keepStage) {
-        leagueFollowRef.current = null;
-      } else if (
-        !isLeagueSource(source, LEAGUE_CLIENT_EXECUTABLE) &&
-        !isLeagueSource(source, LEAGUE_GAME_EXECUTABLE)
-      ) {
+        if (isLeagueSource(source)) {
+          // When starting a League broadcast, opt for game if open, otherwise client
+          const allSources = await window.zoia.sources.list().catch(() => []);
+          const { game, client } = findLeagueSources(allSources);
+          const target = game ?? client ?? source;
+          leagueFollowRef.current = {
+            client: client ?? (isLeagueClient(source) ? source : null),
+            current: target,
+            preset,
+          };
+          source = target;
+        } else {
+          leagueFollowRef.current = null;
+        }
+      } else if (!isLeagueSource(source)) {
         // A manual source change turns off the automatic League handoff.
         leagueFollowRef.current = null;
       } else if (leagueFollowRef.current) {
         leagueFollowRef.current.current = source;
+        if (isLeagueClient(source)) {
+          leagueFollowRef.current.client = source;
+        }
       }
 
       // Switching what you are sharing keeps the stage you already hold:
@@ -799,10 +806,6 @@ export function useRoom() {
           setBroadcastError('Não foi possível iniciar sua transmissão.');
           return false;
         }
-      }
-
-      if (!keepStage && isLeagueSource(source, LEAGUE_CLIENT_EXECUTABLE)) {
-        leagueFollowRef.current = { client: source, current: source, preset };
       }
 
       try {
@@ -881,6 +884,21 @@ export function useRoom() {
           if (localTrackRef.current?.mediaStreamTrack !== mediaTrack) return;
 
           void (async () => {
+            if (leagueFollowRef.current && restartWindowRef.current) {
+              for (let attempt = 0; attempt < 15; attempt += 1) {
+                if (localTrackRef.current?.mediaStreamTrack !== mediaTrack) return;
+                const currentSources = await window.zoia.sources.list().catch(() => []);
+                const target = resolveLeagueTarget(currentSources, leagueFollowRef.current.client);
+                if (target && target.id !== source.id) {
+                  leagueFollowRef.current.current = target;
+                  if (isLeagueClient(target)) leagueFollowRef.current.client = target;
+                  await restartWindowRef.current(target, leagueFollowRef.current.preset);
+                  return;
+                }
+                await new Promise((r) => setTimeout(r, 500));
+              }
+            }
+
             if (source.kind === 'window') {
               const replacement = await replacementWindow(source);
               if (replacement && restartWindowRef.current) {
@@ -962,10 +980,11 @@ export function useRoom() {
       const sources = await window.zoia.sources.list().catch(() => []);
       if (disposed) return;
 
-      const game = sources.find((source) => isLeagueSource(source, LEAGUE_GAME_EXECUTABLE));
-      const client =
-        sources.find((source) => isLeagueSource(source, LEAGUE_CLIENT_EXECUTABLE)) ?? follow.client;
-      const target = game ?? client;
+      const { game, client } = findLeagueSources(sources);
+      if (client) {
+        follow.client = client;
+      }
+      const target = game ?? client ?? follow.client;
 
       if (!target || target.id === follow.current.id || !restartWindowRef.current) return;
 

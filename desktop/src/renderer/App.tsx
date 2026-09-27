@@ -19,6 +19,7 @@ import {
   type RoomInfo,
   type SourceInfo,
 } from '../shared/ipc';
+import { isLeagueSource, resolveLeagueTarget } from '../shared/league';
 
 const PRESET_STORAGE_KEY = 'zoia.qualityPreset';
 const ONBOARDING_STORAGE_KEY = 'zoia.onboardingDismissed';
@@ -200,8 +201,15 @@ export default function App() {
     // for no reason, and briefly offer the stage to someone else.
     const switching = isLive;
 
+    let target = source;
+    if (isLeagueSource(source)) {
+      const allSources = await window.zoia.sources.list().catch(() => []);
+      const resolved = resolveLeagueTarget(allSources, source);
+      if (resolved) target = resolved;
+    }
+
     if (mode === 'window') {
-      await room.startBroadcast(source, preset, { keepStage: switching });
+      await room.startBroadcast(target, preset, { keepStage: switching });
       return;
     }
 
@@ -214,7 +222,7 @@ export default function App() {
     }
 
     setStageError(null);
-    const ok = await gpuCast.start(preset, source);
+    const ok = await gpuCast.start(preset, target);
     if (!ok && !switching) await window.zoia.stage.release().catch(() => {});
   }
 
