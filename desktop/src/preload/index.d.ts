@@ -44,6 +44,8 @@ export interface ZoiaBridge {
   sources: {
     list(): Promise<SourceInfo[]>;
     select(source: Pick<SourceInfo, 'id' | 'name' | 'processId'>): Promise<void>;
+    /** A window's current title, or null once it is gone. */
+    title(hwnd: number): Promise<string | null>;
   };
   /** The hardware-encoding path: ffmpeg + NVENC + WHIP, bypassing Chromium. */
   encoder: {

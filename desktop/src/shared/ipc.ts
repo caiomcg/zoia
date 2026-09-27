@@ -241,6 +241,7 @@ export const IPC = {
   stageRelease: 'zoia:stage:release',
   sourcesList: 'zoia:sources:list',
   sourcesSelect: 'zoia:sources:select',
+  sourcesTitle: 'zoia:sources:title',
   audioStart: 'zoia:audio:start',
   audioStop: 'zoia:audio:stop',
   audioChunk: 'zoia:audio:chunk',

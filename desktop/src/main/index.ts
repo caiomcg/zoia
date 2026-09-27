@@ -236,6 +236,10 @@ function registerIpc(): void {
     },
   );
 
+  ipcMain.handle(IPC.sourcesTitle, (_event, hwnd: number) =>
+    typeof hwnd === 'number' ? sources.windowTitle(hwnd) : null,
+  );
+
   ipcMain.handle(IPC.renameDevice, (_event, name: string) => api.renameDevice(name));
 
   ipcMain.handle(

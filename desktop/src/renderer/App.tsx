@@ -24,10 +24,14 @@ import { isLeagueSource, resolveLeagueTarget } from '../shared/league';
 
 const PRESET_STORAGE_KEY = 'zoia.qualityPreset';
 const HARDWARE_STORAGE_KEY = 'zoia.hardwareAcceleration';
+const PREVIEW_STORAGE_KEY = 'zoia.showOwnPreview';
 const ONBOARDING_STORAGE_KEY = 'zoia.onboardingDismissed';
 const CHANNEL_STORAGE_KEY = 'zoia.channel';
 /** How often the channel list (who is where, who is live) is refreshed. */
-const ROOMS_POLL_MS = 5_000;
+// The server answers this in ~10ms (measured), so polling often is cheap. At
+// 5s a move between channels showed up late: the mover needs about a second
+// to reach their new channel, after the immediate re-read had already run.
+const ROOMS_POLL_MS = 2_000;
 
 function storeChannel(id: string) {
   try {
@@ -199,6 +203,15 @@ export default function App() {
   // straight from the logo to a populated room rather than through an empty
   // one. Capped, so a slow or failing server still gets its say on screen.
   const [booted, setBooted] = useState(false);
+  // Seeing your own broadcast is opt-in, and the choice is remembered.
+  const [showPreview, setShowPreview] = useState(
+    () => localStorage.getItem(PREVIEW_STORAGE_KEY) === 'true',
+  );
+  const togglePreview = () =>
+    setShowPreview((current) => {
+      localStorage.setItem(PREVIEW_STORAGE_KEY, String(!current));
+      return !current;
+    });
   useEffect(() => {
     if (room.state === 'connected' || room.state === 'error') setBooted(true);
   }, [room.state]);
@@ -316,14 +329,19 @@ export default function App() {
     );
   } else if (encodingLive && stats) {
     connectionStats.push(
-      { label: 'Encoder', value: `${stats.encoder} on the CPU` },
-      { label: 'Resolution', value: `${stats.width}×${stats.height}` },
-      { label: 'Frame rate', value: `${stats.fps} fps` },
+      { label: 'Target', value: preset.label },
+      {
+        label: 'Capture',
+        value: `${stats.captureWidth}×${stats.captureHeight} · ${stats.captureFps} fps`,
+      },
+      { label: 'Sending', value: `${stats.width}×${stats.height} · ${stats.fps} fps` },
       { label: 'Bitrate', value: `${(stats.kbps / 1000).toFixed(1)} Mbps` },
+      { label: 'Encoder', value: `${stats.encoder} (${stats.codec})` },
+      {
+        label: 'Limited by',
+        value: stats.limitation === 'none' ? 'nothing' : stats.limitation,
+      },
     );
-    if (room.audioLatencyMs > 0) {
-      connectionStats.push({ label: 'Audio delay', value: `+${room.audioLatencyMs} ms` });
-    }
   }
 
   const roomError = show('room', room.error);
@@ -388,7 +406,7 @@ export default function App() {
         <div className="topbar-right">
           <div className="share-icons" role="group" aria-label="What to share">
             <button
-              className={`icon-button${screenLive ? ' active' : ''}`}
+              className={`share-button${screenLive ? ' active' : ''}`}
               disabled={room.state !== 'connected' || isStarting}
               onClick={() => setPickerOpen(true)}
               title={
@@ -409,10 +427,11 @@ export default function App() {
                 <rect x="2.5" y="4" width="19" height="13" rx="2" />
                 <path d="M8 20.5h8" strokeLinecap="round" />
               </svg>
+              {screenLive ? 'Sharing' : 'Screen'}
             </button>
 
             <button
-              className={`icon-button${cameraLive ? ' active' : ''}`}
+              className={`share-button${cameraLive ? ' active' : ''}`}
               disabled={room.state !== 'connected' || isStarting}
               onClick={() => void toggleCamera()}
               title={cameraLive ? 'Sharing your camera — click to stop' : 'Share your camera'}
@@ -429,6 +448,7 @@ export default function App() {
                 <rect x="2.5" y="6" width="13" height="12" rx="2" />
                 <path d="M15.5 11l6-3.5v9l-6-3.5z" strokeLinejoin="round" />
               </svg>
+              {cameraLive ? 'Camera on' : 'Camera'}
             </button>
           </div>
         </div>
@@ -476,6 +496,8 @@ export default function App() {
                       <Player
                         fullscreen={fullscreen}
                         name={status.deviceName ?? 'You'}
+                        showPreview={showPreview}
+                        onTogglePreview={togglePreview}
                         localTrack={room.localTrack}
                         gpuBroadcasting={gpuLive}
                         sendAudio={
@@ -491,7 +513,10 @@ export default function App() {
                         onSwitch={() => setPickerOpen(true)}
                       />
                     ),
-                    track: room.localTrack,
+                    // The strip's thumbnail follows the same choice.
+                    track: showPreview ? room.localTrack : null,
+                    showPreview,
+                    onTogglePreview: togglePreview,
                     onStop: () => void stopSharing(),
                     name: status.deviceName ?? 'You',
                   }
