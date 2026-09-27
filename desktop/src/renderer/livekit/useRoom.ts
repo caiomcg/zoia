@@ -255,6 +255,8 @@ export interface SendAudio {
   muted: boolean;
 }
 
+const DEFAULT_SEND_AUDIO: SendAudio = { volume: 1, muted: false };
+
 export function useRoom() {
   const roomRef = useRef<Room | null>(null);
   const localTrackRef = useRef<LocalVideoTrack | null>(null);
@@ -264,9 +266,10 @@ export function useRoom() {
     track: LocalAudioTrack;
     capture: CaptureTrackHandle | null;
   } | null>(null);
-  // What viewers hear of the audio this device sends. Kept across broadcasts
-  // in a session, so switching source does not unmute behind your back.
-  const sendAudioRef = useRef<SendAudio>({ volume: 1, muted: false });
+  // What viewers hear of the audio this device sends. Kept while you switch
+  // source, so a switch does not unmute behind your back; reset when you stop,
+  // so the next broadcast starts audible.
+  const sendAudioRef = useRef<SendAudio>(DEFAULT_SEND_AUDIO);
   const [sendAudio, setSendAudioState] = useState<SendAudio>(sendAudioRef.current);
   const [sendingAudio, setSendingAudio] = useState(false);
   const restartWindowRef = useRef<
@@ -671,6 +674,8 @@ export function useRoom() {
   const stopBroadcast = useCallback(async () => {
     leagueFollowRef.current = null;
     await stopPublishing();
+    sendAudioRef.current = DEFAULT_SEND_AUDIO;
+    setSendAudioState(DEFAULT_SEND_AUDIO);
     await window.zoia.stage.release().catch(() => {});
   }, [stopPublishing]);
 

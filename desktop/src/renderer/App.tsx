@@ -415,7 +415,6 @@ export default function App() {
                       <Player
                         fullscreen={fullscreen}
                         name={status.deviceName ?? 'You'}
-                        viewers={room.viewers}
                         localTrack={room.localTrack}
                         gpuBroadcasting={gpuLive}
                         sendAudio={

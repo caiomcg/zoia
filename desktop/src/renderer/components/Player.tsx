@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { LocalVideoTrack } from 'livekit-client';
-import type { SendAudio, Viewer } from '../livekit/useRoom';
+import type { SendAudio } from '../livekit/useRoom';
 import Avatar from './Avatar';
 
 /**
@@ -82,7 +82,6 @@ export function IconFullscreen({ active }: { active: boolean }) {
 
 export default function Player({
   name,
-  viewers,
   localTrack,
   gpuBroadcasting = false,
   sendAudio,
@@ -91,8 +90,6 @@ export default function Player({
   fullscreen,
 }: {
   name: string;
-  /** People in the room watching this share, by their own account. */
-  viewers: Viewer[];
   localTrack: LocalVideoTrack | null;
   /**
    * On the NVENC path the frames never enter this process — ffmpeg publishes
@@ -175,7 +172,6 @@ export default function Player({
           </span>
         </span>
         <div className="remote-audio-controls">
-          <ViewersButton viewers={viewers} />
           {sendAudio && audio && (
             <>
               {/* Same behaviour as a watched tile: muting keeps the level, and
@@ -237,44 +233,6 @@ export default function Player({
         </div>
       </div>
     </section>
-  );
-}
-
-/** An eye and a count; click for the names. */
-function ViewersButton({ viewers }: { viewers: Viewer[] }) {
-  const [open, setOpen] = useState(false);
-  const names = viewers.map((v) => v.name).join(', ');
-  const label =
-    viewers.length === 0 ? 'Nobody is watching yet' : `${viewers.length} watching: ${names}`;
-
-  return (
-    <span className="viewers">
-      <button
-        className={`icon-button viewers-button${open ? ' active' : ''}`}
-        onClick={() => setOpen((o) => !o)}
-        onBlur={() => setOpen(false)}
-        title={label}
-        aria-label={label}
-        aria-expanded={open}
-      >
-        <IconEye />
-        <span className="viewers-count">{viewers.length}</span>
-      </button>
-      {open && (
-        <span className="viewers-list" role="status">
-          {viewers.length === 0 ? (
-            <em>Nobody is watching yet</em>
-          ) : (
-            viewers.map((v) => (
-              <span key={v.identity} className="viewers-person">
-                <Avatar name={v.name} live={false} />
-                {v.name}
-              </span>
-            ))
-          )}
-        </span>
-      )}
-    </span>
   );
 }
 

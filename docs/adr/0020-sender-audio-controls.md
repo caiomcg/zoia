@@ -17,8 +17,8 @@ the speaker as "mute my stream", and the headphones as noise.
 - On your own share, the footer's speaker and slider set **what viewers hear**. The slider
   drives a gain node between the capture worklet and the published track. The speaker mutes
   the LiveKit track, so the track stays published and unmuting is instant.
-- The level and mute last for the session and carry across source switches, so switching
-  windows does not unmute behind your back.
+- The level and mute carry across source switches, so switching windows does not unmute
+  behind your back. Stopping the broadcast resets them, so the next one starts audible.
 - A camera's microphone has no gain stage, so it gets the mute but no slider. The camera
   dialog's "mute microphone" option (ADR 0018) sets the same mute, so the two agree.
 - The monitor is removed, including its gain node and the `canMonitor` flag.
