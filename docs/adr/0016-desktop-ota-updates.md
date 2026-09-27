@@ -1,0 +1,78 @@
+# 16. OTA updates for the desktop app's application code
+
+- **Status:** accepted
+- **Date:** 2026-09-27
+
+## Context
+
+The Windows desktop client is distributed as an Electron application. A normal
+Electron rebuild produces a large installer or portable executable because it
+contains the Electron runtime, Chromium, FFmpeg, and native capture addons.
+Downloading that entire artifact for every TypeScript or React change is
+unnecessarily expensive.
+
+The project is also forkable and does not have one universal update service.
+An updater therefore needs a repository and branch that can be changed by the
+fork owner without rebuilding the Electron runtime solely to change a feed URL.
+
+An update must not replace files while the main Electron process still has
+them open. It must also reject corrupted or untrusted downloads and leave a
+recoverable copy of the previous application if replacement fails.
+
+## Decision
+
+The desktop app uses a custom OTA updater that replaces only
+`resources/app.asar`. It does not replace `Zoia.exe`, the Electron runtime,
+FFmpeg, or unpacked native addons.
+
+The feed is configured by `desktop/updater-config.json`, with overrides beside
+the executable or in `%APPDATA%/Zoia/updater-config.json`. The configuration
+contains the Git repository, branch, manifest path or explicit HTTPS URLs, and
+whether startup checks and confirmation dialogs are enabled.
+
+For GitHub repositories, the updater reads the selected branch commit through
+the GitHub API and reads a JSON manifest from the corresponding raw branch
+path. The manifest contains the release version, commit, HTTPS `app.asar`
+artifact URL, SHA-256 digest, and optional release notes. The updater refuses
+an incomplete manifest, non-HTTPS URL, commit mismatch, or digest mismatch.
+
+The update sequence is:
+
+1. Fetch the branch commit and manifest.
+2. Compare the remote version/commit with the local version and update state.
+3. Download the artifact to `%APPDATA%/Zoia/updates` using a partial filename.
+4. Verify SHA-256, then rename the verified file into the staging name.
+5. Start a detached helper process and ask Electron to quit normally.
+6. After the parent exits, rename the current `app.asar` to a backup and move
+   the staged artifact into place.
+7. Relaunch the original executable and remove the backup after the handoff.
+
+The portable build is deliberately excluded. Its application files are
+extracted into a temporary directory and would disappear on the next launch;
+portable users must receive a new executable. Changes to Electron, FFmpeg,
+native addons, or other unpacked resources also require a complete release.
+
+## Consequences
+
+### Benefits
+
+- Routine JavaScript/TypeScript releases download only the application archive.
+- Forks can point the same updater at their own repository and branch by editing
+  JSON configuration.
+- HTTPS, branch-commit matching, and SHA-256 verification reduce accidental or
+  corrupted installs.
+- Replacement happens after graceful shutdown and retains a rollback copy while
+  the new process starts.
+- Existing installer and portable release distribution remains unchanged.
+
+### Costs and limitations
+
+- OTA artifacts must be produced from the same packaged build as the release.
+- The release workflow must publish an `app.asar` asset and maintain the branch
+  manifest with its exact SHA-256 value.
+- Native, Electron, FFmpeg, and unpacked-resource changes cannot use this path.
+- The updater currently supports the installed Windows build, not portable
+  builds or macOS/Linux packages.
+- A compromised repository branch or release asset is still an update authority;
+  SHA-256 protects integrity in transit, not publisher identity. A future
+  signing scheme may extend this design.
