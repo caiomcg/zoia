@@ -135,6 +135,16 @@ export default function App() {
     };
   }, [status?.paired, channel, room.state, channelsVersion]);
 
+  // Someone joining or leaving this channel has also left or joined another,
+  // and the poll would not show that for up to five seconds. Re-read now.
+  const memberKey = room.members
+    .map((m) => m.identity)
+    .sort()
+    .join(',');
+  useEffect(() => {
+    if (memberKey) setChannelsVersion((v) => v + 1);
+  }, [memberKey]);
+
   const CHANNEL_ERRORS: Record<string, string> = {
     room_limit: 'The server already has the most channels it allows.',
     room_not_empty: 'Only an empty channel can be deleted.',
@@ -306,22 +316,14 @@ export default function App() {
             // path: under file:// a leading slash means the filesystem root,
             // not the folder the page was loaded from.
           />
-          <StatusLight tone={connectionTone} label={`Connection: ${room.state}`} />
-          {(gpuLive || encodingLive) && (
-            <StatusLight
-              // Amber would mean something is wrong. While the CPU path is
-              // the only one offered, encoding on the CPU is simply how this
-              // works, so the light says "encoding, and healthy" and leaves
-              // which encoder to the tooltip. It only warns when the GPU was
-              // available and we ended up on the CPU anyway.
-              // Amber would mean something is wrong, and encoding on the CPU
-              // is not wrong unless hardware encoding was asked for and did
-              // not happen.
-              tone={gpuLive || !hardware ? 'ok' : 'warn'}
-              label={gpuLive ? 'Encoding on the GPU' : 'Encoding on the CPU'}
-              detail={encodeDetail}
-            />
-          )}
+          {/* One light: the connection, with the round trip to the server
+              beside it. How your own broadcast is encoding is in its tooltip. */}
+          <StatusLight
+            tone={connectionTone}
+            label={`Connection: ${room.state}`}
+            detail={encodeDetail}
+            text={room.state === 'connected' && room.pingMs !== null ? `${room.pingMs} ms` : null}
+          />
         </div>
 
         <div className="topbar-centre">

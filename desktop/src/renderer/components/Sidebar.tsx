@@ -158,6 +158,7 @@ export default function Sidebar({
     ...members.filter((m) => m.isBroadcasting),
     ...members.filter((m) => !m.isBroadcasting),
   ];
+  const here = new Set(members.map((m) => m.identity));
   // Collapsed keeps only the avatars; names move into tooltips.
   const [collapsed, setCollapsed] = useState(readCollapsed);
 
@@ -233,7 +234,7 @@ export default function Sidebar({
                         </span>
                       )}
                       <span className="channel-count">
-                        {current ? liveMembers.length : c.participants.length}
+                        {current ? liveMembers.length : othersInChannel(c, here).length}
                       </span>
                     </button>
                     <span className="channel-actions">
@@ -283,10 +284,10 @@ export default function Sidebar({
                       ))}
                     </div>
                   ) : (
-                    c.participants.length > 0 && (
+                    othersInChannel(c, here).length > 0 && (
                       // Just faces until you join: enough to see who is where.
                       <div className="channel-people">
-                        {sortLiveFirst(c).map((p) => (
+                        {othersInChannel(c, here).map((p) => (
                           <span key={p.identity} title={p.name}>
                             <Avatar
                               name={p.name}
@@ -367,12 +368,17 @@ export default function Sidebar({
   );
 }
 
-/** A channel's people from the server's poll, sharers first. */
-function sortLiveFirst(channel: RoomInfo): RoomInfo['participants'] {
+/**
+ * A channel's people from the server's poll, sharers first. Anyone already in
+ * `here` is left out: the live room knows the moment someone arrives, while
+ * the poll can still list them where they came from.
+ */
+function othersInChannel(channel: RoomInfo, here: ReadonlySet<string>): RoomInfo['participants'] {
   const live = new Set(channel.broadcasters.map((b) => b.identity));
+  const people = channel.participants.filter((p) => !here.has(p.identity));
   return [
-    ...channel.participants.filter((p) => live.has(p.identity)),
-    ...channel.participants.filter((p) => !live.has(p.identity)),
+    ...people.filter((p) => live.has(p.identity)),
+    ...people.filter((p) => !live.has(p.identity)),
   ];
 }
 

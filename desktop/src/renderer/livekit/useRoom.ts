@@ -257,6 +257,9 @@ export interface SendAudio {
 
 const DEFAULT_SEND_AUDIO: SendAudio = { volume: 1, muted: false };
 
+/** How long the watch list must hold still before it is announced. */
+const WATCHING_SETTLE_MS = 1500;
+
 export function useRoom() {
   const roomRef = useRef<Room | null>(null);
   const localTrackRef = useRef<LocalVideoTrack | null>(null);
@@ -309,16 +312,37 @@ export function useRoom() {
   // Who is watching this device's broadcast, from their own announcements.
   const [viewers, setViewers] = useState<Viewer[]>([]);
   const announcedWatchingRef = useRef<string | null>(null);
+  const announceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  /** Tells the room whose broadcasts this device is watching, when it changes. */
+  /**
+   * Tells the room whose broadcasts this device is watching, once it has
+   * settled. A new broadcast is selected the instant it appears and paused
+   * into a thumbnail a moment later; announcing each step made a broadcaster's
+   * eyes blink on and off for people who were never really watching.
+   */
   const announceWatching = useCallback((room: Room) => {
-    const value = watchingValue(selectedRemoteIdsRef.current, pausedRemoteIdsRef.current);
-    if (value === announcedWatchingRef.current) return;
-    announcedWatchingRef.current = value;
-    room.localParticipant.setAttributes({ [WATCHING_ATTRIBUTE]: value }).catch(() => {
-      // Forgotten, so the next change tries again rather than assuming it landed.
-      announcedWatchingRef.current = null;
-    });
+    if (announceTimerRef.current) clearTimeout(announceTimerRef.current);
+    announceTimerRef.current = setTimeout(() => {
+      announceTimerRef.current = null;
+      if (roomRef.current !== room) return;
+      const value = watchingValue(selectedRemoteIdsRef.current, pausedRemoteIdsRef.current);
+      if (value === announcedWatchingRef.current) return;
+      announcedWatchingRef.current = value;
+      room.localParticipant.setAttributes({ [WATCHING_ATTRIBUTE]: value }).catch(() => {
+        // Forgotten, so the next change tries again rather than assuming it landed.
+        announcedWatchingRef.current = null;
+      });
+    }, WATCHING_SETTLE_MS);
+  }, []);
+
+  // Round trip to the server, from LiveKit's own signalling pings.
+  const [pingMs, setPingMs] = useState<number | null>(null);
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const rtt = roomRef.current?.engine?.client?.rtt;
+      setPingMs(typeof rtt === 'number' && rtt > 0 ? Math.round(rtt) : null);
+    }, 2000);
+    return () => clearInterval(timer);
   }, []);
   const [broadcastState, setBroadcastState] = useState<BroadcastState>('idle');
   const [broadcastError, setBroadcastError] = useState<string | null>(null);
@@ -586,6 +610,8 @@ export function useRoom() {
     selectedRemoteIdsRef.current = new Set();
     setSelectedRemoteIds(new Set());
     announcedWatchingRef.current = null;
+    if (announceTimerRef.current) clearTimeout(announceTimerRef.current);
+    announceTimerRef.current = null;
     setViewers([]);
   }, []);
 
@@ -1007,6 +1033,7 @@ export function useRoom() {
     participantCount,
     members,
     viewers,
+    pingMs,
     connect,
     disconnect,
     setDisplayName,

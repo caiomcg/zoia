@@ -480,8 +480,10 @@ button:disabled {
     opacity 0.2s ease;
 }
 
-.stage-area:hover .thumb-overlay,
-.stage-area:focus-within .thumb-overlay {
+/* Only when a footer is there to make room for: an empty stage has none, and
+   lifting the strip there just made it jump. */
+.stage-area:has(.remote-tile-footer):hover .thumb-overlay,
+.stage-area:has(.remote-tile-footer):focus-within .thumb-overlay {
   bottom: 60px;
 }
 
@@ -2008,6 +2010,13 @@ button.danger {
   width: 9px;
   height: 9px;
   border-radius: 50%;
+}
+
+.status-text {
+  margin-left: 6px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
 }
 
 .status-light.ok .status-dot {
