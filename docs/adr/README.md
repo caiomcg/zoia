@@ -30,6 +30,7 @@ record that supersedes it, so the history stays legible.
 | [0020](0020-sender-audio-controls.md)                    | Sender-side audio controls replace the monitor                | accepted                                                                           |
 | [0021](0021-retire-the-browser-viewer.md)                | Retire the browser viewer                                     | accepted                                                                           |
 | [0022](0022-unified-league-streaming.md)                 | Unified League of Legends streaming and bidirectional handoff | accepted                                                                           |
+| [0023](0023-interface-languages.md) | Interface languages | accepted |
 
 ## The two that explain the most
 

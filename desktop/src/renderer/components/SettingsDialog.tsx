@@ -1,15 +1,18 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { UpdaterConfig } from '../../shared/ipc';
 import Avatar from './Avatar';
+import { tNow, useT } from '../i18n';
+import LanguagePicker from './LanguagePicker';
+import type { MessageKey } from '../../shared/i18n';
 
 type Section = 'profile' | 'broadcast' | 'general' | 'updates' | 'about';
 
-const SECTIONS: { id: Section; label: string }[] = [
-  { id: 'profile', label: 'Profile' },
-  { id: 'broadcast', label: 'Broadcast' },
-  { id: 'general', label: 'General' },
-  { id: 'updates', label: 'Updates' },
-  { id: 'about', label: 'About' },
+const SECTIONS: { id: Section; label: MessageKey }[] = [
+  { id: 'profile', label: 'settings.nav.profile' },
+  { id: 'broadcast', label: 'settings.nav.broadcast' },
+  { id: 'general', label: 'settings.nav.general' },
+  { id: 'updates', label: 'settings.nav.updates' },
+  { id: 'about', label: 'settings.nav.about' },
 ];
 
 interface SettingsDialogProps {
@@ -31,6 +34,7 @@ export default function SettingsDialog({
   onRename,
   hardwareDetail,
 }: SettingsDialogProps) {
+  const t = useT();
   const [section, setSection] = useState<Section>('profile');
 
   return (
@@ -38,23 +42,23 @@ export default function SettingsDialog({
       <section
         className="picker settings-dialog"
         role="dialog"
-        aria-label="Settings"
+        aria-label={t('settings.title')}
         onClick={(event) => event.stopPropagation()}
       >
         <div className="settings-header">
-          <h2>Settings</h2>
+          <h2>{t('settings.title')}</h2>
           <button
             className="icon-button"
             onClick={onClose}
-            aria-label="Close settings"
-            title="Close"
+            aria-label={t('settings.close')}
+            title={t('common.close')}
           >
             ×
           </button>
         </div>
 
         <div className="settings-body">
-          <nav className="settings-nav" aria-label="Settings sections">
+          <nav className="settings-nav" aria-label={t('settings.sections')}>
             {SECTIONS.map((s) => (
               <button
                 key={s.id}
@@ -62,7 +66,7 @@ export default function SettingsDialog({
                 aria-current={section === s.id ? 'page' : undefined}
                 onClick={() => setSection(s.id)}
               >
-                {s.label}
+                {t(s.label)}
               </button>
             ))}
           </nav>
@@ -87,6 +91,7 @@ function ProfileSection({
   myName: string;
   onRename: (name: string) => Promise<void>;
 }) {
+  const t = useT();
   const [value, setValue] = useState(myName);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -104,9 +109,9 @@ function ProfileSection({
     setMessage(null);
     try {
       await onRename(next);
-      setMessage('Saved. Everyone in the room sees the new name now.');
+      setMessage(t('profile.saved'));
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Rename failed');
+      setError(err instanceof Error ? err.message : t('profile.renameFailed'));
     } finally {
       setBusy(false);
     }
@@ -114,15 +119,13 @@ function ProfileSection({
 
   return (
     <>
-      <h3>Profile</h3>
+      <h3>{t('settings.nav.profile')}</h3>
       <div className="settings-profile">
         <Avatar name={next || myName} live={false} />
-        <p className="muted">
-          This is how other people see you in the room and on your broadcasts.
-        </p>
+        <p className="muted">{t('profile.body')}</p>
       </div>
       <label className="settings-field">
-        <span>Display name</span>
+        <span>{t('profile.displayName')}</span>
         <div className="settings-inline">
           <input
             value={value}
@@ -138,7 +141,7 @@ function ProfileSection({
             }}
           />
           <button className="primary" onClick={() => void save()} disabled={busy || !changed}>
-            Save
+            {t('settings.save')}
           </button>
         </div>
       </label>
@@ -149,16 +152,17 @@ function ProfileSection({
 }
 
 function BroadcastSection({ hardwareDetail }: { hardwareDetail: string }) {
+  const t = useT();
   return (
     <>
-      <h3>Broadcast</h3>
+      <h3>{t('settings.nav.broadcast')}</h3>
       {/* Switched off for now: the GPU path is the one that has broken on
           other people's machines. Shown, so its absence is not a mystery. */}
       <label className="settings-check unavailable" title={hardwareDetail}>
         <input type="checkbox" checked={false} disabled readOnly />
         <span>
-          Hardware acceleration
-          <span className="settings-badge">Coming soon</span>
+          {t('broadcast.hardware')}
+          <span className="settings-badge">{t('broadcast.comingSoon')}</span>
           <small>{hardwareDetail}</small>
         </span>
       </label>
@@ -167,8 +171,9 @@ function BroadcastSection({ hardwareDetail }: { hardwareDetail: string }) {
 }
 
 function GeneralSection() {
+  const t = useT();
   // Applied as soon as it is toggled, like the same checkbox in the tray menu.
-  const [closeToTray, setCloseToTray] = useState(true);
+  const [closeToTray, setCloseToTray] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -185,22 +190,27 @@ function GeneralSection() {
       setCloseToTray(await window.zoia.tray.setCloseToTray(value));
     } catch {
       setCloseToTray(!value);
-      setError('Could not change the system tray setting.');
+      setError(t('general.trayFailed'));
     }
   }
 
   return (
     <>
-      <h3>General</h3>
+      <h3>{t('settings.nav.general')}</h3>
       <label className="settings-check">
         <input
           type="checkbox"
           checked={closeToTray}
           onChange={(event) => void toggleCloseToTray(event.target.checked)}
         />
-        Keep Zoia in the system tray when the window is closed
+        {t('general.tray')}
       </label>
       {error && <p className="settings-error">{error}</p>}
+
+      <div className="settings-field">
+        <span>{t('general.language')}</span>
+        <LanguagePicker />
+      </div>
     </>
   );
 }
@@ -214,6 +224,7 @@ const emptyConfig: UpdaterConfig = {
 };
 
 function UpdatesSection() {
+  const t = useT();
   const [config, setConfig] = useState<UpdaterConfig>(emptyConfig);
   const [currentVersion, setCurrentVersion] = useState<string | null>(null);
   const [availableVersion, setAvailableVersion] = useState<string | null>(null);
@@ -224,6 +235,8 @@ function UpdatesSection() {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // tNow, not t: these run from callbacks, and depending on the language
+  // would re-run the update check whenever it changed.
   const check = useCallback(async () => {
     if (updating) return;
     setBusy(true);
@@ -239,20 +252,20 @@ function UpdatesSection() {
       setAvailableVersion(result.version);
       setInstallerUrl(null);
       setCanInstall(true);
-      setMessage(`Version ${result.version} is available.`);
+      setMessage(tNow('updates.isAvailable', { version: result.version }));
     } else if (result.status === 'full-required') {
       setAvailableVersion(result.version);
       setInstallerUrl(result.installerUrl);
       setCanInstall(false);
-      setMessage(`Version ${result.version} requires the full installer.`);
+      setMessage(tNow('updates.needsInstaller', { version: result.version }));
     } else if (result.status === 'up-to-date') {
       setAvailableVersion(appVersion);
       setInstallerUrl(null);
       setCanInstall(false);
-      setMessage('You are up to date.');
+      setMessage(tNow('updates.upToDate'));
     } else if (result.status === 'disabled') {
       setCanInstall(false);
-      setMessage('Updates are disabled for this build.');
+      setMessage(tNow('updates.disabled'));
     } else {
       setCanInstall(false);
       setError(result.message);
@@ -268,7 +281,7 @@ function UpdatesSection() {
     window.zoia.updater
       .config()
       .then(setConfig)
-      .catch(() => setError('Could not load updater settings.'))
+      .catch(() => setError(tNow('updates.loadFailed')))
       .finally(() => setBusy(false));
     void check();
   }, [check]);
@@ -286,9 +299,9 @@ function UpdatesSection() {
     try {
       const saved = await window.zoia.updater.save(config);
       setConfig(saved);
-      setMessage('Saved. The new feed will be used on the next update check.');
+      setMessage(t('updates.saved'));
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Could not save updater settings.');
+      setError(reason instanceof Error ? reason.message : t('updates.saveFailed'));
     } finally {
       setBusy(false);
     }
@@ -300,9 +313,9 @@ function UpdatesSection() {
     setMessage(null);
     try {
       setConfig(await window.zoia.updater.reset());
-      setMessage('Default updater settings restored.');
+      setMessage(t('updates.restored'));
     } catch {
-      setError('Could not restore the default settings.');
+      setError(t('updates.restoreFailed'));
     } finally {
       setBusy(false);
     }
@@ -311,32 +324,30 @@ function UpdatesSection() {
   async function install() {
     setUpdating(true);
     setError(null);
-    setMessage('Downloading and installing update…');
+    setMessage(t('updates.installing'));
     try {
       await window.zoia.updater.install();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Could not install update.');
+      setError(reason instanceof Error ? reason.message : t('updates.installFailed'));
       setUpdating(false);
     }
   }
 
   return (
     <>
-      <h3>Updates</h3>
+      <h3>{t('settings.nav.updates')}</h3>
       <div className="settings-version" aria-live="polite">
-        <span>Installed version</span>
-        <strong>{currentVersion ? `v${currentVersion}` : 'Loading…'}</strong>
-        <span>Available version</span>
-        <strong>{availableVersion ? `v${availableVersion}` : 'Not checked yet'}</strong>
+        <span>{t('updates.installed')}</span>
+        <strong>{currentVersion ? `v${currentVersion}` : t('common.loading')}</strong>
+        <span>{t('updates.available')}</span>
+        <strong>{availableVersion ? `v${availableVersion}` : t('updates.notChecked')}</strong>
       </div>
-      <p className="muted">Choose where Zoia looks for lightweight application updates.</p>
+      <p className="muted">{t('updates.body')}</p>
 
-      <div className="settings-warning">
-        Only use a repository you trust. An update can run code on this computer.
-      </div>
+      <div className="settings-warning">{t('updates.warning')}</div>
 
       <label className="settings-field">
-        <span>Git repository</span>
+        <span>{t('updates.repository')}</span>
         <input
           value={config.repository}
           onChange={(event) => update('repository', event.target.value)}
@@ -345,7 +356,7 @@ function UpdatesSection() {
         />
       </label>
       <label className="settings-field">
-        <span>Branch</span>
+        <span>{t('updates.branch')}</span>
         <input
           value={config.branch}
           onChange={(event) => update('branch', event.target.value)}
@@ -354,7 +365,7 @@ function UpdatesSection() {
         />
       </label>
       <label className="settings-field">
-        <span>Manifest path</span>
+        <span>{t('updates.manifest')}</span>
         <input
           value={config.manifestPath}
           onChange={(event) => update('manifestPath', event.target.value)}
@@ -370,7 +381,7 @@ function UpdatesSection() {
           onChange={(event) => update('checkOnStartup', event.target.checked)}
           disabled={busy || updating}
         />
-        Check for updates when Zoia starts
+        {t('updates.checkOnStart')}
       </label>
       <label className="settings-check">
         <input
@@ -379,7 +390,7 @@ function UpdatesSection() {
           onChange={(event) => update('autoInstall', event.target.checked)}
           disabled={busy || updating}
         />
-        Install available updates automatically
+        {t('updates.autoInstall')}
       </label>
 
       {error && <p className="settings-error">{error}</p>}
@@ -390,11 +401,11 @@ function UpdatesSection() {
           className="primary settings-download"
           onClick={() =>
             void window.zoia.updater.openInstaller(installerUrl).catch(() => {
-              setError('Could not open the installer download.');
+              setError(t('updates.openInstallerFailed'));
             })
           }
         >
-          Download installer
+          {t('updates.downloadInstaller')}
         </button>
       )}
 
@@ -404,19 +415,19 @@ function UpdatesSection() {
           onClick={() => void install()}
           disabled={busy || updating}
         >
-          {updating ? 'Updating…' : 'Update now'}
+          {updating ? t('updates.updating') : t('updates.updateNow')}
         </button>
       )}
 
       <div className="settings-actions">
         <button onClick={() => void reset()} disabled={busy || updating}>
-          Restore defaults
+          {t('updates.restoreDefaults')}
         </button>
         <button onClick={() => void check()} disabled={busy || updating}>
-          Check now
+          {t('updates.checkNow')}
         </button>
         <button className="primary" onClick={() => void save()} disabled={busy || updating}>
-          Save
+          {t('settings.save')}
         </button>
       </div>
     </>
@@ -430,16 +441,17 @@ const PEOPLE = [
   {
     name: 'Caio',
     handle: 'caiomcg',
-    role: 'Started Zoia: capture, channels and the server.',
+    role: 'about.role.caio' as MessageKey,
   },
   {
     name: 'Nycholas',
     handle: 'nycholassousa',
-    role: 'Updates, League hand-off and multi-stream viewing.',
+    role: 'about.role.nycholas' as MessageKey,
   },
 ];
 
 function AboutSection() {
+  const t = useT();
   const [version, setVersion] = useState<string | null>(null);
   useEffect(() => {
     window.zoia.app
@@ -455,17 +467,14 @@ function AboutSection() {
         {version && <span className="about-version">v{version}</span>}
       </div>
 
-      <p className="about-lede">
-        Share a window, a screen or a camera with a few friends, with that app&rsquo;s own sound.
-        Self-hosted, and open source.
-      </p>
+      <p className="about-lede">{t('about.lede')}</p>
 
       <a className="about-repo" href={REPOSITORY} target="_blank" rel="noreferrer">
         <IconGitHub />
-        View on GitHub
+        {t('about.github')}
       </a>
 
-      <h3>Made by</h3>
+      <h3>{t('about.madeBy')}</h3>
       <ul className="about-people">
         {PEOPLE.map((person) => (
           <li key={person.handle}>
@@ -475,7 +484,7 @@ function AboutSection() {
                 {person.name}
               </a>
               <span className="muted"> @{person.handle}</span>
-              <p>{person.role}</p>
+              <p>{t(person.role)}</p>
             </div>
           </li>
         ))}

@@ -3,6 +3,7 @@ import type { RoomMember } from '../livekit/useRoom';
 import type { RoomInfo } from '../../shared/ipc';
 import Avatar from './Avatar';
 import { IconEye } from './Player';
+import { useT } from '../i18n';
 
 /**
  * Who is in the room, and who is sharing. Your own name sits in the footer,
@@ -89,6 +90,7 @@ function ChannelNameField({
   initial: string;
   onDone: (name: string | null) => void;
 }) {
+  const t = useT();
   const [value, setValue] = useState(initial);
   const inputRef = useRef<HTMLInputElement>(null);
   // Enter, then the blur that follows it, must not create the channel twice.
@@ -109,8 +111,8 @@ function ChannelNameField({
         ref={inputRef}
         value={value}
         maxLength={32}
-        placeholder="Channel name"
-        aria-label="Channel name"
+        placeholder={t('sidebar.channelName')}
+        aria-label={t('sidebar.channelName')}
         onChange={(event) => setValue(event.target.value)}
         onKeyDown={(event) => {
           if (event.key === 'Enter') finish(value.trim() || null);
@@ -152,6 +154,7 @@ export default function Sidebar({
   onRenameChannel: (id: string, name: string) => void;
   onRemoveChannel: (id: string) => void;
 }) {
+  const t = useT();
   // Your own channel is listed from the live room, which is current to the
   // second; the others come from the server's poll. Sharers first.
   const liveMembers = [
@@ -173,7 +176,7 @@ export default function Sidebar({
     });
   }
 
-  const label = (m: RoomMember) => (m.isLocal ? `${m.name} (you)` : m.name);
+  const label = (m: RoomMember) => (m.isLocal ? `${m.name} (${t('common.youTag')})` : m.name);
   // Which channel is being renamed, or 'new' while one is being named.
   const [editing, setEditing] = useState<string | null>(null);
 
@@ -184,13 +187,15 @@ export default function Sidebar({
           className="sidebar-toggle"
           onClick={toggleCollapsed}
           aria-expanded={!collapsed}
-          title={collapsed ? 'Expand list' : 'Collapse list'}
-          aria-label={collapsed ? 'Expand list' : 'Collapse list'}
+          title={collapsed ? t('sidebar.expand') : t('sidebar.collapse')}
+          aria-label={collapsed ? t('sidebar.expand') : t('sidebar.collapse')}
         >
           <IconPanel collapsed={collapsed} />
         </button>
         {/* On the arrow's line rather than a row of its own below it. */}
-        {!collapsed && channels.length > 0 && <h2 className="sidebar-title">Channels</h2>}
+        {!collapsed && channels.length > 0 && (
+          <h2 className="sidebar-title">{t('sidebar.channels')}</h2>
+        )}
       </div>
       <div className="sidebar-scroll">
         {channels.length > 0 && (
@@ -223,10 +228,13 @@ export default function Sidebar({
                         !collapsed
                           ? undefined
                           : current
-                            ? `${c.name} — you are here`
-                            : `Join ${c.name} (${c.participants.length} ${
-                                c.participants.length === 1 ? 'person' : 'people'
-                              })`
+                            ? t('sidebar.youAreHere', { channel: c.name })
+                            : c.participants.length === 1
+                              ? t('sidebar.joinOne', { channel: c.name })
+                              : t('sidebar.joinMany', {
+                                  channel: c.name,
+                                  count: c.participants.length,
+                                })
                       }
                     >
                       <span className="channel-short" aria-hidden="true">
@@ -241,8 +249,8 @@ export default function Sidebar({
                       <button
                         className="channel-action"
                         onClick={() => setEditing(c.id)}
-                        title={`Rename ${c.name}`}
-                        aria-label={`Rename ${c.name}`}
+                        title={t('sidebar.rename', { channel: c.name })}
+                        aria-label={t('sidebar.rename', { channel: c.name })}
                       >
                         <IconPencil />
                       </button>
@@ -251,8 +259,8 @@ export default function Sidebar({
                         <button
                           className="channel-action"
                           onClick={() => onRemoveChannel(c.id)}
-                          title={`Delete ${c.name}`}
-                          aria-label={`Delete ${c.name}`}
+                          title={t('sidebar.delete', { channel: c.name })}
+                          aria-label={t('sidebar.delete', { channel: c.name })}
                         >
                           <IconTrash />
                         </button>
@@ -272,10 +280,10 @@ export default function Sidebar({
                         >
                           <Avatar name={m.name} live={m.isBroadcasting} />
                           <span className="member-name">{m.name}</span>
-                          {m.isLocal && <span className="you-tag">you</span>}
+                          {m.isLocal && <span className="you-tag">{t('common.youTag')}</span>}
                           {viewerIds.has(m.identity) && <WatchingYou />}
                           {!m.isLocal && loadingRemoteIds.has(m.identity) && (
-                            <span className="stream-state">Loading…</span>
+                            <span className="stream-state">{t('common.loading')}</span>
                           )}
                         </div>
                       ))}
@@ -311,12 +319,12 @@ export default function Sidebar({
                 <button
                   className="channel channel-new"
                   onClick={() => setEditing('new')}
-                  title={`New channel (${channels.length} of ${maxChannels})`}
+                  title={t('sidebar.newChannelTitle', { count: channels.length, max: maxChannels })}
                 >
                   <span className="channel-short" aria-hidden="true">
                     +
                   </span>
-                  <span className="channel-name">+ New channel</span>
+                  <span className="channel-name">{t('sidebar.newChannel')}</span>
                 </button>
               )
             )}
@@ -327,7 +335,7 @@ export default function Sidebar({
             channels, the room's people still need a home. */}
         {channels.length === 0 && (
           <section className="member-group">
-            <h2 className="member-heading">In room — {liveMembers.length}</h2>
+            <h2 className="member-heading">{t('sidebar.inRoom', { count: liveMembers.length })}</h2>
             {liveMembers.map((m) => (
               <div
                 className={`member${m.isBroadcasting ? ' live' : ''}`}
@@ -336,7 +344,7 @@ export default function Sidebar({
               >
                 <Avatar name={m.name} live={m.isBroadcasting} />
                 <span className="member-name">{m.name}</span>
-                {m.isLocal && <span className="you-tag">you</span>}
+                {m.isLocal && <span className="you-tag">{t('common.youTag')}</span>}
                 {viewerIds.has(m.identity) && <WatchingYou />}
               </div>
             ))}
@@ -354,8 +362,8 @@ export default function Sidebar({
         <button
           className="icon-button sidebar-settings"
           onClick={onOpenSettings}
-          title="Settings"
-          aria-label="Settings"
+          title={t('sidebar.settings')}
+          aria-label={t('sidebar.settings')}
         >
           <IconSliders />
         </button>
@@ -379,8 +387,13 @@ function othersInChannel(channel: RoomInfo, here: ReadonlySet<string>): RoomInfo
 }
 
 function WatchingYou() {
+  const t = useT();
   return (
-    <span className="watching-you" title="Watching your screen" aria-label="Watching your screen">
+    <span
+      className="watching-you"
+      title={t('sidebar.watchingYou')}
+      aria-label={t('sidebar.watchingYou')}
+    >
       <IconEye />
     </span>
   );

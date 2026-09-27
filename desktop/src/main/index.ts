@@ -9,6 +9,8 @@ import * as audioCapture from './audio';
 import * as encoder from './encoder';
 import * as capture from './capture';
 import { getCloseToTray, installTray, setCloseToTray, showWindow } from './tray';
+import * as language from './language';
+import { isLanguagePreference } from '../shared/i18n';
 import { IPC } from '../shared/ipc';
 import type { GpuStatus } from '../shared/ipc';
 import {
@@ -188,11 +190,11 @@ function registerIpc(): void {
   // all, by design — it receives a status back, never a path or a token.
   ipcMain.handle(IPC.pairingChooseInvite, async () => {
     const result = await dialog.showOpenDialog({
-      title: 'Choose your Zoia invite',
+      title: language.t('pair.dialogTitle'),
       defaultPath: INVITE_FILENAME,
       filters: [
-        { name: 'Zoia invite', extensions: ['json'] },
-        { name: 'All files', extensions: ['*'] },
+        { name: language.t('pair.dialogInvite'), extensions: ['json'] },
+        { name: language.t('pair.dialogAll'), extensions: ['*'] },
       ],
       properties: ['openFile'],
     });
@@ -225,6 +227,17 @@ function registerIpc(): void {
     return shell.openExternal(url.toString());
   });
   ipcMain.handle(IPC.appVersion, () => app.getVersion());
+  const languageState = () => ({
+    preference: language.getPreference(),
+    language: language.currentLanguage(),
+    system: language.systemLanguage(),
+  });
+  ipcMain.handle(IPC.languageGet, () => languageState());
+  ipcMain.handle(IPC.languageSet, (_event, next: unknown) => {
+    if (isLanguagePreference(next)) language.setPreference(next);
+    return languageState();
+  });
+
   ipcMain.handle(IPC.trayCloseGet, () => getCloseToTray());
   ipcMain.handle(IPC.trayCloseSet, (_event, value: boolean) => setCloseToTray(value === true));
 

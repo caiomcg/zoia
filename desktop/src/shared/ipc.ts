@@ -197,6 +197,15 @@ export interface GpuStatus {
   gpuEncoder: 'nvenc' | 'amf' | 'qsv' | 'none';
 }
 
+/** What the Language setting shows: the choice, and what it resolves to. */
+export interface LanguageState {
+  preference: 'system' | 'en' | 'es' | 'pt';
+  /** The language in use now. */
+  language: 'en' | 'es' | 'pt';
+  /** What 'system' would resolve to, for the setting's label. */
+  system: 'en' | 'es' | 'pt';
+}
+
 export interface UpdaterConfig {
   repository: string;
   branch: string;
@@ -242,6 +251,8 @@ export const IPC = {
   sourcesList: 'zoia:sources:list',
   sourcesSelect: 'zoia:sources:select',
   sourcesTitle: 'zoia:sources:title',
+  languageGet: 'zoia:language:get',
+  languageSet: 'zoia:language:set',
   audioStart: 'zoia:audio:start',
   audioStop: 'zoia:audio:stop',
   audioChunk: 'zoia:audio:chunk',

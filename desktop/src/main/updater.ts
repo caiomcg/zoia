@@ -4,6 +4,7 @@ import { createWriteStream } from 'node:fs';
 import { access, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { spawn } from 'node:child_process';
+import { t } from './language';
 import { pipeline } from 'node:stream/promises';
 import { Readable } from 'node:stream';
 
@@ -501,12 +502,10 @@ export async function runUpdateCheck(force = false): Promise<void> {
       if (update.updateType === 'full') {
         const result = await dialog.showMessageBox({
           type: 'info',
-          title: 'Full update required',
-          message: `Version ${update.version} requires a new installer.`,
-          detail:
-            update.notes ??
-            'This release changes Electron, native components, or another file that cannot be updated OTA.',
-          buttons: ['Open download', 'Later'],
+          title: t('update.fullTitle'),
+          message: t('update.fullMessage', { version: update.version }),
+          detail: update.notes ?? t('update.fullDetail'),
+          buttons: [t('update.openDownload'), t('common.later')],
           defaultId: 0,
           cancelId: 1,
         });
@@ -521,12 +520,10 @@ export async function runUpdateCheck(force = false): Promise<void> {
       if (!config.autoInstall) {
         const result = await dialog.showMessageBox({
           type: 'info',
-          title: 'Update available',
-          message: `Version ${update.version} is available.`,
-          detail:
-            update.notes ??
-            'Only the application code is updated; nothing large is downloaded again.',
-          buttons: ['Update now', 'Later'],
+          title: t('update.availableTitle'),
+          message: t('update.availableMessage', { version: update.version }),
+          detail: update.notes ?? t('update.availableDetail'),
+          buttons: [t('update.updateNow'), t('common.later')],
           defaultId: 0,
           cancelId: 1,
         });
@@ -543,10 +540,10 @@ export async function runUpdateCheck(force = false): Promise<void> {
       if (force || userConfirmed) {
         await dialog.showMessageBox({
           type: 'error',
-          title: 'Update not finished',
-          message: 'The update could not be installed.',
+          title: t('update.failedTitle'),
+          message: t('update.failedMessage'),
           detail: message,
-          buttons: ['OK'],
+          buttons: [t('common.ok')],
         });
       }
     }

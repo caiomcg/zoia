@@ -3,6 +3,8 @@ import type { LocalVideoTrack, RemoteTrack } from 'livekit-client';
 import type { RemoteScreen } from '../livekit/useRoom';
 import Avatar from './Avatar';
 import { IconEye, IconFullscreen, IconHeadphones, IconVolume } from './Player';
+import { useT, type T } from '../i18n';
+import type { MessageKey } from '../../shared/i18n';
 
 /**
  * Every broadcast in the room, laid out one of two ways:
@@ -168,11 +170,15 @@ function readAudioSettings(): Record<string, AudioSetting> {
   }
 }
 
-function sourceText(sourceName: string | null, sourceKind: RemoteScreen['sourceKind']): string {
+function sourceText(
+  t: T,
+  sourceName: string | null,
+  sourceKind: RemoteScreen['sourceKind'],
+): string {
   if (sourceName) return sourceName;
-  if (sourceKind === 'camera') return 'Camera';
-  if (sourceKind === 'window') return 'Window';
-  return 'Screen';
+  if (sourceKind === 'camera') return t('grid.source.camera');
+  if (sourceKind === 'window') return t('grid.source.window');
+  return t('grid.source.screen');
 }
 
 function Icon({ children }: { children: ReactNode }) {
@@ -193,10 +199,10 @@ function Icon({ children }: { children: ReactNode }) {
   );
 }
 
-const LAYOUTS: Array<{ mode: LayoutMode; label: string; icon: ReactNode }> = [
+const LAYOUTS: Array<{ mode: LayoutMode; label: MessageKey; icon: ReactNode }> = [
   {
     mode: 'spotlight',
-    label: 'Spotlight',
+    label: 'grid.spotlight',
     icon: (
       <Icon>
         <rect x="3" y="4" width="18" height="11" rx="1.5" />
@@ -206,7 +212,7 @@ const LAYOUTS: Array<{ mode: LayoutMode; label: string; icon: ReactNode }> = [
   },
   {
     mode: 'mosaic',
-    label: 'Mosaic',
+    label: 'grid.mosaic',
     icon: (
       <Icon>
         <rect x="3" y="3" width="8" height="8" rx="1.5" />
@@ -256,6 +262,7 @@ function RemoteTile({
   /** Stop watching: the broadcast goes back to the thumbnails. */
   onClose: () => void;
 }) {
+  const t = useT();
   const videoRef = useRef<HTMLVideoElement>(null);
   const { volume, muted } = audio;
   useMediaStream(videoRef, screen.videoTrack, screen.audioTrack);
@@ -276,7 +283,7 @@ function RemoteTile({
           <span>
             {screen.participantName}
             <small className="stream-source">
-              {sourceText(screen.sourceName, screen.sourceKind)}
+              {sourceText(t, screen.sourceName, screen.sourceKind)}
             </small>
           </span>
         </span>
@@ -290,8 +297,8 @@ function RemoteTile({
                 onClick={() =>
                   onAudioChange({ volume: muted && volume === 0 ? 1 : volume, muted: !muted })
                 }
-                title={muted ? 'Unmute' : 'Mute'}
-                aria-label={muted ? 'Unmute' : 'Mute'}
+                title={muted ? t('common.unmute') : t('common.mute')}
+                aria-label={muted ? t('common.unmute') : t('common.mute')}
               >
                 <IconVolume muted={muted || volume === 0} />
               </button>
@@ -306,7 +313,7 @@ function RemoteTile({
                   onAudioChange({ volume: value, muted: value === 0 });
                 }}
                 className="remote-volume"
-                aria-label={`Volume de ${screen.participantName}`}
+                aria-label={t('grid.volumeFor', { name: screen.participantName })}
               />
             </>
           )}
@@ -317,11 +324,7 @@ function RemoteTile({
               className={`hq-toggle${hq ? ' active' : ''}`}
               onClick={onToggleHq}
               aria-pressed={hq}
-              title={
-                hq
-                  ? 'High quality on — click to save bandwidth'
-                  : 'Low quality — click to go back to high quality'
-              }
+              title={hq ? t('grid.hqOn') : t('grid.hqOff')}
             >
               HQ
             </button>
@@ -329,8 +332,8 @@ function RemoteTile({
           <button
             className="icon-button"
             onClick={onToggleFullscreen}
-            title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
-            aria-label={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+            title={isFullscreen ? t('common.exitFullscreen') : t('common.fullscreen')}
+            aria-label={isFullscreen ? t('common.exitFullscreen') : t('common.fullscreen')}
           >
             <IconFullscreen active={isFullscreen} />
           </button>
@@ -338,8 +341,8 @@ function RemoteTile({
             <button
               className="icon-button"
               onClick={onClose}
-              title="Stop watching"
-              aria-label="Stop watching"
+              title={t('grid.stopWatching')}
+              aria-label={t('grid.stopWatching')}
             >
               <Icon>
                 <path d="M6 6l12 12M18 6L6 18" />
@@ -494,6 +497,7 @@ function Thumbnail({
   peeking?: boolean;
   onTogglePeek?: () => void;
 }) {
+  const t = useT();
   const videoRef = useRef<HTMLVideoElement>(null);
   useMediaStream(videoRef, liveVideo, null);
   useSnapshot(captureTrack, capture, (url) => onCaptured?.(url));
@@ -510,7 +514,7 @@ function Thumbnail({
         className="thumb-watch"
         onClick={onWatch}
         disabled={!onWatch}
-        aria-label={`Watch ${name}`}
+        aria-label={t('grid.watch', { name })}
       >
         {liveVideo ? (
           <video className="thumb-live" ref={videoRef} playsInline autoPlay muted />
@@ -528,7 +532,7 @@ function Thumbnail({
             <Icon>
               <path d="M3 9V3h6M21 9V3h-6M3 15v6h6M21 15v6h-6" />
             </Icon>
-            Watch on stage
+            {t('grid.watchOnStage')}
           </span>
         )}
       </button>
@@ -542,8 +546,8 @@ function Thumbnail({
             onClick={() =>
               onAudioChange({ volume: muted && volume === 0 ? 1 : volume, muted: !muted })
             }
-            title={muted ? 'Unmute' : 'Mute'}
-            aria-label={muted ? `Unmute ${name}` : `Mute ${name}`}
+            title={muted ? t('common.unmute') : t('common.mute')}
+            aria-label={muted ? t('grid.unmuteName', { name }) : t('grid.muteName', { name })}
           >
             <IconVolume muted={muted || volume === 0} />
           </button>
@@ -558,7 +562,7 @@ function Thumbnail({
               onAudioChange({ volume: value, muted: value === 0 });
             }}
             className="thumb-volume"
-            aria-label={`Volume for ${name}`}
+            aria-label={t('grid.volumeFor', { name })}
           />
         </div>
       )}
@@ -569,8 +573,8 @@ function Thumbnail({
               className={`thumb-action${preview.on ? ' active' : ''}`}
               onClick={preview.onToggle}
               aria-pressed={preview.on}
-              title={preview.on ? 'Hide your preview' : 'Show your preview'}
-              aria-label={preview.on ? 'Hide your preview' : 'Show your preview'}
+              title={preview.on ? t('player.hidePreview') : t('player.showPreview')}
+              aria-label={preview.on ? t('player.hidePreview') : t('player.showPreview')}
             >
               <IconEye off={!preview.on} />
             </button>
@@ -579,8 +583,8 @@ function Thumbnail({
               className={`thumb-action${peeking ? ' active' : ''}`}
               onClick={onTogglePeek}
               aria-pressed={peeking}
-              title={peeking ? 'Stop the preview' : 'Preview here, with sound'}
-              aria-label={peeking ? 'Stop the preview' : 'Preview here, with sound'}
+              title={peeking ? t('grid.previewStop') : t('grid.previewStart')}
+              aria-label={peeking ? t('grid.previewStop') : t('grid.previewStart')}
             >
               <IconEye off={!peeking} />
             </button>
@@ -590,8 +594,8 @@ function Thumbnail({
               className={`thumb-action${listening ? ' active' : ''}`}
               onClick={onToggleListen}
               aria-pressed={listening}
-              title={listening ? 'Stop listening' : 'Listen only'}
-              aria-label={listening ? 'Stop listening' : 'Listen only'}
+              title={listening ? t('grid.listenStop') : t('grid.listenStart')}
+              aria-label={listening ? t('grid.listenStop') : t('grid.listenStart')}
             >
               <IconHeadphones />
             </button>
@@ -600,8 +604,8 @@ function Thumbnail({
             <button
               className="thumb-action danger"
               onClick={onStop}
-              title="Stop sharing"
-              aria-label="Stop sharing"
+              title={t('common.stopSharing')}
+              aria-label={t('common.stopSharing')}
             >
               <Icon>
                 <rect x="6" y="6" width="12" height="12" rx="1.5" />
@@ -644,6 +648,7 @@ export default function RemoteGrid({
   /** Called with the remote broadcasts whose video should not be forwarded. */
   onPausedChange: (identities: string[]) => void;
 }) {
+  const t = useT();
   const [mode, setMode] = useState<LayoutMode>(() =>
     // 'pair' was a layout of its own; mosaic now does side by side.
     readStored(LAYOUT_KEY, ['spotlight', 'mosaic', 'pair'], 'spotlight') === 'spotlight'
@@ -879,38 +884,39 @@ export default function RemoteGrid({
         <div className="overlay">
           {loadingBroadcasts.length > 0 ? (
             <>
-              <h2>Loading broadcast…</h2>
+              <h2>{t('grid.loadingTitle')}</h2>
               <p className="muted">
-                {loadingBroadcasts.map((broadcast) => broadcast.name).join(', ')}{' '}
-                {loadingBroadcasts.length === 1 ? 'is' : 'are'} live, but still loading.
+                {t(loadingBroadcasts.length === 1 ? 'grid.loadingOne' : 'grid.loadingMany', {
+                  names: loadingBroadcasts.map((broadcast) => broadcast.name).join(', '),
+                })}
               </p>
             </>
           ) : showOnboarding ? (
             <div className="onboarding-card">
-              <p className="onboarding-step">You are in the room</p>
-              <h2>Ready to start</h2>
-              <p className="muted">
-                Watch a live broadcast from the list beside you, or share your screen.
-              </p>
+              <p className="onboarding-step">{t('grid.onboardStep')}</p>
+              <h2>{t('grid.onboardTitle')}</h2>
+              <p className="muted">{t('grid.onboardBody')}</p>
               <ol className="onboarding-list">
                 <li>
-                  Click <strong>Screen</strong> at the top.
+                  {t('grid.onboardClick').split('{button}')[0]}
+                  <strong>{t('top.screen')}</strong>
+                  {t('grid.onboardClick').split('{button}')[1]}
                 </li>
-                <li>Pick a window or a screen.</li>
+                <li>{t('grid.onboardPick')}</li>
               </ol>
               <div className="onboarding-actions">
                 <button className="primary" onClick={onStartSharing}>
-                  Share screen
+                  {t('common.shareScreen')}
                 </button>
                 <button className="link" onClick={onDismissOnboarding}>
-                  Not now
+                  {t('grid.notNow')}
                 </button>
               </div>
             </div>
           ) : (
             <>
-              <h2>Nobody is broadcasting</h2>
-              <p className="muted">When someone shares, their broadcast appears here.</p>
+              <h2>{t('grid.nobodyTitle')}</h2>
+              <p className="muted">{t('grid.nobodyBody')}</p>
             </>
           )}
         </div>
@@ -940,8 +946,8 @@ export default function RemoteGrid({
             <button
               className="tile-close"
               onClick={() => stopWatching(id)}
-              title="Remove from view"
-              aria-label="Remove from view"
+              title={t('grid.removeFromView')}
+              aria-label={t('grid.removeFromView')}
             >
               <Icon>
                 <path d="M6 6l12 12M18 6L6 18" />
@@ -983,14 +989,12 @@ export default function RemoteGrid({
       // broadcasts waiting below.
       <section className="stage remote-empty">
         <div className="overlay">
-          <h2>Pick a broadcast</h2>
-          <p className="muted">
-            Watch or just listen to one of the broadcasts below, or share your own.
-          </p>
+          <h2>{t('grid.pickTitle')}</h2>
+          <p className="muted">{t('grid.pickBody')}</p>
           {!local && onStartSharing && (
             <div className="onboarding-actions">
               <button className="primary" onClick={onStartSharing}>
-                Share screen
+                {t('common.shareScreen')}
               </button>
             </div>
           )}
@@ -1008,7 +1012,7 @@ export default function RemoteGrid({
           aria-valuemin={SPLIT_MIN * 100}
           aria-valuemax={SPLIT_MAX * 100}
           aria-valuenow={Math.round(split * 100)}
-          title="Drag to resize · double-click to split evenly"
+          title={t('grid.splitTitle')}
           onPointerDown={(event) => {
             draggingRef.current = true;
             event.currentTarget.setPointerCapture(event.pointerId);
@@ -1053,15 +1057,15 @@ export default function RemoteGrid({
           })}
 
         {candidates.length > 1 && !fullId && (
-          <div className="layout-switch" role="group" aria-label="Layout">
+          <div className="layout-switch" role="group" aria-label={t('grid.layout')}>
             {LAYOUTS.map((layout) => (
               <button
                 key={layout.mode}
                 className={mode === layout.mode ? 'active' : undefined}
                 onClick={() => chooseLayout(layout.mode)}
                 aria-pressed={mode === layout.mode}
-                title={layout.label}
-                aria-label={layout.label}
+                title={t(layout.label)}
+                aria-label={t(layout.label)}
               >
                 {layout.icon}
               </button>
@@ -1076,7 +1080,7 @@ export default function RemoteGrid({
             className="thumb-toggle"
             onClick={toggleStrip}
             aria-expanded={!stripHidden}
-            title={stripHidden ? 'Show broadcasts' : 'Hide broadcasts'}
+            title={stripHidden ? t('grid.showStrip') : t('grid.hideStrip')}
           >
             <Icon>
               <path d={stripHidden ? 'M6 15l6-6 6 6' : 'M6 9l6 6 6-6'} />
@@ -1093,7 +1097,7 @@ export default function RemoteGrid({
                     <Thumbnail
                       key={id}
                       name={local?.name ?? ''}
-                      label="Your broadcast"
+                      label={t('grid.yourBroadcast')}
                       liveVideo={local?.track ?? null}
                       onWatch={() => watch(id)}
                       onStop={local?.onStop}
@@ -1111,7 +1115,7 @@ export default function RemoteGrid({
                   <Thumbnail
                     key={id}
                     name={screen.participantName}
-                    label={sourceText(screen.sourceName, screen.sourceKind)}
+                    label={sourceText(t, screen.sourceName, screen.sourceKind)}
                     snapshot={snapshots[id]?.url ?? null}
                     captureTrack={screen.videoTrack}
                     capture={capturing.has(id)}
@@ -1129,7 +1133,11 @@ export default function RemoteGrid({
                 );
               })}
               {loadingThumbs.map((broadcast) => (
-                <Thumbnail key={broadcast.identity} name={broadcast.name} label="Loading…" />
+                <Thumbnail
+                  key={broadcast.identity}
+                  name={broadcast.name}
+                  label={t('common.loading')}
+                />
               ))}
             </div>
           </div>

@@ -9,6 +9,7 @@ import type {
   GpuStatus,
   EncoderStatus,
   UpdaterConfig,
+  LanguageState,
   UpdaterCheckResult,
 } from '../shared/ipc';
 
@@ -81,6 +82,11 @@ export interface ZoiaBridge {
   };
   app: {
     version(): Promise<string>;
+  };
+  /** The interface language: the user's choice, and what it resolves to. */
+  language: {
+    get(): Promise<LanguageState>;
+    set(preference: LanguageState['preference']): Promise<LanguageState>;
   };
   tray: {
     /** Whether closing the window hides it to the tray instead of quitting. */

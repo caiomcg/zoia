@@ -1,3 +1,4 @@
+import { useT } from '../i18n';
 /**
  * A dismissible message.
  *
@@ -13,10 +14,16 @@ export default function Banner({
   children: React.ReactNode;
   onDismiss: () => void;
 }) {
+  const t = useT();
   return (
     <p className={`banner ${tone}`} role={tone === 'error' ? 'alert' : 'status'}>
       <span className="banner-text">{children}</span>
-      <button className="banner-close" onClick={onDismiss} title="Dismiss" aria-label="Dismiss">
+      <button
+        className="banner-close"
+        onClick={onDismiss}
+        title={t('common.dismiss')}
+        aria-label={t('common.dismiss')}
+      >
         <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
           <path
             d="M6 6l12 12M18 6L6 18"

@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
 import type { PairingStatus } from '../../shared/ipc';
+import { useT } from '../i18n';
 
 /**
  * First run, before this machine has a credential.
@@ -21,6 +22,7 @@ export default function PairingScreen({
   status: PairingStatus;
   onPaired: (status: PairingStatus) => void;
 }) {
+  const t = useT();
   const [deviceName, setDeviceName] = useState('');
   const [busy, setBusy] = useState(false);
   const [dragging, setDragging] = useState(false);
@@ -80,45 +82,47 @@ export default function PairingScreen({
 
         {status.needsInvite ? (
           <>
-            <p className="onboarding-step">Step 1 of 2</p>
-            <h1>Open your invite</h1>
+            <p className="onboarding-step">{t('pair.step1')}</p>
+            <h1>{t('pair.openTitle')}</h1>
             <p className="muted">
-              Use the <code>zoia-invite.json</code> file from whoever set up the room.
+              {t('pair.openBody').split('{file}')[0]}
+              <code>zoia-invite.json</code>
+              {t('pair.openBody').split('{file}')[1]}
             </p>
 
             <div className="invite-drop">
-              <p>Drop your invite here</p>
+              <p>{t('pair.drop')}</p>
               <button onClick={handleChoose} disabled={busy}>
-                Open invite file…
+                {t('pair.openFile')}
               </button>
             </div>
           </>
         ) : (
           <>
-            <p className="onboarding-step">Step 2 of 2</p>
-            <h1>Join the room</h1>
-            <p className="muted">Confirm your name, then join to watch or share.</p>
+            <p className="onboarding-step">{t('pair.step2')}</p>
+            <h1>{t('pair.joinTitle')}</h1>
+            <p className="muted">{t('pair.joinBody')}</p>
 
             <div className="invite-target">
-              <span className="muted">Room</span>
+              <span className="muted">{t('pair.room')}</span>
               <strong>{status.serverUrl}</strong>
             </div>
 
-            <label htmlFor="device-name">Your name (optional)</label>
+            <label htmlFor="device-name">{t('pair.yourName')}</label>
             <input
               id="device-name"
-              placeholder="e.g. Alice"
+              placeholder={t('pair.namePlaceholder')}
               value={deviceName}
               onChange={(e) => setDeviceName(e.target.value)}
               disabled={busy}
             />
 
             <button className="primary" onClick={handlePair} disabled={busy}>
-              {busy ? 'Joining…' : 'Join the room'}
+              {busy ? t('pair.joining') : t('pair.join')}
             </button>
 
             <button className="link" onClick={handleChoose} disabled={busy}>
-              Use another invite
+              {t('pair.anotherInvite')}
             </button>
           </>
         )}

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { QUALITY_PRESETS, type SourceInfo } from '../../shared/ipc';
 import { findLeagueSources, isLeagueClient, isLeagueGame } from '../../shared/league';
+import { useT } from '../i18n';
 
 /**
  * Quality lives here rather than in the top bar because this is the moment it
@@ -19,6 +20,7 @@ export default function SourcePicker({
   presetId: string;
   onPresetChange: (id: string) => void;
 }) {
+  const t = useT();
   const [sources, setSources] = useState<SourceInfo[] | null>(null);
   const [query, setQuery] = useState('');
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -76,17 +78,17 @@ export default function SourcePicker({
     <div className="picker-backdrop" onClick={onCancel}>
       <div className="picker" onClick={(e) => e.stopPropagation()}>
         <header>
-          <h2>Choose what to share</h2>
+          <h2>{t('picker.title')}</h2>
           <input
             autoFocus
-            placeholder="Search windows…"
+            placeholder={t('picker.search')}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
         </header>
 
         {loadError && <p className="error">{loadError}</p>}
-        {!sources && !loadError && <p className="muted">Loading sources…</p>}
+        {!sources && !loadError && <p className="muted">{t('picker.loading')}</p>}
 
         {sources && (
           <div className="picker-body">
@@ -99,20 +101,19 @@ export default function SourcePicker({
                       <strong>League of Legends</strong>
                     </div>
                     <p className="picker-league-status">
-                      {league.game
-                        ? 'Partida em andamento • Optando pelo jogo (alterna para o cliente após a partida)'
-                        : 'Seleção de Campeões / Cliente • Alternará para o jogo quando a partida começar'}
+                      {league.game ? t('picker.leagueInGame') : t('picker.leagueInClient')}
                     </p>
                     <span className="picker-league-tip">
-                      💡 Dica: jogue em modo <strong>Sem Bordas</strong> para capturar mesmo durante
-                      Alt+Tab.
+                      💡 {t('picker.leagueTip').split('{mode}')[0]}
+                      <strong>{t('picker.leagueBorderless')}</strong>
+                      {t('picker.leagueTip').split('{mode}')[1]}
                     </span>
                   </div>
                   <button
                     className="picker-league-button"
                     onClick={() => onPick((league.game ?? league.client)!)}
                   >
-                    Transmitir LoL
+                    {t('picker.leagueShare')}
                   </button>
                 </div>
               </section>
@@ -120,7 +121,7 @@ export default function SourcePicker({
 
             {screens.length > 0 && (
               <section>
-                <h3>Screens</h3>
+                <h3>{t('picker.screens')}</h3>
                 <div className="picker-grid">
                   {screens.map((s) => (
                     <SourceTile key={s.id} source={s} onClick={() => onPick(s)} />
@@ -130,7 +131,7 @@ export default function SourcePicker({
             )}
             {windows.length > 0 && (
               <section>
-                <h3>Windows</h3>
+                <h3>{t('picker.windows')}</h3>
                 <div className="picker-grid">
                   {windows.map((s) => (
                     <SourceTile key={s.id} source={s} onClick={() => onPick(s)} />
@@ -138,14 +139,14 @@ export default function SourcePicker({
                 </div>
               </section>
             )}
-            {filtered.length === 0 && <p className="muted">No matching sources.</p>}
+            {filtered.length === 0 && <p className="muted">{t('picker.none')}</p>}
           </div>
         )}
 
         <footer className="picker-footer">
           <div className="picker-options">
             <label className="picker-option">
-              <span>Quality</span>
+              <span>{t('picker.quality')}</span>
               <select value={presetId} onChange={(e) => onPresetChange(e.target.value)}>
                 {QUALITY_PRESETS.map((p) => (
                   <option key={p.id} value={p.id}>
@@ -156,7 +157,7 @@ export default function SourcePicker({
             </label>
           </div>
 
-          <button onClick={onCancel}>Cancel</button>
+          <button onClick={onCancel}>{t('common.cancel')}</button>
         </footer>
       </div>
     </div>
@@ -164,6 +165,7 @@ export default function SourcePicker({
 }
 
 function SourceTile({ source, onClick }: { source: SourceInfo; onClick: () => void }) {
+  const t = useT();
   const isGame = isLeagueGame(source);
   const isClient = isLeagueClient(source);
 
@@ -175,10 +177,10 @@ function SourceTile({ source, onClick }: { source: SourceInfo; onClick: () => vo
         <div className="picker-tile-blank" />
       )}
       <span>{source.name}</span>
-      {isGame && <em className="picker-tile-badge">LoL • Partida</em>}
-      {isClient && <em className="picker-tile-badge">LoL • Cliente / Seleção</em>}
+      {isGame && <em className="picker-tile-badge">{t('picker.leagueGameBadge')}</em>}
+      {isClient && <em className="picker-tile-badge">{t('picker.leagueClientBadge')}</em>}
       {source.kind === 'window' && source.processId === null && (
-        <em className="picker-tile-warn">audio unavailable</em>
+        <em className="picker-tile-warn">{t('picker.audioUnavailable')}</em>
       )}
     </button>
   );
