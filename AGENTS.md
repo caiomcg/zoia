@@ -6,7 +6,8 @@ Conventions and invariants for anyone — human or agent — working on this rep
 ## What this is
 
 Zoia is a private one-to-many screen broadcast. Everyone who has an invite key picks one of
-a few **channels** (five by default, each its own LiveKit room; see ADR 0015) and watches
+a **channel** (each its own LiveKit room; a permanent default plus any people add, up to five;
+see ADR 0015) and watches
 there; **anyone may claim an independent broadcast slot** in their channel and share a screen,
 window or tab with audio. Multiple people may stream at the same time, and each viewer chooses
 which broadcasts to watch. Latency is ~200–500 ms. Access is by per-person invite key; there

@@ -1,6 +1,7 @@
 import type {
   PairingStatus,
   RoomInfo,
+  ChannelOutcome,
   TokenResult,
   StageState,
   ClaimResult,
@@ -26,7 +27,12 @@ export interface ZoiaBridge {
     get(room?: string): Promise<TokenResult>;
   };
   rooms: {
-    list(): Promise<RoomInfo[]>;
+    /** Every channel, and the most the server will hold. */
+    list(): Promise<{ rooms: RoomInfo[]; max: number }>;
+    create(name: string): Promise<ChannelOutcome>;
+    rename(id: string, name: string): Promise<ChannelOutcome>;
+    /** Only an empty channel that is not the default. */
+    remove(id: string): Promise<ChannelOutcome>;
   };
   stage: {
     get(): Promise<StageState>;
