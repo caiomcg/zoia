@@ -76,6 +76,7 @@ export interface ZoiaBridge {
     save(config: UpdaterConfig): Promise<UpdaterConfig>;
     reset(): Promise<UpdaterConfig>;
     check(): Promise<UpdaterCheckResult>;
+    install(): Promise<void>;
     openInstaller(url: string): Promise<void>;
   };
   app: {

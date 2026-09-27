@@ -14,6 +14,7 @@ import type { GpuStatus } from '../shared/ipc';
 import {
   checkForUpdate,
   getUpdaterConfig,
+  installCurrentUpdate,
   resetUpdaterConfig,
   runUpdateCheck,
   saveUpdaterConfig,
@@ -216,6 +217,7 @@ function registerIpc(): void {
   ipcMain.handle(IPC.updaterConfigSave, (_event, next) => saveUpdaterConfig(next));
   ipcMain.handle(IPC.updaterConfigReset, () => resetUpdaterConfig());
   ipcMain.handle(IPC.updaterCheck, () => checkForUpdate(true));
+  ipcMain.handle(IPC.updaterInstall, () => installCurrentUpdate());
   ipcMain.handle(IPC.updaterOpenInstaller, (_event, installerUrl: unknown) => {
     if (typeof installerUrl !== 'string') throw new Error('Installer URL is required');
     const url = new URL(installerUrl);
