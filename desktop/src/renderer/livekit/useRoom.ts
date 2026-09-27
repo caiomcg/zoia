@@ -21,6 +21,7 @@ import {
 } from 'livekit-client';
 import type { QualityPreset, SourceInfo, TokenResult } from '../../shared/ipc';
 import { createCaptureAudioTrack, type CaptureTrackHandle } from '../audio/capture-track';
+import { WATCHING_ATTRIBUTE, isWatching, watchingValue } from './watching';
 
 /**
  * The identity suffix a hardware-encoded broadcast publishes under. Must match
@@ -144,6 +145,11 @@ export interface VideoStats {
   height: number;
   fps: number;
   kbps: number;
+}
+
+export interface Viewer {
+  identity: string;
+  name: string;
 }
 
 export interface RoomMember {
@@ -297,6 +303,20 @@ export function useRoom() {
   const [selectedRemoteIds, setSelectedRemoteIds] = useState<Set<string>>(new Set());
   const [participantCount, setParticipantCount] = useState(0);
   const [members, setMembers] = useState<RoomMember[]>([]);
+  // Who is watching this device's broadcast, from their own announcements.
+  const [viewers, setViewers] = useState<Viewer[]>([]);
+  const announcedWatchingRef = useRef<string | null>(null);
+
+  /** Tells the room whose broadcasts this device is watching, when it changes. */
+  const announceWatching = useCallback((room: Room) => {
+    const value = watchingValue(selectedRemoteIdsRef.current, pausedRemoteIdsRef.current);
+    if (value === announcedWatchingRef.current) return;
+    announcedWatchingRef.current = value;
+    room.localParticipant.setAttributes({ [WATCHING_ATTRIBUTE]: value }).catch(() => {
+      // Forgotten, so the next change tries again rather than assuming it landed.
+      announcedWatchingRef.current = null;
+    });
+  }, []);
   const [broadcastState, setBroadcastState] = useState<BroadcastState>('idle');
   const [broadcastError, setBroadcastError] = useState<string | null>(null);
   const [audioWarning, setAudioWarning] = useState<string | null>(null);
@@ -404,6 +424,15 @@ export function useRoom() {
         );
         setRemoteScreens(findRemoteScreens(room));
         setParticipantCount(room.remoteParticipants.size);
+        announceWatching(room);
+
+        const me = room.localParticipant.identity;
+        setViewers(
+          [...room.remoteParticipants.values()]
+            .filter((p) => !p.identity.endsWith(WHIP_SUFFIX) && isWatching(p.attributes, me))
+            .map((p) => ({ identity: p.identity, name: p.name || p.identity }))
+            .sort((a, b) => a.name.localeCompare(b.name)),
+        );
 
         const describe = (p: Participant, isLocal: boolean): RoomMember => ({
           identity: p.identity,
@@ -461,6 +490,7 @@ export function useRoom() {
         // own footer while every list in every client kept the old name.
         .on(RoomEvent.ParticipantNameChanged, () => refresh())
         .on(RoomEvent.ParticipantMetadataChanged, () => refresh())
+        .on(RoomEvent.ParticipantAttributesChanged, () => refresh())
         // Permission changes are how losing the stage arrives: the server
         // revokes canPublish and LiveKit pushes it down live.
         .on(RoomEvent.ParticipantPermissionsChanged, () => refresh())
@@ -490,6 +520,8 @@ export function useRoom() {
           if (roomRef.current !== room) return;
           setIsReconnecting(false);
           setState('connected');
+          // A full reconnect is a new session, which starts without attributes.
+          announcedWatchingRef.current = null;
           refresh();
         })
         .on(RoomEvent.Disconnected, (reason) => {
@@ -512,6 +544,7 @@ export function useRoom() {
 
       try {
         await room.connect(wsUrl, token);
+        announcedWatchingRef.current = null;
         setState('connected');
         refresh();
       } catch (err) {
@@ -519,7 +552,7 @@ export function useRoom() {
         setError(`Não foi possível conectar: ${err instanceof Error ? err.message : String(err)}`);
       }
     },
-    [findRemoteScreens],
+    [findRemoteScreens, announceWatching],
   );
 
   /**
@@ -549,6 +582,8 @@ export function useRoom() {
     focusedRemoteIdsRef.current = null;
     selectedRemoteIdsRef.current = new Set();
     setSelectedRemoteIds(new Set());
+    announcedWatchingRef.current = null;
+    setViewers([]);
   }, []);
 
   /** The broadcasts shown large with HQ on get the high layer; the rest, the low. */
@@ -567,19 +602,23 @@ export function useRoom() {
   }, []);
 
   /** Stops video (not audio) for these broadcasts until they are unpaused. */
-  const setRemotePaused = useCallback((identities: readonly string[]) => {
-    const paused = new Set(identities);
-    pausedRemoteIdsRef.current = paused;
-    const room = roomRef.current;
-    if (room) {
-      applyRemoteMediaSettings(
-        room,
-        selectedRemoteIdsRef.current,
-        focusedRemoteIdsRef.current,
-        paused,
-      );
-    }
-  }, []);
+  const setRemotePaused = useCallback(
+    (identities: readonly string[]) => {
+      const paused = new Set(identities);
+      pausedRemoteIdsRef.current = paused;
+      const room = roomRef.current;
+      if (room) {
+        applyRemoteMediaSettings(
+          room,
+          selectedRemoteIdsRef.current,
+          focusedRemoteIdsRef.current,
+          paused,
+        );
+        announceWatching(room);
+      }
+    },
+    [announceWatching],
+  );
 
   /**
    * Ends the local publish and releases the stage, unconditionally — this
@@ -962,6 +1001,7 @@ export function useRoom() {
     setRemoteFocus,
     participantCount,
     members,
+    viewers,
     connect,
     disconnect,
     setDisplayName,

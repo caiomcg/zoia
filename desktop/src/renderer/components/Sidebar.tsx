@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { RoomMember } from '../livekit/useRoom';
 import type { RoomInfo } from '../../shared/ipc';
 import Avatar from './Avatar';
+import { IconEye } from './Player';
 
 /**
  * Who is in the room, and who is sharing. Your own name sits in the footer,
@@ -124,6 +125,7 @@ function ChannelNameField({
 export default function Sidebar({
   members,
   myName,
+  viewerIds,
   onOpenSettings,
   loadingRemoteIds,
   channels,
@@ -136,6 +138,8 @@ export default function Sidebar({
 }: {
   members: RoomMember[];
   myName: string;
+  /** Who is watching your broadcast right now; empty while you are not live. */
+  viewerIds: ReadonlySet<string>;
   onOpenSettings: () => void;
   loadingRemoteIds: Set<string>;
   /** Every channel, who is in it and who is live, polled from the server. */
@@ -301,6 +305,7 @@ export default function Sidebar({
                 <Avatar name={m.name} live />
                 <span className="member-name">{m.name}</span>
                 {m.isLocal && <span className="you-tag">you</span>}
+                {viewerIds.has(m.identity) && <WatchingYou />}
                 {!m.isLocal && loadingRemoteIds.has(m.identity) && (
                   <span className="stream-state">Carregando…</span>
                 )}
@@ -318,6 +323,7 @@ export default function Sidebar({
               <Avatar name={m.name} live={false} />
               <span className="member-name">{m.name}</span>
               {m.isLocal && <span className="you-tag">you</span>}
+              {viewerIds.has(m.identity) && <WatchingYou />}
             </div>
           ))}
         </section>
@@ -340,6 +346,14 @@ export default function Sidebar({
         </button>
       </div>
     </aside>
+  );
+}
+
+function WatchingYou() {
+  return (
+    <span className="watching-you" title="Watching your screen" aria-label="Watching your screen">
+      <IconEye />
+    </span>
   );
 }
 

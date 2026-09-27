@@ -272,6 +272,8 @@ export default function App() {
         !activeRemoteIds.has(member.identity),
     )
     .map((member) => ({ identity: member.identity, name: member.name }));
+  // Only while live: a stale list would say people are watching nothing.
+  const viewerIds = new Set(isLive ? room.viewers.map((v) => v.identity) : []);
   const loadingRemoteIds = new Set(loadingBroadcasts.map((broadcast) => broadcast.identity));
 
   function dismissOnboarding() {
@@ -413,6 +415,7 @@ export default function App() {
                       <Player
                         fullscreen={fullscreen}
                         name={status.deviceName ?? 'You'}
+                        viewers={room.viewers}
                         localTrack={room.localTrack}
                         gpuBroadcasting={gpuLive}
                         sendAudio={
@@ -448,6 +451,7 @@ export default function App() {
         <Sidebar
           members={room.members}
           myName={status.deviceName ?? 'You'}
+          viewerIds={viewerIds}
           onOpenSettings={() => setSettingsOpen(true)}
           loadingRemoteIds={loadingRemoteIds}
           channels={channels}

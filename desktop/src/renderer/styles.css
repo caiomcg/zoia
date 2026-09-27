@@ -771,6 +771,59 @@ button:disabled {
   opacity: 1;
 }
 
+/* Who is watching your share: an eye, a count, and the names on click. */
+.viewers {
+  position: relative;
+  display: inline-flex;
+}
+
+.remote-tile-footer .viewers-button {
+  width: auto;
+  gap: 5px;
+  padding: 0 8px;
+}
+
+.viewers-count {
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.viewers-list {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 8px);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 160px;
+  max-height: 240px;
+  padding: 10px 12px;
+  overflow-y: auto;
+  background: rgb(0 0 0 / 0.8);
+  border: 1px solid rgb(255 255 255 / 0.12);
+  border-radius: 8px;
+  backdrop-filter: blur(6px);
+  white-space: nowrap;
+}
+
+.viewers-list em {
+  color: rgb(255 255 255 / 0.7);
+  font-style: normal;
+}
+
+.viewers-person {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.viewers-person .avatar {
+  width: 20px;
+  height: 20px;
+  font-size: 8px;
+}
+
 /* Your own share wears the same footer; Stop is the one control in red. */
 .remote-tile-footer .icon-button.stop {
   color: var(--danger);
@@ -1764,6 +1817,16 @@ button.danger {
   color: #fff;
   background: var(--accent);
   border-radius: 3px;
+}
+
+.watching-you {
+  display: inline-flex;
+  color: var(--accent);
+}
+
+.watching-you svg {
+  width: 14px;
+  height: 14px;
 }
 
 .live-dot {
