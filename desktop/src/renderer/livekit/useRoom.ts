@@ -136,10 +136,18 @@ const LOW_LAYER = [ScreenSharePresets.h360fps15];
 export interface VideoStats {
   encoder: string;
   codec: string;
+  /** The top simulcast layer: what a viewer on full quality receives. */
   width: number;
   height: number;
   fps: number;
+  /** Every layer together: what actually leaves this machine. */
   kbps: number;
+  /** What the capture delivers before encoding, from the track's settings. */
+  captureWidth: number;
+  captureHeight: number;
+  captureFps: number;
+  /** WebRTC's own reason for sending less than asked: cpu, bandwidth, or none. */
+  limitation: string;
 }
 
 export interface Viewer {
@@ -203,30 +211,39 @@ async function samplePublishStats(
   const sender = track.sender;
   if (!sender) return;
 
-  const report = await sender.getStats();
-  let outbound: RTCOutboundRtpStreamStats | undefined;
-  report.forEach((entry) => {
-    const stat = entry as RTCOutboundRtpStreamStats & { kind?: string };
-    if (stat.type === 'outbound-rtp' && stat.kind === 'video') outbound = stat;
-  });
-  if (!outbound) return;
-
-  const withExtras = outbound as RTCOutboundRtpStreamStats & {
+  type Outbound = RTCOutboundRtpStreamStats & {
+    kind?: string;
     encoderImplementation?: string;
     frameWidth?: number;
     frameHeight?: number;
     framesPerSecond?: number;
     bytesSent?: number;
     codecId?: string;
+    qualityLimitationReason?: string;
   };
 
+  // A simulcast sender reports one outbound-rtp per layer. This used to keep
+  // whichever came last — often a reduced layer — so the numbers looked like
+  // the broadcast was missing its resolution and frame rate when only the
+  // measurement was. The top layer is the widest; the bitrate is all of them.
+  const report = await sender.getStats();
+  const layers: Outbound[] = [];
+  report.forEach((entry) => {
+    const stat = entry as Outbound;
+    if (stat.type === 'outbound-rtp' && stat.kind === 'video') layers.push(stat);
+  });
+  if (layers.length === 0) return;
+  const top = layers.reduce((best, layer) =>
+    (layer.frameWidth ?? 0) > (best.frameWidth ?? 0) ? layer : best,
+  );
+
   let codec = 'unknown';
-  if (withExtras.codecId) {
-    const entry = report.get(withExtras.codecId) as { mimeType?: string } | undefined;
+  if (top.codecId) {
+    const entry = report.get(top.codecId) as { mimeType?: string } | undefined;
     if (entry?.mimeType) codec = entry.mimeType.replace('video/', '');
   }
 
-  const bytes = withExtras.bytesSent ?? 0;
+  const bytes = layers.reduce((sum, layer) => sum + (layer.bytesSent ?? 0), 0);
   const now = performance.now();
   const previous = lastSample.current;
   const kbps =
@@ -235,13 +252,18 @@ async function samplePublishStats(
       : 0;
   lastSample.current = { bytes, at: now };
 
+  const capture = track.mediaStreamTrack.getSettings();
   onStats({
-    encoder: withExtras.encoderImplementation ?? 'unknown',
+    encoder: top.encoderImplementation ?? 'unknown',
     codec,
-    width: withExtras.frameWidth ?? 0,
-    height: withExtras.frameHeight ?? 0,
-    fps: Math.round(withExtras.framesPerSecond ?? 0),
+    width: top.frameWidth ?? 0,
+    height: top.frameHeight ?? 0,
+    fps: Math.round(top.framesPerSecond ?? 0),
     kbps,
+    captureWidth: capture.width ?? 0,
+    captureHeight: capture.height ?? 0,
+    captureFps: Math.round(capture.frameRate ?? 0),
+    limitation: top.qualityLimitationReason ?? 'none',
   });
 }
 
