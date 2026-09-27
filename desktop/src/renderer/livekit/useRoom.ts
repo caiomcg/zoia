@@ -235,9 +235,10 @@ async function samplePublishStats(
 export function useRoom() {
   const roomRef = useRef<Room | null>(null);
   const localTrackRef = useRef<LocalVideoTrack | null>(null);
-  const localAudioRef = useRef<{ track: LocalAudioTrack; capture: CaptureTrackHandle } | null>(
-    null,
-  );
+  const localAudioRef = useRef<{
+    track: LocalAudioTrack;
+    capture?: CaptureTrackHandle;
+  } | null>(null);
   const restartWindowRef = useRef<
     ((source: SourceInfo, preset?: QualityPreset) => Promise<boolean>) | null
   >(null);
@@ -576,7 +577,8 @@ export function useRoom() {
     const audio = localAudioRef.current;
     if (audio) {
       if (room) await room.localParticipant.unpublishTrack(audio.track, true).catch(() => {});
-      await audio.capture.stop().catch(() => {});
+      if (audio.capture) await audio.capture.stop().catch(() => {});
+      else audio.track.mediaStreamTrack.stop();
       localAudioRef.current = null;
     }
     if (statsTimerRef.current) {
@@ -613,7 +615,7 @@ export function useRoom() {
    * way, whatever the stage holder happens to be sharing.
    */
   const startCamera = useCallback(
-    async (constraints: MediaStreamConstraints) => {
+    async (constraints: MediaStreamConstraints, muteMicrophone = false) => {
       setBroadcastError(null);
       setAudioWarning(null);
       setBroadcastState('starting');
@@ -662,13 +664,14 @@ export function useRoom() {
         if (micTrack) {
           const audioTrack = new LocalAudioTrack(micTrack, undefined, false);
           audioTrack.source = Track.Source.ScreenShareAudio;
+          if (muteMicrophone) await audioTrack.mute();
           await room.localParticipant.publishTrack(audioTrack, {
             source: Track.Source.ScreenShareAudio,
             stream: 'screen',
           });
           // No capture handle here: the microphone is a plain MediaStream,
           // not the WASAPI bridge, so there is nothing to monitor or meter.
-          localAudioRef.current = null;
+          localAudioRef.current = { track: audioTrack };
         } else {
           setAudioWarning('No microphone was available, so the camera is being shared silently.');
         }

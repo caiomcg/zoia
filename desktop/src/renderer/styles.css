@@ -2097,6 +2097,17 @@ button.danger {
   border-radius: 2px;
 }
 
+.camera-mute-check {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 13px;
+}
+
+.camera-mute-check input {
+  accent-color: var(--accent);
+}
+
 .camera-dialog footer {
   display: flex;
   gap: 8px;

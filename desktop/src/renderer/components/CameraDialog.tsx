@@ -1,6 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
 import { useCameraDevices } from '../livekit/useCamera';
 
+const MUTE_MICROPHONE_KEY = 'zoia.cameraMuteMicrophone';
+
+function readMuteMicrophonePreference(): boolean {
+  try {
+    return localStorage.getItem(MUTE_MICROPHONE_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Choosing a camera before sharing it.
  *
@@ -13,7 +23,7 @@ export default function CameraDialog({
   onStart,
   onCancel,
 }: {
-  onStart: (constraints: MediaStreamConstraints) => void;
+  onStart: (constraints: MediaStreamConstraints, muteMicrophone: boolean) => void;
   onCancel: () => void;
 }) {
   const camera = useCameraDevices();
@@ -21,6 +31,7 @@ export default function CameraDialog({
   const streamRef = useRef<MediaStream | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [level, setLevel] = useState(0);
+  const [muteMicrophone, setMuteMicrophone] = useState(readMuteMicrophonePreference);
 
   const { cameraId, microphoneId } = camera;
 
@@ -89,7 +100,12 @@ export default function CameraDialog({
     // released so the device is not held twice.
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
-    onStart(camera.constraints());
+    try {
+      localStorage.setItem(MUTE_MICROPHONE_KEY, String(muteMicrophone));
+    } catch {
+      // The preference is a convenience; it still applies for this start.
+    }
+    onStart(camera.constraints(), muteMicrophone);
   }
 
   const segments = 14;
@@ -144,6 +160,15 @@ export default function CameraDialog({
             ))}
           </div>
         </div>
+
+        <label className="camera-mute-check">
+          <input
+            type="checkbox"
+            checked={muteMicrophone}
+            onChange={(event) => setMuteMicrophone(event.target.checked)}
+          />
+          Mute microphone when sharing the camera
+        </label>
 
         <footer>
           <button onClick={onCancel}>Cancel</button>
