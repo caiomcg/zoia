@@ -33,6 +33,39 @@ function ownerIdentity(identity: string): string {
   return identity.endsWith(WHIP_SUFFIX) ? identity.slice(0, -WHIP_SUFFIX.length) : identity;
 }
 
+/**
+ * A game launcher commonly destroys its client window and creates a second
+ * window for the game. Chromium reports the first capture track as `ended`
+ * even though sharing should continue. Give the replacement window time to
+ * appear before treating that event as an actual stop.
+ */
+async function replacementWindow(original: SourceInfo): Promise<SourceInfo | null> {
+  const originalName = original.name.trim().toLocaleLowerCase();
+  const leagueSource = /league|riot/.test(originalName);
+
+  for (let attempt = 0; attempt < 12; attempt += 1) {
+    const sources = await window.zoia.sources.list().catch(() => []);
+    const replacement = sources.find((candidate) => {
+      if (candidate.kind !== 'window' || candidate.id === original.id) return false;
+
+      const name = candidate.name.trim().toLocaleLowerCase();
+      // The HWND changes during the LoL client -> game handoff, and the game
+      // can also have a different PID. Its window title still identifies it.
+      if (leagueSource && /league|riot/.test(name)) return true;
+      // For ordinary applications, prefer the same process or title. This
+      // also handles apps that recreate their main window during an update.
+      return (
+        (original.processId !== null && candidate.processId === original.processId) ||
+        name === originalName
+      );
+    });
+    if (replacement) return replacement;
+
+    await new Promise<void>((resolve) => setTimeout(resolve, 500));
+  }
+  return null;
+}
+
 function applyRemoteMediaSettings(
   room: Room,
   selected: Set<string>,
@@ -204,6 +237,9 @@ export function useRoom() {
   const localAudioRef = useRef<{ track: LocalAudioTrack; capture: CaptureTrackHandle } | null>(
     null,
   );
+  const restartWindowRef = useRef<
+    ((source: SourceInfo, preset?: QualityPreset) => Promise<boolean>) | null
+  >(null);
   // Populated by connect(); startBroadcast reads it so capture and encoding
   // actually match what the server tuned, instead of LiveKit's bare defaults.
   const qualityRef = useRef<NonNullable<TokenResult['quality']>>({
@@ -516,8 +552,11 @@ export function useRoom() {
       await room.localParticipant.unpublishTrack(track, true).catch(() => {});
     }
     if (room) await room.localParticipant.setMetadata('').catch(() => {});
-    track?.mediaStreamTrack.stop();
+    // Clear the identity before stopping the MediaStreamTrack. `stop()` can
+    // synchronously emit `ended`; clearing first prevents an explicit Stop or
+    // source switch from being mistaken for the LoL window handoff.
     localTrackRef.current = null;
+    track?.mediaStreamTrack.stop();
     setLocalTrack(null);
 
     const audio = localAudioRef.current;
@@ -727,7 +766,20 @@ export function useRoom() {
         // The OS/Chromium can end capture out from under us (window closed,
         // "Stop sharing" bar) — treat that exactly like clicking Stop here.
         mediaTrack.addEventListener('ended', () => {
-          void stopBroadcast();
+          // `stopPublishing()` deliberately stops the same MediaStreamTrack.
+          // Do not start a recovery for an explicit stop or source switch.
+          if (localTrackRef.current?.mediaStreamTrack !== mediaTrack) return;
+
+          void (async () => {
+            if (source.kind === 'window') {
+              const replacement = await replacementWindow(source);
+              if (replacement && restartWindowRef.current) {
+                await restartWindowRef.current(replacement, preset);
+                return;
+              }
+            }
+            await stopBroadcast();
+          })();
         });
 
         // Audio is captured and published as its own step, deliberately not
@@ -779,6 +831,11 @@ export function useRoom() {
     },
     [stopBroadcast, stopPublishing],
   );
+
+  // Keep this in a ref so the ended-track listener can restart through the
+  // same publishing path without closing over a stale callback.
+  restartWindowRef.current = (source, preset) =>
+    startBroadcast(source, preset, { keepStage: true });
 
   useEffect(
     () => () => {
