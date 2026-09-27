@@ -64,6 +64,7 @@ async function parentExited() {
 
 async function main() {
   await parentExited();
+  await fs.rm(backup, { force: true }).catch(() => {});
   await fs.rename(target, backup).catch(() => {});
   try {
     await fs.rename(staged, target);
@@ -72,7 +73,9 @@ async function main() {
     throw error;
   }
   if (statePath && commit) await fs.writeFile(statePath, JSON.stringify({ commit }, null, 2));
-  const child = spawn(executable, [], { detached: true, stdio: 'ignore' });
+  const env = { ...process.env };
+  delete env.ELECTRON_RUN_AS_NODE;
+  const child = spawn(executable, [], { detached: true, stdio: 'ignore', env });
   child.unref();
   await wait(5000);
   await fs.rm(backup, { force: true }).catch(() => {});
@@ -191,8 +194,16 @@ export async function resetUpdaterConfig(): Promise<UpdaterConfig> {
 }
 
 async function fetchJson<T>(url: string): Promise<T> {
-  const response = await fetch(url, {
-    headers: { accept: 'application/json', 'user-agent': 'Zoia-Updater' },
+  const urlWithCacheBuster = url.includes('?')
+    ? `${url}&_t=${Date.now()}`
+    : `${url}?_t=${Date.now()}`;
+  const response = await fetch(urlWithCacheBuster, {
+    headers: {
+      accept: 'application/json',
+      'user-agent': 'Zoia-Updater',
+      'cache-control': 'no-cache',
+      pragma: 'no-cache',
+    },
   });
   if (!response.ok) throw new Error(`Updater request failed (${response.status})`);
   return (await response.json()) as T;
@@ -261,6 +272,17 @@ function newerVersion(remote: string, local: string): boolean {
   return false;
 }
 
+async function withNoAsar<T>(action: () => Promise<T>): Promise<T> {
+  const proc = process as unknown as { noAsar?: boolean };
+  const prev = proc.noAsar;
+  proc.noAsar = true;
+  try {
+    return await action();
+  } finally {
+    proc.noAsar = prev;
+  }
+}
+
 async function downloadArtifact(
   url: string,
   expectedSha256: string,
@@ -269,17 +291,19 @@ async function downloadArtifact(
   const response = await fetch(url, { headers: { 'user-agent': 'Zoia-Updater' } });
   if (!response.ok || !response.body)
     throw new Error(`Update download failed (${response.status})`);
-  await pipeline(
-    Readable.fromWeb(response.body as never),
-    createWriteStream(destination, { flags: 'wx' }),
-  );
-  const hash = createHash('sha256');
-  const contents = await readFile(destination);
-  hash.update(contents);
-  if (hash.digest('hex').toLowerCase() !== expectedSha256.toLowerCase()) {
-    await rm(destination, { force: true });
-    throw new Error('Downloaded update failed SHA-256 verification');
-  }
+  await withNoAsar(async () => {
+    await pipeline(
+      Readable.fromWeb(response.body as never),
+      createWriteStream(destination, { flags: 'w' }),
+    );
+    const hash = createHash('sha256');
+    const contents = await readFile(destination);
+    hash.update(contents);
+    if (hash.digest('hex').toLowerCase() !== expectedSha256.toLowerCase()) {
+      await rm(destination, { force: true });
+      throw new Error('Downloaded update failed SHA-256 verification');
+    }
+  });
 }
 
 async function writeHelper(path: string): Promise<void> {
@@ -289,8 +313,10 @@ async function writeHelper(path: string): Promise<void> {
 async function isWritableDirectory(dir: string): Promise<boolean> {
   const probe = join(dir, `.probe-${Date.now()}-${Math.random().toString(16).slice(2)}`);
   try {
-    await writeFile(probe, '');
-    await rm(probe, { force: true });
+    await withNoAsar(async () => {
+      await writeFile(probe, '');
+      await rm(probe, { force: true });
+    });
     return true;
   } catch {
     return false;
@@ -298,17 +324,14 @@ async function isWritableDirectory(dir: string): Promise<boolean> {
 }
 
 async function fileExists(path: string): Promise<boolean> {
-  const proc = process as unknown as { noAsar?: boolean };
-  const prev = proc.noAsar;
-  proc.noAsar = true;
-  try {
-    await access(path);
-    return true;
-  } catch {
-    return false;
-  } finally {
-    proc.noAsar = prev;
-  }
+  return withNoAsar(async () => {
+    try {
+      await access(path);
+      return true;
+    } catch {
+      return false;
+    }
+  });
 }
 
 async function writeRunner(
@@ -340,26 +363,29 @@ async function install(update: RemoteUpdate): Promise<void> {
 
   const writable = await isWritableDirectory(process.resourcesPath);
   const elevatePath = join(process.resourcesPath, 'elevate.exe');
-  const canElevate = !writable && (await fileExists(elevatePath));
-
-  if (!writable && !canElevate) {
-    throw new Error(
-      `Permission denied for ${process.resourcesPath}. Administrator permissions are required to update Zoia.`,
-    );
-  }
 
   const updateDir = join(app.getPath('userData'), 'updates', update.commit);
-  await mkdir(updateDir, { recursive: true });
-  const staged = join(updateDir, 'app.asar');
+  const staged = join(updateDir, 'update.bin');
   const partial = `${staged}.partial`;
   const backup = `${target}.previous`;
   const helper = join(updateDir, HELPER_NAME);
   const runner = join(updateDir, 'zoia-update-runner.bat');
   const statePath = join(app.getPath('userData'), STATE_NAME);
-  await rm(partial, { force: true });
-  await rm(staged, { force: true });
+
+  await withNoAsar(async () => {
+    await mkdir(updateDir, { recursive: true });
+    await rm(join(updateDir, 'app.asar'), { force: true }).catch(() => {});
+    await rm(join(updateDir, 'app.asar.partial'), { force: true }).catch(() => {});
+    await rm(partial, { force: true }).catch(() => {});
+    await rm(staged, { force: true }).catch(() => {});
+  });
+
   await downloadArtifact(update.artifactUrl, update.sha256, partial);
-  await rename(partial, staged);
+
+  await withNoAsar(async () => {
+    await rename(partial, staged);
+  });
+
   await writeHelper(helper);
 
   if (writable) {
@@ -393,10 +419,27 @@ async function install(update: RemoteUpdate): Promise<void> {
       statePath,
       commit: update.commit,
     });
-    spawn(elevatePath, [process.env.ComSpec || 'cmd.exe', '/c', runner], {
-      detached: true,
-      stdio: 'ignore',
-    }).unref();
+    if (await fileExists(elevatePath)) {
+      spawn(elevatePath, [process.env.ComSpec || 'cmd.exe', '/c', runner], {
+        detached: true,
+        stdio: 'ignore',
+      }).unref();
+    } else {
+      spawn(
+        'powershell.exe',
+        [
+          '-NoProfile',
+          '-NonInteractive',
+          '-Command',
+          `Start-Process -FilePath "${process.env.ComSpec || 'cmd.exe'}" -ArgumentList '/c "${runner}"' -Verb RunAs -WindowStyle Hidden`,
+        ],
+        {
+          detached: true,
+          stdio: 'ignore',
+          windowsHide: true,
+        },
+      ).unref();
+    }
   }
   app.quit();
 }
@@ -429,60 +472,124 @@ export async function checkForUpdate(force = false): Promise<UpdaterCheckResult>
   }
 }
 
-export async function startUpdater(): Promise<void> {
+const UPDATE_CHECK_INTERVAL_MS = 30 * 60 * 1000;
+let updateInterval: NodeJS.Timeout | null = null;
+let inFlightUpdate: Promise<void> | null = null;
+let inFlightInstall: Promise<void> | null = null;
+let dismissedVersion: string | null = null;
+
+export async function runUpdateCheck(force = false): Promise<void> {
   if (!app.isPackaged) return;
-  const config = await loadConfig();
-  if (!config || config.checkOnStartup === false) return;
+  if (inFlightInstall) return inFlightInstall;
+  if (inFlightUpdate) return inFlightUpdate;
 
-  try {
-    const update = await getRemoteUpdate(config);
-    const state = await readJson<UpdateState>(join(app.getPath('userData'), STATE_NAME));
-    if (state?.commit === update.commit) return;
-    const versionUpgrade = newerVersion(update.version, app.getVersion());
-    const commitUpgrade = Boolean(state?.commit && state.commit !== update.commit);
-    if (!versionUpgrade && !commitUpgrade) return;
+  inFlightUpdate = (async () => {
+    const config = await loadConfig();
+    if (!config || (!force && config.checkOnStartup === false)) return;
 
-    if (update.updateType === 'full') {
-      const result = await dialog.showMessageBox({
-        type: 'info',
-        title: 'Full update required',
-        message: `Version ${update.version} requires a new installer.`,
-        detail:
-          update.notes ??
-          'This release changes Electron, native components, or another file that cannot be updated OTA.',
-        buttons: ['Open download', 'Later'],
-        defaultId: 0,
-        cancelId: 1,
-      });
-      if (result.response === 0 && update.installerUrl)
-        await shell.openExternal(update.installerUrl);
-      return;
+    let userConfirmed = false;
+    try {
+      const update = await getRemoteUpdate(config);
+      const state = await readJson<UpdateState>(join(app.getPath('userData'), STATE_NAME));
+      if (state?.commit === update.commit) return;
+      const versionUpgrade = newerVersion(update.version, app.getVersion());
+      const commitUpgrade = Boolean(state?.commit && state.commit !== update.commit);
+      if (!versionUpgrade && !commitUpgrade) return;
+
+      if (!force && dismissedVersion === update.version) return;
+
+      if (update.updateType === 'full') {
+        const result = await dialog.showMessageBox({
+          type: 'info',
+          title: 'Full update required',
+          message: `Version ${update.version} requires a new installer.`,
+          detail:
+            update.notes ??
+            'This release changes Electron, native components, or another file that cannot be updated OTA.',
+          buttons: ['Open download', 'Later'],
+          defaultId: 0,
+          cancelId: 1,
+        });
+        if (result.response === 0 && update.installerUrl) {
+          await shell.openExternal(update.installerUrl);
+        } else {
+          dismissedVersion = update.version;
+        }
+        return;
+      }
+
+      if (!config.autoInstall) {
+        const result = await dialog.showMessageBox({
+          type: 'info',
+          title: 'Update available',
+          message: `Version ${update.version} is available.`,
+          detail:
+            update.notes ??
+            'Only the application code is updated; nothing large is downloaded again.',
+          buttons: ['Update now', 'Later'],
+          defaultId: 0,
+          cancelId: 1,
+        });
+        if (result.response !== 0) {
+          dismissedVersion = update.version;
+          return;
+        }
+        userConfirmed = true;
+      }
+      await install(update);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn('[updater] update check failed:', message);
+      if (force || userConfirmed) {
+        await dialog.showMessageBox({
+          type: 'error',
+          title: 'Update not finished',
+          message: 'The update could not be installed.',
+          detail: message,
+          buttons: ['OK'],
+        });
+      }
     }
+  })().finally(() => {
+    inFlightUpdate = null;
+  });
 
-    if (!config.autoInstall) {
-      const result = await dialog.showMessageBox({
-        type: 'info',
-        title: 'Update available',
-        message: `Version ${update.version} is available.`,
-        detail:
-          update.notes ??
-          'Only the application code is updated; nothing large is downloaded again.',
-        buttons: ['Update now', 'Later'],
-        defaultId: 0,
-        cancelId: 1,
-      });
-      if (result.response !== 0) return;
+  return inFlightUpdate;
+}
+
+export async function installCurrentUpdate(): Promise<void> {
+  if (!app.isPackaged) {
+    throw new Error('OTA updates are disabled in development builds');
+  }
+  if (inFlightInstall) return inFlightInstall;
+  if (inFlightUpdate) {
+    await inFlightUpdate;
+  }
+
+  inFlightInstall = (async () => {
+    const config = await loadConfig();
+    if (!config) throw new Error('Updater configuration not found');
+    const update = await getRemoteUpdate(config);
+    if (update.updateType === 'full' || !update.artifactUrl || !update.sha256) {
+      throw new Error('This release requires the full installer');
     }
     await install(update);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.warn('[updater] update skipped:', message);
-    await dialog.showMessageBox({
-      type: 'error',
-      title: 'Update not finished',
-      message: 'The update could not be installed.',
-      detail: message,
-      buttons: ['OK'],
-    });
-  }
+  })().finally(() => {
+    inFlightInstall = null;
+  });
+
+  return inFlightInstall;
+}
+
+export async function startUpdater(): Promise<void> {
+  if (updateInterval) clearInterval(updateInterval);
+  updateInterval = setInterval(() => {
+    void runUpdateCheck(false);
+  }, UPDATE_CHECK_INTERVAL_MS);
+  return runUpdateCheck(false);
+}
+
+export function stopUpdater(): void {
+  if (updateInterval) clearInterval(updateInterval);
+  updateInterval = null;
 }

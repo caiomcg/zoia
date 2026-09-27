@@ -14,9 +14,12 @@ import type { GpuStatus } from '../shared/ipc';
 import {
   checkForUpdate,
   getUpdaterConfig,
+  installCurrentUpdate,
   resetUpdaterConfig,
+  runUpdateCheck,
   saveUpdaterConfig,
   startUpdater,
+  stopUpdater,
 } from './updater';
 
 let mainWindow: BrowserWindow | null = null;
@@ -214,6 +217,7 @@ function registerIpc(): void {
   ipcMain.handle(IPC.updaterConfigSave, (_event, next) => saveUpdaterConfig(next));
   ipcMain.handle(IPC.updaterConfigReset, () => resetUpdaterConfig());
   ipcMain.handle(IPC.updaterCheck, () => checkForUpdate(true));
+  ipcMain.handle(IPC.updaterInstall, () => installCurrentUpdate());
   ipcMain.handle(IPC.updaterOpenInstaller, (_event, installerUrl: unknown) => {
     if (typeof installerUrl !== 'string') throw new Error('Installer URL is required');
     const url = new URL(installerUrl);
@@ -228,7 +232,7 @@ function registerIpc(): void {
   ipcMain.handle(IPC.stageClaim, () => api.stageClaim());
   ipcMain.handle(IPC.stageRelease, () => api.stageRelease());
 
-  ipcMain.handle(IPC.sourcesList, () => sources.listSources());
+  ipcMain.handle(IPC.sourcesList, (_event, fresh?: boolean) => sources.listSources(fresh === true));
   ipcMain.handle(
     IPC.sourcesSelect,
     (_event, source: { id: string; name: string; processId: number | null }) => {
@@ -462,7 +466,10 @@ const isFirstInstance = app.requestSingleInstanceLock();
 if (!isFirstInstance) {
   app.quit();
 } else {
-  app.on('second-instance', () => showWindow(mainWindow));
+  app.on('second-instance', () => {
+    showWindow(mainWindow);
+    void runUpdateCheck(false);
+  });
 }
 
 app.whenReady().then(async () => {
@@ -500,6 +507,7 @@ app.whenReady().then(async () => {
 });
 
 app.on('window-all-closed', () => {
+  stopUpdater();
   sources.stopWarming();
   audioCapture.stopCapture();
   capture.stop();

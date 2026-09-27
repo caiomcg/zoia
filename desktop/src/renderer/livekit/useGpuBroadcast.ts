@@ -51,16 +51,20 @@ export function useGpuBroadcast() {
         // try to switch back to client instead of going idle immediately.
         if (leagueFollowRef.current && startRef.current && presetRef.current) {
           void (async () => {
+            await window.zoia.sources.list(true).catch(() => []);
             for (let attempt = 0; attempt < 24; attempt += 1) {
+              if (!activeRef.current) return;
               const currentSources = await window.zoia.sources.list().catch(() => []);
-              const target = resolveLeagueTarget(currentSources, leagueFollowRef.current?.client);
+              const target = resolveLeagueTarget(currentSources);
               if (target && target.id !== activeSourceRef.current?.id) {
-                if (leagueFollowRef.current) {
-                  leagueFollowRef.current.current = target;
-                  if (isLeagueClient(target)) leagueFollowRef.current.client = target;
+                const ok = await startRef.current!(presetRef.current!, target);
+                if (ok) {
+                  if (leagueFollowRef.current) {
+                    leagueFollowRef.current.current = target;
+                    if (isLeagueClient(target)) leagueFollowRef.current.client = target;
+                  }
+                  return;
                 }
-                await startRef.current!(presetRef.current!, target);
-                return;
               }
               await new Promise((r) => setTimeout(r, 500));
             }
@@ -152,15 +156,17 @@ export function useGpuBroadcast() {
       if (client) {
         follow.client = client;
       }
-      const target = game ?? client ?? follow.client;
+      const target = game ?? client;
       if (!target || target.id === follow.current.id || !startRef.current || !presetRef.current)
         return;
 
       switchingRef.current = true;
-      follow.current = target;
       try {
         await window.zoia.encoder.stop().catch(() => {});
-        await startRef.current(presetRef.current, target);
+        const ok = await startRef.current(presetRef.current, target);
+        if (ok) {
+          follow.current = target;
+        }
       } finally {
         switchingRef.current = false;
       }

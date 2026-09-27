@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { UpdaterConfig } from '../../shared/ipc';
 import Avatar from './Avatar';
 
@@ -251,10 +251,48 @@ function UpdatesSection() {
   const [config, setConfig] = useState<UpdaterConfig>(emptyConfig);
   const [currentVersion, setCurrentVersion] = useState<string | null>(null);
   const [availableVersion, setAvailableVersion] = useState<string | null>(null);
+  const [canInstall, setCanInstall] = useState(false);
   const [installerUrl, setInstallerUrl] = useState<string | null>(null);
   const [busy, setBusy] = useState(true);
+  const [updating, setUpdating] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const check = useCallback(async () => {
+    if (updating) return;
+    setBusy(true);
+    setError(null);
+    setMessage(null);
+    const [result, appVersion] = await Promise.all([
+      window.zoia.updater.check(),
+      window.zoia.app.version().catch(() => null),
+    ]);
+    if (appVersion) setCurrentVersion(appVersion);
+
+    if (result.status === 'available') {
+      setAvailableVersion(result.version);
+      setInstallerUrl(null);
+      setCanInstall(true);
+      setMessage(`Version ${result.version} is available.`);
+    } else if (result.status === 'full-required') {
+      setAvailableVersion(result.version);
+      setInstallerUrl(result.installerUrl);
+      setCanInstall(false);
+      setMessage(`Version ${result.version} requires the full installer.`);
+    } else if (result.status === 'up-to-date') {
+      setAvailableVersion(appVersion);
+      setInstallerUrl(null);
+      setCanInstall(false);
+      setMessage('You are up to date.');
+    } else if (result.status === 'disabled') {
+      setCanInstall(false);
+      setMessage('Updates are disabled for this build.');
+    } else {
+      setCanInstall(false);
+      setError(result.message);
+    }
+    setBusy(false);
+  }, [updating]);
 
   useEffect(() => {
     window.zoia.app
@@ -266,7 +304,8 @@ function UpdatesSection() {
       .then(setConfig)
       .catch(() => setError('Could not load updater settings.'))
       .finally(() => setBusy(false));
-  }, []);
+    void check();
+  }, [check]);
 
   function update(field: keyof UpdaterConfig, value: string | boolean) {
     setConfig((current) => ({ ...current, [field]: value }));
@@ -303,26 +342,16 @@ function UpdatesSection() {
     }
   }
 
-  async function check() {
-    setBusy(true);
+  async function install() {
+    setUpdating(true);
     setError(null);
-    setMessage(null);
-    const result = await window.zoia.updater.check();
-    if (result.status === 'available') {
-      setAvailableVersion(result.version);
-      setInstallerUrl(null);
-      setMessage(`Version ${result.version} is available.`);
-    } else if (result.status === 'full-required') {
-      setAvailableVersion(result.version);
-      setInstallerUrl(result.installerUrl);
-      setMessage(`Version ${result.version} requires the full installer.`);
-    } else if (result.status === 'up-to-date') {
-      setAvailableVersion(currentVersion);
-      setInstallerUrl(null);
-      setMessage('You are up to date.');
-    } else if (result.status === 'disabled') setMessage('Updates are disabled for this build.');
-    else setError(result.message);
-    setBusy(false);
+    setMessage('Downloading and installing update…');
+    try {
+      await window.zoia.updater.install();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Could not install update.');
+      setUpdating(false);
+    }
   }
 
   return (
@@ -346,7 +375,7 @@ function UpdatesSection() {
           value={config.repository}
           onChange={(event) => update('repository', event.target.value)}
           placeholder="https://github.com/owner/repository"
-          disabled={busy}
+          disabled={busy || updating}
         />
       </label>
       <label className="settings-field">
@@ -355,7 +384,7 @@ function UpdatesSection() {
           value={config.branch}
           onChange={(event) => update('branch', event.target.value)}
           placeholder="main"
-          disabled={busy}
+          disabled={busy || updating}
         />
       </label>
       <label className="settings-field">
@@ -364,7 +393,7 @@ function UpdatesSection() {
           value={config.manifestPath}
           onChange={(event) => update('manifestPath', event.target.value)}
           placeholder="desktop/updater-manifest.json"
-          disabled={busy}
+          disabled={busy || updating}
         />
       </label>
 
@@ -373,7 +402,7 @@ function UpdatesSection() {
           type="checkbox"
           checked={config.checkOnStartup !== false}
           onChange={(event) => update('checkOnStartup', event.target.checked)}
-          disabled={busy}
+          disabled={busy || updating}
         />
         Check for updates when Zoia starts
       </label>
@@ -382,7 +411,7 @@ function UpdatesSection() {
           type="checkbox"
           checked={config.autoInstall === true}
           onChange={(event) => update('autoInstall', event.target.checked)}
-          disabled={busy}
+          disabled={busy || updating}
         />
         Install available updates automatically
       </label>
@@ -403,14 +432,24 @@ function UpdatesSection() {
         </button>
       )}
 
+      {canInstall && !installerUrl && (
+        <button
+          className="primary settings-download"
+          onClick={() => void install()}
+          disabled={busy || updating}
+        >
+          {updating ? 'Updating…' : 'Update now'}
+        </button>
+      )}
+
       <div className="settings-actions">
-        <button onClick={() => void reset()} disabled={busy}>
+        <button onClick={() => void reset()} disabled={busy || updating}>
           Restore defaults
         </button>
-        <button onClick={() => void check()} disabled={busy}>
+        <button onClick={() => void check()} disabled={busy || updating}>
           Check now
         </button>
-        <button className="primary" onClick={() => void save()} disabled={busy}>
+        <button className="primary" onClick={() => void save()} disabled={busy || updating}>
           Save
         </button>
       </div>

@@ -45,7 +45,7 @@ const bridge: ZoiaBridge = {
     release: () => ipcRenderer.invoke(IPC.stageRelease),
   },
   sources: {
-    list: () => ipcRenderer.invoke(IPC.sourcesList),
+    list: (fresh?: boolean) => ipcRenderer.invoke(IPC.sourcesList, fresh),
     select: (source) => ipcRenderer.invoke(IPC.sourcesSelect, source),
     title: (hwnd) => ipcRenderer.invoke(IPC.sourcesTitle, hwnd),
   },
@@ -70,6 +70,7 @@ const bridge: ZoiaBridge = {
     save: (config: UpdaterConfig) => ipcRenderer.invoke(IPC.updaterConfigSave, config),
     reset: () => ipcRenderer.invoke(IPC.updaterConfigReset),
     check: () => ipcRenderer.invoke(IPC.updaterCheck) as Promise<UpdaterCheckResult>,
+    install: () => ipcRenderer.invoke(IPC.updaterInstall) as Promise<void>,
     openInstaller: (url: string) => ipcRenderer.invoke(IPC.updaterOpenInstaller, url),
   },
   app: {

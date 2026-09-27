@@ -42,7 +42,7 @@ export interface ZoiaBridge {
     release(): Promise<{ ok: boolean; released?: boolean }>;
   };
   sources: {
-    list(): Promise<SourceInfo[]>;
+    list(fresh?: boolean): Promise<SourceInfo[]>;
     select(source: Pick<SourceInfo, 'id' | 'name' | 'processId'>): Promise<void>;
     /** A window's current title, or null once it is gone. */
     title(hwnd: number): Promise<string | null>;
@@ -76,6 +76,7 @@ export interface ZoiaBridge {
     save(config: UpdaterConfig): Promise<UpdaterConfig>;
     reset(): Promise<UpdaterConfig>;
     check(): Promise<UpdaterCheckResult>;
+    install(): Promise<void>;
     openInstaller(url: string): Promise<void>;
   };
   app: {
