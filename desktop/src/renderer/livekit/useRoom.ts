@@ -23,6 +23,7 @@ import type { QualityPreset, SourceInfo, TokenResult } from '../../shared/ipc';
 import {
   findLeagueSources,
   isLeagueClient,
+  isLeagueGame,
   isLeagueSource,
   resolveLeagueTarget,
 } from '../../shared/league';
@@ -885,7 +886,8 @@ export function useRoom() {
 
           void (async () => {
             if (leagueFollowRef.current && restartWindowRef.current) {
-              for (let attempt = 0; attempt < 15; attempt += 1) {
+              setRoomNotice('Partida encerrada. Aguardando o cliente do League of Legends…');
+              for (let attempt = 0; attempt < 24; attempt += 1) {
                 if (localTrackRef.current?.mediaStreamTrack !== mediaTrack) return;
                 const currentSources = await window.zoia.sources.list().catch(() => []);
                 const target = resolveLeagueTarget(currentSources, leagueFollowRef.current.client);
@@ -893,6 +895,7 @@ export function useRoom() {
                   leagueFollowRef.current.current = target;
                   if (isLeagueClient(target)) leagueFollowRef.current.client = target;
                   await restartWindowRef.current(target, leagueFollowRef.current.preset);
+                  setRoomNotice('League of Legends: alternado para o cliente / saguão');
                   return;
                 }
                 await new Promise((r) => setTimeout(r, 500));
@@ -992,6 +995,11 @@ export function useRoom() {
       follow.current = target;
       try {
         await restartWindowRef.current(target, follow.preset);
+        if (isLeagueGame(target)) {
+          setRoomNotice('League of Legends: alternado para a partida em andamento');
+        } else if (isLeagueClient(target)) {
+          setRoomNotice('League of Legends: alternado para o cliente / saguão');
+        }
       } finally {
         switchingWindowRef.current = false;
       }

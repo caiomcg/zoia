@@ -51,7 +51,7 @@ export function useGpuBroadcast() {
         // try to switch back to client instead of going idle immediately.
         if (leagueFollowRef.current && startRef.current && presetRef.current) {
           void (async () => {
-            for (let attempt = 0; attempt < 15; attempt += 1) {
+            for (let attempt = 0; attempt < 24; attempt += 1) {
               const currentSources = await window.zoia.sources.list().catch(() => []);
               const target = resolveLeagueTarget(currentSources, leagueFollowRef.current?.client);
               if (target && target.id !== activeSourceRef.current?.id) {

@@ -103,6 +103,10 @@ export default function SourcePicker({
                         ? 'Partida em andamento • Optando pelo jogo (alterna para o cliente após a partida)'
                         : 'Seleção de Campeões / Cliente • Alternará para o jogo quando a partida começar'}
                     </p>
+                    <span className="picker-league-tip">
+                      💡 Dica: jogue em modo <strong>Sem Bordas</strong> para capturar mesmo durante
+                      Alt+Tab.
+                    </span>
                   </div>
                   <button
                     className="picker-league-button"
