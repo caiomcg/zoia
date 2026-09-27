@@ -886,7 +886,7 @@ export function useRoom() {
     videoStats,
     canMonitor,
     setMonitorGain: useCallback((value: number) => {
-    localAudioRef.current?.capture?.setMonitorGain(value);
+      localAudioRef.current?.capture?.setMonitorGain(value);
     }, []),
     localTrack,
     sharingKind,
