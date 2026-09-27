@@ -122,6 +122,83 @@ function IconPanel({ collapsed }: { collapsed: boolean }) {
   );
 }
 
+function IconPencil() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="14"
+      height="14"
+      aria-hidden="true"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M4 20h4L19 9l-4-4L4 16v4zM13.5 6.5l4 4" />
+    </svg>
+  );
+}
+
+function IconTrash() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="14"
+      height="14"
+      aria-hidden="true"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13" />
+    </svg>
+  );
+}
+
+/** Naming a channel in place: Enter keeps it, Escape or an empty name drops it. */
+function ChannelNameField({
+  initial,
+  onDone,
+}: {
+  initial: string;
+  onDone: (name: string | null) => void;
+}) {
+  const [value, setValue] = useState(initial);
+  const inputRef = useRef<HTMLInputElement>(null);
+  // Enter, then the blur that follows it, must not create the channel twice.
+  const doneRef = useRef(false);
+  const finish = (name: string | null) => {
+    if (doneRef.current) return;
+    doneRef.current = true;
+    onDone(name);
+  };
+
+  useEffect(() => {
+    inputRef.current?.select();
+  }, []);
+
+  return (
+    <div className="channel-edit">
+      <input
+        ref={inputRef}
+        value={value}
+        maxLength={32}
+        placeholder="Nome do canal"
+        aria-label="Nome do canal"
+        onChange={(event) => setValue(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') finish(value.trim() || null);
+          if (event.key === 'Escape') finish(null);
+        }}
+        onBlur={() => finish(value.trim() || null)}
+      />
+    </div>
+  );
+}
+
 export default function Sidebar({
   members,
   myName,
@@ -130,6 +207,10 @@ export default function Sidebar({
   channels,
   currentChannel,
   onJoinChannel,
+  maxChannels,
+  onCreateChannel,
+  onRenameChannel,
+  onRemoveChannel,
 }: {
   members: RoomMember[];
   myName: string;
@@ -139,6 +220,11 @@ export default function Sidebar({
   channels: RoomInfo[];
   currentChannel: string | null;
   onJoinChannel: (id: string) => void;
+  /** The most channels the server holds, the default included. */
+  maxChannels: number;
+  onCreateChannel: (name: string) => void;
+  onRenameChannel: (id: string, name: string) => void;
+  onRemoveChannel: (id: string) => void;
 }) {
   const broadcasting = members.filter((m) => m.isBroadcasting);
   const watching = members.filter((m) => !m.isBroadcasting);
@@ -157,6 +243,8 @@ export default function Sidebar({
   }
 
   const label = (m: RoomMember) => (m.isLocal ? `${m.name} (você)` : m.name);
+  // Which channel is being renamed, or 'new' while one is being named.
+  const [editing, setEditing] = useState<string | null>(null);
 
   return (
     <aside className={`sidebar${collapsed ? ' collapsed' : ''}`}>
@@ -172,37 +260,72 @@ export default function Sidebar({
         </button>
       </div>
       <div className="sidebar-scroll">
-        {channels.length > 1 && (
+        {channels.length > 0 && (
           <section className="member-group channel-group">
             <h2 className="member-heading">Canais</h2>
             {channels.map((c) => {
               const current = c.id === currentChannel;
               const live = c.broadcasters.length;
+              if (editing === c.id) {
+                return (
+                  <ChannelNameField
+                    key={c.id}
+                    initial={c.name}
+                    onDone={(name) => {
+                      setEditing(null);
+                      if (name && name !== c.name) onRenameChannel(c.id, name);
+                    }}
+                  />
+                );
+              }
               return (
                 <div key={c.id} className="channel-block">
-                  <button
-                    className={`channel${current ? ' current' : ''}`}
-                    onClick={() => onJoinChannel(c.id)}
-                    aria-current={current ? 'true' : undefined}
-                    title={
-                      current
-                        ? `${c.name} — você está aqui`
-                        : `Entrar em ${c.name} (${c.participants.length} ${
-                            c.participants.length === 1 ? 'pessoa' : 'pessoas'
-                          })`
-                    }
-                  >
-                    <span className="channel-short" aria-hidden="true">
-                      {shortName(c.name)}
-                    </span>
-                    <span className="channel-name">{c.name}</span>
-                    {live > 0 && (
-                      <span className="channel-live" title={`${live} ao vivo`}>
-                        {live} ao vivo
+                  <div className="channel-row">
+                    <button
+                      className={`channel${current ? ' current' : ''}`}
+                      onClick={() => onJoinChannel(c.id)}
+                      aria-current={current ? 'true' : undefined}
+                      title={
+                        current
+                          ? `${c.name} — você está aqui`
+                          : `Entrar em ${c.name} (${c.participants.length} ${
+                              c.participants.length === 1 ? 'pessoa' : 'pessoas'
+                            })`
+                      }
+                    >
+                      <span className="channel-short" aria-hidden="true">
+                        {shortName(c.name)}
                       </span>
-                    )}
-                    <span className="channel-count">{c.participants.length}</span>
-                  </button>
+                      <span className="channel-name">{c.name}</span>
+                      {live > 0 && (
+                        <span className="channel-live" title={`${live} ao vivo`}>
+                          {live} ao vivo
+                        </span>
+                      )}
+                      <span className="channel-count">{c.participants.length}</span>
+                    </button>
+                    <span className="channel-actions">
+                      <button
+                        className="channel-action"
+                        onClick={() => setEditing(c.id)}
+                        title={`Renomear ${c.name}`}
+                        aria-label={`Renomear ${c.name}`}
+                      >
+                        <IconPencil />
+                      </button>
+                      {/* Only an empty channel that is not the default. */}
+                      {!c.isDefault && c.participants.length === 0 && (
+                        <button
+                          className="channel-action"
+                          onClick={() => onRemoveChannel(c.id)}
+                          title={`Apagar ${c.name}`}
+                          aria-label={`Apagar ${c.name}`}
+                        >
+                          <IconTrash />
+                        </button>
+                      )}
+                    </span>
+                  </div>
                   {/* Who is where, for the channels you are not in; your
                       own channel's people are listed in full below. */}
                   {!current && c.participants.length > 0 && (
@@ -223,6 +346,28 @@ export default function Sidebar({
                 </div>
               );
             })}
+            {editing === 'new' ? (
+              <ChannelNameField
+                initial=""
+                onDone={(name) => {
+                  setEditing(null);
+                  if (name) onCreateChannel(name);
+                }}
+              />
+            ) : (
+              channels.length < maxChannels && (
+                <button
+                  className="channel channel-new"
+                  onClick={() => setEditing('new')}
+                  title={`Novo canal (${channels.length} de ${maxChannels})`}
+                >
+                  <span className="channel-short" aria-hidden="true">
+                    +
+                  </span>
+                  <span className="channel-name">+ Novo canal</span>
+                </button>
+              )
+            )}
           </section>
         )}
 
