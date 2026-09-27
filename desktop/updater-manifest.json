@@ -1,7 +1,7 @@
 {
-  "version": "0.3.0",
+  "version": "0.3.8",
   "updateType": "asar",
-  "artifactUrl": "https://github.com/caiomcg/zoia/releases/download/v0.3.0/Zoia-OTA-0.3.0.asar",
-  "sha256": "59724413879c4310e4091d498a573a3f36557491532ece5600a8ca1d7a9e4971",
-  "notes": "Sectioned settings, send volume and mute for your share, and see who is watching you."
+  "artifactUrl": "https://github.com/caiomcg/zoia/releases/download/v0.3.8/Zoia-OTA-0.3.8.asar",
+  "sha256": "29f96d5bd1730a77649e299576e9193f25b5b4d2e414a2dab2556b89c02f121a",
+  "notes": "English interface, people listed under their channel, a startup splash, connection stats on hover, and no ghost windows in the share picker."
 }
