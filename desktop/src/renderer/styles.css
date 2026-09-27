@@ -1612,9 +1612,7 @@ button.danger {
   display: flex;
   flex-direction: column;
   gap: 1px;
-  margin: 2px 0 6px 14px;
-  padding-left: 8px;
-  border-left: 1px solid var(--border);
+  margin: 2px 0 6px 16px;
 }
 
 .channel-members .member {
