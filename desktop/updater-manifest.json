@@ -1,7 +1,7 @@
 {
-  "version": "0.2.15",
+  "version": "0.3.0",
   "updateType": "asar",
-  "artifactUrl": "https://github.com/caiomcg/zoia/releases/download/v0.2.15/Zoia-OTA-0.2.15.asar",
-  "sha256": "94b7c64fdd5805c5cafbd50fdba9023a8574b999268092a7ac545af728905702",
-  "notes": "Settings: turn off keeping Zoia in the system tray; lighter settings icon."
+  "artifactUrl": "https://github.com/caiomcg/zoia/releases/download/v0.3.0/Zoia-OTA-0.3.0.asar",
+  "sha256": "59724413879c4310e4091d498a573a3f36557491532ece5600a8ca1d7a9e4971",
+  "notes": "Sectioned settings, send volume and mute for your share, and see who is watching you."
 }
