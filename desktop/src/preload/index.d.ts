@@ -75,6 +75,10 @@ export interface ZoiaBridge {
     reset(): Promise<UpdaterConfig>;
     check(): Promise<UpdaterCheckResult>;
   };
+  tray: {
+    config(): Promise<{ closeToTray: boolean }>;
+    save(closeToTray: boolean): Promise<{ closeToTray: boolean }>;
+  };
   audio: {
     /** `processId: null` captures the whole system's output instead of one app. */
     start(processId: number | null): Promise<void>;

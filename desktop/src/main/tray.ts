@@ -38,6 +38,8 @@ function writePrefs(prefs: TrayPrefs): void {
 let tray: Tray | null = null;
 let quitting = false;
 let toldAboutTray = false;
+let prefs: TrayPrefs = { closeToTray: true };
+let refreshTrayMenu: (() => void) | null = null;
 
 /** Brings the window back from the tray, or from behind other windows. */
 export function showWindow(window: BrowserWindow | null): void {
@@ -47,8 +49,19 @@ export function showWindow(window: BrowserWindow | null): void {
   window.focus();
 }
 
+export function getCloseToTray(): boolean {
+  return prefs.closeToTray;
+}
+
+export function setCloseToTray(closeToTray: boolean): boolean {
+  prefs = { closeToTray };
+  writePrefs(prefs);
+  refreshTrayMenu?.();
+  return prefs.closeToTray;
+}
+
 export function installTray(getWindow: () => BrowserWindow | null, iconPath: string): void {
-  let prefs = readPrefs();
+  prefs = readPrefs();
 
   tray = new Tray(nativeImage.createFromPath(iconPath));
   tray.setToolTip('Zoia');
@@ -78,6 +91,7 @@ export function installTray(getWindow: () => BrowserWindow | null, iconPath: str
       ]),
     );
   };
+  refreshTrayMenu = rebuildMenu;
   rebuildMenu();
 
   app.on('before-quit', () => {
