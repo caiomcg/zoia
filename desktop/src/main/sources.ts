@@ -70,14 +70,16 @@ async function captureSources(): Promise<SourceInfo[]> {
 
     const processId = nativeWindow?.processId ?? null;
 
-    return [{
-      id: source.id,
-      name: source.name,
-      kind: isWindow ? 'window' : 'screen',
-      thumbnailDataUrl: toDataUrl(source.thumbnail),
-      processId,
-      hwnd,
-    }];
+    return [
+      {
+        id: source.id,
+        name: source.name,
+        kind: isWindow ? 'window' : 'screen',
+        thumbnailDataUrl: toDataUrl(source.thumbnail),
+        processId,
+        hwnd,
+      },
+    ];
   });
 }
 
