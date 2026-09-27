@@ -214,6 +214,7 @@ function registerIpc(): void {
   ipcMain.handle(IPC.updaterConfigSave, (_event, next) => saveUpdaterConfig(next));
   ipcMain.handle(IPC.updaterConfigReset, () => resetUpdaterConfig());
   ipcMain.handle(IPC.updaterCheck, () => checkForUpdate(true));
+  ipcMain.handle(IPC.appVersion, () => app.getVersion());
   ipcMain.handle(IPC.trayCloseGet, () => getCloseToTray());
   ipcMain.handle(IPC.trayCloseSet, (_event, value: boolean) => setCloseToTray(value === true));
 

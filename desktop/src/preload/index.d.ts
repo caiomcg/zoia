@@ -75,6 +75,9 @@ export interface ZoiaBridge {
     reset(): Promise<UpdaterConfig>;
     check(): Promise<UpdaterCheckResult>;
   };
+  app: {
+    version(): Promise<string>;
+  };
   tray: {
     /** Whether closing the window hides it to the tray instead of quitting. */
     closeToTray(): Promise<boolean>;
