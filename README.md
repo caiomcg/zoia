@@ -114,7 +114,10 @@ everywhere, but Chromium has **no hardware video encoder on Windows** (measured,
 assumed; see [ADR 0009](docs/adr/0009-hardware-encoding.md)). So a 4K share taxes the CPU
 while the GPU sits idle.
 
-Tick **Hardware acceleration** in the share picker and the app skips Chromium altogether.
+> **Switched off for now.** Settings → Broadcast shows the option disabled while the GPU
+> path is made reliable on more machines. What follows describes it when enabled.
+
+Enable **Hardware acceleration** in Settings → Broadcast and the app skips Chromium altogether.
 It encodes on the GPU, then ffmpeg publishes the stream over **WHIP**, the WebRTC-HTTP
 Ingestion Protocol. WHIP is plain WebRTC with a simple HTTP handshake, and LiveKit's SFU
 accepts it natively, so the stream goes straight into the room. Viewers notice no

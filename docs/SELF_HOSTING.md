@@ -193,8 +193,9 @@ stopped using from one that is simply idle right now.
 
 ## Optional: hardware encoding
 
-Broadcasters opt in with the **Hardware acceleration** checkbox in the share picker. It
-encodes on the GPU (NVENC on NVIDIA, AMF on AMD, Quick Sync on Intel) and publishes over
+**Currently switched off in the desktop app.** Settings → Broadcast shows the
+**Hardware acceleration** option disabled until the GPU path is reliable on more machines.
+When enabled, it encodes on the GPU (NVENC on NVIDIA, AMF on AMD, Quick Sync on Intel) and publishes over
 WHIP instead of through Chromium. The [README](../README.md#hardware-encoding-whip)
 explains the whole path.
 

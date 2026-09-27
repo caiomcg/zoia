@@ -21,7 +21,6 @@ import {
 } from '../shared/ipc';
 
 const PRESET_STORAGE_KEY = 'zoia.qualityPreset';
-const HARDWARE_STORAGE_KEY = 'zoia.hardwareAcceleration';
 const ONBOARDING_STORAGE_KEY = 'zoia.onboardingDismissed';
 const CHANNEL_STORAGE_KEY = 'zoia.channel';
 /** How often the channel list (who is where, who is live) is refreshed. */
@@ -65,13 +64,11 @@ export default function App() {
   const [presetId, setPresetId] = useState(
     () => localStorage.getItem(PRESET_STORAGE_KEY) ?? DEFAULT_PRESET_ID,
   );
-  // Off unless the person turned it on, and it stays off after an upgrade:
-  // absent means false. The GPU path is the newer half of the app and the one
-  // that has broken on other people's hardware, so it is opt-in rather than
-  // something to discover by having a broadcast fail.
-  const [hardware, setHardware] = useState(
-    () => localStorage.getItem(HARDWARE_STORAGE_KEY) === 'true',
-  );
+  // Switched off for everyone for now; Settings shows it disabled. The GPU
+  // path is the newer half of the app and the one that has broken on other
+  // people's hardware. An earlier opt-in is still stored under
+  // 'zoia.hardwareAcceleration', untouched, for when it comes back.
+  const hardware = false;
 
   const room = useRoom();
   const gpuCast = useGpuBroadcast();
@@ -94,15 +91,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    window.zoia.gpu.status().then((next) => {
-      setGpu(next);
-      // Turn it back off rather than leaving someone switched on to a path
-      // this machine cannot take — they would only find out at "go live".
-      if (!next.hardwareEncoder) {
-        setHardware(false);
-        localStorage.setItem(HARDWARE_STORAGE_KEY, 'false');
-      }
-    });
+    window.zoia.gpu.status().then(setGpu);
   }, []);
 
   useEffect(() => {
@@ -379,27 +368,6 @@ export default function App() {
               </svg>
             </button>
           </div>
-          <button
-            className="icon-button settings-button"
-            onClick={() => setSettingsOpen(true)}
-            title="Settings"
-            aria-label="Settings"
-          >
-            {/* Two sliders: lighter than a gear at this size. */}
-            <svg
-              viewBox="0 0 24 24"
-              width="18"
-              height="18"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.75"
-              strokeLinecap="round"
-            >
-              <path d="M4 8h9M17 8h3M4 16h3M11 16h9" />
-              <circle cx="15" cy="8" r="2" />
-              <circle cx="9" cy="16" r="2" />
-            </svg>
-          </button>
         </div>
       </header>
 
@@ -474,7 +442,7 @@ export default function App() {
         <Sidebar
           members={room.members}
           myName={status.deviceName ?? 'You'}
-          onRename={handleRename}
+          onOpenSettings={() => setSettingsOpen(true)}
           loadingRemoteIds={loadingRemoteIds}
           channels={channels}
           currentChannel={channel}
@@ -495,17 +463,6 @@ export default function App() {
             setPresetId(id);
             localStorage.setItem(PRESET_STORAGE_KEY, id);
           }}
-          hardware={hardware}
-          onHardwareChange={(next) => {
-            setHardware(next);
-            localStorage.setItem(HARDWARE_STORAGE_KEY, String(next));
-          }}
-          hardwareAvailable={Boolean(gpu?.hardwareEncoder)}
-          hardwareDetail={
-            gpu?.hardwareEncoder
-              ? `${(gpu.gpuEncoder ?? '').toUpperCase()} on ${gpu.adapter}`
-              : (gpu?.encoderReason ?? 'No hardware encoder was found on this machine.')
-          }
         />
       )}
 
@@ -525,7 +482,18 @@ export default function App() {
         />
       )}
 
-      {settingsOpen && <SettingsDialog onClose={() => setSettingsOpen(false)} />}
+      {settingsOpen && (
+        <SettingsDialog
+          onClose={() => setSettingsOpen(false)}
+          myName={status.deviceName ?? 'You'}
+          onRename={handleRename}
+          hardwareDetail={
+            gpu?.hardwareEncoder
+              ? `${(gpu.gpuEncoder ?? '').toUpperCase()} on ${gpu.adapter}`
+              : (gpu?.encoderReason ?? 'No hardware encoder was found on this machine.')
+          }
+        />
+      )}
     </div>
   );
 }

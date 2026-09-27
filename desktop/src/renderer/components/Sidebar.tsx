@@ -4,87 +4,9 @@ import type { RoomInfo } from '../../shared/ipc';
 import Avatar from './Avatar';
 
 /**
- * Who is in the room, and who is sharing. Deliberately the only place a
- * person's name is shown or changed, so the rename flow has one home.
+ * Who is in the room, and who is sharing. Your own name sits in the footer,
+ * next to the way into Settings, which is where it is changed.
  */
-
-function RenameField({
-  current,
-  onRename,
-}: {
-  current: string;
-  onRename: (name: string) => Promise<void>;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [value, setValue] = useState(current);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (!editing) setValue(current);
-  }, [current, editing]);
-
-  useEffect(() => {
-    if (editing) inputRef.current?.select();
-  }, [editing]);
-
-  async function commit() {
-    const next = value.trim();
-    if (!next || next === current) {
-      setEditing(false);
-      setValue(current);
-      return;
-    }
-    setBusy(true);
-    setError(null);
-    try {
-      await onRename(next);
-      setEditing(false);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Rename failed');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  if (!editing) {
-    return (
-      <div className="rename-row">
-        <span className="rename-name" title={current}>
-          {current}
-        </span>
-        <button className="rename-button" onClick={() => setEditing(true)} title="Change your name">
-          Edit
-        </button>
-      </div>
-    );
-  }
-
-  return (
-    <div className="rename-row editing">
-      <input
-        ref={inputRef}
-        value={value}
-        maxLength={32}
-        disabled={busy}
-        onChange={(e) => setValue(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') void commit();
-          if (e.key === 'Escape') {
-            setEditing(false);
-            setValue(current);
-          }
-        }}
-        aria-label="Your display name"
-      />
-      <button className="rename-button primary" disabled={busy} onClick={() => void commit()}>
-        {busy ? '…' : 'Save'}
-      </button>
-      {error && <p className="rename-error">{error}</p>}
-    </div>
-  );
-}
 
 const COLLAPSED_KEY = 'zoia.sidebarCollapsed';
 
@@ -202,7 +124,7 @@ function ChannelNameField({
 export default function Sidebar({
   members,
   myName,
-  onRename,
+  onOpenSettings,
   loadingRemoteIds,
   channels,
   currentChannel,
@@ -214,7 +136,7 @@ export default function Sidebar({
 }: {
   members: RoomMember[];
   myName: string;
-  onRename: (name: string) => Promise<void>;
+  onOpenSettings: () => void;
   loadingRemoteIds: Set<string>;
   /** Every channel, who is in it and who is live, polled from the server. */
   channels: RoomInfo[];
@@ -403,8 +325,40 @@ export default function Sidebar({
 
       <div className="sidebar-footer" title={collapsed ? myName : undefined}>
         <Avatar name={myName} live={false} />
-        {!collapsed && <RenameField current={myName} onRename={onRename} />}
+        {!collapsed && (
+          <span className="sidebar-name" title={myName}>
+            {myName}
+          </span>
+        )}
+        <button
+          className="icon-button sidebar-settings"
+          onClick={onOpenSettings}
+          title="Settings"
+          aria-label="Settings"
+        >
+          <IconSliders />
+        </button>
       </div>
     </aside>
+  );
+}
+
+/** Two sliders: lighter than a gear at this size. */
+function IconSliders() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="18"
+      height="18"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      aria-hidden="true"
+    >
+      <path d="M4 8h9M17 8h3M4 16h3M11 16h9" />
+      <circle cx="15" cy="8" r="2" />
+      <circle cx="9" cy="16" r="2" />
+    </svg>
   );
 }

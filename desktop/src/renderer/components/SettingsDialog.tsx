@@ -1,8 +1,206 @@
 import { useEffect, useState } from 'react';
 import type { UpdaterConfig } from '../../shared/ipc';
+import Avatar from './Avatar';
+
+type Section = 'profile' | 'broadcast' | 'general' | 'updates';
+
+const SECTIONS: { id: Section; label: string }[] = [
+  { id: 'profile', label: 'Profile' },
+  { id: 'broadcast', label: 'Broadcast' },
+  { id: 'general', label: 'General' },
+  { id: 'updates', label: 'Updates' },
+];
 
 interface SettingsDialogProps {
   onClose: () => void;
+  myName: string;
+  onRename: (name: string) => Promise<void>;
+  /** Which encoder and card, or why there isn't one. */
+  hardwareDetail: string;
+}
+
+/**
+ * Everything that is set once and left alone. The sections are one pane each
+ * rather than one long form, so a setting is found by where it belongs, and
+ * each pane scrolls on its own when it outgrows the dialog.
+ */
+export default function SettingsDialog({
+  onClose,
+  myName,
+  onRename,
+  hardwareDetail,
+}: SettingsDialogProps) {
+  const [section, setSection] = useState<Section>('profile');
+
+  return (
+    <div className="picker-backdrop" onClick={onClose}>
+      <section
+        className="picker settings-dialog"
+        role="dialog"
+        aria-label="Settings"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="settings-header">
+          <h2>Settings</h2>
+          <button
+            className="icon-button"
+            onClick={onClose}
+            aria-label="Close settings"
+            title="Close"
+          >
+            ×
+          </button>
+        </div>
+
+        <div className="settings-body">
+          <nav className="settings-nav" aria-label="Settings sections">
+            {SECTIONS.map((s) => (
+              <button
+                key={s.id}
+                className={section === s.id ? 'active' : undefined}
+                aria-current={section === s.id ? 'page' : undefined}
+                onClick={() => setSection(s.id)}
+              >
+                {s.label}
+              </button>
+            ))}
+          </nav>
+
+          <div className="settings-pane">
+            {section === 'profile' && <ProfileSection myName={myName} onRename={onRename} />}
+            {section === 'broadcast' && <BroadcastSection hardwareDetail={hardwareDetail} />}
+            {section === 'general' && <GeneralSection />}
+            {section === 'updates' && <UpdatesSection />}
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function ProfileSection({
+  myName,
+  onRename,
+}: {
+  myName: string;
+  onRename: (name: string) => Promise<void>;
+}) {
+  const [value, setValue] = useState(myName);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => setValue(myName), [myName]);
+
+  const next = value.trim();
+  const changed = next !== '' && next !== myName;
+
+  async function save() {
+    if (!changed) return;
+    setBusy(true);
+    setError(null);
+    setMessage(null);
+    try {
+      await onRename(next);
+      setMessage('Saved. Everyone in the room sees the new name now.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Rename failed');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <h3>Profile</h3>
+      <div className="settings-profile">
+        <Avatar name={next || myName} live={false} />
+        <p className="muted">
+          This is how other people see you in the room and on your broadcasts.
+        </p>
+      </div>
+      <label className="settings-field">
+        <span>Display name</span>
+        <div className="settings-inline">
+          <input
+            value={value}
+            maxLength={32}
+            disabled={busy}
+            onChange={(event) => {
+              setValue(event.target.value);
+              setMessage(null);
+              setError(null);
+            }}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') void save();
+            }}
+          />
+          <button className="primary" onClick={() => void save()} disabled={busy || !changed}>
+            Save
+          </button>
+        </div>
+      </label>
+      {error && <p className="settings-error">{error}</p>}
+      {message && <p className="settings-message">{message}</p>}
+    </>
+  );
+}
+
+function BroadcastSection({ hardwareDetail }: { hardwareDetail: string }) {
+  return (
+    <>
+      <h3>Broadcast</h3>
+      {/* Switched off for now: the GPU path is the one that has broken on
+          other people's machines. Shown, so its absence is not a mystery. */}
+      <label className="settings-check unavailable" title={hardwareDetail}>
+        <input type="checkbox" checked={false} disabled readOnly />
+        <span>
+          Hardware acceleration
+          <span className="settings-badge">Coming soon</span>
+          <small>{hardwareDetail}</small>
+        </span>
+      </label>
+    </>
+  );
+}
+
+function GeneralSection() {
+  // Applied as soon as it is toggled, like the same checkbox in the tray menu.
+  const [closeToTray, setCloseToTray] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    window.zoia.tray
+      .closeToTray()
+      .then(setCloseToTray)
+      .catch(() => {});
+  }, []);
+
+  async function toggleCloseToTray(value: boolean) {
+    setCloseToTray(value);
+    setError(null);
+    try {
+      setCloseToTray(await window.zoia.tray.setCloseToTray(value));
+    } catch {
+      setCloseToTray(!value);
+      setError('Could not change the system tray setting.');
+    }
+  }
+
+  return (
+    <>
+      <h3>General</h3>
+      <label className="settings-check">
+        <input
+          type="checkbox"
+          checked={closeToTray}
+          onChange={(event) => void toggleCloseToTray(event.target.checked)}
+        />
+        Keep Zoia in the system tray when the window is closed
+      </label>
+      {error && <p className="settings-error">{error}</p>}
+    </>
+  );
 }
 
 const emptyConfig: UpdaterConfig = {
@@ -13,36 +211,19 @@ const emptyConfig: UpdaterConfig = {
   autoInstall: false,
 };
 
-export default function SettingsDialog({ onClose }: SettingsDialogProps) {
+function UpdatesSection() {
   const [config, setConfig] = useState<UpdaterConfig>(emptyConfig);
   const [busy, setBusy] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // Applied as soon as it is toggled, like the same checkbox in the tray menu;
-  // Save is for the update feed only.
-  const [closeToTray, setCloseToTray] = useState(true);
 
   useEffect(() => {
-    window.zoia.tray
-      .closeToTray()
-      .then(setCloseToTray)
-      .catch(() => {});
     window.zoia.updater
       .config()
       .then(setConfig)
       .catch(() => setError('Could not load updater settings.'))
       .finally(() => setBusy(false));
   }, []);
-
-  async function toggleCloseToTray(value: boolean) {
-    setCloseToTray(value);
-    try {
-      setCloseToTray(await window.zoia.tray.setCloseToTray(value));
-    } catch {
-      setCloseToTray(!value);
-      setError('Could not change the system tray setting.');
-    }
-  }
 
   function update(field: keyof UpdaterConfig, value: string | boolean) {
     setConfig((current) => ({ ...current, [field]: value }));
@@ -96,100 +277,75 @@ export default function SettingsDialog({ onClose }: SettingsDialogProps) {
   }
 
   return (
-    <div className="picker-backdrop" onClick={onClose}>
-      <section className="picker settings-dialog" onClick={(event) => event.stopPropagation()}>
-        <div className="settings-header">
-          <h2>Settings</h2>
-          <button
-            className="icon-button"
-            onClick={onClose}
-            aria-label="Close settings"
-            title="Close"
-          >
-            ×
-          </button>
-        </div>
+    <>
+      <h3>Updates</h3>
+      <p className="muted">Choose where Zoia looks for lightweight application updates.</p>
 
-        <h3 className="settings-section">General</h3>
-        <label className="settings-check">
-          <input
-            type="checkbox"
-            checked={closeToTray}
-            onChange={(event) => void toggleCloseToTray(event.target.checked)}
-          />
-          Keep Zoia in the system tray when the window is closed
-        </label>
+      <div className="settings-warning">
+        Only use a repository you trust. An update can run code on this computer.
+      </div>
 
-        <h3 className="settings-section">Updates</h3>
-        <p className="muted settings-note">
-          Choose where Zoia looks for lightweight application updates.
-        </p>
-        <div className="settings-warning">
-          Only use a repository you trust. An update can run code on this computer.
-        </div>
+      <label className="settings-field">
+        <span>Git repository</span>
+        <input
+          value={config.repository}
+          onChange={(event) => update('repository', event.target.value)}
+          placeholder="https://github.com/owner/repository"
+          disabled={busy}
+        />
+      </label>
+      <label className="settings-field">
+        <span>Branch</span>
+        <input
+          value={config.branch}
+          onChange={(event) => update('branch', event.target.value)}
+          placeholder="main"
+          disabled={busy}
+        />
+      </label>
+      <label className="settings-field">
+        <span>Manifest path</span>
+        <input
+          value={config.manifestPath}
+          onChange={(event) => update('manifestPath', event.target.value)}
+          placeholder="desktop/updater-manifest.json"
+          disabled={busy}
+        />
+      </label>
 
-        <label className="settings-field">
-          <span>Git repository</span>
-          <input
-            value={config.repository}
-            onChange={(event) => update('repository', event.target.value)}
-            placeholder="https://github.com/owner/repository"
-            disabled={busy}
-          />
-        </label>
-        <label className="settings-field">
-          <span>Branch</span>
-          <input
-            value={config.branch}
-            onChange={(event) => update('branch', event.target.value)}
-            placeholder="main"
-            disabled={busy}
-          />
-        </label>
-        <label className="settings-field">
-          <span>Manifest path</span>
-          <input
-            value={config.manifestPath}
-            onChange={(event) => update('manifestPath', event.target.value)}
-            placeholder="desktop/updater-manifest.json"
-            disabled={busy}
-          />
-        </label>
+      <label className="settings-check">
+        <input
+          type="checkbox"
+          checked={config.checkOnStartup !== false}
+          onChange={(event) => update('checkOnStartup', event.target.checked)}
+          disabled={busy}
+        />
+        Check for updates when Zoia starts
+      </label>
+      <label className="settings-check">
+        <input
+          type="checkbox"
+          checked={config.autoInstall === true}
+          onChange={(event) => update('autoInstall', event.target.checked)}
+          disabled={busy}
+        />
+        Install available updates automatically
+      </label>
 
-        <label className="settings-check">
-          <input
-            type="checkbox"
-            checked={config.checkOnStartup !== false}
-            onChange={(event) => update('checkOnStartup', event.target.checked)}
-            disabled={busy}
-          />
-          Check for updates when Zoia starts
-        </label>
-        <label className="settings-check">
-          <input
-            type="checkbox"
-            checked={config.autoInstall === true}
-            onChange={(event) => update('autoInstall', event.target.checked)}
-            disabled={busy}
-          />
-          Install available updates automatically
-        </label>
+      {error && <p className="settings-error">{error}</p>}
+      {message && <p className="settings-message">{message}</p>}
 
-        {error && <p className="settings-error">{error}</p>}
-        {message && <p className="settings-message">{message}</p>}
-
-        <div className="settings-actions">
-          <button onClick={() => void reset()} disabled={busy}>
-            Restore defaults
-          </button>
-          <button onClick={() => void check()} disabled={busy}>
-            Check now
-          </button>
-          <button className="primary" onClick={() => void save()} disabled={busy}>
-            Save
-          </button>
-        </div>
-      </section>
-    </div>
+      <div className="settings-actions">
+        <button onClick={() => void reset()} disabled={busy}>
+          Restore defaults
+        </button>
+        <button onClick={() => void check()} disabled={busy}>
+          Check now
+        </button>
+        <button className="primary" onClick={() => void save()} disabled={busy}>
+          Save
+        </button>
+      </div>
+    </>
   );
 }

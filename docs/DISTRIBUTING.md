@@ -36,9 +36,9 @@ if needed, `manifestPath`/`manifestUrl`:
 ```
 
 Users do not need to navigate to AppData to make this change: in the desktop app, open the
-settings button (the sliders icon) in the top-right corner and edit the **Updates** section.
-The screen saves the configuration in the correct location, validates HTTPS URLs and the
-branch, restores the defaults, and provides **Check now**. Enable automatic installation only when the configured
+settings button (the sliders icon) at the bottom of the member list and edit the **Updates**
+section. The screen saves the configuration in the correct location, validates HTTPS URLs
+and the branch, restores the defaults, and provides **Check now**. Enable automatic installation only when the configured
 repository is trusted.
 
 For a GitHub repository, the updater queries the branch commit through the API and reads the
