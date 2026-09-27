@@ -80,11 +80,25 @@ async function captureSources(): Promise<SourceInfo[]> {
     // have an HWND and are intentionally kept unchanged.
     // Visible is not enough: see window-filter.ts for the tray apps and
     // helper windows that pass it with nothing to show.
-    if (
-      isWindow &&
-      (!nativeWindow || !nativeWindow.isVisible() || !isShareableWindow(safeBounds(nativeWindow)))
-    ) {
-      return [];
+    if (isWindow) {
+      if (!nativeWindow || !nativeWindow.isVisible()) {
+        return [];
+      }
+      // If the League client window is parked/minimized after a match closes,
+      // restore it into view so the post-game lobby is immediately shareable.
+      if (
+        !isShareableWindow(safeBounds(nativeWindow)) &&
+        /leagueclient(ux)?\.exe$/i.test(nativeWindow.path || '')
+      ) {
+        try {
+          nativeWindow.restore();
+        } catch {
+          // Ignore failure to restore if the window closed or is inaccessible.
+        }
+      }
+      if (!isShareableWindow(safeBounds(nativeWindow))) {
+        return [];
+      }
     }
 
     const processId = nativeWindow?.processId ?? null;
@@ -154,7 +168,11 @@ export function stopWarming(): void {
  * that refresh. Only the very first call in a session — before warming has
  * had a chance to complete — pays the full capture cost.
  */
-export async function listSources(): Promise<SourceInfo[]> {
+export async function listSources(fresh = false): Promise<SourceInfo[]> {
+  if (fresh) {
+    cache = null;
+    return refresh();
+  }
   if (cache) {
     void refresh();
     return cache;

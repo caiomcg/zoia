@@ -191,8 +191,16 @@ export async function resetUpdaterConfig(): Promise<UpdaterConfig> {
 }
 
 async function fetchJson<T>(url: string): Promise<T> {
-  const response = await fetch(url, {
-    headers: { accept: 'application/json', 'user-agent': 'Zoia-Updater' },
+  const urlWithCacheBuster = url.includes('?')
+    ? `${url}&_t=${Date.now()}`
+    : `${url}?_t=${Date.now()}`;
+  const response = await fetch(urlWithCacheBuster, {
+    headers: {
+      accept: 'application/json',
+      'user-agent': 'Zoia-Updater',
+      'cache-control': 'no-cache',
+      pragma: 'no-cache',
+    },
   });
   if (!response.ok) throw new Error(`Updater request failed (${response.status})`);
   return (await response.json()) as T;
@@ -429,60 +437,96 @@ export async function checkForUpdate(force = false): Promise<UpdaterCheckResult>
   }
 }
 
-export async function startUpdater(): Promise<void> {
+const UPDATE_CHECK_INTERVAL_MS = 30 * 60 * 1000;
+let updateInterval: NodeJS.Timeout | null = null;
+let inFlightUpdate: Promise<void> | null = null;
+let dismissedVersion: string | null = null;
+
+export async function runUpdateCheck(force = false): Promise<void> {
   if (!app.isPackaged) return;
-  const config = await loadConfig();
-  if (!config || config.checkOnStartup === false) return;
+  if (inFlightUpdate) return inFlightUpdate;
 
-  try {
-    const update = await getRemoteUpdate(config);
-    const state = await readJson<UpdateState>(join(app.getPath('userData'), STATE_NAME));
-    if (state?.commit === update.commit) return;
-    const versionUpgrade = newerVersion(update.version, app.getVersion());
-    const commitUpgrade = Boolean(state?.commit && state.commit !== update.commit);
-    if (!versionUpgrade && !commitUpgrade) return;
+  inFlightUpdate = (async () => {
+    const config = await loadConfig();
+    if (!config || (!force && config.checkOnStartup === false)) return;
 
-    if (update.updateType === 'full') {
-      const result = await dialog.showMessageBox({
-        type: 'info',
-        title: 'Full update required',
-        message: `Version ${update.version} requires a new installer.`,
-        detail:
-          update.notes ??
-          'This release changes Electron, native components, or another file that cannot be updated OTA.',
-        buttons: ['Open download', 'Later'],
-        defaultId: 0,
-        cancelId: 1,
-      });
-      if (result.response === 0 && update.installerUrl)
-        await shell.openExternal(update.installerUrl);
-      return;
+    try {
+      const update = await getRemoteUpdate(config);
+      const state = await readJson<UpdateState>(join(app.getPath('userData'), STATE_NAME));
+      if (state?.commit === update.commit) return;
+      const versionUpgrade = newerVersion(update.version, app.getVersion());
+      const commitUpgrade = Boolean(state?.commit && state.commit !== update.commit);
+      if (!versionUpgrade && !commitUpgrade) return;
+
+      if (!force && dismissedVersion === update.version) return;
+
+      if (update.updateType === 'full') {
+        const result = await dialog.showMessageBox({
+          type: 'info',
+          title: 'Full update required',
+          message: `Version ${update.version} requires a new installer.`,
+          detail:
+            update.notes ??
+            'This release changes Electron, native components, or another file that cannot be updated OTA.',
+          buttons: ['Open download', 'Later'],
+          defaultId: 0,
+          cancelId: 1,
+        });
+        if (result.response === 0 && update.installerUrl) {
+          await shell.openExternal(update.installerUrl);
+        } else {
+          dismissedVersion = update.version;
+        }
+        return;
+      }
+
+      if (!config.autoInstall) {
+        const result = await dialog.showMessageBox({
+          type: 'info',
+          title: 'Update available',
+          message: `Version ${update.version} is available.`,
+          detail:
+            update.notes ??
+            'Only the application code is updated; nothing large is downloaded again.',
+          buttons: ['Update now', 'Later'],
+          defaultId: 0,
+          cancelId: 1,
+        });
+        if (result.response !== 0) {
+          dismissedVersion = update.version;
+          return;
+        }
+      }
+      await install(update);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn('[updater] update check failed:', message);
+      if (force) {
+        await dialog.showMessageBox({
+          type: 'error',
+          title: 'Update not finished',
+          message: 'The update could not be installed.',
+          detail: message,
+          buttons: ['OK'],
+        });
+      }
     }
+  })().finally(() => {
+    inFlightUpdate = null;
+  });
 
-    if (!config.autoInstall) {
-      const result = await dialog.showMessageBox({
-        type: 'info',
-        title: 'Update available',
-        message: `Version ${update.version} is available.`,
-        detail:
-          update.notes ??
-          'Only the application code is updated; nothing large is downloaded again.',
-        buttons: ['Update now', 'Later'],
-        defaultId: 0,
-        cancelId: 1,
-      });
-      if (result.response !== 0) return;
-    }
-    await install(update);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.warn('[updater] update skipped:', message);
-    await dialog.showMessageBox({
-      type: 'error',
-      title: 'Update not finished',
-      message: 'The update could not be installed.',
-      detail: message,
-      buttons: ['OK'],
-    });
-  }
+  return inFlightUpdate;
+}
+
+export async function startUpdater(): Promise<void> {
+  if (updateInterval) clearInterval(updateInterval);
+  updateInterval = setInterval(() => {
+    void runUpdateCheck(false);
+  }, UPDATE_CHECK_INTERVAL_MS);
+  return runUpdateCheck(false);
+}
+
+export function stopUpdater(): void {
+  if (updateInterval) clearInterval(updateInterval);
+  updateInterval = null;
 }

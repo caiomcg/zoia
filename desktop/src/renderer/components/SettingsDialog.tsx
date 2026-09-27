@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { UpdaterConfig } from '../../shared/ipc';
 import Avatar from './Avatar';
 
@@ -222,6 +222,33 @@ function UpdatesSection() {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const check = useCallback(async () => {
+    setBusy(true);
+    setError(null);
+    setMessage(null);
+    const [result, appVersion] = await Promise.all([
+      window.zoia.updater.check(),
+      window.zoia.app.version().catch(() => null),
+    ]);
+    if (appVersion) setCurrentVersion(appVersion);
+
+    if (result.status === 'available') {
+      setAvailableVersion(result.version);
+      setInstallerUrl(null);
+      setMessage(`Version ${result.version} is available.`);
+    } else if (result.status === 'full-required') {
+      setAvailableVersion(result.version);
+      setInstallerUrl(result.installerUrl);
+      setMessage(`Version ${result.version} requires the full installer.`);
+    } else if (result.status === 'up-to-date') {
+      setAvailableVersion(appVersion);
+      setInstallerUrl(null);
+      setMessage('You are up to date.');
+    } else if (result.status === 'disabled') setMessage('Updates are disabled for this build.');
+    else setError(result.message);
+    setBusy(false);
+  }, []);
+
   useEffect(() => {
     window.zoia.app
       .version()
@@ -232,7 +259,8 @@ function UpdatesSection() {
       .then(setConfig)
       .catch(() => setError('Could not load updater settings.'))
       .finally(() => setBusy(false));
-  }, []);
+    void check();
+  }, [check]);
 
   function update(field: keyof UpdaterConfig, value: string | boolean) {
     setConfig((current) => ({ ...current, [field]: value }));
@@ -267,28 +295,6 @@ function UpdatesSection() {
     } finally {
       setBusy(false);
     }
-  }
-
-  async function check() {
-    setBusy(true);
-    setError(null);
-    setMessage(null);
-    const result = await window.zoia.updater.check();
-    if (result.status === 'available') {
-      setAvailableVersion(result.version);
-      setInstallerUrl(null);
-      setMessage(`Version ${result.version} is available.`);
-    } else if (result.status === 'full-required') {
-      setAvailableVersion(result.version);
-      setInstallerUrl(result.installerUrl);
-      setMessage(`Version ${result.version} requires the full installer.`);
-    } else if (result.status === 'up-to-date') {
-      setAvailableVersion(currentVersion);
-      setInstallerUrl(null);
-      setMessage('You are up to date.');
-    } else if (result.status === 'disabled') setMessage('Updates are disabled for this build.');
-    else setError(result.message);
-    setBusy(false);
   }
 
   return (

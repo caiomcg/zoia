@@ -960,16 +960,23 @@ export function useRoom() {
           void (async () => {
             if (leagueFollowRef.current && restartWindowRef.current) {
               setRoomNotice('Partida encerrada. Aguardando o cliente do League of Legends…');
+              await window.zoia.sources.list(true).catch(() => []);
               for (let attempt = 0; attempt < 24; attempt += 1) {
-                if (localTrackRef.current?.mediaStreamTrack !== mediaTrack) return;
+                if (!leagueFollowRef.current) return;
                 const currentSources = await window.zoia.sources.list().catch(() => []);
-                const target = resolveLeagueTarget(currentSources, leagueFollowRef.current.client);
+                const target = resolveLeagueTarget(currentSources);
                 if (target && target.id !== source.id) {
-                  leagueFollowRef.current.current = target;
-                  if (isLeagueClient(target)) leagueFollowRef.current.client = target;
-                  await restartWindowRef.current(target, leagueFollowRef.current.preset);
-                  setRoomNotice('League of Legends: alternado para o cliente / saguão');
-                  return;
+                  const ok = await restartWindowRef.current(target, leagueFollowRef.current.preset);
+                  if (ok) {
+                    leagueFollowRef.current.current = target;
+                    if (isLeagueClient(target)) leagueFollowRef.current.client = target;
+                    setRoomNotice(
+                      isLeagueGame(target)
+                        ? 'League of Legends: alternado para a partida em andamento'
+                        : 'League of Legends: alternado para o cliente / saguão',
+                    );
+                    return;
+                  }
                 }
                 await new Promise((r) => setTimeout(r, 500));
               }
@@ -978,8 +985,8 @@ export function useRoom() {
             if (source.kind === 'window') {
               const replacement = await replacementWindow(source);
               if (replacement && restartWindowRef.current) {
-                await restartWindowRef.current(replacement, preset);
-                return;
+                const ok = await restartWindowRef.current(replacement, preset);
+                if (ok) return;
               }
             }
             await stopBroadcast();
@@ -1060,18 +1067,20 @@ export function useRoom() {
       if (client) {
         follow.client = client;
       }
-      const target = game ?? client ?? follow.client;
+      const target = game ?? client;
 
       if (!target || target.id === follow.current.id || !restartWindowRef.current) return;
 
       switchingWindowRef.current = true;
-      follow.current = target;
       try {
-        await restartWindowRef.current(target, follow.preset);
-        if (isLeagueGame(target)) {
-          setRoomNotice('League of Legends: alternado para a partida em andamento');
-        } else if (isLeagueClient(target)) {
-          setRoomNotice('League of Legends: alternado para o cliente / saguão');
+        const ok = await restartWindowRef.current(target, follow.preset);
+        if (ok) {
+          follow.current = target;
+          if (isLeagueGame(target)) {
+            setRoomNotice('League of Legends: alternado para a partida em andamento');
+          } else if (isLeagueClient(target)) {
+            setRoomNotice('League of Legends: alternado para o cliente / saguão');
+          }
         }
       } finally {
         switchingWindowRef.current = false;
