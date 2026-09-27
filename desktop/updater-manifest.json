@@ -1,7 +1,7 @@
 {
-  "version": "0.3.11",
+  "version": "0.3.12",
   "updateType": "asar",
-  "artifactUrl": "https://github.com/caiomcg/zoia/releases/download/v0.3.11/Zoia-OTA-0.3.11.asar",
-  "sha256": "ec09871dd46a9381f1e7eb9463ea5e6e1c6ddd33dc465ff68d21ecdb48b2d204",
-  "notes": "Faster update discovery, an update button in Settings, a fix for the invalid-package error, and a more reliable League post-game hand-off."
+  "artifactUrl": "https://github.com/caiomcg/zoia/releases/download/v0.3.12/Zoia-OTA-0.3.12.asar",
+  "sha256": "071e85a7f8d8adc756560339deb965c9046d1f9fe1b01d7b73b2e8f59f4b133b",
+  "notes": "Zoia now speaks English, Spanish and Portuguese, following your system language or your choice in Settings. Closing the window now quits by default."
 }
