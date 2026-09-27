@@ -57,19 +57,27 @@ async function captureSources(): Promise<SourceInfo[]> {
   // reason to cache.
   const windowsById = new Map(windowManager.getWindows().map((w) => [w.id, w]));
 
-  return sources.map((source) => {
+  return sources.flatMap((source) => {
     const isWindow = source.id.startsWith('window:');
     const hwnd = isWindow ? hwndFromSourceId(source.id) : null;
-    const processId = hwnd !== null ? (windowsById.get(hwnd)?.processId ?? null) : null;
+    const nativeWindow = hwnd !== null ? windowsById.get(hwnd) : undefined;
 
-    return {
+    // Chromium can retain capture entries for hidden/ghost HWNDs after an
+    // app closes a launcher window. Only expose windows that still exist in
+    // the native enumeration and are visible to the user. Screens do not
+    // have an HWND and are intentionally kept unchanged.
+    if (isWindow && (!nativeWindow || !nativeWindow.isVisible())) return [];
+
+    const processId = nativeWindow?.processId ?? null;
+
+    return [{
       id: source.id,
       name: source.name,
       kind: isWindow ? 'window' : 'screen',
       thumbnailDataUrl: toDataUrl(source.thumbnail),
       processId,
       hwnd,
-    };
+    }];
   });
 }
 
