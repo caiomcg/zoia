@@ -235,9 +235,17 @@ async function samplePublishStats(
 export function useRoom() {
   const roomRef = useRef<Room | null>(null);
   const localTrackRef = useRef<LocalVideoTrack | null>(null);
-  const localAudioRef = useRef<{ track: LocalAudioTrack; capture: CaptureTrackHandle } | null>(
-    null,
-  );
+  // `capture` is null for a camera's microphone: a plain MediaStream, with no
+  // WASAPI bridge to meter, monitor or stop.
+  const localAudioRef = useRef<{
+    track: LocalAudioTrack;
+    capture: CaptureTrackHandle | null;
+  } | null>(null);
+  // Whether viewers should hear the audio this device is sending. Kept across
+  // broadcasts in a session, so switching source does not unmute behind your back.
+  const audioMutedRef = useRef(false);
+  const [audioMuted, setAudioMuted] = useState(false);
+  const [sendingAudio, setSendingAudio] = useState(false);
   const restartWindowRef = useRef<
     ((source: SourceInfo, preset?: QualityPreset) => Promise<boolean>) | null
   >(null);
@@ -576,9 +584,10 @@ export function useRoom() {
     const audio = localAudioRef.current;
     if (audio) {
       if (room) await room.localParticipant.unpublishTrack(audio.track, true).catch(() => {});
-      await audio.capture.stop().catch(() => {});
+      await audio.capture?.stop().catch(() => {});
       localAudioRef.current = null;
     }
+    setSendingAudio(false);
     if (statsTimerRef.current) {
       clearInterval(statsTimerRef.current);
       statsTimerRef.current = null;
@@ -666,9 +675,9 @@ export function useRoom() {
             source: Track.Source.ScreenShareAudio,
             stream: 'screen',
           });
-          // No capture handle here: the microphone is a plain MediaStream,
-          // not the WASAPI bridge, so there is nothing to monitor or meter.
-          localAudioRef.current = null;
+          if (audioMutedRef.current) await audioTrack.mute();
+          localAudioRef.current = { track: audioTrack, capture: null };
+          setSendingAudio(true);
         } else {
           setAudioWarning('No microphone was available, so the camera is being shared silently.');
         }
@@ -821,7 +830,9 @@ export function useRoom() {
             stream: 'screen',
           });
 
+          if (audioMutedRef.current) await audioTrack.mute();
           localAudioRef.current = { track: audioTrack, capture };
+          setSendingAudio(true);
           setCanMonitor(capture.canMonitor);
           capture.onStats((stats) => {
             setAudioLevel(stats.peak);
@@ -883,7 +894,19 @@ export function useRoom() {
     videoStats,
     canMonitor,
     setMonitorGain: useCallback((value: number) => {
-      localAudioRef.current?.capture.setMonitorGain(value);
+      localAudioRef.current?.capture?.setMonitorGain(value);
+    }, []),
+    sendingAudio,
+    audioMuted,
+    /**
+     * Mutes what viewers hear, not what you hear: the track stays published
+     * and captured, so unmuting is instant and the level meter keeps moving.
+     */
+    setAudioMuted: useCallback(async (muted: boolean) => {
+      audioMutedRef.current = muted;
+      setAudioMuted(muted);
+      const track = localAudioRef.current?.track;
+      if (track) await (muted ? track.mute() : track.unmute());
     }, []),
     localTrack,
     sharingKind,

@@ -104,6 +104,7 @@ export default function Player({
   canMonitor,
   setMonitorGain,
   gpuBroadcasting = false,
+  outgoingAudio,
   onStop,
   onSwitch,
   fullscreen,
@@ -118,6 +119,8 @@ export default function Player({
    * them directly — so there is no local track to preview.
    */
   gpuBroadcasting?: boolean;
+  /** Present while this device is sending audio; mutes it for viewers. */
+  outgoingAudio?: { muted: boolean; onToggle: () => void };
   /** Shown floating over the picture while this device is the one sharing. */
   onStop?: () => void;
   onSwitch?: () => void;
@@ -207,6 +210,20 @@ export default function Player({
               Switch
             </button>
           )}
+          {outgoingAudio && (
+            <button
+              className={outgoingAudio.muted ? 'muted-send' : undefined}
+              onClick={outgoingAudio.onToggle}
+              aria-pressed={outgoingAudio.muted}
+              title={
+                outgoingAudio.muted
+                  ? 'Viewers hear nothing. Click to send your audio again'
+                  : 'Stop sending your audio to viewers'
+              }
+            >
+              {outgoingAudio.muted ? 'Unmute audio' : 'Mute audio'}
+            </button>
+          )}
         </div>
       )}
 
@@ -274,7 +291,11 @@ export default function Player({
               >
                 <IconHeadphones />
               </button>
-              <span className="sharing-label">Sharing this window&rsquo;s audio</span>
+              <span className="sharing-label">
+                {outgoingAudio?.muted
+                  ? 'Audio muted for viewers'
+                  : 'Sharing this window\u2019s audio'}
+              </span>
             </>
           )}
 

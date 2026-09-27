@@ -1046,6 +1046,10 @@ button.danger {
   background: var(--raised);
 }
 
+.live-controls button.muted-send {
+  color: var(--warn);
+}
+
 .settings-warning {
   padding: 10px 12px;
   color: var(--warn);

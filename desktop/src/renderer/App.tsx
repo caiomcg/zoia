@@ -418,6 +418,14 @@ export default function App() {
                         canMonitor={room.canMonitor}
                         setMonitorGain={room.setMonitorGain}
                         gpuBroadcasting={gpuLive}
+                        outgoingAudio={
+                          room.sendingAudio
+                            ? {
+                                muted: room.audioMuted,
+                                onToggle: () => void room.setAudioMuted(!room.audioMuted),
+                              }
+                            : undefined
+                        }
                         onStop={() => void stopSharing()}
                         onSwitch={() => setPickerOpen(true)}
                       />
