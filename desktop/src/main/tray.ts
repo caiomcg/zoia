@@ -4,7 +4,8 @@
  * Closing the window hides it to the tray instead of quitting, so a broadcast
  * or a channel you are listening in keeps going. The tray's menu is the way
  * back, and the way out. Whether closing hides or quits is a choice kept in the
- * user's data folder; hiding is the default.
+ * user's data folder; hiding is the default. It can be changed from the tray
+ * menu or from the settings dialog, and both read the same preference.
  */
 
 import { app, BrowserWindow, Menu, Tray, nativeImage } from 'electron';
@@ -36,10 +37,27 @@ function writePrefs(prefs: TrayPrefs): void {
 }
 
 let tray: Tray | null = null;
+let prefs: TrayPrefs | null = null;
+let rebuildMenu: () => void = () => {};
 let quitting = false;
 let toldAboutTray = false;
-let prefs: TrayPrefs = { closeToTray: true };
-let refreshTrayMenu: (() => void) | null = null;
+
+function currentPrefs(): TrayPrefs {
+  prefs ??= readPrefs();
+  return prefs;
+}
+
+export function getCloseToTray(): boolean {
+  return currentPrefs().closeToTray;
+}
+
+/** Sets the preference and keeps the tray menu's checkbox in step with it. */
+export function setCloseToTray(closeToTray: boolean): boolean {
+  prefs = { closeToTray };
+  writePrefs(prefs);
+  rebuildMenu();
+  return closeToTray;
+}
 
 /** Brings the window back from the tray, or from behind other windows. */
 export function showWindow(window: BrowserWindow | null): void {
@@ -49,36 +67,20 @@ export function showWindow(window: BrowserWindow | null): void {
   window.focus();
 }
 
-export function getCloseToTray(): boolean {
-  return prefs.closeToTray;
-}
-
-export function setCloseToTray(closeToTray: boolean): boolean {
-  prefs = { closeToTray };
-  writePrefs(prefs);
-  refreshTrayMenu?.();
-  return prefs.closeToTray;
-}
-
 export function installTray(getWindow: () => BrowserWindow | null, iconPath: string): void {
-  prefs = readPrefs();
-
   tray = new Tray(nativeImage.createFromPath(iconPath));
   tray.setToolTip('Zoia');
   tray.on('click', () => showWindow(getWindow()));
 
-  const rebuildMenu = () => {
+  rebuildMenu = () => {
     tray?.setContextMenu(
       Menu.buildFromTemplate([
         { label: 'Abrir Zoia', click: () => showWindow(getWindow()) },
         {
           label: 'Manter na bandeja ao fechar',
           type: 'checkbox',
-          checked: prefs.closeToTray,
-          click: (item) => {
-            prefs = { closeToTray: item.checked };
-            writePrefs(prefs);
-          },
+          checked: getCloseToTray(),
+          click: (item) => setCloseToTray(item.checked),
         },
         { type: 'separator' },
         {
@@ -91,7 +93,6 @@ export function installTray(getWindow: () => BrowserWindow | null, iconPath: str
       ]),
     );
   };
-  refreshTrayMenu = rebuildMenu;
   rebuildMenu();
 
   app.on('before-quit', () => {
@@ -101,7 +102,7 @@ export function installTray(getWindow: () => BrowserWindow | null, iconPath: str
   // Attached per window, since the window can be recreated.
   app.on('browser-window-created', (_event, window) => {
     window.on('close', (event) => {
-      if (quitting || !prefs.closeToTray) return;
+      if (quitting || !getCloseToTray()) return;
       event.preventDefault();
       window.hide();
       // Said once per session, so a closed window that did not quit is not a

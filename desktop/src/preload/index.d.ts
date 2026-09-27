@@ -76,8 +76,9 @@ export interface ZoiaBridge {
     check(): Promise<UpdaterCheckResult>;
   };
   tray: {
-    config(): Promise<{ closeToTray: boolean }>;
-    save(closeToTray: boolean): Promise<{ closeToTray: boolean }>;
+    /** Whether closing the window hides it to the tray instead of quitting. */
+    closeToTray(): Promise<boolean>;
+    setCloseToTray(value: boolean): Promise<boolean>;
   };
   audio: {
     /** `processId: null` captures the whole system's output instead of one app. */

@@ -71,9 +71,8 @@ const bridge: ZoiaBridge = {
     check: () => ipcRenderer.invoke(IPC.updaterCheck) as Promise<UpdaterCheckResult>,
   },
   tray: {
-    config: () => ipcRenderer.invoke(IPC.trayConfigGet) as Promise<{ closeToTray: boolean }>,
-    save: (closeToTray: boolean) =>
-      ipcRenderer.invoke(IPC.trayConfigSave, closeToTray) as Promise<{ closeToTray: boolean }>,
+    closeToTray: () => ipcRenderer.invoke(IPC.trayCloseGet),
+    setCloseToTray: (value) => ipcRenderer.invoke(IPC.trayCloseSet, value),
   },
   audio: {
     start: (processId) => ipcRenderer.invoke(IPC.audioStart, processId),

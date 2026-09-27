@@ -939,8 +939,18 @@ button.danger {
   margin: 0 0 4px;
 }
 
-.settings-header p {
+.settings-section {
+  margin: 4px 0 -8px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.settings-note {
   margin: 0;
+  font-size: 12px;
 }
 
 .settings-warning {

@@ -15,20 +15,34 @@ const emptyConfig: UpdaterConfig = {
 
 export default function SettingsDialog({ onClose }: SettingsDialogProps) {
   const [config, setConfig] = useState<UpdaterConfig>(emptyConfig);
-  const [closeToTray, setCloseToTray] = useState(true);
   const [busy, setBusy] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Applied as soon as it is toggled, like the same checkbox in the tray menu;
+  // Save is for the update feed only.
+  const [closeToTray, setCloseToTray] = useState(true);
 
   useEffect(() => {
-    Promise.all([window.zoia.updater.config(), window.zoia.tray.config()])
-      .then(([updaterConfig, trayConfig]) => {
-        setConfig(updaterConfig);
-        setCloseToTray(trayConfig.closeToTray);
-      })
-      .catch(() => setError('Could not load settings.'))
+    window.zoia.tray
+      .closeToTray()
+      .then(setCloseToTray)
+      .catch(() => {});
+    window.zoia.updater
+      .config()
+      .then(setConfig)
+      .catch(() => setError('Could not load updater settings.'))
       .finally(() => setBusy(false));
   }, []);
+
+  async function toggleCloseToTray(value: boolean) {
+    setCloseToTray(value);
+    try {
+      setCloseToTray(await window.zoia.tray.setCloseToTray(value));
+    } catch {
+      setCloseToTray(!value);
+      setError('Could not change the system tray setting.');
+    }
+  }
 
   function update(field: keyof UpdaterConfig, value: string | boolean) {
     setConfig((current) => ({ ...current, [field]: value }));
@@ -43,9 +57,7 @@ export default function SettingsDialog({ onClose }: SettingsDialogProps) {
     try {
       const saved = await window.zoia.updater.save(config);
       setConfig(saved);
-      const savedTray = await window.zoia.tray.save(closeToTray);
-      setCloseToTray(savedTray.closeToTray);
-      setMessage('Settings saved.');
+      setMessage('Saved. The new feed will be used on the next update check.');
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Could not save updater settings.');
     } finally {
@@ -59,9 +71,7 @@ export default function SettingsDialog({ onClose }: SettingsDialogProps) {
     setMessage(null);
     try {
       setConfig(await window.zoia.updater.reset());
-      const savedTray = await window.zoia.tray.save(true);
-      setCloseToTray(savedTray.closeToTray);
-      setMessage('Default settings restored.');
+      setMessage('Default updater settings restored.');
     } catch {
       setError('Could not restore the default settings.');
     } finally {
@@ -89,10 +99,7 @@ export default function SettingsDialog({ onClose }: SettingsDialogProps) {
     <div className="picker-backdrop" onClick={onClose}>
       <section className="picker settings-dialog" onClick={(event) => event.stopPropagation()}>
         <div className="settings-header">
-          <div>
-            <h2>Settings</h2>
-            <p className="muted">Configure updates and what happens when you close Zoia.</p>
-          </div>
+          <h2>Settings</h2>
           <button
             className="icon-button"
             onClick={onClose}
@@ -103,6 +110,20 @@ export default function SettingsDialog({ onClose }: SettingsDialogProps) {
           </button>
         </div>
 
+        <h3 className="settings-section">General</h3>
+        <label className="settings-check">
+          <input
+            type="checkbox"
+            checked={closeToTray}
+            onChange={(event) => void toggleCloseToTray(event.target.checked)}
+          />
+          Keep Zoia in the system tray when the window is closed
+        </label>
+
+        <h3 className="settings-section">Updates</h3>
+        <p className="muted settings-note">
+          Choose where Zoia looks for lightweight application updates.
+        </p>
         <div className="settings-warning">
           Only use a repository you trust. An update can run code on this computer.
         </div>
@@ -152,19 +173,6 @@ export default function SettingsDialog({ onClose }: SettingsDialogProps) {
             disabled={busy}
           />
           Install available updates automatically
-        </label>
-        <label className="settings-check">
-          <input
-            type="checkbox"
-            checked={closeToTray}
-            onChange={(event) => {
-              setCloseToTray(event.target.checked);
-              setMessage(null);
-              setError(null);
-            }}
-            disabled={busy}
-          />
-          Minimize to the system tray when closing Zoia
         </label>
 
         {error && <p className="settings-error">{error}</p>}

@@ -214,11 +214,8 @@ function registerIpc(): void {
   ipcMain.handle(IPC.updaterConfigSave, (_event, next) => saveUpdaterConfig(next));
   ipcMain.handle(IPC.updaterConfigReset, () => resetUpdaterConfig());
   ipcMain.handle(IPC.updaterCheck, () => checkForUpdate(true));
-  ipcMain.handle(IPC.trayConfigGet, () => ({ closeToTray: getCloseToTray() }));
-  ipcMain.handle(IPC.trayConfigSave, (_event, closeToTray: unknown) => {
-    if (typeof closeToTray !== 'boolean') throw new Error('closeToTray must be a boolean');
-    return { closeToTray: setCloseToTray(closeToTray) };
-  });
+  ipcMain.handle(IPC.trayCloseGet, () => getCloseToTray());
+  ipcMain.handle(IPC.trayCloseSet, (_event, value: boolean) => setCloseToTray(value === true));
 
   ipcMain.handle(IPC.stageGet, () => api.stageGet());
   ipcMain.handle(IPC.stageClaim, () => api.stageClaim());
