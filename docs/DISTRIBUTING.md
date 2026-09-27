@@ -89,23 +89,17 @@ For a `full` release, publish a manifest with `updateType: "full"` and the insta
   "commit": "<40 hexadecimal characters from the branch commit>",
   "updateType": "full",
   "installerUrl": "https://github.com/OWNER/REPOSITORY/releases/download/v0.3.0/Zoia-Setup-0.3.0-x64.exe",
-  "portableUrl": "https://github.com/OWNER/REPOSITORY/releases/download/v0.3.0/Zoia-0.3.0-portable.exe",
-  "portableSha256": "<64 hexadecimal characters>",
   "notes": "Electron or native component update"
 }
 ```
 
-Installed builds use `installerUrl` for a full update. Portable builds use the optional
-`portableUrl` and `portableSha256`: when the user confirms, or when `autoInstall` is enabled,
-the updater downloads and verifies the new portable executable, waits for Zoia to exit, replaces
-the original executable, and launches it again. Without those two portable fields, portable users
-are shown the normal installer download instead.
+The desktop updater never replaces the executable itself. It focuses only on `asar` manifests;
+when it sees `updateType: "full"`, it tells the user to download the installer instead.
 
 The [desktop/src/main/updater.ts](../desktop/src/main/updater.ts) module starts from
 `desktop/src/main/index.ts` after `config.init()` and `pairing.restoreSession()`. It downloads
 to `%APPDATA%/Zoia/updates`, validates SHA-256, starts a helper process, quits Electron, and
-replaces either `resources/app.asar` or the original portable `.exe` with a temporary backup
-before relaunching the executable.
+replaces `resources/app.asar` with a temporary backup before relaunching the installed executable.
 
 The published binary contains **no server URL and no pairing token**, so it is not a
 credential and can be linked anywhere. It is inert until someone supplies an invite.
@@ -120,12 +114,12 @@ git tag v0.2.0
 git push --follow-tags
 ```
 
-`.github/workflows/release.yml` then builds on a Windows runner — the native capture addon,
-the installer and the portable exe — and attaches them to a GitHub Release with a
+`.github/workflows/release.yml` then builds on a Windows runner — the native capture addon
+and the Windows installer — and attaches it to a GitHub Release with a
 `SHA256SUMS.txt`.
 
 **The tag must match both `package.json` files.** electron-builder names its artifacts from
-`desktop/package.json`, not from the tag, so a mismatch would publish `Zoia-0.1.0-portable.exe`
+`desktop/package.json`, not from the tag, so a mismatch would publish `Zoia-Setup-0.1.0-x64.exe`
 under a release called v0.2.0. The workflow refuses before building anything. Check it
 yourself first with `npm run version:check v0.2.0`.
 
@@ -136,7 +130,7 @@ this is the only place CI compiles C++ — run the workflow by hand from the Act
 Verifying a download:
 
 ```powershell
-Get-FileHash Zoia-0.2.0-portable.exe -Algorithm SHA256   # compare with SHA256SUMS.txt
+Get-FileHash Zoia-Setup-0.2.0-x64.exe -Algorithm SHA256   # compare with SHA256SUMS.txt
 ```
 
 ## The invite
@@ -160,11 +154,9 @@ terminal scrollback is shared far more casually than files are:
 
 **Treat this file as the credential, because it is one.** The exe is not.
 
-Send it over something private. The person then either drops it next to the portable exe,
-drags it onto the Zoia window, or uses **Choose invite file…** on the pairing screen. An
-installed copy has no useful "next to the exe", so the drop and the picker are the paths that
-matter there. Zoia copies it into its own data directory, so it does not have to stay where
-they put it.
+Send it over something private. The person then drags it onto the Zoia window or uses
+**Choose invite file…** on the pairing screen. Zoia copies it into its own data directory,
+so it does not have to stay where they put it.
 
 `--max-activations` caps how many machines that invite can ever pair, which bounds the damage
 if it is forwarded. One invite per group makes it possible to cut off a group without touching
@@ -208,8 +200,8 @@ have. On first run Windows shows **"Windows protected your PC"**; the way throug
 *More info* → *Run anyway*. Tell people that before they see it, or they will assume the file
 is broken.
 
-The portable exe is large — around 125 MB — because it carries Electron and ffmpeg. The
-ffmpeg build alone is about 100 MB of that.
+The installer is large because it carries Electron and ffmpeg. The ffmpeg build alone is
+about 100 MB of the package.
 
 ## Revoking
 

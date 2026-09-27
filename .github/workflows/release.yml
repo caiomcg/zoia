@@ -137,7 +137,7 @@ jobs:
           ZOIA_TOKENLESS_BUILD: '1'
         run: npm run build
 
-      - name: Package the installer and the portable exe
+      - name: Package the Windows installer
         run: npx electron-builder --win --x64 --publish never
 
       - name: Checksum the artifacts
@@ -147,7 +147,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $updateType = '${{ steps.classify.outputs.update_type }}'
           $files = @(Get-ChildItem -Filter '*.exe')
-          if ($files.Count -lt 2) { throw "expected an installer and a portable exe, found $($files.Count)" }
+          if ($files.Count -lt 1) { throw "expected the Windows installer" }
           if ($updateType -eq 'asar') {
             $asar = 'win-unpacked/resources/app.asar'
             if (-not (Test-Path $asar)) { throw "missing OTA payload: $asar" }

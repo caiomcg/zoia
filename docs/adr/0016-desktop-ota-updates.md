@@ -6,7 +6,7 @@
 ## Context
 
 The Windows desktop client is distributed as an Electron application. A normal
-Electron rebuild produces a large installer or portable executable because it
+Electron rebuild produces a large installer because it
 contains the Electron runtime, Chromium, FFmpeg, and native capture addons.
 Downloading that entire artifact for every TypeScript or React change is
 unnecessarily expensive.
@@ -56,14 +56,6 @@ The update sequence is:
    the staged artifact into place.
 7. Relaunch the original executable and remove the backup after the handoff.
 
-Portable builds use a separate full-update path: the manifest may provide a
-`portableUrl` and `portableSha256`. The updater downloads and verifies that
-executable, waits for the portable process to exit, replaces the original
-executable, and relaunches it. The extracted application files are never
-replaced directly. If the portable artifact is absent, the user must download
-the full release manually. Changes to Electron, FFmpeg, native addons, or
-other unpacked resources still require a complete release.
-
 ## Consequences
 
 ### Benefits
@@ -76,7 +68,7 @@ other unpacked resources still require a complete release.
   corrupted installs.
 - Replacement happens after graceful shutdown and retains a rollback copy while
   the new process starts.
-- Existing installer and portable release distribution remains unchanged.
+- The installer remains the single distribution format.
 
 ### Costs and limitations
 
@@ -87,8 +79,7 @@ other unpacked resources still require a complete release.
   require a full installer even when the resulting code would technically fit
   inside `app.asar`.
 - Native, Electron, FFmpeg, and unpacked-resource changes cannot use this path.
-- Portable updates require every full manifest to publish a verified portable
-  executable alongside the installer; macOS/Linux packages remain unsupported.
+- The updater currently supports the installed Windows build, not macOS/Linux packages.
 - A compromised repository branch or release asset is still an update authority;
   SHA-256 protects integrity in transit, not publisher identity. A future
   signing scheme may extend this design.
