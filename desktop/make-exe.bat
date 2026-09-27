@@ -1,5 +1,5 @@
 @echo off
-REM Builds the portable Zoia .exe.
+REM Builds the Zoia Windows installer.
 REM Double-click this file, or run it from a Windows terminal.
 REM
 REM   make-exe.bat             private build: the token is baked in, so the
@@ -15,7 +15,7 @@ setlocal EnableDelayedExpansion
 cd /d "%~dp0"
 
 echo.
-echo === Zoia portable build =========================================
+echo === Zoia Windows installer build ===============================
 echo.
 
 REM --- mode ---------------------------------------------------------
@@ -94,7 +94,7 @@ REM Close any running copy, which would otherwise lock release\win-unpacked
 REM and make the build fail at the very last step.
 taskkill /IM Zoia.exe /F >nul 2>&1
 
-call npm run pack:portable || goto :failed
+call npm run pack || goto :failed
 
 REM --- verify what did, or did not, make it in ----------------------
 REM Both directions matter, and the second matters more now. Shipping a
@@ -122,10 +122,10 @@ if "%MODE%"=="public" (
   echo Pairing token verified as embedded.
 )
 echo.
-dir /b release\*portable*.exe 2>nul
+dir /b release\*Setup*.exe 2>nul
 echo.
 echo Full path: %~dp0release
-echo Send the portable .exe to whoever needs it. No install required.
+echo Send the installer to whoever needs it.
 echo.
 pause
 exit /b 0

@@ -74,6 +74,10 @@ export interface ZoiaBridge {
     save(config: UpdaterConfig): Promise<UpdaterConfig>;
     reset(): Promise<UpdaterConfig>;
     check(): Promise<UpdaterCheckResult>;
+    openInstaller(url: string): Promise<void>;
+  };
+  app: {
+    version(): Promise<string>;
   };
   tray: {
     /** Whether closing the window hides it to the tray instead of quitting. */

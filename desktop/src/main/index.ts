@@ -214,7 +214,13 @@ function registerIpc(): void {
   ipcMain.handle(IPC.updaterConfigSave, (_event, next) => saveUpdaterConfig(next));
   ipcMain.handle(IPC.updaterConfigReset, () => resetUpdaterConfig());
   ipcMain.handle(IPC.updaterCheck, () => checkForUpdate(true));
-
+  ipcMain.handle(IPC.updaterOpenInstaller, (_event, installerUrl: unknown) => {
+    if (typeof installerUrl !== 'string') throw new Error('Installer URL is required');
+    const url = new URL(installerUrl);
+    if (url.protocol !== 'https:') throw new Error('Installer URL must use HTTPS');
+    return shell.openExternal(url.toString());
+  });
+  ipcMain.handle(IPC.appVersion, () => app.getVersion());
   ipcMain.handle(IPC.trayCloseGet, () => getCloseToTray());
   ipcMain.handle(IPC.trayCloseSet, (_event, value: boolean) => setCloseToTray(value === true));
 

@@ -963,6 +963,23 @@ button.danger {
   line-height: 1.4;
 }
 
+.settings-version {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px 16px;
+  padding: 10px 12px;
+  font-size: 12px;
+  color: var(--muted);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.settings-version strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
 .settings-field {
   display: flex;
   flex-direction: column;
@@ -1005,6 +1022,10 @@ button.danger {
 
 .settings-message {
   color: var(--accent);
+}
+
+.settings-download {
+  align-self: flex-start;
 }
 
 .settings-actions {
@@ -2105,6 +2126,17 @@ button.danger {
   flex: 1;
   height: 100%;
   border-radius: 2px;
+}
+
+.camera-mute-check {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 13px;
+}
+
+.camera-mute-check input {
+  accent-color: var(--accent);
 }
 
 .camera-dialog footer {

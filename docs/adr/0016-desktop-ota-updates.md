@@ -6,7 +6,7 @@
 ## Context
 
 The Windows desktop client is distributed as an Electron application. A normal
-Electron rebuild produces a large installer or portable executable because it
+Electron rebuild produces a large installer because it
 contains the Electron runtime, Chromium, FFmpeg, and native capture addons.
 Downloading that entire artifact for every TypeScript or React change is
 unnecessarily expensive.
@@ -56,11 +56,6 @@ The update sequence is:
    the staged artifact into place.
 7. Relaunch the original executable and remove the backup after the handoff.
 
-The portable build is deliberately excluded. Its application files are
-extracted into a temporary directory and would disappear on the next launch;
-portable users must receive a new executable. Changes to Electron, FFmpeg,
-native addons, or other unpacked resources also require a complete release.
-
 ## Consequences
 
 ### Benefits
@@ -73,7 +68,7 @@ native addons, or other unpacked resources also require a complete release.
   corrupted installs.
 - Replacement happens after graceful shutdown and retains a rollback copy while
   the new process starts.
-- Existing installer and portable release distribution remains unchanged.
+- The installer remains the single distribution format.
 
 ### Costs and limitations
 
@@ -84,8 +79,7 @@ native addons, or other unpacked resources also require a complete release.
   require a full installer even when the resulting code would technically fit
   inside `app.asar`.
 - Native, Electron, FFmpeg, and unpacked-resource changes cannot use this path.
-- The updater currently supports the installed Windows build, not portable
-  builds or macOS/Linux packages.
+- The updater currently supports the installed Windows build, not macOS/Linux packages.
 - A compromised repository branch or release asset is still an update authority;
   SHA-256 protects integrity in transit, not publisher identity. A future
   signing scheme may extend this design.

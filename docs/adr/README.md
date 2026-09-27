@@ -24,6 +24,9 @@ record that supersedes it, so the history stays legible.
 | [0014](0014-browser-viewer.md) | Restore a viewer-only browser client | accepted |
 | [0015](0015-channels.md) | Channels | accepted |
 | [0016](0016-desktop-ota-updates.md) | OTA updates for desktop application code | accepted |
+| [0017](0017-desktop-preferences-and-update-discovery.md) | Desktop preferences and update discovery | accepted |
+| [0018](0018-local-audio-controls.md) | Local audio controls for camera and remote broadcasts | accepted |
+| [0019](0019-league-window-handoff.md) | Automatic League window handoff | accepted |
 
 ## The two that explain the most
 

@@ -286,12 +286,6 @@ async function install(update: RemoteUpdate): Promise<void> {
     throw new Error('This release requires the full installer');
   }
   if (!app.isPackaged) throw new Error('OTA updates are disabled in development builds');
-  if (process.env.PORTABLE_EXECUTABLE_DIR) {
-    throw new Error(
-      'OTA app.asar updates require the installed build; portable builds need a new exe',
-    );
-  }
-
   const target = join(process.resourcesPath, 'app.asar');
   await access(target);
   const updateDir = join(app.getPath('userData'), 'updates', update.commit);
@@ -401,9 +395,14 @@ export async function startUpdater(): Promise<void> {
     }
     await install(update);
   } catch (error) {
-    console.warn(
-      '[updater] update skipped:',
-      error instanceof Error ? error.message : String(error),
-    );
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn('[updater] update skipped:', message);
+    await dialog.showMessageBox({
+      type: 'error',
+      title: 'Atualização não concluída',
+      message: 'Não foi possível instalar a atualização.',
+      detail: message,
+      buttons: ['OK'],
+    });
   }
 }
