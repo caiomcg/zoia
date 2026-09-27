@@ -232,6 +232,11 @@ async function samplePublishStats(
   });
 }
 
+export interface SendAudio {
+  volume: number;
+  muted: boolean;
+}
+
 export function useRoom() {
   const roomRef = useRef<Room | null>(null);
   const localTrackRef = useRef<LocalVideoTrack | null>(null);
@@ -241,10 +246,10 @@ export function useRoom() {
     track: LocalAudioTrack;
     capture: CaptureTrackHandle | null;
   } | null>(null);
-  // Whether viewers should hear the audio this device is sending. Kept across
-  // broadcasts in a session, so switching source does not unmute behind your back.
-  const audioMutedRef = useRef(false);
-  const [audioMuted, setAudioMuted] = useState(false);
+  // What viewers hear of the audio this device sends. Kept across broadcasts
+  // in a session, so switching source does not unmute behind your back.
+  const sendAudioRef = useRef<SendAudio>({ volume: 1, muted: false });
+  const [sendAudio, setSendAudioState] = useState<SendAudio>(sendAudioRef.current);
   const [sendingAudio, setSendingAudio] = useState(false);
   const restartWindowRef = useRef<
     ((source: SourceInfo, preset?: QualityPreset) => Promise<boolean>) | null
@@ -675,7 +680,7 @@ export function useRoom() {
             source: Track.Source.ScreenShareAudio,
             stream: 'screen',
           });
-          if (audioMutedRef.current) await audioTrack.mute();
+          if (sendAudioRef.current.muted) await audioTrack.mute();
           localAudioRef.current = { track: audioTrack, capture: null };
           setSendingAudio(true);
         } else {
@@ -830,7 +835,8 @@ export function useRoom() {
             stream: 'screen',
           });
 
-          if (audioMutedRef.current) await audioTrack.mute();
+          capture.setSendGain(sendAudioRef.current.volume);
+          if (sendAudioRef.current.muted) await audioTrack.mute();
           localAudioRef.current = { track: audioTrack, capture };
           setSendingAudio(true);
           setCanMonitor(capture.canMonitor);
@@ -897,16 +903,27 @@ export function useRoom() {
       localAudioRef.current?.capture?.setMonitorGain(value);
     }, []),
     sendingAudio,
-    audioMuted,
     /**
-     * Mutes what viewers hear, not what you hear: the track stays published
-     * and captured, so unmuting is instant and the level meter keeps moving.
+     * Only the WASAPI path has a gain stage; a camera's microphone can only
+     * mute. Read at render: the ref is set before setSendingAudio(true), which
+     * is what re-renders.
      */
-    setAudioMuted: useCallback(async (muted: boolean) => {
-      audioMutedRef.current = muted;
-      setAudioMuted(muted);
-      const track = localAudioRef.current?.track;
-      if (track) await (muted ? track.mute() : track.unmute());
+    canSetSendVolume: sendingAudio && Boolean(localAudioRef.current?.capture),
+    sendAudio,
+    /**
+     * Sets what viewers hear. The track stays published and captured while
+     * muted, so unmuting is instant.
+     */
+    setSendAudio: useCallback(async (next: SendAudio) => {
+      const previous = sendAudioRef.current;
+      sendAudioRef.current = next;
+      setSendAudioState(next);
+      const audio = localAudioRef.current;
+      if (!audio) return;
+      audio.capture?.setSendGain(next.volume);
+      if (next.muted !== previous.muted) {
+        await (next.muted ? audio.track.mute() : audio.track.unmute());
+      }
     }, []),
     localTrack,
     sharingKind,

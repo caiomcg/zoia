@@ -412,17 +412,17 @@ export default function App() {
                     renderStage: (fullscreen) => (
                       <Player
                         fullscreen={fullscreen}
-                        remoteScreen={null}
+                        name={status.deviceName ?? 'You'}
                         localTrack={room.localTrack}
-                        audioLevel={room.audioLevel}
                         canMonitor={room.canMonitor}
                         setMonitorGain={room.setMonitorGain}
                         gpuBroadcasting={gpuLive}
-                        outgoingAudio={
+                        sendAudio={
                           room.sendingAudio
                             ? {
-                                muted: room.audioMuted,
-                                onToggle: () => void room.setAudioMuted(!room.audioMuted),
+                                value: room.sendAudio,
+                                canSetVolume: room.canSetSendVolume,
+                                onChange: (next) => void room.setSendAudio(next),
                               }
                             : undefined
                         }

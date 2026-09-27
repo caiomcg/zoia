@@ -443,22 +443,12 @@ button:disabled {
     opacity 0.2s ease;
 }
 
-.stage-area .player-controls,
-.stage-area .live-controls {
-  opacity: 0;
-  transition: opacity 0.15s ease;
-}
-
 .stage-area:hover .thumb-overlay,
 .stage-area:focus-within .thumb-overlay {
   bottom: 60px;
 }
 
-.stage-area:hover .remote-tile-footer,
-.stage-area:hover .player-controls,
-.stage-area:hover .live-controls,
-.stage-area .player-controls:focus-within,
-.stage-area .live-controls:focus-within {
+.stage-area:hover .remote-tile-footer {
   opacity: 1;
 }
 
@@ -480,10 +470,7 @@ button:disabled {
 .stage-area.idle .remote-tile-footer,
 .stage-area.idle:hover .remote-tile-footer,
 .stage-area.idle .remote-tile:focus-within .remote-tile-footer,
-.stage-area.idle .player-controls,
-.stage-area.idle:hover .player-controls,
-.stage-area.idle .live-controls,
-.stage-area.idle:hover .live-controls {
+.stage-area.idle .stage:focus-within .remote-tile-footer {
   opacity: 0;
   pointer-events: none;
 }
@@ -779,8 +766,14 @@ button:disabled {
   transition: opacity 0.15s ease;
 }
 
-.remote-tile:focus-within .remote-tile-footer {
+.remote-tile:focus-within .remote-tile-footer,
+.stage:focus-within .remote-tile-footer {
   opacity: 1;
+}
+
+/* Your own share wears the same footer; Stop is the one control in red. */
+.remote-tile-footer .icon-button.stop {
+  color: var(--danger);
 }
 
 .remote-audio-controls {
@@ -1046,10 +1039,6 @@ button.danger {
   background: var(--raised);
 }
 
-.live-controls button.muted-send {
-  color: var(--warn);
-}
-
 .settings-warning {
   padding: 10px 12px;
   color: var(--warn);
@@ -1247,18 +1236,6 @@ button.danger {
   object-fit: contain;
 }
 
-.player-controls {
-  position: absolute;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  padding: 10px 14px;
-  background: linear-gradient(to top, rgb(0 0 0 / 0.75), transparent);
-}
-
 .icon-button {
   display: inline-flex;
   align-items: center;
@@ -1316,16 +1293,6 @@ button.danger {
 
 .level-seg.hot.on {
   background: #f5a623;
-}
-
-.sharing-label {
-  font-size: 12px;
-  color: rgb(255 255 255 / 0.75);
-}
-
-.volume-slider {
-  width: 90px;
-  accent-color: var(--accent);
 }
 
 /* ---- quality picker + status pills --------------------------------------- */
@@ -2011,22 +1978,6 @@ button.danger {
 .share-icons .icon-button.active {
   color: #fff;
   background: var(--live);
-}
-
-/* ---- live controls, floating over the picture ---------------------------- */
-
-.live-controls {
-  position: absolute;
-  top: 16px;
-  left: 50%;
-  display: flex;
-  gap: 8px;
-  padding: 6px;
-  background: rgb(0 0 0 / 0.55);
-  border: 1px solid rgb(255 255 255 / 0.12);
-  border-radius: 10px;
-  transform: translateX(-50%);
-  backdrop-filter: blur(6px);
 }
 
 /* ---- camera dialog ------------------------------------------------------- */

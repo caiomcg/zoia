@@ -30,6 +30,8 @@ export interface CaptureTrackHandle {
    * a second machine. 0 (silent) by default — see canMonitor.
    */
   setMonitorGain(value: number): void;
+  /** How loud viewers hear it, 0..1. The monitor follows, so it stays honest. */
+  setSendGain(value: number): void;
   /**
    * False when capturing the whole system rather than one process: monitoring
    * system audio through the speakers feeds straight back into the capture.
@@ -71,14 +73,16 @@ export async function createCaptureAudioTrack(
   };
 
   const destination = ctx.createMediaStreamDestination();
-  node.connect(destination);
+  const sendGain = ctx.createGain();
+  node.connect(sendGain);
+  sendGain.connect(destination);
 
   // Monitoring runs through its own gain node kept at zero, rather than
   // connecting and disconnecting the speaker path: toggling a gain value is
   // click-free, and the graph shape stays constant.
   const monitorGain = ctx.createGain();
   monitorGain.gain.value = 0;
-  node.connect(monitorGain);
+  sendGain.connect(monitorGain);
   monitorGain.connect(ctx.destination);
 
   // Capturing one process means our own playback is a *different* process,
@@ -107,6 +111,9 @@ export async function createCaptureAudioTrack(
     canMonitor,
     setMonitorGain(value: number) {
       monitorGain.gain.value = canMonitor ? value : 0;
+    },
+    setSendGain(value: number) {
+      sendGain.gain.value = value;
     },
     onStats(cb) {
       listeners.add(cb);
