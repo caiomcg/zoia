@@ -31,6 +31,9 @@ concurrency:
 
 jobs:
   build:
+    outputs:
+      update_type: ${{ steps.classify.outputs.update_type }}
+      base_tag: ${{ steps.classify.outputs.base_tag }}
     # Pinned rather than windows-latest. This is the only job in the repo that
     # compiles C++, and the image's Visual Studio and Windows SDK are inputs to
     # the artifact. A silent image migration should not first be noticed as a
@@ -41,6 +44,13 @@ jobs:
         working-directory: desktop
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Classify desktop update
+        id: classify
+        working-directory: .
+        run: node scripts/classify-desktop-update.js HEAD
 
       - name: Refuse a tag that disagrees with package.json
         if: github.event_name == 'push'
@@ -135,13 +145,16 @@ jobs:
         working-directory: desktop/release
         run: |
           $ErrorActionPreference = 'Stop'
+          $updateType = '${{ steps.classify.outputs.update_type }}'
           $files = @(Get-ChildItem -Filter '*.exe')
           if ($files.Count -lt 2) { throw "expected an installer and a portable exe, found $($files.Count)" }
-          $asar = 'win-unpacked/resources/app.asar'
-          if (-not (Test-Path $asar)) { throw "missing OTA payload: $asar" }
-          $version = (Get-Content ../package.json | ConvertFrom-Json).version
-          Copy-Item $asar "Zoia-OTA-$version.asar"
-          $files += Get-Item "Zoia-OTA-$version.asar"
+          if ($updateType -eq 'asar') {
+            $asar = 'win-unpacked/resources/app.asar'
+            if (-not (Test-Path $asar)) { throw "missing OTA payload: $asar" }
+            $version = (Get-Content ../package.json | ConvertFrom-Json).version
+            Copy-Item $asar "Zoia-OTA-$version.asar"
+            $files += Get-Item "Zoia-OTA-$version.asar"
+          }
           # Two spaces, the format `sha256sum -c` expects.
           $files | ForEach-Object {
             "$((Get-FileHash $_ -Algorithm SHA256).Hash.ToLower())  $($_.Name)"
@@ -153,8 +166,16 @@ jobs:
           name: zoia-windows
           path: |
             desktop/release/*.exe
-            desktop/release/*.asar
             desktop/release/SHA256SUMS.txt
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Upload OTA artifact
+        if: steps.classify.outputs.update_type == 'asar'
+        uses: actions/upload-artifact@v4
+        with:
+          name: zoia-ota
+          path: desktop/release/*.asar
           retention-days: 7
           if-no-files-found: error
 

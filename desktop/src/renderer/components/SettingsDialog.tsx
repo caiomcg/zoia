@@ -68,7 +68,11 @@ export default function SettingsDialog({ onClose }: SettingsDialogProps) {
     setMessage(null);
     const result = await window.zoia.updater.check();
     if (result.status === 'available') setMessage(`Version ${result.version} is available.`);
-    else if (result.status === 'up-to-date') setMessage('You are up to date.');
+    else if (result.status === 'full-required') {
+      setMessage(
+        `Version ${result.version} requires the full installer. Open the release page to download it.`,
+      );
+    } else if (result.status === 'up-to-date') setMessage('You are up to date.');
     else if (result.status === 'disabled') setMessage('Updates are disabled for this build.');
     else setError(result.message);
     setBusy(false);
@@ -82,7 +86,12 @@ export default function SettingsDialog({ onClose }: SettingsDialogProps) {
             <h2>Update settings</h2>
             <p className="muted">Choose where Zoia looks for lightweight application updates.</p>
           </div>
-          <button className="icon-button" onClick={onClose} aria-label="Close settings" title="Close">
+          <button
+            className="icon-button"
+            onClick={onClose}
+            aria-label="Close settings"
+            title="Close"
+          >
             ×
           </button>
         </div>

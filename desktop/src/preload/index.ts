@@ -6,7 +6,12 @@
 
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import { IPC } from '../shared/ipc';
-import type { EncoderStatus, PairingStatus, UpdaterConfig, UpdaterCheckResult } from '../shared/ipc';
+import type {
+  EncoderStatus,
+  PairingStatus,
+  UpdaterConfig,
+  UpdaterCheckResult,
+} from '../shared/ipc';
 import type { ZoiaBridge } from './index.d';
 
 const bridge: ZoiaBridge = {

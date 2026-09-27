@@ -1,4 +1,4 @@
-import { app, dialog } from 'electron';
+import { app, dialog, shell } from 'electron';
 import { createHash } from 'node:crypto';
 import { createWriteStream } from 'node:fs';
 import { access, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
@@ -24,9 +24,10 @@ export interface UpdaterConfig {
 interface UpdateManifest {
   version: string;
   commit: string;
-  artifactUrl: string;
-  sha256: string;
-  artifactType?: 'asar';
+  updateType?: 'asar' | 'full';
+  artifactUrl?: string;
+  sha256?: string;
+  installerUrl?: string;
   notes?: string;
 }
 
@@ -41,6 +42,7 @@ interface RemoteUpdate extends UpdateManifest {
 export type UpdaterCheckResult =
   | { status: 'up-to-date' }
   | { status: 'available'; version: string; notes: string | null }
+  | { status: 'full-required'; version: string; installerUrl: string; notes: string | null }
   | { status: 'disabled' }
   | { status: 'error'; message: string };
 
@@ -96,7 +98,10 @@ function githubRepository(repository: string): { owner: string; name: string } |
   try {
     const url = new URL(repository);
     if (url.hostname !== 'github.com') return null;
-    const parts = url.pathname.replace(/\.git$/, '').split('/').filter(Boolean);
+    const parts = url.pathname
+      .replace(/\.git$/, '')
+      .split('/')
+      .filter(Boolean);
     const [owner, name] = parts;
     return owner && name ? { owner, name } : null;
   } catch {
@@ -123,7 +128,8 @@ async function loadConfig(): Promise<UpdaterConfig | null> {
 
   for (const path of candidates) {
     const config = await readJson<UpdaterConfig>(path);
-    if (!config || typeof config.repository !== 'string' || typeof config.branch !== 'string') continue;
+    if (!config || typeof config.repository !== 'string' || typeof config.branch !== 'string')
+      continue;
     if (!config.manifestPath && !config.manifestUrl) continue;
     return config;
   }
@@ -180,7 +186,9 @@ export async function resetUpdaterConfig(): Promise<UpdaterConfig> {
 }
 
 async function fetchJson<T>(url: string): Promise<T> {
-  const response = await fetch(url, { headers: { accept: 'application/json', 'user-agent': 'Zoia-Updater' } });
+  const response = await fetch(url, {
+    headers: { accept: 'application/json', 'user-agent': 'Zoia-Updater' },
+  });
   if (!response.ok) throw new Error(`Updater request failed (${response.status})`);
   return (await response.json()) as T;
 }
@@ -208,23 +216,38 @@ async function getRemoteUpdate(config: UpdaterConfig): Promise<RemoteUpdate> {
     fetchJson<{ sha?: string }>(commitUrl),
   ]);
   const commit = commitInfo.sha ?? manifest.commit;
-  if (!manifest.version || !manifest.artifactUrl || !manifest.sha256 || !commit) {
+  if (!manifest.version || !commit) {
     throw new Error('Updater manifest is incomplete');
   }
   if (manifest.commit && manifest.commit !== commit) {
     throw new Error('Updater manifest does not match the branch commit');
   }
-  if (manifest.artifactType && manifest.artifactType !== 'asar') {
-    throw new Error('Only app.asar OTA artifacts are supported');
-  }
-  if (!isUrl(manifest.artifactUrl) || !/^[a-f0-9]{64}$/i.test(manifest.sha256)) {
-    throw new Error('Updater manifest contains an invalid artifact URL or SHA-256');
+  const updateType = manifest.updateType ?? 'asar';
+  if (updateType === 'asar') {
+    if (
+      !manifest.artifactUrl ||
+      !manifest.sha256 ||
+      !isUrl(manifest.artifactUrl) ||
+      !/^[a-f0-9]{64}$/i.test(manifest.sha256)
+    ) {
+      throw new Error('Updater manifest contains an invalid OTA artifact URL or SHA-256');
+    }
+  } else if (updateType === 'full') {
+    if (!manifest.installerUrl || !isUrl(manifest.installerUrl)) {
+      throw new Error('Full update manifest contains an invalid installer URL');
+    }
+  } else {
+    throw new Error('Updater manifest has an unknown update type');
   }
   return { ...manifest, commit };
 }
 
 function newerVersion(remote: string, local: string): boolean {
-  const parse = (value: string) => value.replace(/^v/, '').split('.').map((part) => Number.parseInt(part, 10) || 0);
+  const parse = (value: string) =>
+    value
+      .replace(/^v/, '')
+      .split('.')
+      .map((part) => Number.parseInt(part, 10) || 0);
   const a = parse(remote);
   const b = parse(local);
   for (let index = 0; index < Math.max(a.length, b.length); index += 1) {
@@ -233,10 +256,18 @@ function newerVersion(remote: string, local: string): boolean {
   return false;
 }
 
-async function downloadArtifact(url: string, expectedSha256: string, destination: string): Promise<void> {
+async function downloadArtifact(
+  url: string,
+  expectedSha256: string,
+  destination: string,
+): Promise<void> {
   const response = await fetch(url, { headers: { 'user-agent': 'Zoia-Updater' } });
-  if (!response.ok || !response.body) throw new Error(`Update download failed (${response.status})`);
-  await pipeline(Readable.fromWeb(response.body as never), createWriteStream(destination, { flags: 'wx' }));
+  if (!response.ok || !response.body)
+    throw new Error(`Update download failed (${response.status})`);
+  await pipeline(
+    Readable.fromWeb(response.body as never),
+    createWriteStream(destination, { flags: 'wx' }),
+  );
   const hash = createHash('sha256');
   const contents = await readFile(destination);
   hash.update(contents);
@@ -251,9 +282,14 @@ async function writeHelper(path: string): Promise<void> {
 }
 
 async function install(update: RemoteUpdate): Promise<void> {
+  if (update.updateType === 'full' || !update.artifactUrl || !update.sha256) {
+    throw new Error('This release requires the full installer');
+  }
   if (!app.isPackaged) throw new Error('OTA updates are disabled in development builds');
   if (process.env.PORTABLE_EXECUTABLE_DIR) {
-    throw new Error('OTA app.asar updates require the installed build; portable builds need a new exe');
+    throw new Error(
+      'OTA app.asar updates require the installed build; portable builds need a new exe',
+    );
   }
 
   const target = join(process.resourcesPath, 'app.asar');
@@ -270,12 +306,25 @@ async function install(update: RemoteUpdate): Promise<void> {
   await rename(partial, staged);
   await writeHelper(helper);
 
-  spawn(process.execPath, [helper, target, staged, backup, String(process.pid), process.execPath, statePath, update.commit], {
-    detached: true,
-    stdio: 'ignore',
-    windowsHide: true,
-    env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
-  }).unref();
+  spawn(
+    process.execPath,
+    [
+      helper,
+      target,
+      staged,
+      backup,
+      String(process.pid),
+      process.execPath,
+      statePath,
+      update.commit,
+    ],
+    {
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: true,
+      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+    },
+  ).unref();
   app.quit();
 }
 
@@ -289,9 +338,16 @@ export async function checkForUpdate(force = false): Promise<UpdaterCheckResult>
     if (state?.commit === update.commit) return { status: 'up-to-date' };
     const versionUpgrade = newerVersion(update.version, app.getVersion());
     const commitUpgrade = Boolean(state?.commit && state.commit !== update.commit);
-    return versionUpgrade || commitUpgrade
-      ? { status: 'available', version: update.version, notes: update.notes ?? null }
-      : { status: 'up-to-date' };
+    if (!versionUpgrade && !commitUpgrade) return { status: 'up-to-date' };
+    if (update.updateType === 'full') {
+      return {
+        status: 'full-required',
+        version: update.version,
+        installerUrl: update.installerUrl!,
+        notes: update.notes ?? null,
+      };
+    }
+    return { status: 'available', version: update.version, notes: update.notes ?? null };
   } catch (error) {
     return {
       status: 'error',
@@ -313,12 +369,30 @@ export async function startUpdater(): Promise<void> {
     const commitUpgrade = Boolean(state?.commit && state.commit !== update.commit);
     if (!versionUpgrade && !commitUpgrade) return;
 
+    if (update.updateType === 'full') {
+      const result = await dialog.showMessageBox({
+        type: 'info',
+        title: 'Full update required',
+        message: `Version ${update.version} requires a new installer.`,
+        detail:
+          update.notes ??
+          'This release changes Electron, native components, or another file that cannot be updated OTA.',
+        buttons: ['Open download', 'Later'],
+        defaultId: 0,
+        cancelId: 1,
+      });
+      if (result.response === 0 && update.installerUrl)
+        await shell.openExternal(update.installerUrl);
+      return;
+    }
+
     if (!config.autoInstall) {
       const result = await dialog.showMessageBox({
         type: 'info',
         title: 'Atualização disponível',
         message: `A versão ${update.version} está disponível.`,
-        detail: update.notes ?? 'O código da aplicação será atualizado sem baixar novamente o Electron.',
+        detail:
+          update.notes ?? 'O código da aplicação será atualizado sem baixar novamente o Electron.',
         buttons: ['Atualizar agora', 'Depois'],
         defaultId: 0,
         cancelId: 1,
@@ -327,6 +401,9 @@ export async function startUpdater(): Promise<void> {
     }
     await install(update);
   } catch (error) {
-    console.warn('[updater] update skipped:', error instanceof Error ? error.message : String(error));
+    console.warn(
+      '[updater] update skipped:',
+      error instanceof Error ? error.message : String(error),
+    );
   }
 }
