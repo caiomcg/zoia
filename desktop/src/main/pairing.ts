@@ -28,6 +28,20 @@ export function getStatus(): PairingStatus {
   return status;
 }
 
+// Settled once restoreSession has run. Until then `status` is only a
+// placeholder, and answering with it made the pairing screen flash on every
+// launch of an already-paired machine.
+let markRestored: () => void = () => {};
+const restored = new Promise<void>((resolve) => {
+  markRestored = resolve;
+});
+
+/** The status, once the stored credential has been checked. */
+export async function getRestoredStatus(): Promise<PairingStatus> {
+  await restored;
+  return status;
+}
+
 /** Folds the current config into the status the UI renders. */
 function unpaired(error: string | null): PairingStatus {
   const resolved = config.describe();
@@ -46,6 +60,14 @@ function unpaired(error: string | null): PairingStatus {
  * establish this run's session cookie.
  */
 export async function restoreSession(): Promise<PairingStatus> {
+  try {
+    return await restore();
+  } finally {
+    markRestored();
+  }
+}
+
+async function restore(): Promise<PairingStatus> {
   const stored = await loadCredential();
   if (!stored) {
     status = unpaired(null);

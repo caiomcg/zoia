@@ -74,11 +74,48 @@ body {
     sans-serif;
 }
 
-.loading {
-  display: grid;
-  place-items: center;
+.splash {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  align-items: center;
+  justify-content: center;
   height: 100%;
-  color: var(--muted);
+  animation: splash-in 0.3s ease 0.15s both;
+}
+
+.splash-logo {
+  width: min(220px, 50vw);
+  height: auto;
+  user-select: none;
+}
+
+.splash-spinner {
+  width: 28px;
+  height: 28px;
+  border: 3px solid color-mix(in srgb, var(--accent) 25%, transparent);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: splash-spin 0.8s linear infinite;
+}
+
+/* Faded in after a beat, so a fast start never shows it at all. */
+@keyframes splash-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes splash-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .splash-spinner {
+    animation-duration: 2.4s;
+  }
 }
 
 .pairing {
