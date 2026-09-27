@@ -12,6 +12,7 @@ import express from 'express';
 import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
 import { NotStageHolderError, WHIP_SUFFIX } from './whip.js';
+import { fixedChannels } from './channels.js';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -34,23 +35,32 @@ export function createApp({
   const app = express();
 
   // Each channel is its own LiveKit room, with its own stage and WHIP
-  // publisher. Built by index.js; a single-room caller (the tests, mostly)
-  // passes stage and whip, and gets one channel made of them.
-  const channelList = channels ?? [{ id: config.roomName ?? 'zoia', name: 'Sala 1', stage, whip }];
-  const channelsById = new Map(channelList.map((channel) => [channel.id, channel]));
+  // publisher; see src/channels.js. A single-room caller (the tests, mostly)
+  // passes stage and whip, and gets one fixed channel made of them.
+  const channelSet =
+    channels ?? fixedChannels([{ id: config.roomName ?? 'zoia', name: 'Geral', stage, whip }]);
 
   /**
-   * The channel a request is about: `room` in the body or query, or the first
-   * channel when it names none, which is what a client from before channels
-   * sends. Anything else is refused rather than guessed at.
+   * The channel a request is about: `room` in the body or query, or the
+   * default channel when it names none, which is what a client from before
+   * channels sends. Anything else is refused rather than guessed at.
    */
-  function channelOf(req, res) {
-    const id = req.body?.room ?? req.query?.room;
-    if (id === undefined) return channelList[0];
-    const channel = typeof id === 'string' ? channelsById.get(id) : undefined;
+  async function channelOf(req, res) {
+    const id = req.body?.room ?? req.query?.room ?? channelSet.defaultId;
+    const channel = typeof id === 'string' ? await channelSet.get(id) : null;
     if (!channel) res.status(404).json({ error: 'unknown_room' });
     return channel;
   }
+
+  const CHANNEL_ERRORS = {
+    invalid_name: 400,
+    unknown_room: 404,
+    room_limit: 409,
+    room_is_default: 409,
+    room_not_empty: 409,
+    channels_fixed: 501,
+  };
+  const refuse = (res, reason) => res.status(CHANNEL_ERRORS[reason] ?? 400).json({ error: reason });
 
   // Behind the caddy front end. Without this every request appears to come from
   // the proxy and the rate limiter throttles all users as one client.
@@ -211,7 +221,7 @@ export function createApp({
 
   app.post('/api/token', requireSession, async (req, res, next) => {
     try {
-      const channel = channelOf(req, res);
+      const channel = await channelOf(req, res);
       if (!channel) return;
       const result = await tokenIssuer.issue(req.user, channel.id);
       // Against the store the session actually came from. A device only hits
@@ -295,7 +305,7 @@ export function createApp({
   app.get('/api/rooms', requireSession, async (_req, res, next) => {
     try {
       const rooms = await Promise.all(
-        channelList.map(async ({ id, name, stage: channelStage }) => {
+        (await channelSet.list()).map(async ({ id, name, isDefault, stage: channelStage }) => {
           const [participants, broadcasters] = await Promise.all([
             channelStage.participants(),
             channelStage.broadcasters(),
@@ -303,6 +313,7 @@ export function createApp({
           return {
             id,
             name,
+            isDefault,
             // A WHIP publisher is its owner's broadcast, not another person.
             participants: participants
               .filter((p) => !p.identity.endsWith(WHIP_SUFFIX))
@@ -311,7 +322,44 @@ export function createApp({
           };
         }),
       );
-      res.json({ rooms });
+      res.json({ rooms, max: channelSet.max });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // Anyone may add a channel (up to the server's limit), rename any channel,
+  // and remove an empty one that is not the default.
+  app.post('/api/rooms', requireSession, async (req, res, next) => {
+    try {
+      const result = await channelSet.create(req.body?.name, req.user);
+      if (!result.ok) return refuse(res, result.reason);
+      res.status(201).json({ room: result.channel });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  app.patch('/api/rooms/:id', requireSession, async (req, res, next) => {
+    try {
+      const result = await channelSet.rename(req.params.id, req.body?.name, req.user);
+      if (!result.ok) return refuse(res, result.reason);
+      res.json({ room: result.channel });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  app.delete('/api/rooms/:id', requireSession, async (req, res, next) => {
+    try {
+      const channel = await channelSet.get(req.params.id);
+      if (!channel) return refuse(res, 'unknown_room');
+      if (channel.isDefault) return refuse(res, 'room_is_default');
+      // Nobody is thrown out of a channel by someone deleting it.
+      if ((await channel.stage.participants()).length > 0) return refuse(res, 'room_not_empty');
+      const result = await channelSet.remove(channel.id, req.user);
+      if (!result.ok) return refuse(res, result.reason);
+      res.json({ ok: true });
     } catch (err) {
       next(err);
     }
@@ -319,7 +367,7 @@ export function createApp({
 
   app.get('/api/stage', requireSession, async (req, res, next) => {
     try {
-      const channel = channelOf(req, res);
+      const channel = await channelOf(req, res);
       if (!channel) return;
       res.json({
         broadcasters: await channel.stage.broadcasters(),
@@ -332,12 +380,12 @@ export function createApp({
 
   app.post('/api/stage/claim', requireSession, async (req, res, next) => {
     try {
-      const channel = channelOf(req, res);
+      const channel = await channelOf(req, res);
       if (!channel) return;
       // One broadcast per person across all channels: a slot held elsewhere
       // (a client that switched channel without releasing) is released first.
-      for (const other of channelList) {
-        if (other === channel) continue;
+      for (const other of await channelSet.list()) {
+        if (other.id === channel.id) continue;
         if (await other.stage.isBroadcaster(req.user.id).catch(() => false)) {
           await other.stage.release(req.user);
         }
@@ -354,7 +402,7 @@ export function createApp({
 
   app.post('/api/stage/release', requireSession, async (req, res, next) => {
     try {
-      const channel = channelOf(req, res);
+      const channel = await channelOf(req, res);
       if (!channel) return;
       res.json(await channel.stage.release(req.user));
     } catch (err) {
@@ -367,15 +415,17 @@ export function createApp({
   // Chromium's own WebRTC encoder is software-only on Windows. Claiming the
   // stage still goes through /api/stage — this only hands out the endpoint.
 
-  const requireWhip = (_req, res, next) =>
-    channelList[0]?.whip ? next() : res.status(501).json({ error: 'whip_not_configured' });
+  const requireWhip = async (_req, res, next) =>
+    (await channelSet.get(channelSet.defaultId))?.whip
+      ? next()
+      : res.status(501).json({ error: 'whip_not_configured' });
 
   // Hardware-encoded broadcasts publish to the SFU over WHIP. The endpoint is
   // the SFU's own; what this hands out is permission, and only to whoever
   // has claimed their own broadcast slot. See src/whip.js.
   app.post('/api/whip', requireSession, requireWhip, async (req, res, next) => {
     try {
-      const channel = channelOf(req, res);
+      const channel = await channelOf(req, res);
       if (!channel) return;
       res.json(await channel.whip.endpointFor(req.user, req.body));
     } catch (err) {
@@ -388,7 +438,7 @@ export function createApp({
 
   app.post('/api/whip/release', requireSession, requireWhip, async (req, res, next) => {
     try {
-      const channel = channelOf(req, res);
+      const channel = await channelOf(req, res);
       if (!channel) return;
       res.json(await channel.whip.release(req.user));
     } catch (err) {

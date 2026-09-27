@@ -194,6 +194,11 @@ function registerIpc(): void {
     api.getToken(typeof room === 'string' ? room : undefined),
   );
   ipcMain.handle(IPC.roomsList, () => api.roomsList());
+  ipcMain.handle(IPC.roomsCreate, (_event, name: string) => api.roomsCreate(String(name)));
+  ipcMain.handle(IPC.roomsRename, (_event, id: string, name: string) =>
+    api.roomsRename(String(id), String(name)),
+  );
+  ipcMain.handle(IPC.roomsRemove, (_event, id: string) => api.roomsRemove(String(id)));
 
   ipcMain.handle(IPC.gpuStatus, () => gpuStatus);
 

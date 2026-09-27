@@ -30,6 +30,9 @@ const bridge: ZoiaBridge = {
   },
   rooms: {
     list: () => ipcRenderer.invoke(IPC.roomsList),
+    create: (name) => ipcRenderer.invoke(IPC.roomsCreate, name),
+    rename: (id, name) => ipcRenderer.invoke(IPC.roomsRename, id, name),
+    remove: (id) => ipcRenderer.invoke(IPC.roomsRemove, id),
   },
   stage: {
     get: () => ipcRenderer.invoke(IPC.stageGet),
