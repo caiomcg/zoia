@@ -32,21 +32,26 @@ export function createTokenIssuer({
    * host joins. Viewers never trigger creation — an empty room they could
    * create would only be a room with nothing in it.
    */
-  async function ensureRoom() {
+  async function ensureRoom(room) {
     try {
-      await rooms.createRoom({ name: roomName, emptyTimeout: 300, maxParticipants: 30 });
+      await rooms.createRoom({ name: room, emptyTimeout: 300, maxParticipants: 30 });
     } catch (err) {
       // Already existing is the common case and not an error.
       if (!/already exists/i.test(err?.message ?? '')) {
-        logger.warn(`[token] could not ensure room "${roomName}": ${err?.message ?? err}`);
+        logger.warn(`[token] could not ensure room "${room}": ${err?.message ?? err}`);
       }
     }
   }
 
   return {
-    async issue(user) {
+    /**
+     * A join token for one channel. `room` is chosen by the caller, which must
+     * have checked it is a configured channel; nothing about it can widen the
+     * grant, which is subscribe-only whatever room it names.
+     */
+    async issue(user, room = roomName) {
       // The room must exist before anyone joins, since auto_create is off.
-      await ensureRoom();
+      await ensureRoom(room);
 
       const at = new AccessToken(apiKey, apiSecret, {
         identity: user.id,
@@ -56,7 +61,7 @@ export function createTokenIssuer({
 
       at.addGrant({
         roomJoin: true,
-        room: roomName,
+        room,
         // Nobody joins as a broadcaster. Publishing is granted at runtime by
         // stage.js, and only after that participant claims a broadcast slot.
         canPublish: false,
@@ -75,7 +80,7 @@ export function createTokenIssuer({
       return {
         token: await at.toJwt(),
         wsUrl,
-        room: roomName,
+        room,
         identity: user.id,
         name: user.name,
       };

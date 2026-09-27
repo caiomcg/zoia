@@ -1,5 +1,6 @@
 import type {
   PairingStatus,
+  RoomInfo,
   TokenResult,
   StageState,
   ClaimResult,
@@ -21,7 +22,11 @@ export interface ZoiaBridge {
     onChange(cb: (status: PairingStatus) => void): () => void;
   };
   token: {
-    get(): Promise<TokenResult>;
+    /** A join token for a channel; the first channel when none is named. */
+    get(room?: string): Promise<TokenResult>;
+  };
+  rooms: {
+    list(): Promise<RoomInfo[]>;
   };
   stage: {
     get(): Promise<StageState>;

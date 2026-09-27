@@ -37,16 +37,20 @@ const rooms = new RoomServiceClient(
   config.livekit.apiKey,
   config.livekit.apiSecret,
 );
-const stage = createStage({ rooms, roomName: config.roomName });
-// Derived from LIVEKIT_WS_URL: the SFU's own WHIP endpoint on the host clients
-// already connect to. There is no separate address to configure.
-const whip = createWhipPublisher({
-  apiKey: config.livekit.apiKey,
-  apiSecret: config.livekit.apiSecret,
-  wsUrl: config.livekit.wsUrl,
-  roomName: config.roomName,
-  rooms,
-  stage,
+// One LiveKit room per channel, each with its own stage and WHIP publisher.
+// The WHIP endpoint is derived from LIVEKIT_WS_URL: the SFU's own, on the host
+// clients already connect to, so there is no separate address to configure.
+const channels = config.channels.map(({ id, name }) => {
+  const stage = createStage({ rooms, roomName: id });
+  const whip = createWhipPublisher({
+    apiKey: config.livekit.apiKey,
+    apiSecret: config.livekit.apiSecret,
+    wsUrl: config.livekit.wsUrl,
+    roomName: id,
+    rooms,
+    stage,
+  });
+  return { id, name, stage, whip };
 });
 
 const reports = createReportStore();
@@ -55,8 +59,7 @@ const app = createApp({
   config,
   keyStore,
   tokenIssuer,
-  stage,
-  whip,
+  channels,
   reports,
   pairingStore,
   deviceStore,
@@ -66,7 +69,9 @@ app.listen(config.port, () => {
   console.log(`[zoia] listening on :${config.port}`);
   console.log(`[zoia] public host  ${config.publicHost}`);
   console.log(`[zoia] livekit ws   ${config.livekit.wsUrl}`);
-  console.log(`[zoia] room         ${config.roomName}`);
+  console.log(
+    `[zoia] channels     ${config.channels.map((c) => `${c.id} (${c.name})`).join(', ')}`,
+  );
   if (config.trustProxy === 0) {
     console.warn('[zoia] TRUST_PROXY is 0 — behind a reverse proxy this breaks rate limiting');
   }
