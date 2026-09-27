@@ -13,8 +13,8 @@ import { IconFullscreen, IconHeadphones, IconVolume } from './Player';
  *
  * Nothing opens by itself. Someone joining sees a dark stage and every
  * broadcast as a blurred, silent thumbnail; they choose to watch one (it goes
- * large, with sound) or only to listen to it (it stays a thumbnail, and its
- * audio plays). A broadcast that starts later joins the thumbnails too. In the
+ * large, with sound) or only to listen to it (it stays a blurred thumbnail,
+ * moves to the front of the strip, and its audio plays). A broadcast that starts later joins the thumbnails too. In the
  * spotlight, watching replaces what is large; in the mosaic, it adds to it.
  *
  * Fullscreen shows one broadcast, with the others still in the thumbnail strip
@@ -442,10 +442,7 @@ function Thumbnail({
 }: {
   name: string;
   label: string;
-  /**
-   * Live video: your own preview (it costs no bandwidth), or a broadcast
-   * someone is listening to. Everything else shows a snapshot.
-   */
+  /** Your own preview, which costs no bandwidth, stays live and sharp. */
   liveVideo?: LocalVideoTrack | RemoteTrack | null;
   /** A remote broadcast shows its latest snapshot instead of live video. */
   snapshot?: string | null;
@@ -638,10 +635,10 @@ export default function RemoteGrid({
   // Every remote broadcast not shown large is a thumbnail: its video is paused
   // on the server, except for the moment a snapshot is being taken. With the
   // strip tucked away no snapshot can be taken, so all of them stay paused.
-  // A broadcast being listened to is exempt: its thumbnail plays live.
+  // Listening only brings the sound; the thumbnail stays a blurred snapshot.
   const remoteThumbKey = screens
     .map((screen) => screen.participantIdentity)
-    .filter((id) => !mains.includes(id) && !listening.has(id))
+    .filter((id) => !mains.includes(id))
     .join('|');
   const pausedKey = (remoteThumbKey ? remoteThumbKey.split('|') : [])
     .filter((id) => stripHidden || !capturing.has(id))
@@ -997,7 +994,6 @@ export default function RemoteGrid({
                       key={id}
                       name={screen.participantName}
                       label={sourceText(screen.sourceName, screen.sourceKind)}
-                      liveVideo={listening.has(id) ? screen.videoTrack : null}
                       snapshot={snapshots[id]?.url ?? null}
                       captureTrack={screen.videoTrack}
                       capture={capturing.has(id)}
