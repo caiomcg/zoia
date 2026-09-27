@@ -17,6 +17,9 @@ interface SettingsDialogProps {
   onRename: (name: string) => Promise<void>;
   /** Which encoder and card, or why there isn't one. */
   hardwareDetail: string;
+  hardware?: boolean;
+  onHardwareChange?: (enabled: boolean) => void;
+  hardwareAvailable?: boolean;
 }
 
 /**
@@ -29,6 +32,9 @@ export default function SettingsDialog({
   myName,
   onRename,
   hardwareDetail,
+  hardware,
+  onHardwareChange,
+  hardwareAvailable,
 }: SettingsDialogProps) {
   const [section, setSection] = useState<Section>('profile');
 
@@ -68,7 +74,14 @@ export default function SettingsDialog({
 
           <div className="settings-pane">
             {section === 'profile' && <ProfileSection myName={myName} onRename={onRename} />}
-            {section === 'broadcast' && <BroadcastSection hardwareDetail={hardwareDetail} />}
+            {section === 'broadcast' && (
+              <BroadcastSection
+                hardwareDetail={hardwareDetail}
+                hardware={hardware ?? false}
+                onHardwareChange={onHardwareChange}
+                hardwareAvailable={hardwareAvailable ?? false}
+              />
+            )}
             {section === 'general' && <GeneralSection />}
             {section === 'updates' && <UpdatesSection />}
           </div>
@@ -146,20 +159,41 @@ function ProfileSection({
   );
 }
 
-function BroadcastSection({ hardwareDetail }: { hardwareDetail: string }) {
+function BroadcastSection({
+  hardwareDetail,
+  hardware,
+  onHardwareChange,
+  hardwareAvailable,
+}: {
+  hardwareDetail: string;
+  hardware: boolean;
+  onHardwareChange?: (enabled: boolean) => void;
+  hardwareAvailable: boolean;
+}) {
   return (
     <>
       <h3>Broadcast</h3>
-      {/* Switched off for now: the GPU path is the one that has broken on
-          other people's machines. Shown, so its absence is not a mystery. */}
-      <label className="settings-check unavailable" title={hardwareDetail}>
-        <input type="checkbox" checked={false} disabled readOnly />
+      <label
+        className={`settings-check ${!hardwareAvailable ? 'unavailable' : ''}`}
+        title={hardwareDetail}
+      >
+        <input
+          type="checkbox"
+          checked={hardware && hardwareAvailable}
+          disabled={!hardwareAvailable}
+          onChange={(event) => onHardwareChange?.(event.target.checked)}
+        />
         <span>
           Hardware acceleration
-          <span className="settings-badge">Coming soon</span>
+          <span className="settings-badge">{hardwareAvailable ? 'Beta' : 'Unavailable'}</span>
           <small>{hardwareDetail}</small>
         </span>
       </label>
+      <p className="muted" style={{ marginTop: '8px', fontSize: '12px' }}>
+        Uses your GPU for video encoding (WHIP/WebRTC) to reduce CPU load. If you experience UI
+        freezes, encoder errors, or legacy GPU incompatibilities, turn this off to use standard CPU
+        broadcasting.
+      </p>
     </>
   );
 }

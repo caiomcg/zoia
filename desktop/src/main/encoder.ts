@@ -213,13 +213,16 @@ function scaleArgs(): string[] {
  * has no low-latency controls worth the name.
  */
 function encoderFor(vendor: string): string {
-  switch (vendor) {
+  switch (vendor?.toLowerCase()) {
     case 'amd':
       return 'h264_amf';
     case 'intel':
       return 'h264_qsv';
-    default:
+    case 'nvidia':
       return 'h264_nvenc';
+    default:
+      // Safe fallback for machines without dedicated GPU or unknown adapters.
+      return 'libx264';
   }
 }
 
@@ -253,6 +256,9 @@ function encoderTuning(encoder: string): string[] {
       return ['-usage', 'ultralowlatency', '-quality', 'speed', '-rc', 'cbr', '-bf', '0'];
     case 'h264_qsv':
       return ['-preset', 'veryfast', '-look_ahead', '0', '-bf', '0'];
+    case 'libx264':
+      // Ultra-low latency software fallback for CPU encoding.
+      return ['-preset', 'ultrafast', '-tune', 'zerolatency', '-bf', '0'];
     default:
       return ['-preset', 'p4', '-tune', 'll', '-bf', '0'];
   }
@@ -356,6 +362,11 @@ function buildArgs(options: EncoderOptions): string[] {
 
     ...scaleArgs(),
 
+    // Explicit stream mapping to ensure proper video/audio association
+    '-map',
+    '0:v',
+    ...(options.withAudio ? ['-map', '1:a'] : []),
+
     ...(passthrough
       ? // Nothing to do but carry the bitstream to the muxer.
         ['-c:v', 'copy']
@@ -367,8 +378,9 @@ function buildArgs(options: EncoderOptions): string[] {
           String(bitrate),
           '-maxrate',
           String(bitrate),
+          // Constrained VBV buffer to prevent UDP bursts that cause NACK storm
           '-bufsize',
-          String(bitrate),
+          String(Math.floor(bitrate / 2)),
           '-g',
           String(framerate * 2),
         ]),
@@ -377,13 +389,26 @@ function buildArgs(options: EncoderOptions): string[] {
     // "Unsupported audio channels 1 by RTC". WASAPI loopback is already stereo,
     // so this only makes the requirement visible rather than incidental.
     ...(options.withAudio
-      ? ['-c:a', 'libopus', '-ac', '2', '-b:a', '128k', '-application', 'lowdelay']
+      ? [
+          '-c:a',
+          'libopus',
+          '-ac',
+          '2',
+          '-ar',
+          String(SAMPLE_RATE),
+          '-b:a',
+          '128k',
+          '-application',
+          'lowdelay',
+        ]
       : ['-an']),
 
     // Without dtls_active ffmpeg tries to be the DTLS server and fails to
     // create a security context; measured on Windows.
     '-whip_flags',
     'dtls_active',
+    '-reorder_queue_size',
+    '1024',
     // Without a generous buffer the muxer fails sends with EAGAIN (-11) as
     // soon as bitrate rises.
     '-ts_buffer_size',
@@ -681,6 +706,10 @@ export function writeAudio(chunk: Buffer): void {
 export function writeFrame(frame: Buffer): void {
   const stdin = child?.stdin;
   if (!stdin || stdin.destroyed || !stdin.writable) return;
+  // If the pipe is experiencing backpressure, drop the frame immediately
+  // rather than queuing megabytes of uncompressed BGRA in Node's V8 heap,
+  // which causes Garbage Collection stalls and freezes the UI.
+  if (stdin.writableLength > 0) return;
   try {
     // Back-pressure is handled by dropping: a frame that cannot be written
     // now is better skipped than queued, which would only add latency.

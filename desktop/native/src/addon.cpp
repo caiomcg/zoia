@@ -384,6 +384,8 @@ class Session {
   std::string StartInternal(HWND hwnd, uint32_t fps, uint32_t bitrate,
                             Napi::ThreadSafeFunction tsfn) {
     tsfn_ = std::move(tsfn);
+    targetFps_ = fps;
+    lastFrameTime_ = std::chrono::steady_clock::time_point{};
 
     adapter_ = ChooseAdapter();
     if (!adapter_.adapter) return "No hardware graphics adapter was found.";
@@ -548,8 +550,18 @@ class Session {
     auto frame = pool.TryGetNextFrame();
     if (!frame || !running_) return;
 
+    if (targetFps_ > 0 && lastFrameTime_.time_since_epoch().count() > 0) {
+      const auto now = std::chrono::steady_clock::now();
+      const auto elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastFrameTime_).count();
+      const int64_t minIntervalMs = (1000 / targetFps_) - 2;
+      if (elapsedMs < minIntervalMs) {
+        return;
+      }
+    }
+
     std::lock_guard<std::mutex> guard(encodeMutex_);
     if (!running_) return;
+    lastFrameTime_ = std::chrono::steady_clock::now();
 
     auto access = frame.Surface().as<::Windows::Graphics::DirectX::Direct3D11::IDirect3DDxgiInterfaceAccess>();
     ComPtr<ID3D11Texture2D> captured;
@@ -667,6 +679,8 @@ class Session {
   std::atomic<uint64_t> encodeNanos_{0};
   uint32_t width_ = 0;
   uint32_t height_ = 0;
+  uint32_t targetFps_ = 0;
+  std::chrono::steady_clock::time_point lastFrameTime_{};
   Napi::ThreadSafeFunction tsfn_;
 };
 

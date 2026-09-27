@@ -23,6 +23,7 @@ import {
 import { isLeagueSource, resolveLeagueTarget } from '../shared/league';
 
 const PRESET_STORAGE_KEY = 'zoia.qualityPreset';
+const HARDWARE_STORAGE_KEY = 'zoia.hardwareAcceleration';
 const ONBOARDING_STORAGE_KEY = 'zoia.onboardingDismissed';
 const CHANNEL_STORAGE_KEY = 'zoia.channel';
 /** How often the channel list (who is where, who is live) is refreshed. */
@@ -66,18 +67,25 @@ export default function App() {
   const [presetId, setPresetId] = useState(
     () => localStorage.getItem(PRESET_STORAGE_KEY) ?? DEFAULT_PRESET_ID,
   );
-  // Switched off for everyone for now; Settings shows it disabled. The GPU
-  // path is the newer half of the app and the one that has broken on other
-  // people's hardware. An earlier opt-in is still stored under
-  // 'zoia.hardwareAcceleration', untouched, for when it comes back.
-  const hardware = false;
+  // Off unless explicitly turned on: absent reads as false.
+  // This allows opting into hardware acceleration without breaking standard
+  // CPU broadcasting for machines where GPU encoding is unstable or unsupported.
+  const [hardware, setHardware] = useState(
+    () => localStorage.getItem(HARDWARE_STORAGE_KEY) === 'true',
+  );
+
+  const handleHardwareChange = (enabled: boolean) => {
+    setHardware(enabled);
+    localStorage.setItem(HARDWARE_STORAGE_KEY, String(enabled));
+  };
 
   const room = useRoom();
   const gpuCast = useGpuBroadcast();
   const { setRemoteFocus, setRemotePaused } = room;
 
   // The rest of the app still thinks in terms of which path is publishing.
-  const mode: BroadcastMode = hardware ? 'gpu' : 'window';
+  // Only use GPU mode if the flag is active AND hardware encoding is supported.
+  const mode: BroadcastMode = hardware && gpu?.hardwareEncoder ? 'gpu' : 'window';
 
   const preset =
     QUALITY_PRESETS.find((p) => p.id === presetId) ??
@@ -93,7 +101,13 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    window.zoia.gpu.status().then(setGpu);
+    window.zoia.gpu.status().then((next) => {
+      setGpu(next);
+      if (!next.hardwareEncoder) {
+        setHardware(false);
+        localStorage.setItem(HARDWARE_STORAGE_KEY, 'false');
+      }
+    });
   }, []);
 
   useEffect(() => {
@@ -245,7 +259,11 @@ export default function App() {
 
     setStageError(null);
     const ok = await gpuCast.start(preset, target);
-    if (!ok && !switching) await window.zoia.stage.release().catch(() => {});
+    if (!ok) {
+      if (!switching) await window.zoia.stage.release().catch(() => {});
+      console.warn('[gpu] GPU broadcast failed, falling back to window broadcast');
+      await room.startBroadcast(target, preset, { keepStage: switching });
+    }
   }
 
   async function stopSharing() {
@@ -286,8 +304,9 @@ export default function App() {
   }
   if (gpuLive) {
     const g = gpuCast.status;
+    const encName = g?.encoder || gpu?.gpuEncoder || 'GPU';
     connectionStats.push(
-      { label: 'Encoder', value: `NVENC on ${gpu?.adapter || 'the GPU'}` },
+      { label: 'Encoder', value: `${encName.toUpperCase()} on ${gpu?.adapter || 'the GPU'}` },
       {
         label: 'Resolution',
         value: g && g.width > 0 ? `${g.width}×${g.height}` : 'starting…',
@@ -543,6 +562,9 @@ export default function App() {
               ? `${(gpu.gpuEncoder ?? '').toUpperCase()} on ${gpu.adapter}`
               : (gpu?.encoderReason ?? 'No hardware encoder was found on this machine.')
           }
+          hardware={hardware}
+          onHardwareChange={handleHardwareChange}
+          hardwareAvailable={Boolean(gpu?.hardwareEncoder)}
         />
       )}
     </div>
