@@ -46,7 +46,8 @@ export type UpdaterCheckResult =
   | { status: 'disabled' }
   | { status: 'error'; message: string };
 
-const HELPER_SOURCE = String.raw`const fs = require('node:fs/promises');
+const HELPER_SOURCE = String.raw`process.noAsar = true;
+const fs = require('node:fs/promises');
 const { spawn } = require('node:child_process');
 
 const [target, staged, backup, parentPid, executable, statePath, commit] = process.argv.slice(2);
@@ -71,7 +72,7 @@ async function main() {
     throw error;
   }
   if (statePath && commit) await fs.writeFile(statePath, JSON.stringify({ commit }, null, 2));
-  const child = spawn(executable, [], { detached: true, stdio: 'ignore', windowsHide: true });
+  const child = spawn(executable, [], { detached: true, stdio: 'ignore' });
   child.unref();
   await wait(5000);
   await fs.rm(backup, { force: true }).catch(() => {});
@@ -79,6 +80,10 @@ async function main() {
 
 main().catch(async (error) => {
   console.error('[zoia-updater]', error?.stack || error);
+  try {
+    const errorLog = require('node:path').join(__dirname, 'update-error.log');
+    await fs.writeFile(errorLog, String(error?.stack || error), 'utf8');
+  } catch {}
   if (await exists(backup) && !(await exists(target))) await fs.rename(backup, target).catch(() => {});
   process.exitCode = 1;
 });
@@ -281,44 +286,118 @@ async function writeHelper(path: string): Promise<void> {
   await writeFile(path, HELPER_SOURCE, { encoding: 'utf8', mode: 0o600 });
 }
 
+async function isWritableDirectory(dir: string): Promise<boolean> {
+  const probe = join(dir, `.probe-${Date.now()}-${Math.random().toString(16).slice(2)}`);
+  try {
+    await writeFile(probe, '');
+    await rm(probe, { force: true });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function fileExists(path: string): Promise<boolean> {
+  const proc = process as unknown as { noAsar?: boolean };
+  const prev = proc.noAsar;
+  proc.noAsar = true;
+  try {
+    await access(path);
+    return true;
+  } catch {
+    return false;
+  } finally {
+    proc.noAsar = prev;
+  }
+}
+
+async function writeRunner(
+  path: string,
+  args: {
+    executable: string;
+    helper: string;
+    target: string;
+    staged: string;
+    backup: string;
+    pid: number;
+    statePath: string;
+    commit: string;
+  },
+): Promise<void> {
+  const content = `@echo off\r\nset ELECTRON_RUN_AS_NODE=1\r\n"${args.executable}" "${args.helper}" "${args.target}" "${args.staged}" "${args.backup}" "${args.pid}" "${args.executable}" "${args.statePath}" "${args.commit}"\r\n`;
+  await writeFile(path, content, { encoding: 'utf8' });
+}
+
 async function install(update: RemoteUpdate): Promise<void> {
   if (update.updateType === 'full' || !update.artifactUrl || !update.sha256) {
     throw new Error('This release requires the full installer');
   }
   if (!app.isPackaged) throw new Error('OTA updates are disabled in development builds');
   const target = join(process.resourcesPath, 'app.asar');
-  await access(target);
+  if (!(await fileExists(target))) {
+    throw new Error(`Target archive not found: ${target}`);
+  }
+
+  const writable = await isWritableDirectory(process.resourcesPath);
+  const elevatePath = join(process.resourcesPath, 'elevate.exe');
+  const canElevate = !writable && (await fileExists(elevatePath));
+
+  if (!writable && !canElevate) {
+    throw new Error(
+      `Permission denied for ${process.resourcesPath}. Administrator permissions are required to update Zoia.`,
+    );
+  }
+
   const updateDir = join(app.getPath('userData'), 'updates', update.commit);
   await mkdir(updateDir, { recursive: true });
   const staged = join(updateDir, 'app.asar');
   const partial = `${staged}.partial`;
   const backup = `${target}.previous`;
   const helper = join(updateDir, HELPER_NAME);
+  const runner = join(updateDir, 'zoia-update-runner.bat');
   const statePath = join(app.getPath('userData'), STATE_NAME);
   await rm(partial, { force: true });
+  await rm(staged, { force: true });
   await downloadArtifact(update.artifactUrl, update.sha256, partial);
   await rename(partial, staged);
   await writeHelper(helper);
 
-  spawn(
-    process.execPath,
-    [
+  if (writable) {
+    spawn(
+      process.execPath,
+      [
+        helper,
+        target,
+        staged,
+        backup,
+        String(process.pid),
+        process.execPath,
+        statePath,
+        update.commit,
+      ],
+      {
+        detached: true,
+        stdio: 'ignore',
+        windowsHide: true,
+        env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+      },
+    ).unref();
+  } else {
+    await writeRunner(runner, {
+      executable: process.execPath,
       helper,
       target,
       staged,
       backup,
-      String(process.pid),
-      process.execPath,
+      pid: process.pid,
       statePath,
-      update.commit,
-    ],
-    {
+      commit: update.commit,
+    });
+    spawn(elevatePath, [process.env.ComSpec || 'cmd.exe', '/c', runner], {
       detached: true,
       stdio: 'ignore',
-      windowsHide: true,
-      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
-    },
-  ).unref();
+    }).unref();
+  }
   app.quit();
 }
 

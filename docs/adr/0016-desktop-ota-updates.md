@@ -51,7 +51,9 @@ The update sequence is:
 2. Compare the remote version/commit with the local version and update state.
 3. Download the artifact to `%APPDATA%/Zoia/updates` using a partial filename.
 4. Verify SHA-256, then rename the verified file into the staging name.
-5. Start a detached helper process and ask Electron to quit normally.
+5. Start a detached helper process and ask Electron to quit normally. If
+   installed to a protected directory such as `Program Files`, launch via the
+   bundled `elevate.exe` to request UAC elevation.
 6. After the parent exits, rename the current `app.asar` to a backup and move
    the staged artifact into place.
 7. Relaunch the original executable and remove the backup after the handoff.
