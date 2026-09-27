@@ -17,6 +17,7 @@ export default function SettingsDialog({ onClose }: SettingsDialogProps) {
   const [config, setConfig] = useState<UpdaterConfig>(emptyConfig);
   const [currentVersion, setCurrentVersion] = useState<string | null>(null);
   const [availableVersion, setAvailableVersion] = useState<string | null>(null);
+  const [installerUrl, setInstallerUrl] = useState<string | null>(null);
   const [busy, setBusy] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -92,14 +93,15 @@ export default function SettingsDialog({ onClose }: SettingsDialogProps) {
     const result = await window.zoia.updater.check();
     if (result.status === 'available') {
       setAvailableVersion(result.version);
+      setInstallerUrl(null);
       setMessage(`Version ${result.version} is available.`);
     } else if (result.status === 'full-required') {
       setAvailableVersion(result.version);
-      setMessage(
-        `Version ${result.version} requires the full installer. Open the release page to download it.`,
-      );
+      setInstallerUrl(result.installerUrl);
+      setMessage(`Version ${result.version} requires the full installer.`);
     } else if (result.status === 'up-to-date') {
       setAvailableVersion(currentVersion);
+      setInstallerUrl(null);
       setMessage('You are up to date.');
     } else if (result.status === 'disabled') setMessage('Updates are disabled for this build.');
     else setError(result.message);
@@ -194,6 +196,19 @@ export default function SettingsDialog({ onClose }: SettingsDialogProps) {
 
         {error && <p className="settings-error">{error}</p>}
         {message && <p className="settings-message">{message}</p>}
+
+        {installerUrl && (
+          <button
+            className="primary settings-download"
+            onClick={() =>
+              void window.zoia.updater.openInstaller(installerUrl).catch(() => {
+                setError('Could not open the installer download.');
+              })
+            }
+          >
+            Download installer
+          </button>
+        )}
 
         <div className="settings-actions">
           <button onClick={() => void reset()} disabled={busy}>

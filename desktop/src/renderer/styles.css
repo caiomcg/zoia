@@ -1024,6 +1024,10 @@ button.danger {
   color: var(--accent);
 }
 
+.settings-download {
+  align-self: flex-start;
+}
+
 .settings-actions {
   display: flex;
   gap: 8px;

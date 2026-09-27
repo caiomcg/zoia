@@ -69,6 +69,7 @@ const bridge: ZoiaBridge = {
     save: (config: UpdaterConfig) => ipcRenderer.invoke(IPC.updaterConfigSave, config),
     reset: () => ipcRenderer.invoke(IPC.updaterConfigReset),
     check: () => ipcRenderer.invoke(IPC.updaterCheck) as Promise<UpdaterCheckResult>,
+    openInstaller: (url: string) => ipcRenderer.invoke(IPC.updaterOpenInstaller, url),
   },
   app: {
     version: () => ipcRenderer.invoke(IPC.appVersion) as Promise<string>,
