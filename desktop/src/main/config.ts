@@ -41,15 +41,9 @@ let current: Resolved = {
 
 /**
  * Every directory an invite might sit in, most specific first.
- *
- * PORTABLE_EXECUTABLE_DIR is set by electron-builder's portable target and is
- * the folder the exe was launched from — not the temporary directory it
- * unpacks itself into, which is what process.execPath reports for a portable
- * build and which is wiped on exit.
  */
 function searchDirs(): string[] {
-  const dirs = [process.env.PORTABLE_EXECUTABLE_DIR, dirname(process.execPath), userDataDir()];
-  return dirs.filter((dir): dir is string => Boolean(dir));
+  return [dirname(process.execPath), userDataDir()];
 }
 
 function userDataDir(): string {

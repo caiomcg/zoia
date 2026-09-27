@@ -50,8 +50,6 @@ win:
   target:
     - target: nsis
       arch: [x64]
-    - target: portable
-      arch: [x64]
   artifactName: '${productName}-${version}-${arch}.${ext}'
 
 nsis:
@@ -61,9 +59,6 @@ nsis:
   createDesktopShortcut: true
   createStartMenuShortcut: true
   artifactName: '${productName}-Setup-${version}-${arch}.${ext}'
-
-portable:
-  artifactName: '${productName}-${version}-portable.${ext}'
 
 # No auto-update feed configured — a friend testing a hand-built exe has no
 # update server to check against, and a missing feed would otherwise print a

@@ -160,10 +160,10 @@ People need two things, and only one of them is secret:
 
 | | Where from | Sensitive |
 |---|---|---|
-| `Zoia-<version>-portable.exe` | Your [Releases](https://github.com/caiomcg/zoia/releases) page, or theirs | No — it carries no server and no token |
+| `Zoia-Setup-<version>-x64.exe` | Your [Releases](https://github.com/caiomcg/zoia/releases) page, or theirs | No — it carries no server and no token |
 | `zoia-invite.json` | You, over a private channel | **Yes** |
 
-They put the invite next to the portable exe, or drag it onto the Zoia window, and run it.
+They install Zoia, then drag the invite onto the window or choose it from the pairing screen.
 Zoia copies it into its own data directory, so it does not have to stay where they put it.
 
 You do not have to build anything: a release binary is the same file for everyone. If you

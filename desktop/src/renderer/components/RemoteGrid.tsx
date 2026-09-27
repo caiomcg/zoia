@@ -56,6 +56,7 @@ const MOSAIC_HIGH_LIMIT = 4;
 /** In fullscreen, overlays fade after this long without the mouse moving. */
 const FULLSCREEN_IDLE_MS = 5000;
 const SPLIT_KEY = 'zoia.pairSplit';
+const AUDIO_KEY = 'zoia.remoteAudio';
 const SPLIT_MIN = 0.2;
 const SPLIT_MAX = 0.8;
 
@@ -141,6 +142,30 @@ export interface LoadingBroadcast {
 interface AudioSetting {
   volume: number;
   muted: boolean;
+}
+
+function readAudioSettings(): Record<string, AudioSetting> {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(AUDIO_KEY) ?? '{}') as Record<string, unknown>;
+    return Object.fromEntries(
+      Object.entries(parsed).flatMap(([id, value]) => {
+        if (!value || typeof value !== 'object') return [];
+        const setting = value as Partial<AudioSetting>;
+        if (
+          typeof setting.volume !== 'number' ||
+          !Number.isFinite(setting.volume) ||
+          setting.volume < 0 ||
+          setting.volume > 1 ||
+          typeof setting.muted !== 'boolean'
+        ) {
+          return [];
+        }
+        return [[id, { volume: setting.volume, muted: setting.muted }]];
+      }),
+    );
+  } catch {
+    return {};
+  }
 }
 
 function sourceText(sourceName: string | null, sourceKind: RemoteScreen['sourceKind']): string {
@@ -572,7 +597,7 @@ export default function RemoteGrid({
   );
   // Spotlight picks, most recently chosen first.
   const [pinned, setPinned] = useState<string[]>([]);
-  const [audio, setAudio] = useState<Record<string, AudioSetting>>({});
+  const [audio, setAudio] = useState<Record<string, AudioSetting>>(readAudioSettings);
   const [stripHidden, setStripHidden] = useState(
     () => readStored(STRIP_HIDDEN_KEY, ['true', 'false'], 'false') === 'true',
   );
@@ -739,9 +764,22 @@ export default function RemoteGrid({
       setAudio((current) => {
         const setting = current[id];
         if (!setting?.muted && (setting?.volume ?? DEFAULT_VOLUME) > 0) return current;
-        return { ...current, [id]: { volume: setting?.volume || DEFAULT_VOLUME, muted: false } };
+        const next = {
+          ...current,
+          [id]: { volume: setting?.volume || DEFAULT_VOLUME, muted: false },
+        };
+        store(AUDIO_KEY, JSON.stringify(next));
+        return next;
       });
     }
+  }
+
+  function updateAudio(id: string, nextSetting: AudioSetting) {
+    setAudio((current) => {
+      const next = { ...current, [id]: nextSetting };
+      store(AUDIO_KEY, JSON.stringify(next));
+      return next;
+    });
   }
 
   function toggleFullscreenFor(id: string) {
@@ -847,7 +885,7 @@ export default function RemoteGrid({
       <RemoteTile
         screen={screen}
         audio={audioFor(id)}
-        onAudioChange={(next) => setAudio((current) => ({ ...current, [id]: next }))}
+        onAudioChange={(next) => updateAudio(id, next)}
         hq={!lowQuality.has(id)}
         onToggleHq={() =>
           setLowQuality((current) => {
@@ -1000,7 +1038,7 @@ export default function RemoteGrid({
                       onCaptured={(url) => captured(id, url)}
                       audioTrack={screen.audioTrack}
                       audio={audioFor(id)}
-                      onAudioChange={(next) => setAudio((current) => ({ ...current, [id]: next }))}
+                      onAudioChange={(next) => updateAudio(id, next)}
                       listening={listening.has(id)}
                       onWatch={() => watch(id)}
                       onToggleListen={() => toggleListen(id)}

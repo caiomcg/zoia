@@ -220,6 +220,8 @@ export interface SourceInfo {
   kind: 'screen' | 'window';
   thumbnailDataUrl: string;
   processId: number | null;
+  /** Full executable path of the window's owning process, when available. */
+  processPath: string | null;
   /** Win32 window handle; the GPU path uses it to locate the window on screen. */
   hwnd: number | null;
 }
@@ -252,6 +254,8 @@ export const IPC = {
   updaterConfigSave: 'zoia:updater:config:save',
   updaterConfigReset: 'zoia:updater:config:reset',
   updaterCheck: 'zoia:updater:check',
+  updaterOpenInstaller: 'zoia:updater:installer:open',
+  appVersion: 'zoia:app:version',
   trayCloseGet: 'zoia:tray:close:get',
   trayCloseSet: 'zoia:tray:close:set',
 } as const;

@@ -213,11 +213,18 @@ const emptyConfig: UpdaterConfig = {
 
 function UpdatesSection() {
   const [config, setConfig] = useState<UpdaterConfig>(emptyConfig);
+  const [currentVersion, setCurrentVersion] = useState<string | null>(null);
+  const [availableVersion, setAvailableVersion] = useState<string | null>(null);
+  const [installerUrl, setInstallerUrl] = useState<string | null>(null);
   const [busy, setBusy] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    window.zoia.app
+      .version()
+      .then(setCurrentVersion)
+      .catch(() => {});
     window.zoia.updater
       .config()
       .then(setConfig)
@@ -265,13 +272,19 @@ function UpdatesSection() {
     setError(null);
     setMessage(null);
     const result = await window.zoia.updater.check();
-    if (result.status === 'available') setMessage(`Version ${result.version} is available.`);
-    else if (result.status === 'full-required') {
-      setMessage(
-        `Version ${result.version} requires the full installer. Open the release page to download it.`,
-      );
-    } else if (result.status === 'up-to-date') setMessage('You are up to date.');
-    else if (result.status === 'disabled') setMessage('Updates are disabled for this build.');
+    if (result.status === 'available') {
+      setAvailableVersion(result.version);
+      setInstallerUrl(null);
+      setMessage(`Version ${result.version} is available.`);
+    } else if (result.status === 'full-required') {
+      setAvailableVersion(result.version);
+      setInstallerUrl(result.installerUrl);
+      setMessage(`Version ${result.version} requires the full installer.`);
+    } else if (result.status === 'up-to-date') {
+      setAvailableVersion(currentVersion);
+      setInstallerUrl(null);
+      setMessage('You are up to date.');
+    } else if (result.status === 'disabled') setMessage('Updates are disabled for this build.');
     else setError(result.message);
     setBusy(false);
   }
@@ -279,6 +292,12 @@ function UpdatesSection() {
   return (
     <>
       <h3>Updates</h3>
+      <div className="settings-version" aria-live="polite">
+        <span>Installed version</span>
+        <strong>{currentVersion ? `v${currentVersion}` : 'Loading…'}</strong>
+        <span>Available version</span>
+        <strong>{availableVersion ? `v${availableVersion}` : 'Not checked yet'}</strong>
+      </div>
       <p className="muted">Choose where Zoia looks for lightweight application updates.</p>
 
       <div className="settings-warning">
@@ -334,6 +353,19 @@ function UpdatesSection() {
 
       {error && <p className="settings-error">{error}</p>}
       {message && <p className="settings-message">{message}</p>}
+
+      {installerUrl && (
+        <button
+          className="primary settings-download"
+          onClick={() =>
+            void window.zoia.updater.openInstaller(installerUrl).catch(() => {
+              setError('Could not open the installer download.');
+            })
+          }
+        >
+          Download installer
+        </button>
+      )}
 
       <div className="settings-actions">
         <button onClick={() => void reset()} disabled={busy}>

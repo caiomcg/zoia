@@ -474,14 +474,14 @@ export default function App() {
 
       {cameraOpen && (
         <CameraDialog
-          onStart={(constraints) => {
+          onStart={(constraints, muteMicrophone) => {
             setCameraOpen(false);
             // A camera always goes through the Chromium path: there is no
             // window for the hardware encoder to capture, and the frame is
             // small enough that it does not need one.
             void (async () => {
               if (isLive) await stopSharing();
-              await room.startCamera(constraints);
+              await room.startCamera(constraints, muteMicrophone);
             })();
           }}
           onCancel={() => setCameraOpen(false)}

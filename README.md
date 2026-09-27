@@ -62,10 +62,10 @@ encoding path does: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 Zoia is **Windows x64 only**, and unsigned — SmartScreen will warn on first run.
 
-1. Download the portable `.exe` from [Releases](https://github.com/caiomcg/zoia/releases),
+1. Download the Windows installer from [Releases](https://github.com/caiomcg/zoia/releases),
    or build it yourself (below).
 2. Get a `zoia-invite.json` from whoever runs the server you are joining.
-3. Put it next to the exe — or drag it onto the window — and run it.
+3. Run Zoia and drag the invite onto the window, or choose it when prompted.
 4. Share something.
 
 The download itself carries no server and no credentials, so it is the same file for
