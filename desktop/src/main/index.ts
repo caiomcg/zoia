@@ -8,6 +8,7 @@ import * as sources from './sources';
 import * as audioCapture from './audio';
 import * as encoder from './encoder';
 import * as capture from './capture';
+import { installTray, showWindow } from './tray';
 import { IPC } from '../shared/ipc';
 import type { GpuStatus } from '../shared/ipc';
 
@@ -419,8 +420,22 @@ function installCrashReporting(): void {
   });
 }
 
+// One copy at a time: a second launch (the exe clicked again while this one
+// sits in the tray) brings this window back instead of joining the room as the
+// same device twice.
+const isFirstInstance = app.requestSingleInstanceLock();
+if (!isFirstInstance) {
+  app.quit();
+} else {
+  app.on('second-instance', () => showWindow(mainWindow));
+}
+
 app.whenReady().then(async () => {
+  // The second copy is on its way out; it must not open a window first.
+  if (!isFirstInstance) return;
   installCrashReporting();
+  // Created before the window, so its close handler is attached to it.
+  installTray(() => mainWindow, join(__dirname, '../../build/tray.png'));
   // Removes the default menu outright, so Alt reveals nothing.
   Menu.setApplicationMenu(null);
   await refreshGpuStatus();
