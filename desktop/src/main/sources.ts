@@ -26,6 +26,7 @@
 
 import { desktopCapturer, type NativeImage } from 'electron';
 import { windowManager } from 'node-window-manager';
+import { isShareableWindow, type Bounds } from './window-filter';
 
 export interface SourceInfo {
   id: string;
@@ -45,6 +46,15 @@ function hwndFromSourceId(id: string): number | null {
 
 function toDataUrl(image: NativeImage): string {
   return image.isEmpty() ? '' : image.toDataURL();
+}
+
+/** A window can close between enumeration and this call. */
+function safeBounds(window: { getBounds(): Bounds }): Bounds | null {
+  try {
+    return window.getBounds();
+  } catch {
+    return null;
+  }
 }
 
 async function captureSources(): Promise<SourceInfo[]> {
@@ -68,7 +78,14 @@ async function captureSources(): Promise<SourceInfo[]> {
     // app closes a launcher window. Only expose windows that still exist in
     // the native enumeration and are visible to the user. Screens do not
     // have an HWND and are intentionally kept unchanged.
-    if (isWindow && (!nativeWindow || !nativeWindow.isVisible())) return [];
+    // Visible is not enough: see window-filter.ts for the tray apps and
+    // helper windows that pass it with nothing to show.
+    if (
+      isWindow &&
+      (!nativeWindow || !nativeWindow.isVisible() || !isShareableWindow(safeBounds(nativeWindow)))
+    ) {
+      return [];
+    }
 
     const processId = nativeWindow?.processId ?? null;
 
