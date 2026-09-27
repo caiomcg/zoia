@@ -23,6 +23,7 @@ import {
 import { isLeagueSource, resolveLeagueTarget } from '../shared/league';
 
 const PRESET_STORAGE_KEY = 'zoia.qualityPreset';
+const PREVIEW_STORAGE_KEY = 'zoia.showOwnPreview';
 const ONBOARDING_STORAGE_KEY = 'zoia.onboardingDismissed';
 const CHANNEL_STORAGE_KEY = 'zoia.channel';
 /** How often the channel list (who is where, who is live) is refreshed. */
@@ -185,6 +186,15 @@ export default function App() {
   // straight from the logo to a populated room rather than through an empty
   // one. Capped, so a slow or failing server still gets its say on screen.
   const [booted, setBooted] = useState(false);
+  // Seeing your own broadcast is opt-in, and the choice is remembered.
+  const [showPreview, setShowPreview] = useState(
+    () => localStorage.getItem(PREVIEW_STORAGE_KEY) === 'true',
+  );
+  const togglePreview = () =>
+    setShowPreview((current) => {
+      localStorage.setItem(PREVIEW_STORAGE_KEY, String(!current));
+      return !current;
+    });
   useEffect(() => {
     if (room.state === 'connected' || room.state === 'error') setBooted(true);
   }, [room.state]);
@@ -297,14 +307,19 @@ export default function App() {
     );
   } else if (encodingLive && stats) {
     connectionStats.push(
-      { label: 'Encoder', value: `${stats.encoder} on the CPU` },
-      { label: 'Resolution', value: `${stats.width}×${stats.height}` },
-      { label: 'Frame rate', value: `${stats.fps} fps` },
+      { label: 'Target', value: preset.label },
+      {
+        label: 'Capture',
+        value: `${stats.captureWidth}×${stats.captureHeight} · ${stats.captureFps} fps`,
+      },
+      { label: 'Sending', value: `${stats.width}×${stats.height} · ${stats.fps} fps` },
       { label: 'Bitrate', value: `${(stats.kbps / 1000).toFixed(1)} Mbps` },
+      { label: 'Encoder', value: `${stats.encoder} (${stats.codec})` },
+      {
+        label: 'Limited by',
+        value: stats.limitation === 'none' ? 'nothing' : stats.limitation,
+      },
     );
-    if (room.audioLatencyMs > 0) {
-      connectionStats.push({ label: 'Audio delay', value: `+${room.audioLatencyMs} ms` });
-    }
   }
 
   const roomError = show('room', room.error);
@@ -457,6 +472,8 @@ export default function App() {
                       <Player
                         fullscreen={fullscreen}
                         name={status.deviceName ?? 'You'}
+                        showPreview={showPreview}
+                        onTogglePreview={togglePreview}
                         localTrack={room.localTrack}
                         gpuBroadcasting={gpuLive}
                         sendAudio={
@@ -472,7 +489,8 @@ export default function App() {
                         onSwitch={() => setPickerOpen(true)}
                       />
                     ),
-                    track: room.localTrack,
+                    // The strip's thumbnail follows the same choice.
+                    track: showPreview ? room.localTrack : null,
                     onStop: () => void stopSharing(),
                     name: status.deviceName ?? 'You',
                   }

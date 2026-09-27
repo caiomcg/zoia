@@ -82,6 +82,8 @@ export function IconFullscreen({ active }: { active: boolean }) {
 
 export default function Player({
   name,
+  showPreview,
+  onTogglePreview,
   localTrack,
   gpuBroadcasting = false,
   sendAudio,
@@ -90,6 +92,12 @@ export default function Player({
   fullscreen,
 }: {
   name: string;
+  /**
+   * Whether you see your own picture. Off by default: you know what you are
+   * sharing, and decoding it back costs your machine for nothing.
+   */
+  showPreview: boolean;
+  onTogglePreview: () => void;
   localTrack: LocalVideoTrack | null;
   /**
    * On the NVENC path the frames never enter this process — ffmpeg publishes
@@ -118,11 +126,12 @@ export default function Player({
   useEffect(() => {
     const el = videoRef.current;
     if (!el) return undefined;
-    el.srcObject = localTrack ? new MediaStream([localTrack.mediaStreamTrack]) : null;
+    el.srcObject =
+      localTrack && showPreview ? new MediaStream([localTrack.mediaStreamTrack]) : null;
     return () => {
       el.srcObject = null;
     };
-  }, [localTrack]);
+  }, [localTrack, showPreview]);
 
   useEffect(() => {
     const handler = () => setIsFullscreen(Boolean(document.fullscreenElement));
@@ -151,6 +160,13 @@ export default function Player({
     <section className="stage" ref={stageRef}>
       <video ref={videoRef} playsInline autoPlay muted />
 
+      {localTrack && !showPreview && (
+        <div className="overlay">
+          <h2>You&rsquo;re live</h2>
+          <p className="muted">Your preview is hidden. Viewers see your broadcast as normal.</p>
+        </div>
+      )}
+
       {!localTrack && gpuBroadcasting && (
         <div className="overlay">
           <h2>Sharing your screen</h2>
@@ -172,6 +188,17 @@ export default function Player({
           </span>
         </span>
         <div className="remote-audio-controls">
+          {localTrack && (
+            <button
+              className={`icon-button${showPreview ? ' active' : ''}`}
+              onClick={onTogglePreview}
+              aria-pressed={showPreview}
+              title={showPreview ? 'Hide your preview' : 'Show your preview'}
+              aria-label={showPreview ? 'Hide your preview' : 'Show your preview'}
+            >
+              <IconEye off={!showPreview} />
+            </button>
+          )}
           {sendAudio && audio && (
             <>
               {/* Same behaviour as a watched tile: muting keeps the level, and
@@ -236,7 +263,7 @@ export default function Player({
   );
 }
 
-export function IconEye() {
+export function IconEye({ off = false }: { off?: boolean }) {
   return (
     <svg
       viewBox="0 0 24 24"
@@ -251,6 +278,7 @@ export function IconEye() {
     >
       <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" />
       <circle cx="12" cy="12" r="3" />
+      {off && <path d="M3 3l18 18" />}
     </svg>
   );
 }

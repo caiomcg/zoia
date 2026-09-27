@@ -482,9 +482,15 @@ button:disabled {
 
 /* Only when a footer is there to make room for: an empty stage has none, and
    lifting the strip there just made it jump. */
-.stage-area:has(.remote-tile-footer):hover .thumb-overlay,
-.stage-area:has(.remote-tile-footer):focus-within .thumb-overlay {
+.stage-area:has(.remote-tile-footer):hover .thumb-overlay:not(.collapsed),
+.stage-area:has(.remote-tile-footer):focus-within .thumb-overlay:not(.collapsed) {
   bottom: 60px;
+}
+
+/* Collapsed, the arrow stays down at the bottom edge, centred in the gap
+   between the footer's name and its controls rather than lifting over them. */
+.thumb-overlay.collapsed {
+  justify-content: center;
 }
 
 .stage-area:hover .remote-tile-footer {
