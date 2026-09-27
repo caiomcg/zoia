@@ -273,9 +273,8 @@ export default function App() {
     setStageError(null);
     const ok = await gpuCast.start(preset, target);
     if (!ok) {
-      if (!switching) await window.zoia.stage.release().catch(() => {});
       console.warn('[gpu] GPU broadcast failed, falling back to window broadcast');
-      await room.startBroadcast(target, preset, { keepStage: switching });
+      await room.startBroadcast(target, preset, { keepStage: true });
     }
   }
 

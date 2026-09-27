@@ -270,6 +270,7 @@ function encoderTuning(encoder: string): string[] {
  * number worth reading — what is doing the encoding — misleading.
  */
 let currentEncoder = 'unknown';
+let isPassthrough = false;
 
 export function encoderInUse(): string {
   return currentEncoder;
@@ -283,6 +284,7 @@ function buildArgs(options: EncoderOptions): string[] {
   // hwupload_cuda` into h264_nvenc a second time — which cost quality and GPU
   // for nothing.
   const passthrough = frames?.output === 'h264';
+  isPassthrough = passthrough;
   const encoder = encoderFor(frames?.vendor ?? options.gpuVendor ?? 'nvidia');
   // ddagrab hands over D3D11 surfaces, which NVENC takes directly. AMF and
   // Quick Sync are given ordinary frames instead, downloaded once, rather than
@@ -709,7 +711,10 @@ export function writeFrame(frame: Buffer): void {
   // If the pipe is experiencing backpressure, drop the frame immediately
   // rather than queuing megabytes of uncompressed BGRA in Node's V8 heap,
   // which causes Garbage Collection stalls and freezes the UI.
-  if (stdin.writableLength > 0) return;
+  // For passthrough H.264, frames are small NAL units and dropping mid-GOP
+  // causes stream corruption, so only drop if the pipe is severely backpressured (>256KB).
+  const threshold = isPassthrough ? 256 * 1024 : 0;
+  if (stdin.writableLength > threshold) return;
   try {
     // Back-pressure is handled by dropping: a frame that cannot be written
     // now is better skipped than queued, which would only add latency.
@@ -720,6 +725,7 @@ export function writeFrame(frame: Buffer): void {
 }
 
 export function stop(): void {
+  isPassthrough = false;
   if (watchdog) clearInterval(watchdog);
   watchdog = null;
   if (keepAlive) clearInterval(keepAlive);

@@ -71,12 +71,14 @@ export function useGpuBroadcast() {
             activeRef.current = false;
             setState('idle');
             if (next.error) setError(next.error);
+            void window.zoia.stage.release().catch(() => {});
           })();
           return;
         }
         activeRef.current = false;
         setState('idle');
         if (next.error) setError(next.error);
+        void window.zoia.stage.release().catch(() => {});
       }
     });
   }, []);
