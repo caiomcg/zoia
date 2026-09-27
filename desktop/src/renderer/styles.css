@@ -566,8 +566,8 @@ button:disabled {
 }
 
 /* A snapshot is blurred: a hint of what is on, not a picture to watch.
-   Scaled a touch so the blur does not soften the edges into the frame. Live
-   video (your own preview, or a broadcast you listen to) stays sharp. */
+   Scaled a touch so the blur does not soften the edges into the frame. Your
+   own live preview stays sharp. */
 .thumb img,
 .thumb video {
   display: block;
