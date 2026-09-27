@@ -70,6 +70,10 @@ const bridge: ZoiaBridge = {
     reset: () => ipcRenderer.invoke(IPC.updaterConfigReset),
     check: () => ipcRenderer.invoke(IPC.updaterCheck) as Promise<UpdaterCheckResult>,
   },
+  tray: {
+    closeToTray: () => ipcRenderer.invoke(IPC.trayCloseGet),
+    setCloseToTray: (value) => ipcRenderer.invoke(IPC.trayCloseSet, value),
+  },
   audio: {
     start: (processId) => ipcRenderer.invoke(IPC.audioStart, processId),
     stop: () => ipcRenderer.invoke(IPC.audioStop),

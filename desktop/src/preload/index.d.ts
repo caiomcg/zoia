@@ -75,6 +75,11 @@ export interface ZoiaBridge {
     reset(): Promise<UpdaterConfig>;
     check(): Promise<UpdaterCheckResult>;
   };
+  tray: {
+    /** Whether closing the window hides it to the tray instead of quitting. */
+    closeToTray(): Promise<boolean>;
+    setCloseToTray(value: boolean): Promise<boolean>;
+  };
   audio: {
     /** `processId: null` captures the whole system's output instead of one app. */
     start(processId: number | null): Promise<void>;

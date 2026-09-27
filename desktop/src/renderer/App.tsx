@@ -382,19 +382,22 @@ export default function App() {
           <button
             className="icon-button settings-button"
             onClick={() => setSettingsOpen(true)}
-            title="Update settings"
-            aria-label="Update settings"
+            title="Settings"
+            aria-label="Settings"
           >
+            {/* Two sliders: lighter than a gear at this size. */}
             <svg
               viewBox="0 0 24 24"
               width="18"
               height="18"
               fill="none"
               stroke="currentColor"
-              strokeWidth="2"
+              strokeWidth="1.75"
+              strokeLinecap="round"
             >
-              <path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Z" />
-              <path d="m19.4 15 .1.1a1.8 1.8 0 0 1-2.5 2.5l-.1-.1a1.8 1.8 0 0 0-3 .9v.2a1.8 1.8 0 0 1-3.6 0v-.2a1.8 1.8 0 0 0-3-.9l-.1.1a1.8 1.8 0 0 1-2.5-2.5l.1-.1a1.8 1.8 0 0 0-.9-3h-.2a1.8 1.8 0 0 1 0-3h.2a1.8 1.8 0 0 0 .9-3l-.1-.1a1.8 1.8 0 0 1 2.5-2.5l.1.1a1.8 1.8 0 0 0 3-.9v-.2a1.8 1.8 0 0 1 3.6 0v.2a1.8 1.8 0 0 0 3 .9l.1-.1a1.8 1.8 0 0 1 2.5 2.5l-.1.1a1.8 1.8 0 0 0 .9 3h.2a1.8 1.8 0 0 1 0 3h-.2a1.8 1.8 0 0 0-.9 3Z" />
+              <path d="M4 8h9M17 8h3M4 16h3M11 16h9" />
+              <circle cx="15" cy="8" r="2" />
+              <circle cx="9" cy="16" r="2" />
             </svg>
           </button>
         </div>

@@ -18,14 +18,31 @@ export default function SettingsDialog({ onClose }: SettingsDialogProps) {
   const [busy, setBusy] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Applied as soon as it is toggled, like the same checkbox in the tray menu;
+  // Save is for the update feed only.
+  const [closeToTray, setCloseToTray] = useState(true);
 
   useEffect(() => {
+    window.zoia.tray
+      .closeToTray()
+      .then(setCloseToTray)
+      .catch(() => {});
     window.zoia.updater
       .config()
       .then(setConfig)
       .catch(() => setError('Could not load updater settings.'))
       .finally(() => setBusy(false));
   }, []);
+
+  async function toggleCloseToTray(value: boolean) {
+    setCloseToTray(value);
+    try {
+      setCloseToTray(await window.zoia.tray.setCloseToTray(value));
+    } catch {
+      setCloseToTray(!value);
+      setError('Could not change the system tray setting.');
+    }
+  }
 
   function update(field: keyof UpdaterConfig, value: string | boolean) {
     setConfig((current) => ({ ...current, [field]: value }));
@@ -82,10 +99,7 @@ export default function SettingsDialog({ onClose }: SettingsDialogProps) {
     <div className="picker-backdrop" onClick={onClose}>
       <section className="picker settings-dialog" onClick={(event) => event.stopPropagation()}>
         <div className="settings-header">
-          <div>
-            <h2>Update settings</h2>
-            <p className="muted">Choose where Zoia looks for lightweight application updates.</p>
-          </div>
+          <h2>Settings</h2>
           <button
             className="icon-button"
             onClick={onClose}
@@ -96,6 +110,20 @@ export default function SettingsDialog({ onClose }: SettingsDialogProps) {
           </button>
         </div>
 
+        <h3 className="settings-section">General</h3>
+        <label className="settings-check">
+          <input
+            type="checkbox"
+            checked={closeToTray}
+            onChange={(event) => void toggleCloseToTray(event.target.checked)}
+          />
+          Keep Zoia in the system tray when the window is closed
+        </label>
+
+        <h3 className="settings-section">Updates</h3>
+        <p className="muted settings-note">
+          Choose where Zoia looks for lightweight application updates.
+        </p>
         <div className="settings-warning">
           Only use a repository you trust. An update can run code on this computer.
         </div>

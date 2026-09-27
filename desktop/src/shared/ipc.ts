@@ -252,4 +252,6 @@ export const IPC = {
   updaterConfigSave: 'zoia:updater:config:save',
   updaterConfigReset: 'zoia:updater:config:reset',
   updaterCheck: 'zoia:updater:check',
+  trayCloseGet: 'zoia:tray:close:get',
+  trayCloseSet: 'zoia:tray:close:set',
 } as const;

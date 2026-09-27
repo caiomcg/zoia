@@ -8,7 +8,7 @@ import * as sources from './sources';
 import * as audioCapture from './audio';
 import * as encoder from './encoder';
 import * as capture from './capture';
-import { installTray, showWindow } from './tray';
+import { getCloseToTray, installTray, setCloseToTray, showWindow } from './tray';
 import { IPC } from '../shared/ipc';
 import type { GpuStatus } from '../shared/ipc';
 import {
@@ -214,6 +214,9 @@ function registerIpc(): void {
   ipcMain.handle(IPC.updaterConfigSave, (_event, next) => saveUpdaterConfig(next));
   ipcMain.handle(IPC.updaterConfigReset, () => resetUpdaterConfig());
   ipcMain.handle(IPC.updaterCheck, () => checkForUpdate(true));
+
+  ipcMain.handle(IPC.trayCloseGet, () => getCloseToTray());
+  ipcMain.handle(IPC.trayCloseSet, (_event, value: boolean) => setCloseToTray(value === true));
 
   ipcMain.handle(IPC.stageGet, () => api.stageGet());
   ipcMain.handle(IPC.stageClaim, () => api.stageClaim());
