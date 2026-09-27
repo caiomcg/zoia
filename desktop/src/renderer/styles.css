@@ -1408,6 +1408,72 @@ button.danger {
   color: var(--muted);
 }
 
+.channel-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.channel-row > .channel {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Rename and delete show on hover, over the count, so the row stays quiet. */
+.channel-actions {
+  position: absolute;
+  right: 4px;
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.channel-row:hover .channel-actions,
+.channel-actions:focus-within {
+  opacity: 1;
+}
+
+.channel-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  color: var(--muted);
+  background: var(--surface-2);
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.channel-action:hover {
+  color: var(--text);
+  background: var(--raised);
+}
+
+.channel-new {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.channel-edit {
+  padding: 3px 4px;
+}
+
+.channel-edit input {
+  width: 100%;
+  padding: 5px 8px;
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  background: var(--surface-2);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  outline: none;
+}
+
 .channel-people {
   display: flex;
   flex-wrap: wrap;
@@ -1472,6 +1538,9 @@ button.danger {
     0 0 0 4px var(--accent);
 }
 
+.sidebar.collapsed .channel-new,
+.sidebar.collapsed .channel-actions,
+.sidebar.collapsed .channel-edit,
 .sidebar.collapsed .channel-name,
 .sidebar.collapsed .channel-live,
 .sidebar.collapsed .channel-count,

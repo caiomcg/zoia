@@ -26,9 +26,14 @@ export interface PairingStatus {
 export interface RoomInfo {
   id: string;
   name: string;
+  /** Where clients that name no channel land. Renamable, never removable. */
+  isDefault: boolean;
   participants: Array<{ identity: string; name: string }>;
   broadcasters: Array<{ identity: string; name: string }>;
 }
+
+/** How a channel change went; `error` is the server's code when refused. */
+export type ChannelOutcome = { ok: true } | { ok: false; error: string };
 
 export interface TokenResult {
   token: string;
@@ -209,6 +214,9 @@ export const IPC = {
   pairingChooseInvite: 'zoia:pairing:choose-invite',
   getToken: 'zoia:token:get',
   roomsList: 'zoia:rooms:list',
+  roomsCreate: 'zoia:rooms:create',
+  roomsRename: 'zoia:rooms:rename',
+  roomsRemove: 'zoia:rooms:remove',
   stageGet: 'zoia:stage:get',
   stageClaim: 'zoia:stage:claim',
   stageRelease: 'zoia:stage:release',

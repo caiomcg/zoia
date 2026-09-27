@@ -12,7 +12,14 @@
  */
 
 import { net } from 'electron';
-import type { TokenResult, StageState, ClaimResult, WhipEndpoint, RoomInfo } from '../shared/ipc';
+import type {
+  TokenResult,
+  StageState,
+  ClaimResult,
+  WhipEndpoint,
+  RoomInfo,
+  ChannelOutcome,
+} from '../shared/ipc';
 import { getServerUrl } from './config';
 
 class ApiError extends Error {
@@ -87,9 +94,43 @@ export async function getToken(room?: string) {
   return result;
 }
 
-export async function roomsList() {
-  const { rooms } = await call<{ rooms: RoomInfo[] }>('/api/rooms');
-  return rooms;
+export function roomsList() {
+  return call<{ rooms: RoomInfo[]; max: number }>('/api/rooms');
+}
+
+/**
+ * A refusal the user should hear about (the channel limit, an occupied
+ * channel) comes back as its error code rather than thrown: an error crossing
+ * IPC arrives in the renderer as a message string, without the server's body.
+ */
+async function outcome(request: Promise<unknown>): Promise<ChannelOutcome> {
+  try {
+    await request;
+    return { ok: true };
+  } catch (err) {
+    if (err instanceof ApiError && err.status < 500) {
+      const code = (err.body as { error?: string } | null)?.error;
+      return { ok: false, error: code ?? `http_${err.status}` };
+    }
+    throw err;
+  }
+}
+
+export function roomsCreate(name: string) {
+  return outcome(call('/api/rooms', { method: 'POST', body: JSON.stringify({ name }) }));
+}
+
+export function roomsRename(id: string, name: string) {
+  return outcome(
+    call(`/api/rooms/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ name }),
+    }),
+  );
+}
+
+export function roomsRemove(id: string) {
+  return outcome(call(`/api/rooms/${encodeURIComponent(id)}`, { method: 'DELETE' }));
 }
 
 /**

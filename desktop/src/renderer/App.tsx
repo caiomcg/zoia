@@ -55,6 +55,10 @@ export default function App() {
   // The channel this device is in, or wants to be in; the last one it used.
   const [channel, setChannel] = useState<string | null>(readChannel);
   const [channels, setChannels] = useState<RoomInfo[]>([]);
+  const [maxChannels, setMaxChannels] = useState(0);
+  const [channelError, setChannelError] = useState<string | null>(null);
+  // Bumped to refetch the channel list right after a change, not at the next poll.
+  const [channelsVersion, setChannelsVersion] = useState(0);
   const connectingRef = useRef(false);
   const [presetId, setPresetId] = useState(
     () => localStorage.getItem(PRESET_STORAGE_KEY) ?? DEFAULT_PRESET_ID,
@@ -125,8 +129,10 @@ export default function App() {
     const load = () =>
       window.zoia.rooms
         .list()
-        .then((list) => {
-          if (!cancelled) setChannels(list);
+        .then(({ rooms, max }) => {
+          if (cancelled) return;
+          setChannels(rooms);
+          setMaxChannels(max);
         })
         .catch(() => {});
     load();
@@ -135,7 +141,30 @@ export default function App() {
       cancelled = true;
       clearInterval(timer);
     };
-  }, [status?.paired, channel, room.state]);
+  }, [status?.paired, channel, room.state, channelsVersion]);
+
+  const CHANNEL_ERRORS: Record<string, string> = {
+    room_limit: 'O servidor já tem o máximo de canais.',
+    room_not_empty: 'Só dá para apagar um canal vazio.',
+    room_is_default: 'O canal principal não pode ser apagado.',
+    invalid_name: 'Dê um nome de 1 a 32 caracteres.',
+    unknown_room: 'Esse canal não existe mais.',
+  };
+
+  /** Runs a channel change, reports a refusal, and refreshes the list. */
+  async function changeChannels(change: Promise<{ ok: boolean; error?: string }>) {
+    try {
+      const result = await change;
+      setChannelError(
+        result.ok
+          ? null
+          : (CHANNEL_ERRORS[result.error ?? ''] ?? 'Não foi possível alterar o canal.'),
+      );
+    } catch {
+      setChannelError('Não foi possível falar com o servidor.');
+    }
+    setChannelsVersion((v) => v + 1);
+  }
 
   /**
    * Moves this device to another channel. A broadcast does not follow you:
@@ -240,6 +269,7 @@ export default function App() {
   const gpuError = show('gpu', gpuCast.error);
   const audioWarning = show('audio', room.audioWarning);
   const stageMessage = show('stage', stageError);
+  const channelMessage = show('channel', channelError);
   const gpuWarning = gpuLive ? show('gpustatus', gpuCast.status?.error) : null;
   const activeRemoteIds = new Set(room.remoteScreens.map((screen) => screen.participantIdentity));
   const loadingBroadcasts: LoadingBroadcast[] = room.members
@@ -363,6 +393,9 @@ export default function App() {
       {stageMessage && (
         <Banner onDismiss={() => dismiss('stage', stageMessage)}>{stageMessage}</Banner>
       )}
+      {channelMessage && (
+        <Banner onDismiss={() => dismiss('channel', channelMessage)}>{channelMessage}</Banner>
+      )}
       {audioWarning && (
         <Banner tone="warn" onDismiss={() => dismiss('audio', audioWarning)}>
           {audioWarning}
@@ -423,6 +456,10 @@ export default function App() {
           channels={channels}
           currentChannel={channel}
           onJoinChannel={(id) => void switchChannel(id)}
+          maxChannels={maxChannels}
+          onCreateChannel={(name) => void changeChannels(window.zoia.rooms.create(name))}
+          onRenameChannel={(id, name) => void changeChannels(window.zoia.rooms.rename(id, name))}
+          onRemoveChannel={(id) => void changeChannels(window.zoia.rooms.remove(id))}
         />
       </div>
 
