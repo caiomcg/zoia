@@ -6,7 +6,7 @@
 
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import { IPC } from '../shared/ipc';
-import type { EncoderStatus, PairingStatus } from '../shared/ipc';
+import type { EncoderStatus, PairingStatus, UpdaterConfig, UpdaterCheckResult } from '../shared/ipc';
 import type { ZoiaBridge } from './index.d';
 
 const bridge: ZoiaBridge = {
@@ -58,6 +58,12 @@ const bridge: ZoiaBridge = {
   report: (entry) => ipcRenderer.send(IPC.report, entry),
   gpu: {
     status: () => ipcRenderer.invoke(IPC.gpuStatus),
+  },
+  updater: {
+    config: () => ipcRenderer.invoke(IPC.updaterConfigGet) as Promise<UpdaterConfig>,
+    save: (config: UpdaterConfig) => ipcRenderer.invoke(IPC.updaterConfigSave, config),
+    reset: () => ipcRenderer.invoke(IPC.updaterConfigReset),
+    check: () => ipcRenderer.invoke(IPC.updaterCheck) as Promise<UpdaterCheckResult>,
   },
   audio: {
     start: (processId) => ipcRenderer.invoke(IPC.audioStart, processId),

@@ -35,6 +35,12 @@ e, se necessário, `manifestPath`/`manifestUrl`:
 }
 ```
 
+Usuários não precisam navegar até o AppData para fazer essa alteração: no desktop, abra o
+botão de engrenagem no canto superior direito e edite **Update settings**. A tela salva a
+configuração no local correto, valida URLs HTTPS e branch, permite restaurar os padrões e
+oferece **Check now**. O campo de instalação automática deve ser usado somente quando o
+repositório configurado for confiável.
+
 Em um repositório GitHub, o updater consulta o commit da branch pela API e lê o manifesto
 em `raw.githubusercontent.com`. O manifesto publicado nessa branch deve ter este formato
 (um exemplo completo está em [desktop/updater-manifest.example.json](../desktop/updater-manifest.example.json)):

@@ -920,6 +920,90 @@ button.danger {
   overflow: hidden;
 }
 
+.settings-dialog {
+  width: min(560px, 92vw);
+  max-height: 90vh;
+  gap: 16px;
+  padding: 20px;
+  overflow-y: auto;
+}
+
+.settings-header {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.settings-header h2 {
+  margin: 0 0 4px;
+}
+
+.settings-header p {
+  margin: 0;
+}
+
+.settings-warning {
+  padding: 10px 12px;
+  color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--warn) 35%, transparent);
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.settings-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.settings-field input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 9px 10px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font: inherit;
+}
+
+.settings-check {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 13px;
+}
+
+.settings-check input {
+  accent-color: var(--accent);
+}
+
+.settings-error,
+.settings-message {
+  margin: 0;
+  font-size: 12px;
+}
+
+.settings-error {
+  color: var(--danger);
+}
+
+.settings-message {
+  color: var(--accent);
+}
+
+.settings-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
 .picker header {
   padding: 16px 20px 12px;
   border-bottom: 1px solid var(--border);

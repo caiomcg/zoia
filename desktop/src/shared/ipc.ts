@@ -197,6 +197,22 @@ export interface GpuStatus {
   gpuEncoder: 'nvenc' | 'amf' | 'qsv' | 'none';
 }
 
+export interface UpdaterConfig {
+  repository: string;
+  branch: string;
+  manifestPath: string;
+  manifestUrl?: string;
+  commitUrl?: string;
+  checkOnStartup?: boolean;
+  autoInstall?: boolean;
+}
+
+export type UpdaterCheckResult =
+  | { status: 'up-to-date' }
+  | { status: 'available'; version: string; notes: string | null }
+  | { status: 'disabled' }
+  | { status: 'error'; message: string };
+
 export interface SourceInfo {
   id: string;
   name: string;
@@ -231,4 +247,8 @@ export const IPC = {
   encoderStop: 'zoia:encoder:stop',
   encoderStatus: 'zoia:encoder:status',
   renameDevice: 'zoia:device:rename',
+  updaterConfigGet: 'zoia:updater:config:get',
+  updaterConfigSave: 'zoia:updater:config:save',
+  updaterConfigReset: 'zoia:updater:config:reset',
+  updaterCheck: 'zoia:updater:check',
 } as const;

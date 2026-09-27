@@ -8,6 +8,8 @@ import type {
   SourceInfo,
   GpuStatus,
   EncoderStatus,
+  UpdaterConfig,
+  UpdaterCheckResult,
 } from '../shared/ipc';
 
 export interface ZoiaBridge {
@@ -66,6 +68,12 @@ export interface ZoiaBridge {
   report(entry: { kind: string; message: string; stack?: string; context?: string }): void;
   gpu: {
     status(): Promise<GpuStatus>;
+  };
+  updater: {
+    config(): Promise<UpdaterConfig>;
+    save(config: UpdaterConfig): Promise<UpdaterConfig>;
+    reset(): Promise<UpdaterConfig>;
+    check(): Promise<UpdaterCheckResult>;
   };
   audio: {
     /** `processId: null` captures the whole system's output instead of one app. */
