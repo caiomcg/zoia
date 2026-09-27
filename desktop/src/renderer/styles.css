@@ -1608,22 +1608,31 @@ button.danger {
   outline: none;
 }
 
-.channel-people {
+.channel-members {
   display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  padding: 2px 8px 6px 16px;
+  flex-direction: column;
+  gap: 1px;
+  margin: 2px 0 6px 14px;
+  padding-left: 8px;
+  border-left: 1px solid var(--border);
 }
 
-.channel-people .avatar {
-  width: 20px;
-  height: 20px;
-  font-size: 8px;
+.channel-members .member {
+  padding: 3px 8px;
 }
 
-.channel-more {
-  align-self: center;
-  font-size: 11px;
+.channel-members .member .avatar {
+  width: 22px;
+  height: 22px;
+  font-size: 9px;
+}
+
+.channel-members .member-name {
+  font-size: 13px;
+}
+
+/* Other channels are for finding people, not for acting on them. */
+.channel-members.other .member-name {
   color: var(--muted);
 }
 
@@ -1655,6 +1664,12 @@ button.danger {
   padding: 5px 0;
 }
 
+.sidebar.collapsed .channel-members {
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+
 .sidebar.collapsed .channel {
   justify-content: center;
   padding: 3px 0;
@@ -1678,7 +1693,7 @@ button.danger {
 .sidebar.collapsed .channel-name,
 .sidebar.collapsed .channel-live,
 .sidebar.collapsed .channel-count,
-.sidebar.collapsed .channel-people,
+.sidebar.collapsed .channel-members.other,
 .sidebar.collapsed .member-name,
 .sidebar.collapsed .you-tag,
 .sidebar.collapsed .stream-state,

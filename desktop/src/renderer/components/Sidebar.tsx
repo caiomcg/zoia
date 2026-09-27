@@ -152,8 +152,12 @@ export default function Sidebar({
   onRenameChannel: (id: string, name: string) => void;
   onRemoveChannel: (id: string) => void;
 }) {
-  const broadcasting = members.filter((m) => m.isBroadcasting);
-  const watching = members.filter((m) => !m.isBroadcasting);
+  // Your own channel is listed from the live room, which is current to the
+  // second; the others come from the server's poll. Sharers first.
+  const liveMembers = [
+    ...members.filter((m) => m.isBroadcasting),
+    ...members.filter((m) => !m.isBroadcasting),
+  ];
   // Collapsed keeps only the avatars; names move into tooltips.
   const [collapsed, setCollapsed] = useState(readCollapsed);
 
@@ -228,7 +232,9 @@ export default function Sidebar({
                           {live} ao vivo
                         </span>
                       )}
-                      <span className="channel-count">{c.participants.length}</span>
+                      <span className="channel-count">
+                        {current ? liveMembers.length : c.participants.length}
+                      </span>
                     </button>
                     <span className="channel-actions">
                       <button
@@ -252,22 +258,48 @@ export default function Sidebar({
                       )}
                     </span>
                   </div>
-                  {/* Who is where, for the channels you are not in; your
-                      own channel's people are listed in full below. */}
-                  {!current && c.participants.length > 0 && (
-                    <div className="channel-people">
-                      {c.participants.slice(0, 6).map((p) => (
-                        <span key={p.identity} title={p.name}>
-                          <Avatar
-                            name={p.name}
-                            live={c.broadcasters.some((b) => b.identity === p.identity)}
-                          />
-                        </span>
+                  {/* Everyone is listed under the channel they are in, so
+                      who is where reads at a glance. */}
+                  {current ? (
+                    <div className="channel-members">
+                      {liveMembers.map((m) => (
+                        <div
+                          className={`member${m.isBroadcasting ? ' live' : ''}`}
+                          key={m.identity}
+                          title={label(m)}
+                        >
+                          <Avatar name={m.name} live={m.isBroadcasting} />
+                          <span className="member-name">{m.name}</span>
+                          {m.isLocal && <span className="you-tag">you</span>}
+                          {viewerIds.has(m.identity) && <WatchingYou />}
+                          {!m.isLocal && loadingRemoteIds.has(m.identity) && (
+                            <span className="stream-state">Carregando…</span>
+                          )}
+                          {m.isBroadcasting && (
+                            <span className="live-dot" title="Sharing their screen" />
+                          )}
+                        </div>
                       ))}
-                      {c.participants.length > 6 && (
-                        <span className="channel-more">+{c.participants.length - 6}</span>
-                      )}
                     </div>
+                  ) : (
+                    c.participants.length > 0 && (
+                      <div className="channel-members other">
+                        {sortLiveFirst(c).map((p) => {
+                          const isLive = c.broadcasters.some((b) => b.identity === p.identity);
+                          return (
+                            <div
+                              className={`member${isLive ? ' live' : ''}`}
+                              key={p.identity}
+                              title={p.name}
+                            >
+                              <Avatar name={p.name} live={isLive} />
+                              <span className="member-name">{p.name}</span>
+                              {isLive && <span className="live-dot" title="Sharing their screen" />}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )
                   )}
                 </div>
               );
@@ -297,36 +329,26 @@ export default function Sidebar({
           </section>
         )}
 
-        {broadcasting.length > 0 && (
+        {/* Before the first channel poll lands, or against a server without
+            channels, the room's people still need a home. */}
+        {channels.length === 0 && (
           <section className="member-group">
-            <h2 className="member-heading">Ao vivo — {broadcasting.length}</h2>
-            {broadcasting.map((m) => (
-              <div className="member live" key={m.identity} title={label(m)}>
-                <Avatar name={m.name} live />
+            <h2 className="member-heading">In room — {liveMembers.length}</h2>
+            {liveMembers.map((m) => (
+              <div
+                className={`member${m.isBroadcasting ? ' live' : ''}`}
+                key={m.identity}
+                title={label(m)}
+              >
+                <Avatar name={m.name} live={m.isBroadcasting} />
                 <span className="member-name">{m.name}</span>
                 {m.isLocal && <span className="you-tag">you</span>}
                 {viewerIds.has(m.identity) && <WatchingYou />}
-                {!m.isLocal && loadingRemoteIds.has(m.identity) && (
-                  <span className="stream-state">Carregando…</span>
-                )}
-                <span className="live-dot" title="Sharing their screen" />
+                {m.isBroadcasting && <span className="live-dot" title="Sharing their screen" />}
               </div>
             ))}
           </section>
         )}
-
-        <section className="member-group">
-          <h2 className="member-heading">In room — {watching.length}</h2>
-          {watching.length === 0 && <p className="member-empty">Nobody else is here yet.</p>}
-          {watching.map((m) => (
-            <div className="member" key={m.identity} title={label(m)}>
-              <Avatar name={m.name} live={false} />
-              <span className="member-name">{m.name}</span>
-              {m.isLocal && <span className="you-tag">you</span>}
-              {viewerIds.has(m.identity) && <WatchingYou />}
-            </div>
-          ))}
-        </section>
       </div>
 
       <div className="sidebar-footer" title={collapsed ? myName : undefined}>
@@ -347,6 +369,15 @@ export default function Sidebar({
       </div>
     </aside>
   );
+}
+
+/** A channel's people from the server's poll, sharers first. */
+function sortLiveFirst(channel: RoomInfo): RoomInfo['participants'] {
+  const live = new Set(channel.broadcasters.map((b) => b.identity));
+  return [
+    ...channel.participants.filter((p) => live.has(p.identity)),
+    ...channel.participants.filter((p) => !live.has(p.identity)),
+  ];
 }
 
 function WatchingYou() {
