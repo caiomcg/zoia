@@ -8,7 +8,7 @@ import Sidebar from './components/Sidebar';
 import SourcePicker from './components/SourcePicker';
 import SettingsDialog from './components/SettingsDialog';
 import Splash from './components/Splash';
-import StatusLight, { type StatusTone } from './components/StatusLight';
+import StatusLight, { type StatusStat, type StatusTone } from './components/StatusLight';
 import { useRoom } from './livekit/useRoom';
 import { useGpuBroadcast } from './livekit/useGpuBroadcast';
 import {
@@ -270,11 +270,34 @@ export default function App() {
   const connectionTone: StatusTone =
     room.state === 'connected' ? 'ok' : room.state === 'error' ? 'bad' : 'idle';
 
-  const encodeDetail = gpuLive
-    ? `NVENC on the GPU\n${gpuCast.status && gpuCast.status.width > 0 ? `${gpuCast.status.width}×${gpuCast.status.height} · ${Math.round(gpuCast.status.fps)}fps` : 'starting…'} · ${(preset.maxBitrate / 1e6).toFixed(0)}Mbps\n${gpu?.adapter ?? ''}`
-    : encodingLive
-      ? `${stats!.encoder} on the CPU\n${stats!.width}×${stats!.height} · ${stats!.fps}fps · ${(stats!.kbps / 1000).toFixed(1)}Mbps${room.audioLatencyMs > 0 ? `\naudio +${room.audioLatencyMs}ms` : ''}`
-      : null;
+  // What the connection light's hover card lists: always the link to the
+  // server, and while you are sharing, how your broadcast is being encoded.
+  const connectionStats: StatusStat[] = [];
+  if (room.state === 'connected' && room.pingMs !== null) {
+    connectionStats.push({ label: 'Ping', value: `${room.pingMs} ms` });
+  }
+  if (gpuLive) {
+    const g = gpuCast.status;
+    connectionStats.push(
+      { label: 'Encoder', value: `NVENC on ${gpu?.adapter || 'the GPU'}` },
+      {
+        label: 'Resolution',
+        value: g && g.width > 0 ? `${g.width}×${g.height}` : 'starting…',
+      },
+      { label: 'Frame rate', value: g && g.width > 0 ? `${Math.round(g.fps)} fps` : '—' },
+      { label: 'Bitrate', value: `${(preset.maxBitrate / 1e6).toFixed(0)} Mbps` },
+    );
+  } else if (encodingLive && stats) {
+    connectionStats.push(
+      { label: 'Encoder', value: `${stats.encoder} on the CPU` },
+      { label: 'Resolution', value: `${stats.width}×${stats.height}` },
+      { label: 'Frame rate', value: `${stats.fps} fps` },
+      { label: 'Bitrate', value: `${(stats.kbps / 1000).toFixed(1)} Mbps` },
+    );
+    if (room.audioLatencyMs > 0) {
+      connectionStats.push({ label: 'Audio delay', value: `+${room.audioLatencyMs} ms` });
+    }
+  }
 
   const roomError = show('room', room.error);
   const roomNotice = show('room-notice', room.roomNotice);
@@ -316,13 +339,12 @@ export default function App() {
             // path: under file:// a leading slash means the filesystem root,
             // not the folder the page was loaded from.
           />
-          {/* One light: the connection, with the round trip to the server
-              beside it. How your own broadcast is encoding is in its tooltip. */}
+          {/* One light: the connection. Ping and, while sharing, how your
+              broadcast is encoding are on its hover card. */}
           <StatusLight
             tone={connectionTone}
             label={`Connection: ${room.state}`}
-            detail={encodeDetail}
-            text={room.state === 'connected' && room.pingMs !== null ? `${room.pingMs} ms` : null}
+            stats={connectionStats}
           />
         </div>
 

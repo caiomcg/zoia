@@ -2012,11 +2012,60 @@ button.danger {
   border-radius: 50%;
 }
 
-.status-text {
-  margin-left: 6px;
+.status-light {
+  position: relative;
+}
+
+/* The statistics card: shown on hover or keyboard focus, below the dot. */
+.status-card {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: -6px;
+  z-index: 20;
+  display: none;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 200px;
+  padding: 10px 12px;
   font-size: 12px;
-  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  white-space: nowrap;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.35);
+  pointer-events: none;
+}
+
+.status-light:hover .status-card,
+.status-light:focus-visible .status-card {
+  display: flex;
+}
+
+.status-card strong {
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.status-card dl {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+}
+
+.status-card dl > div {
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+}
+
+.status-card dt {
   color: var(--muted);
+}
+
+.status-card dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
 }
 
 .status-light.ok .status-dot {

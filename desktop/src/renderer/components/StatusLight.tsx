@@ -3,29 +3,44 @@
  *
  * The top bar used to carry the connection state, the encoder and the stream
  * numbers as words, which crowded out the one control anyone actually reaches
- * for. The detail is still there on hover, where it belongs — something you
- * consult when a broadcast looks wrong, not something to read constantly.
+ * for. The numbers are still there on hover, as a small statistics card —
+ * something you consult when a broadcast looks wrong, not something to read
+ * constantly.
  */
 export type StatusTone = 'ok' | 'warn' | 'bad' | 'idle';
+
+export interface StatusStat {
+  label: string;
+  value: string;
+}
 
 export default function StatusLight({
   tone,
   label,
-  detail,
-  text,
+  stats = [],
 }: {
   tone: StatusTone;
-  /** Read out to screen readers, and the first line of the tooltip. */
+  /** The card's heading, and what screen readers hear. */
   label: string;
-  detail?: string | null;
-  /** A short reading shown beside the dot, such as the ping. */
-  text?: string | null;
+  stats?: StatusStat[];
 }) {
-  const title = detail ? `${label}\n${detail}` : label;
+  const spoken = [label, ...stats.map((s) => `${s.label} ${s.value}`)].join(', ');
   return (
-    <span className={`status-light ${tone}`} title={title} role="status" aria-label={title}>
+    <span className={`status-light ${tone}`} tabIndex={0} role="status" aria-label={spoken}>
       <span className="status-dot" aria-hidden="true" />
-      {text && <span className="status-text">{text}</span>}
+      <span className="status-card" aria-hidden="true">
+        <strong>{label}</strong>
+        {stats.length > 0 && (
+          <dl>
+            {stats.map((s) => (
+              <div key={s.label}>
+                <dt>{s.label}</dt>
+                <dd>{s.value}</dd>
+              </div>
+            ))}
+          </dl>
+        )}
+      </span>
     </span>
   );
 }
