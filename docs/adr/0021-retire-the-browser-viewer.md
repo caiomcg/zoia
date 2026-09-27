@@ -16,7 +16,7 @@ second client to keep working, without the features people now expect.
 ## Decision
 
 The web address goes back to a static page, as in ADR 0008: the logo, one sentence and a
-link to the repository, with an eye favicon. No script is loaded. `viewer.js` and
+link to the repository, with the desktop app's icon as the favicon. No script is loaded. `viewer.js` and
 `viewer.css` are deleted, and `server/test/landing.test.js` fails if a script or either file
 comes back.
 

@@ -58,7 +58,7 @@ describe('the retired web client', () => {
     assert.equal(res.status, 200);
     assert.match(res.headers['content-type'], /html/);
     assert.ok(!/<script/i.test(res.text));
-    assert.equal((await request(build()).get('/icon.svg')).status, 200);
+    assert.equal((await request(build()).get('/icon.png')).status, 200);
     assert.equal((await request(build()).get('/viewer.js')).status, 404);
   });
 
