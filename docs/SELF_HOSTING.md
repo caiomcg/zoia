@@ -113,7 +113,8 @@ missing UDP forward, certificates that never issued, containers that are up but 
 | `MAX_FRAMERATE` | `60` | 30 halves the bitrate need for most content. |
 | `CAPTURE_WIDTH` / `_HEIGHT` | `3840` / `2160` | Drop to `1920`/`1080` on a thin link. |
 | `VIDEO_CODEC` | `vp9` | `vp9` compresses screen content best; `h264` is cheaper to encode. |
-| `ROOM_NAME` | `zoia` | One room per server. |
+| `ROOM_NAME` | `zoia` | Id of the first channel, and the prefix of the default others. |
+| `ROOMS` | five: `Sala 1`…`Sala 5` | Channels as `id:Label,id:Label`. See [ADR 0015](adr/0015-channels.md). |
 
 ### Capacity
 

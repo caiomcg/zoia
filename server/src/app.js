@@ -11,7 +11,7 @@
 import express from 'express';
 import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
-import { NotStageHolderError } from './whip.js';
+import { NotStageHolderError, WHIP_SUFFIX } from './whip.js';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -25,12 +25,32 @@ export function createApp({
   tokenIssuer,
   stage,
   whip = null,
+  channels = null,
   reports = null,
   pairingStore = null,
   deviceStore = null,
   logger = console,
 }) {
   const app = express();
+
+  // Each channel is its own LiveKit room, with its own stage and WHIP
+  // publisher. Built by index.js; a single-room caller (the tests, mostly)
+  // passes stage and whip, and gets one channel made of them.
+  const channelList = channels ?? [{ id: config.roomName ?? 'zoia', name: 'Sala 1', stage, whip }];
+  const channelsById = new Map(channelList.map((channel) => [channel.id, channel]));
+
+  /**
+   * The channel a request is about: `room` in the body or query, or the first
+   * channel when it names none, which is what a client from before channels
+   * sends. Anything else is refused rather than guessed at.
+   */
+  function channelOf(req, res) {
+    const id = req.body?.room ?? req.query?.room;
+    if (id === undefined) return channelList[0];
+    const channel = typeof id === 'string' ? channelsById.get(id) : undefined;
+    if (!channel) res.status(404).json({ error: 'unknown_room' });
+    return channel;
+  }
 
   // Behind the caddy front end. Without this every request appears to come from
   // the proxy and the rate limiter throttles all users as one client.
@@ -191,7 +211,9 @@ export function createApp({
 
   app.post('/api/token', requireSession, async (req, res, next) => {
     try {
-      const result = await tokenIssuer.issue(req.user);
+      const channel = channelOf(req, res);
+      if (!channel) return;
+      const result = await tokenIssuer.issue(req.user, channel.id);
       // Against the store the session actually came from. A device only hits
       // /api/device/session once per launch, so if this touched the key store
       // unconditionally a machine left running for weeks would keep reporting
@@ -268,11 +290,40 @@ export function createApp({
   // ---- broadcast slots ---------------------------------------------------
   // Publishing is a runtime permission, granted independently per participant.
 
-  app.get('/api/stage', requireSession, async (_req, res, next) => {
+  // Every channel, who is in it and who is live, so a client can show where
+  // people are before joining one.
+  app.get('/api/rooms', requireSession, async (_req, res, next) => {
     try {
+      const rooms = await Promise.all(
+        channelList.map(async ({ id, name, stage: channelStage }) => {
+          const [participants, broadcasters] = await Promise.all([
+            channelStage.participants(),
+            channelStage.broadcasters(),
+          ]);
+          return {
+            id,
+            name,
+            // A WHIP publisher is its owner's broadcast, not another person.
+            participants: participants
+              .filter((p) => !p.identity.endsWith(WHIP_SUFFIX))
+              .map(({ identity, name: who }) => ({ identity, name: who })),
+            broadcasters: broadcasters.map(({ identity, name: who }) => ({ identity, name: who })),
+          };
+        }),
+      );
+      res.json({ rooms });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  app.get('/api/stage', requireSession, async (req, res, next) => {
+    try {
+      const channel = channelOf(req, res);
+      if (!channel) return;
       res.json({
-        broadcasters: await stage.broadcasters(),
-        participants: await stage.participants(),
+        broadcasters: await channel.stage.broadcasters(),
+        participants: await channel.stage.participants(),
       });
     } catch (err) {
       next(err);
@@ -281,7 +332,17 @@ export function createApp({
 
   app.post('/api/stage/claim', requireSession, async (req, res, next) => {
     try {
-      const result = await stage.claim(req.user);
+      const channel = channelOf(req, res);
+      if (!channel) return;
+      // One broadcast per person across all channels: a slot held elsewhere
+      // (a client that switched channel without releasing) is released first.
+      for (const other of channelList) {
+        if (other === channel) continue;
+        if (await other.stage.isBroadcaster(req.user.id).catch(() => false)) {
+          await other.stage.release(req.user);
+        }
+      }
+      const result = await channel.stage.claim(req.user);
       if (!result.ok) {
         return res.status(409).json({ error: result.reason });
       }
@@ -293,7 +354,9 @@ export function createApp({
 
   app.post('/api/stage/release', requireSession, async (req, res, next) => {
     try {
-      res.json(await stage.release(req.user));
+      const channel = channelOf(req, res);
+      if (!channel) return;
+      res.json(await channel.stage.release(req.user));
     } catch (err) {
       next(err);
     }
@@ -305,14 +368,16 @@ export function createApp({
   // stage still goes through /api/stage — this only hands out the endpoint.
 
   const requireWhip = (_req, res, next) =>
-    whip ? next() : res.status(501).json({ error: 'whip_not_configured' });
+    channelList[0]?.whip ? next() : res.status(501).json({ error: 'whip_not_configured' });
 
   // Hardware-encoded broadcasts publish to the SFU over WHIP. The endpoint is
   // the SFU's own; what this hands out is permission, and only to whoever
   // has claimed their own broadcast slot. See src/whip.js.
   app.post('/api/whip', requireSession, requireWhip, async (req, res, next) => {
     try {
-      res.json(await whip.endpointFor(req.user, req.body));
+      const channel = channelOf(req, res);
+      if (!channel) return;
+      res.json(await channel.whip.endpointFor(req.user, req.body));
     } catch (err) {
       if (err instanceof NotStageHolderError) {
         return res.status(409).json({ error: 'not_stage_holder' });
@@ -323,7 +388,9 @@ export function createApp({
 
   app.post('/api/whip/release', requireSession, requireWhip, async (req, res, next) => {
     try {
-      res.json(await whip.release(req.user));
+      const channel = channelOf(req, res);
+      if (!channel) return;
+      res.json(await channel.whip.release(req.user));
     } catch (err) {
       next(err);
     }

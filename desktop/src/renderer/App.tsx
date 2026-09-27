@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Banner from './components/Banner';
 import CameraDialog from './components/CameraDialog';
 import PairingScreen from './components/PairingScreen';
@@ -15,12 +15,32 @@ import {
   type BroadcastMode,
   type GpuStatus,
   type PairingStatus,
+  type RoomInfo,
   type SourceInfo,
 } from '../shared/ipc';
 
 const PRESET_STORAGE_KEY = 'zoia.qualityPreset';
 const HARDWARE_STORAGE_KEY = 'zoia.hardwareAcceleration';
 const ONBOARDING_STORAGE_KEY = 'zoia.onboardingDismissed';
+const CHANNEL_STORAGE_KEY = 'zoia.channel';
+/** How often the channel list (who is where, who is live) is refreshed. */
+const ROOMS_POLL_MS = 5_000;
+
+function storeChannel(id: string) {
+  try {
+    localStorage.setItem(CHANNEL_STORAGE_KEY, id);
+  } catch {
+    // Remembering is a convenience; the channel still applies this session.
+  }
+}
+
+function readChannel(): string | null {
+  try {
+    return localStorage.getItem(CHANNEL_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
 
 export default function App() {
   const [status, setStatus] = useState<PairingStatus | null>(null);
@@ -32,6 +52,10 @@ export default function App() {
   const [gpu, setGpu] = useState<GpuStatus | null>(null);
   const [stageError, setStageError] = useState<string | null>(null);
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
+  // The channel this device is in, or wants to be in; the last one it used.
+  const [channel, setChannel] = useState<string | null>(readChannel);
+  const [channels, setChannels] = useState<RoomInfo[]>([]);
+  const connectingRef = useRef(false);
   const [presetId, setPresetId] = useState(
     () => localStorage.getItem(PRESET_STORAGE_KEY) ?? DEFAULT_PRESET_ID,
   );
@@ -76,12 +100,56 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (status?.paired && room.state === 'idle') {
-      window.zoia.token
-        .get()
-        .then(({ wsUrl, token, quality }) => room.connect(wsUrl, token, quality));
-    }
-  }, [status?.paired, room]);
+    if (!status?.paired || room.state !== 'idle' || connectingRef.current) return;
+    connectingRef.current = true;
+    window.zoia.token
+      .get(channel ?? undefined)
+      // A remembered channel the server no longer has: fall back to the first.
+      .catch(() => window.zoia.token.get())
+      .then(async ({ wsUrl, token, quality, room: joined }) => {
+        if (joined !== channel) {
+          setChannel(joined);
+          storeChannel(joined);
+        }
+        await room.connect(wsUrl, token, quality);
+      })
+      .finally(() => {
+        connectingRef.current = false;
+      });
+  }, [status?.paired, room, channel]);
+
+  // Who is in which channel, and who is live there, for the channel list.
+  useEffect(() => {
+    if (!status?.paired) return;
+    let cancelled = false;
+    const load = () =>
+      window.zoia.rooms
+        .list()
+        .then((list) => {
+          if (!cancelled) setChannels(list);
+        })
+        .catch(() => {});
+    load();
+    const timer = setInterval(load, ROOMS_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [status?.paired, channel, room.state]);
+
+  /**
+   * Moves this device to another channel. A broadcast does not follow you:
+   * sharing stops first, then the room is left, and the effect above joins
+   * the new one. The channel is set before leaving so that it never sees an
+   * idle room paired with the old channel and rejoins it.
+   */
+  async function switchChannel(id: string) {
+    if (id === channel) return;
+    if (isLive || isStarting) await stopSharing();
+    setChannel(id);
+    storeChannel(id);
+    await room.disconnect();
+  }
 
   const handleRename = useCallback(
     async (name: string) => {
@@ -308,7 +376,10 @@ export default function App() {
 
       <div className="body">
         <main className="main">
+          {/* Keyed by channel: what you watched or listened to in one channel
+              means nothing in the next. */}
           <RemoteGrid
+            key={channel ?? 'none'}
             screens={room.remoteScreens}
             onFocusChange={setRemoteFocus}
             local={
@@ -349,6 +420,9 @@ export default function App() {
           myName={status.deviceName ?? 'You'}
           onRename={handleRename}
           loadingRemoteIds={loadingRemoteIds}
+          channels={channels}
+          currentChannel={channel}
+          onJoinChannel={(id) => void switchChannel(id)}
         />
       </div>
 

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { RoomMember } from '../livekit/useRoom';
+import type { RoomInfo } from '../../shared/ipc';
 import Avatar from './Avatar';
 
 /**
@@ -87,6 +88,13 @@ function RenameField({
 
 const COLLAPSED_KEY = 'zoia.sidebarCollapsed';
 
+/** "Sala 3" → "S3", "Jogos" → "JO": what a collapsed sidebar shows. */
+function shortName(name: string): string {
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  if (words.length > 1) return (words[0]![0]! + words[words.length - 1]!.slice(0, 2)).toUpperCase();
+  return name.slice(0, 2).toUpperCase();
+}
+
 function readCollapsed(): boolean {
   try {
     return localStorage.getItem(COLLAPSED_KEY) === 'true';
@@ -119,11 +127,18 @@ export default function Sidebar({
   myName,
   onRename,
   loadingRemoteIds,
+  channels,
+  currentChannel,
+  onJoinChannel,
 }: {
   members: RoomMember[];
   myName: string;
   onRename: (name: string) => Promise<void>;
   loadingRemoteIds: Set<string>;
+  /** Every channel, who is in it and who is live, polled from the server. */
+  channels: RoomInfo[];
+  currentChannel: string | null;
+  onJoinChannel: (id: string) => void;
 }) {
   const broadcasting = members.filter((m) => m.isBroadcasting);
   const watching = members.filter((m) => !m.isBroadcasting);
@@ -157,6 +172,60 @@ export default function Sidebar({
         </button>
       </div>
       <div className="sidebar-scroll">
+        {channels.length > 1 && (
+          <section className="member-group channel-group">
+            <h2 className="member-heading">Canais</h2>
+            {channels.map((c) => {
+              const current = c.id === currentChannel;
+              const live = c.broadcasters.length;
+              return (
+                <div key={c.id} className="channel-block">
+                  <button
+                    className={`channel${current ? ' current' : ''}`}
+                    onClick={() => onJoinChannel(c.id)}
+                    aria-current={current ? 'true' : undefined}
+                    title={
+                      current
+                        ? `${c.name} — você está aqui`
+                        : `Entrar em ${c.name} (${c.participants.length} ${
+                            c.participants.length === 1 ? 'pessoa' : 'pessoas'
+                          })`
+                    }
+                  >
+                    <span className="channel-short" aria-hidden="true">
+                      {shortName(c.name)}
+                    </span>
+                    <span className="channel-name">{c.name}</span>
+                    {live > 0 && (
+                      <span className="channel-live" title={`${live} ao vivo`}>
+                        {live} ao vivo
+                      </span>
+                    )}
+                    <span className="channel-count">{c.participants.length}</span>
+                  </button>
+                  {/* Who is where, for the channels you are not in; your
+                      own channel's people are listed in full below. */}
+                  {!current && c.participants.length > 0 && (
+                    <div className="channel-people">
+                      {c.participants.slice(0, 6).map((p) => (
+                        <span key={p.identity} title={p.name}>
+                          <Avatar
+                            name={p.name}
+                            live={c.broadcasters.some((b) => b.identity === p.identity)}
+                          />
+                        </span>
+                      ))}
+                      {c.participants.length > 6 && (
+                        <span className="channel-more">+{c.participants.length - 6}</span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </section>
+        )}
+
         {broadcasting.length > 0 && (
           <section className="member-group">
             <h2 className="member-heading">Ao vivo — {broadcasting.length}</h2>

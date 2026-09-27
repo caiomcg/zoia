@@ -26,7 +26,10 @@ const bridge: ZoiaBridge = {
     },
   },
   token: {
-    get: () => ipcRenderer.invoke(IPC.getToken),
+    get: (room) => ipcRenderer.invoke(IPC.getToken, room),
+  },
+  rooms: {
+    list: () => ipcRenderer.invoke(IPC.roomsList),
   },
   stage: {
     get: () => ipcRenderer.invoke(IPC.stageGet),

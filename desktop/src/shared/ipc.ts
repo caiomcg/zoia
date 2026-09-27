@@ -22,6 +22,14 @@ export interface PairingStatus {
   needsInvite: boolean;
 }
 
+/** A channel, who is in it, and who is live there. */
+export interface RoomInfo {
+  id: string;
+  name: string;
+  participants: Array<{ identity: string; name: string }>;
+  broadcasters: Array<{ identity: string; name: string }>;
+}
+
 export interface TokenResult {
   token: string;
   wsUrl: string;
@@ -200,6 +208,7 @@ export const IPC = {
   pairingUseInvite: 'zoia:pairing:use-invite',
   pairingChooseInvite: 'zoia:pairing:choose-invite',
   getToken: 'zoia:token:get',
+  roomsList: 'zoia:rooms:list',
   stageGet: 'zoia:stage:get',
   stageClaim: 'zoia:stage:claim',
   stageRelease: 'zoia:stage:release',
