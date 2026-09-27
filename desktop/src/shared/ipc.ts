@@ -210,6 +210,7 @@ export interface UpdaterConfig {
 export type UpdaterCheckResult =
   | { status: 'up-to-date' }
   | { status: 'available'; version: string; notes: string | null }
+  | { status: 'full-required'; version: string; installerUrl: string; notes: string | null }
   | { status: 'disabled' }
   | { status: 'error'; message: string };
 

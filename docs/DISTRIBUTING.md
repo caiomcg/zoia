@@ -50,7 +50,7 @@ this format (a complete example is available at
 {
   "version": "0.2.14",
   "commit": "<40 hexadecimal characters from the branch commit>",
-  "artifactType": "asar",
+  "updateType": "asar",
   "artifactUrl": "https://github.com/OWNER/REPOSITORY/releases/download/v0.2.14/Zoia-OTA-0.2.14.asar",
   "sha256": "<SHA-256 of the app.asar file>",
   "notes": "Optional summary"
@@ -62,6 +62,39 @@ copied from `win-unpacked/resources/app.asar`. Publish it as a release asset and
 its SHA-256 before updating the manifest. The operational order is: publish the asset, update
 the branch manifest, and only then distribute the new version. `autoInstall` set to `true`
 installs without confirmation; the default `false` shows the update dialog.
+
+The regular CI workflow classifies every commit on `main` against the previous release tag.
+The release workflow repeats the same classification for each release tag. The result is
+printed in CI and controls whether the OTA asset is published:
+
+| Classification | Meaning | Updater behavior |
+|---|---|---|
+| `asar` | Only application code or other files inside `app.asar` changed | Download and install the small OTA artifact |
+| `full` | Electron, native code, FFmpeg, packaging, or external resources changed | Do not apply OTA; offer the full installer |
+| `none` | No desktop files changed | Publish the normal release without an updater artifact |
+
+The workflow marks a release as `full` when it sees changes under `desktop/native/`,
+`desktop/vendor/`, `desktop/build/`, or changes to `desktop/ffmpeg.json`,
+`desktop/electron-builder.yml`, `desktop/electron.vite.config.ts`, or desktop dependency
+metadata/lockfiles. A version-only change to `desktop/package.json` or the lockfile does not
+force a full release. The classifier lives in
+[`scripts/classify-desktop-update.js`](../scripts/classify-desktop-update.js) and requires
+the checkout to contain the release tags.
+
+For a `full` release, publish a manifest with `updateType: "full"` and the installer URL:
+
+```json
+{
+  "version": "0.3.0",
+  "commit": "<40 hexadecimal characters from the branch commit>",
+  "updateType": "full",
+  "installerUrl": "https://github.com/OWNER/REPOSITORY/releases/download/v0.3.0/Zoia-Setup-0.3.0-x64.exe",
+  "notes": "Electron or native component update"
+}
+```
+
+The desktop updater never replaces the executable itself. It focuses only on `asar` manifests;
+when it sees `updateType: "full"`, it tells the user to download the installer instead.
 
 The [desktop/src/main/updater.ts](../desktop/src/main/updater.ts) module starts from
 `desktop/src/main/index.ts` after `config.init()` and `pairing.restoreSession()`. It downloads

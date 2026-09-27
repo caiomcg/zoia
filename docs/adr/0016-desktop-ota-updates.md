@@ -32,9 +32,18 @@ whether startup checks and confirmation dialogs are enabled.
 
 For GitHub repositories, the updater reads the selected branch commit through
 the GitHub API and reads a JSON manifest from the corresponding raw branch
-path. The manifest contains the release version, commit, HTTPS `app.asar`
-artifact URL, SHA-256 digest, and optional release notes. The updater refuses
-an incomplete manifest, non-HTTPS URL, commit mismatch, or digest mismatch.
+path. The manifest contains the release version, commit, an `updateType`, and
+optional release notes. An `asar` manifest also contains an HTTPS `app.asar`
+artifact URL and SHA-256 digest. A `full` manifest contains an HTTPS installer
+URL instead. The updater refuses an incomplete manifest, non-HTTPS URL, commit
+mismatch, or digest mismatch.
+
+The release workflow runs `scripts/classify-desktop-update.js` against the
+previous release tag. It produces `asar` when only application-code changes are
+present, `full` when Electron/native/FFmpeg/packaging inputs changed, and
+`none` when no desktop files changed. Only an `asar` classification publishes
+the OTA asset. This keeps the decision in CI rather than relying on a person to
+remember whether a commit is safe for an archive-only update.
 
 The update sequence is:
 
@@ -57,6 +66,7 @@ native addons, or other unpacked resources also require a complete release.
 ### Benefits
 
 - Routine JavaScript/TypeScript releases download only the application archive.
+- Releases that need the full installer are identified before publishing the OTA asset.
 - Forks can point the same updater at their own repository and branch by editing
   JSON configuration.
 - HTTPS, branch-commit matching, and SHA-256 verification reduce accidental or
@@ -70,6 +80,9 @@ native addons, or other unpacked resources also require a complete release.
 - OTA artifacts must be produced from the same packaged build as the release.
 - The release workflow must publish an `app.asar` asset and maintain the branch
   manifest with its exact SHA-256 value.
+- The path classifier is conservative; a dependency or packaging change may
+  require a full installer even when the resulting code would technically fit
+  inside `app.asar`.
 - Native, Electron, FFmpeg, and unpacked-resource changes cannot use this path.
 - The updater currently supports the installed Windows build, not portable
   builds or macOS/Linux packages.
