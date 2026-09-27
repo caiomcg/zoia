@@ -1,7 +1,7 @@
 {
-  "version": "0.3.9",
+  "version": "0.3.10",
   "updateType": "asar",
-  "artifactUrl": "https://github.com/caiomcg/zoia/releases/download/v0.3.9/Zoia-OTA-0.3.9.asar",
-  "sha256": "7089f680484452652e19b11e5e577faec047cd45f36860bbda8a08528d1bfd05",
-  "notes": "Unified League of Legends streaming with automatic hand-off, and more reliable OTA updates."
+  "artifactUrl": "https://github.com/caiomcg/zoia/releases/download/v0.3.10/Zoia-OTA-0.3.10.asar",
+  "sha256": "b50ac2eeea1ce5fde55c03a85d4e642739b9d4697fbd5b0ecfa30774b89fe817",
+  "notes": "Live thumbnail previews, your own preview hidden by default, clearer share buttons and sidebar, window labels that follow the window, and an About section."
 }
