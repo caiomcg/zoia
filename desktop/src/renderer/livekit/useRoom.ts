@@ -29,6 +29,18 @@ import { createCaptureAudioTrack, type CaptureTrackHandle } from '../audio/captu
  */
 export const WHIP_SUFFIX = '-gpu';
 
+const LEAGUE_CLIENT_EXECUTABLE = 'leagueclient.exe';
+const LEAGUE_GAME_EXECUTABLE = 'league of legends.exe';
+
+function executableName(source: SourceInfo): string {
+  const path = source.processPath?.replaceAll('\\', '/');
+  return path?.slice(path.lastIndexOf('/') + 1).toLowerCase() ?? '';
+}
+
+function isLeagueSource(source: SourceInfo, executable: string): boolean {
+  return source.kind === 'window' && executableName(source) === executable;
+}
+
 /** The person a WHIP publisher belongs to, or the identity unchanged. */
 function ownerIdentity(identity: string): string {
   return identity.endsWith(WHIP_SUFFIX) ? identity.slice(0, -WHIP_SUFFIX.length) : identity;
@@ -242,6 +254,12 @@ export function useRoom() {
   const restartWindowRef = useRef<
     ((source: SourceInfo, preset?: QualityPreset) => Promise<boolean>) | null
   >(null);
+  const leagueFollowRef = useRef<{
+    client: SourceInfo;
+    current: SourceInfo;
+    preset?: QualityPreset;
+  } | null>(null);
+  const switchingWindowRef = useRef(false);
   // Populated by connect(); startBroadcast reads it so capture and encoding
   // actually match what the server tuned, instead of LiveKit's bare defaults.
   const qualityRef = useRef<NonNullable<TokenResult['quality']>>({
@@ -601,6 +619,7 @@ export function useRoom() {
    * the user clicked Stop, the OS ended capture, or the room disconnected.
    */
   const stopBroadcast = useCallback(async () => {
+    leagueFollowRef.current = null;
     await stopPublishing();
     await window.zoia.stage.release().catch(() => {});
   }, [stopPublishing]);
@@ -698,6 +717,18 @@ export function useRoom() {
       setAudioWarning(null);
       setBroadcastState('starting');
 
+      if (!keepStage) {
+        leagueFollowRef.current = null;
+      } else if (
+        !isLeagueSource(source, LEAGUE_CLIENT_EXECUTABLE) &&
+        !isLeagueSource(source, LEAGUE_GAME_EXECUTABLE)
+      ) {
+        // A manual source change turns off the automatic League handoff.
+        leagueFollowRef.current = null;
+      } else if (leagueFollowRef.current) {
+        leagueFollowRef.current.current = source;
+      }
+
       // Switching what you are sharing keeps the stage you already hold:
       // releasing and re-claiming would briefly free it for someone else and
       // makes the viewer's picture drop out for no reason.
@@ -710,6 +741,10 @@ export function useRoom() {
           setBroadcastError('Não foi possível iniciar sua transmissão.');
           return false;
         }
+      }
+
+      if (!keepStage && isLeagueSource(source, LEAGUE_CLIENT_EXECUTABLE)) {
+        leagueFollowRef.current = { client: source, current: source, preset };
       }
 
       try {
@@ -853,6 +888,42 @@ export function useRoom() {
   // same publishing path without closing over a stale callback.
   restartWindowRef.current = (source, preset) =>
     startBroadcast(source, preset, { keepStage: true });
+
+  // League of Legends keeps its launcher window open while the game creates a
+  // separate window and process. Follow that process pair without asking the
+  // user to stop and start the broadcast manually.
+  useEffect(() => {
+    let disposed = false;
+
+    const followLeagueWindow = async () => {
+      const follow = leagueFollowRef.current;
+      if (!follow || !localTrackRef.current || switchingWindowRef.current) return;
+
+      const sources = await window.zoia.sources.list().catch(() => []);
+      if (disposed) return;
+
+      const game = sources.find((source) => isLeagueSource(source, LEAGUE_GAME_EXECUTABLE));
+      const client =
+        sources.find((source) => isLeagueSource(source, LEAGUE_CLIENT_EXECUTABLE)) ?? follow.client;
+      const target = game ?? client;
+
+      if (!target || target.id === follow.current.id || !restartWindowRef.current) return;
+
+      switchingWindowRef.current = true;
+      follow.current = target;
+      try {
+        await restartWindowRef.current(target, follow.preset);
+      } finally {
+        switchingWindowRef.current = false;
+      }
+    };
+
+    const timer = setInterval(() => void followLeagueWindow(), 1000);
+    return () => {
+      disposed = true;
+      clearInterval(timer);
+    };
+  }, []);
 
   useEffect(
     () => () => {

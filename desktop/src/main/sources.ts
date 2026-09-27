@@ -34,6 +34,8 @@ export interface SourceInfo {
   thumbnailDataUrl: string;
   /** The window's owning PID, when resolvable — the whole point of this app. */
   processId: number | null;
+  /** Full executable path of the window's owning process, when available. */
+  processPath: string | null;
 }
 
 function hwndFromSourceId(id: string): number | null {
@@ -77,6 +79,7 @@ async function captureSources(): Promise<SourceInfo[]> {
         kind: isWindow ? 'window' : 'screen',
         thumbnailDataUrl: toDataUrl(source.thumbnail),
         processId,
+        processPath: nativeWindow?.path ?? null,
         hwnd,
       },
     ];

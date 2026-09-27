@@ -20,11 +20,30 @@ import type { EncoderStatus, QualityPreset, SourceInfo } from '../../shared/ipc'
 
 export type GpuBroadcastState = 'idle' | 'starting' | 'live';
 
+const LEAGUE_CLIENT_EXECUTABLE = 'leagueclient.exe';
+const LEAGUE_GAME_EXECUTABLE = 'league of legends.exe';
+
+function executableName(source: SourceInfo): string {
+  const path = source.processPath?.replaceAll('\\', '/');
+  return path?.slice(path.lastIndexOf('/') + 1).toLowerCase() ?? '';
+}
+
+function isLeagueSource(source: SourceInfo, executable: string): boolean {
+  return source.kind === 'window' && executableName(source) === executable;
+}
+
 export function useGpuBroadcast() {
   const [state, setState] = useState<GpuBroadcastState>('idle');
   const [status, setStatus] = useState<EncoderStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const activeRef = useRef(false);
+  const activeSourceRef = useRef<SourceInfo | null>(null);
+  const leagueClientRef = useRef<SourceInfo | null>(null);
+  const presetRef = useRef<QualityPreset | null>(null);
+  const switchingRef = useRef(false);
+  const startRef = useRef<
+    ((preset: QualityPreset, source: SourceInfo | null) => Promise<boolean>) | null
+  >(null);
 
   useEffect(() => {
     return window.zoia.encoder.onStatus((next) => {
@@ -39,6 +58,8 @@ export function useGpuBroadcast() {
 
   const stop = useCallback(async () => {
     activeRef.current = false;
+    activeSourceRef.current = null;
+    leagueClientRef.current = null;
     await window.zoia.encoder.stop().catch(() => {});
     setState('idle');
     setStatus(null);
@@ -48,6 +69,13 @@ export function useGpuBroadcast() {
     async (preset: QualityPreset, source: SourceInfo | null) => {
       setError(null);
       setState('starting');
+      presetRef.current = preset;
+      activeSourceRef.current = source;
+      if (source && isLeagueSource(source, LEAGUE_CLIENT_EXECUTABLE)) {
+        leagueClientRef.current = source;
+      } else if (!source || !isLeagueSource(source, LEAGUE_GAME_EXECUTABLE)) {
+        leagueClientRef.current = null;
+      }
       try {
         const isWindow = source?.kind === 'window';
         await window.zoia.encoder.start({
@@ -74,6 +102,43 @@ export function useGpuBroadcast() {
     },
     [stop],
   );
+
+  startRef.current = start;
+
+  // The GPU path uses the same native window identity, so it also follows the
+  // League launcher/game handoff instead of remaining pinned to the launcher.
+  useEffect(() => {
+    let disposed = false;
+
+    const followLeagueWindow = async () => {
+      const current = activeSourceRef.current;
+      const client = leagueClientRef.current;
+      if (!activeRef.current || !current || !client || switchingRef.current) return;
+
+      const sources = await window.zoia.sources.list().catch(() => []);
+      if (disposed) return;
+
+      const game = sources.find((source) => isLeagueSource(source, LEAGUE_GAME_EXECUTABLE));
+      const launcher =
+        sources.find((source) => isLeagueSource(source, LEAGUE_CLIENT_EXECUTABLE)) ?? client;
+      const target = game ?? launcher;
+      if (!target || target.id === current.id || !startRef.current || !presetRef.current) return;
+
+      switchingRef.current = true;
+      try {
+        await window.zoia.encoder.stop().catch(() => {});
+        await startRef.current(presetRef.current, target);
+      } finally {
+        switchingRef.current = false;
+      }
+    };
+
+    const timer = setInterval(() => void followLeagueWindow(), 1000);
+    return () => {
+      disposed = true;
+      clearInterval(timer);
+    };
+  }, []);
 
   return { state, status, error, start, stop };
 }
