@@ -89,19 +89,23 @@ For a `full` release, publish a manifest with `updateType: "full"` and the insta
   "commit": "<40 hexadecimal characters from the branch commit>",
   "updateType": "full",
   "installerUrl": "https://github.com/OWNER/REPOSITORY/releases/download/v0.3.0/Zoia-Setup-0.3.0-x64.exe",
+  "portableUrl": "https://github.com/OWNER/REPOSITORY/releases/download/v0.3.0/Zoia-0.3.0-portable.exe",
+  "portableSha256": "<64 hexadecimal characters>",
   "notes": "Electron or native component update"
 }
 ```
 
-The desktop updater never replaces the executable itself. It focuses only on `asar` manifests;
-when it sees `updateType: "full"`, it tells the user to download the installer instead.
+Installed builds use `installerUrl` for a full update. Portable builds use the optional
+`portableUrl` and `portableSha256`: when the user confirms, or when `autoInstall` is enabled,
+the updater downloads and verifies the new portable executable, waits for Zoia to exit, replaces
+the original executable, and launches it again. Without those two portable fields, portable users
+are shown the normal installer download instead.
 
 The [desktop/src/main/updater.ts](../desktop/src/main/updater.ts) module starts from
 `desktop/src/main/index.ts` after `config.init()` and `pairing.restoreSession()`. It downloads
 to `%APPDATA%/Zoia/updates`, validates SHA-256, starts a helper process, quits Electron, and
-replaces `resources/app.asar` with a temporary backup before relaunching the executable. The
-portable build is deliberately rejected: its `app.asar` lives in a temporary extraction and
-would be deleted on the next launch; distribute a new `.exe` for portable users.
+replaces either `resources/app.asar` or the original portable `.exe` with a temporary backup
+before relaunching the executable.
 
 The published binary contains **no server URL and no pairing token**, so it is not a
 credential and can be linked anywhere. It is inert until someone supplies an invite.

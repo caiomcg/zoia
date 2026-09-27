@@ -56,10 +56,13 @@ The update sequence is:
    the staged artifact into place.
 7. Relaunch the original executable and remove the backup after the handoff.
 
-The portable build is deliberately excluded. Its application files are
-extracted into a temporary directory and would disappear on the next launch;
-portable users must receive a new executable. Changes to Electron, FFmpeg,
-native addons, or other unpacked resources also require a complete release.
+Portable builds use a separate full-update path: the manifest may provide a
+`portableUrl` and `portableSha256`. The updater downloads and verifies that
+executable, waits for the portable process to exit, replaces the original
+executable, and relaunches it. The extracted application files are never
+replaced directly. If the portable artifact is absent, the user must download
+the full release manually. Changes to Electron, FFmpeg, native addons, or
+other unpacked resources still require a complete release.
 
 ## Consequences
 
@@ -84,8 +87,8 @@ native addons, or other unpacked resources also require a complete release.
   require a full installer even when the resulting code would technically fit
   inside `app.asar`.
 - Native, Electron, FFmpeg, and unpacked-resource changes cannot use this path.
-- The updater currently supports the installed Windows build, not portable
-  builds or macOS/Linux packages.
+- Portable updates require every full manifest to publish a verified portable
+  executable alongside the installer; macOS/Linux packages remain unsupported.
 - A compromised repository branch or release asset is still an update authority;
   SHA-256 protects integrity in transit, not publisher identity. A future
   signing scheme may extend this design.

@@ -2,7 +2,7 @@ import { app, dialog, shell } from 'electron';
 import { createHash } from 'node:crypto';
 import { createWriteStream } from 'node:fs';
 import { access, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { spawn } from 'node:child_process';
 import { pipeline } from 'node:stream/promises';
 import { Readable } from 'node:stream';
@@ -28,6 +28,8 @@ interface UpdateManifest {
   artifactUrl?: string;
   sha256?: string;
   installerUrl?: string;
+  portableUrl?: string;
+  portableSha256?: string;
   notes?: string;
 }
 
@@ -42,7 +44,12 @@ interface RemoteUpdate extends UpdateManifest {
 export type UpdaterCheckResult =
   | { status: 'up-to-date' }
   | { status: 'available'; version: string; notes: string | null }
-  | { status: 'full-required'; version: string; installerUrl: string; notes: string | null }
+  | {
+      status: 'full-required';
+      version: string;
+      installerUrl: string;
+      notes: string | null;
+    }
   | { status: 'disabled' }
   | { status: 'error'; message: string };
 
@@ -236,6 +243,16 @@ async function getRemoteUpdate(config: UpdaterConfig): Promise<RemoteUpdate> {
     if (!manifest.installerUrl || !isUrl(manifest.installerUrl)) {
       throw new Error('Full update manifest contains an invalid installer URL');
     }
+    if (manifest.portableUrl || manifest.portableSha256) {
+      if (
+        !manifest.portableUrl ||
+        !isUrl(manifest.portableUrl) ||
+        !manifest.portableSha256 ||
+        !/^[a-f0-9]{64}$/i.test(manifest.portableSha256)
+      ) {
+        throw new Error('Full update manifest contains an invalid portable artifact or SHA-256');
+      }
+    }
   } else {
     throw new Error('Updater manifest has an unknown update type');
   }
@@ -328,6 +345,62 @@ async function install(update: RemoteUpdate): Promise<void> {
   app.quit();
 }
 
+function portableExecutablePath(): string | null {
+  if (!process.env.PORTABLE_EXECUTABLE_DIR) return null;
+  return (
+    process.env.PORTABLE_EXECUTABLE_FILE ??
+    join(process.env.PORTABLE_EXECUTABLE_DIR, basename(process.execPath))
+  );
+}
+
+function isPortableBuild(): boolean {
+  return portableExecutablePath() !== null;
+}
+
+async function installPortable(update: RemoteUpdate): Promise<void> {
+  if (!update.portableUrl || !update.portableSha256) {
+    throw new Error('This release does not publish a verified portable executable');
+  }
+  if (!app.isPackaged) throw new Error('Portable updates are disabled in development builds');
+
+  const target = portableExecutablePath();
+  if (!target) throw new Error('The portable executable path is unavailable');
+  await access(target);
+
+  const updateDir = join(app.getPath('userData'), 'updates', update.commit);
+  await mkdir(updateDir, { recursive: true });
+  const staged = join(updateDir, `Zoia-${update.version}-portable.exe`);
+  const partial = `${staged}.partial`;
+  const backup = `${target}.previous`;
+  const helper = join(updateDir, HELPER_NAME);
+  const statePath = join(app.getPath('userData'), STATE_NAME);
+  await rm(partial, { force: true });
+  await downloadArtifact(update.portableUrl, update.portableSha256, partial);
+  await rename(partial, staged);
+  await writeHelper(helper);
+
+  spawn(
+    process.execPath,
+    [
+      helper,
+      target,
+      staged,
+      backup,
+      String(process.pid),
+      target,
+      statePath,
+      update.commit,
+    ],
+    {
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: true,
+      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+    },
+  ).unref();
+  app.quit();
+}
+
 export async function checkForUpdate(force = false): Promise<UpdaterCheckResult> {
   if (!app.isPackaged) return { status: 'disabled' };
   const config = await loadConfig();
@@ -343,7 +416,9 @@ export async function checkForUpdate(force = false): Promise<UpdaterCheckResult>
       return {
         status: 'full-required',
         version: update.version,
-        installerUrl: update.installerUrl!,
+        installerUrl: isPortableBuild()
+          ? (update.portableUrl ?? update.installerUrl!)
+          : update.installerUrl!,
         notes: update.notes ?? null,
       };
     }
@@ -370,6 +445,24 @@ export async function startUpdater(): Promise<void> {
     if (!versionUpgrade && !commitUpgrade) return;
 
     if (update.updateType === 'full') {
+      if (isPortableBuild() && update.portableUrl && update.portableSha256) {
+        if (!config.autoInstall) {
+          const result = await dialog.showMessageBox({
+            type: 'info',
+            title: 'Atualização disponível',
+            message: `A versão ${update.version} está disponível.`,
+            detail:
+              update.notes ?? 'O novo executável portable será baixado e o Zoia será reiniciado.',
+            buttons: ['Atualizar agora', 'Depois'],
+            defaultId: 0,
+            cancelId: 1,
+          });
+          if (result.response !== 0) return;
+        }
+        await installPortable(update);
+        return;
+      }
+
       const result = await dialog.showMessageBox({
         type: 'info',
         title: 'Full update required',
@@ -401,9 +494,14 @@ export async function startUpdater(): Promise<void> {
     }
     await install(update);
   } catch (error) {
-    console.warn(
-      '[updater] update skipped:',
-      error instanceof Error ? error.message : String(error),
-    );
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn('[updater] update skipped:', message);
+    await dialog.showMessageBox({
+      type: 'error',
+      title: 'Atualização não concluída',
+      message: 'Não foi possível instalar a atualização.',
+      detail: message,
+      buttons: ['OK'],
+    });
   }
 }
