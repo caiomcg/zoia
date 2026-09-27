@@ -173,6 +173,20 @@ export function selectSource(source: { id: string; name: string; processId: numb
   selected = source;
 }
 
+/**
+ * A shared window's current title, so its label can follow it: a browser tab
+ * or a document changes the title long after the share started. Null once
+ * the window is gone.
+ */
+export function windowTitle(hwnd: number): string | null {
+  try {
+    const window = windowManager.getWindows().find((w) => w.id === hwnd);
+    return window?.getTitle() || null;
+  } catch {
+    return null;
+  }
+}
+
 export function getSelectedSource() {
   return selected;
 }
