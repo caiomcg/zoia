@@ -789,15 +789,6 @@ button:disabled {
   accent-color: var(--accent);
 }
 
-.remote-tile-footer button {
-  padding: 3px 7px;
-  border: 1px solid #3b414a;
-  border-radius: 4px;
-  color: inherit;
-  background: transparent;
-  cursor: pointer;
-}
-
 .remote-empty {
   position: relative;
 }

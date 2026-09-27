@@ -9,8 +9,7 @@ import Avatar from './Avatar';
  * this one wears the same footer, with the controls a sharer needs instead.
  *
  * Its audio controls act on what viewers hear, not on this machine's
- * speakers: your own capture is never played back here except through the
- * monitor, which you opt into.
+ * speakers: your own capture is never played back here.
  */
 
 export function IconVolume({ muted }: { muted: boolean }) {
@@ -84,8 +83,6 @@ export function IconFullscreen({ active }: { active: boolean }) {
 export default function Player({
   name,
   localTrack,
-  canMonitor,
-  setMonitorGain,
   gpuBroadcasting = false,
   sendAudio,
   onStop,
@@ -94,8 +91,6 @@ export default function Player({
 }: {
   name: string;
   localTrack: LocalVideoTrack | null;
-  canMonitor: boolean;
-  setMonitorGain: (value: number) => void;
   /**
    * On the NVENC path the frames never enter this process — ffmpeg publishes
    * them directly — so there is no local track to preview.
@@ -118,7 +113,6 @@ export default function Player({
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const stageRef = useRef<HTMLElement>(null);
-  const [monitoring, setMonitoring] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   useEffect(() => {
@@ -129,11 +123,6 @@ export default function Player({
       el.srcObject = null;
     };
   }, [localTrack]);
-
-  // The monitor taps the audio after the send gain, so it is what viewers get.
-  useEffect(() => {
-    setMonitorGain(monitoring ? 1 : 0);
-  }, [monitoring, setMonitorGain]);
 
   useEffect(() => {
     const handler = () => setIsFullscreen(Boolean(document.fullscreenElement));
@@ -215,21 +204,6 @@ export default function Player({
                   aria-label="How loud viewers hear your audio"
                 />
               )}
-              <button
-                className={`icon-button${monitoring ? ' active' : ''}`}
-                onClick={() => setMonitoring((m) => !m)}
-                disabled={!canMonitor}
-                title={
-                  canMonitor
-                    ? monitoring
-                      ? 'Stop listening to what you are sharing'
-                      : 'Listen to what you are sharing'
-                    : 'Monitoring is unavailable when sharing whole-system audio (it would echo)'
-                }
-                aria-label="Monitor shared audio"
-              >
-                <IconHeadphones />
-              </button>
             </>
           )}
           <button

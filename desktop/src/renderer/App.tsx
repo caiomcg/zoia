@@ -414,8 +414,6 @@ export default function App() {
                         fullscreen={fullscreen}
                         name={status.deviceName ?? 'You'}
                         localTrack={room.localTrack}
-                        canMonitor={room.canMonitor}
-                        setMonitorGain={room.setMonitorGain}
                         gpuBroadcasting={gpuLive}
                         sendAudio={
                           room.sendingAudio

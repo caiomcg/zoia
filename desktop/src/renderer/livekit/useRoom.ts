@@ -241,7 +241,7 @@ export function useRoom() {
   const roomRef = useRef<Room | null>(null);
   const localTrackRef = useRef<LocalVideoTrack | null>(null);
   // `capture` is null for a camera's microphone: a plain MediaStream, with no
-  // WASAPI bridge to meter, monitor or stop.
+  // WASAPI bridge to meter, set the level of, or stop.
   const localAudioRef = useRef<{
     track: LocalAudioTrack;
     capture: CaptureTrackHandle | null;
@@ -290,7 +290,6 @@ export function useRoom() {
   const [videoStats, setVideoStats] = useState<VideoStats | null>(null);
   const statsTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastSampleRef = useRef<{ bytes: number; at: number } | null>(null);
-  const [canMonitor, setCanMonitor] = useState(false);
   // Which of the two share controls is lit; they are independent.
   const [sharingKind, setSharingKind] = useState<'screen' | 'camera' | null>(null);
 
@@ -602,7 +601,6 @@ export function useRoom() {
     setAudioWarning(null);
     setAudioLevel(0);
     setAudioLatencyMs(0);
-    setCanMonitor(false);
 
     setBroadcastState('idle');
     setSharingKind(null);
@@ -839,7 +837,6 @@ export function useRoom() {
           if (sendAudioRef.current.muted) await audioTrack.mute();
           localAudioRef.current = { track: audioTrack, capture };
           setSendingAudio(true);
-          setCanMonitor(capture.canMonitor);
           capture.onStats((stats) => {
             setAudioLevel(stats.peak);
             setAudioLatencyMs(stats.latencyMs);
@@ -898,10 +895,6 @@ export function useRoom() {
     audioLevel,
     audioLatencyMs,
     videoStats,
-    canMonitor,
-    setMonitorGain: useCallback((value: number) => {
-      localAudioRef.current?.capture?.setMonitorGain(value);
-    }, []),
     sendingAudio,
     /**
      * Only the WASAPI path has a gain stage; a camera's microphone can only

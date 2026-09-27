@@ -24,19 +24,8 @@ export interface CaptureStats {
 
 export interface CaptureTrackHandle {
   track: MediaStreamTrack;
-  /**
-   * Plays the captured audio out of this machine's speakers too, so the
-   * person broadcasting can confirm what viewers are getting without needing
-   * a second machine. 0 (silent) by default — see canMonitor.
-   */
-  setMonitorGain(value: number): void;
-  /** How loud viewers hear it, 0..1. The monitor follows, so it stays honest. */
+  /** How loud viewers hear it, 0..1. */
   setSendGain(value: number): void;
-  /**
-   * False when capturing the whole system rather than one process: monitoring
-   * system audio through the speakers feeds straight back into the capture.
-   */
-  canMonitor: boolean;
   onStats(cb: (stats: CaptureStats) => void): () => void;
   stop(): Promise<void>;
 }
@@ -77,19 +66,6 @@ export async function createCaptureAudioTrack(
   node.connect(sendGain);
   sendGain.connect(destination);
 
-  // Monitoring runs through its own gain node kept at zero, rather than
-  // connecting and disconnecting the speaker path: toggling a gain value is
-  // click-free, and the graph shape stays constant.
-  const monitorGain = ctx.createGain();
-  monitorGain.gain.value = 0;
-  sendGain.connect(monitorGain);
-  monitorGain.connect(ctx.destination);
-
-  // Capturing one process means our own playback is a *different* process,
-  // so WASAPI never re-captures it. Capturing the whole system does include
-  // our playback, which would loop.
-  const canMonitor = processId !== null;
-
   const unsubscribe = window.zoia.audio.onChunk((chunk) => {
     // The chunk is a Uint8Array that crossed contextBridge via structured
     // clone, so its buffer is already a copy owned by this process — safe to
@@ -108,10 +84,6 @@ export async function createCaptureAudioTrack(
 
   return {
     track,
-    canMonitor,
-    setMonitorGain(value: number) {
-      monitorGain.gain.value = canMonitor ? value : 0;
-    },
     setSendGain(value: number) {
       sendGain.gain.value = value;
     },
