@@ -258,8 +258,9 @@ export default function Sidebar({
                       )}
                     </span>
                   </div>
-                  {/* Everyone is listed under the channel they are in, so
-                      who is where reads at a glance. */}
+                  {/* Everyone sits under the channel they are in: in full for
+                      yours, as faces for the rest, so who is where reads at a
+                      glance. */}
                   {current ? (
                     <div className="channel-members">
                       {liveMembers.map((m) => (
@@ -283,21 +284,16 @@ export default function Sidebar({
                     </div>
                   ) : (
                     c.participants.length > 0 && (
-                      <div className="channel-members other">
-                        {sortLiveFirst(c).map((p) => {
-                          const isLive = c.broadcasters.some((b) => b.identity === p.identity);
-                          return (
-                            <div
-                              className={`member${isLive ? ' live' : ''}`}
-                              key={p.identity}
-                              title={p.name}
-                            >
-                              <Avatar name={p.name} live={isLive} />
-                              <span className="member-name">{p.name}</span>
-                              {isLive && <span className="live-dot" title="Sharing their screen" />}
-                            </div>
-                          );
-                        })}
+                      // Just faces until you join: enough to see who is where.
+                      <div className="channel-people">
+                        {sortLiveFirst(c).map((p) => (
+                          <span key={p.identity} title={p.name}>
+                            <Avatar
+                              name={p.name}
+                              live={c.broadcasters.some((b) => b.identity === p.identity)}
+                            />
+                          </span>
+                        ))}
                       </div>
                     )
                   )}

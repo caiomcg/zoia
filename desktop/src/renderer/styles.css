@@ -1631,9 +1631,17 @@ button.danger {
   font-size: 13px;
 }
 
-/* Other channels are for finding people, not for acting on them. */
-.channel-members.other .member-name {
-  color: var(--muted);
+.channel-people {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 2px 8px 6px 24px;
+}
+
+.channel-people .avatar {
+  width: 20px;
+  height: 20px;
+  font-size: 8px;
 }
 
 /* Collapsed: avatars only. The live ring on an avatar still says who is
@@ -1693,7 +1701,7 @@ button.danger {
 .sidebar.collapsed .channel-name,
 .sidebar.collapsed .channel-live,
 .sidebar.collapsed .channel-count,
-.sidebar.collapsed .channel-members.other,
+.sidebar.collapsed .channel-people,
 .sidebar.collapsed .member-name,
 .sidebar.collapsed .you-tag,
 .sidebar.collapsed .stream-state,
