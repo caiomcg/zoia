@@ -1338,6 +1338,95 @@ button.danger {
   background: var(--surface-2);
 }
 
+/* ---- channels ------------------------------------------------------------ */
+
+.channel {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+  padding: 6px 8px;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 500;
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.channel:hover {
+  color: var(--text);
+  background: var(--surface-2);
+}
+
+.channel.current {
+  color: #fff;
+  background: var(--surface-2);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.channel-short {
+  display: none;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  font-size: 11px;
+  font-weight: 800;
+  background: var(--surface-2);
+  border-radius: 10px;
+}
+
+.channel.current .channel-short {
+  color: #fff;
+  background: var(--accent);
+}
+
+.channel-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.channel-live {
+  padding: 1px 6px;
+  font-size: 10px;
+  font-weight: 700;
+  color: #fff;
+  white-space: nowrap;
+  background: var(--live);
+  border-radius: 8px;
+}
+
+.channel-count {
+  min-width: 16px;
+  font-size: 12px;
+  text-align: right;
+  color: var(--muted);
+}
+
+.channel-people {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 2px 8px 6px 16px;
+}
+
+.channel-people .avatar {
+  width: 20px;
+  height: 20px;
+  font-size: 8px;
+}
+
+.channel-more {
+  align-self: center;
+  font-size: 11px;
+  color: var(--muted);
+}
+
 /* Collapsed: avatars only. The live ring on an avatar still says who is
    sharing; names are in each row's tooltip. */
 .sidebar.collapsed {
@@ -1366,6 +1455,27 @@ button.danger {
   padding: 5px 0;
 }
 
+.sidebar.collapsed .channel {
+  justify-content: center;
+  padding: 3px 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.sidebar.collapsed .channel-short {
+  display: grid;
+}
+
+.sidebar.collapsed .channel.current .channel-short {
+  box-shadow:
+    0 0 0 2px var(--surface),
+    0 0 0 4px var(--accent);
+}
+
+.sidebar.collapsed .channel-name,
+.sidebar.collapsed .channel-live,
+.sidebar.collapsed .channel-count,
+.sidebar.collapsed .channel-people,
 .sidebar.collapsed .member-name,
 .sidebar.collapsed .you-tag,
 .sidebar.collapsed .stream-state,

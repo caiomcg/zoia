@@ -12,7 +12,7 @@
  */
 
 import { net } from 'electron';
-import type { TokenResult, StageState, ClaimResult, WhipEndpoint } from '../shared/ipc';
+import type { TokenResult, StageState, ClaimResult, WhipEndpoint, RoomInfo } from '../shared/ipc';
 import { getServerUrl } from './config';
 
 class ApiError extends Error {
@@ -71,8 +71,25 @@ export function deviceSession(deviceCredential: string) {
   });
 }
 
-export function getToken() {
-  return call<TokenResult>('/api/token', { method: 'POST' });
+/**
+ * The channel this device last joined. Stage and WHIP calls are always about
+ * it, which is what keeps the hardware path (whose WHIP token main fetches
+ * itself) publishing into the channel the renderer is actually in.
+ */
+let currentRoom: string | undefined;
+
+export async function getToken(room?: string) {
+  const result = await call<TokenResult>('/api/token', {
+    method: 'POST',
+    body: JSON.stringify(room ? { room } : {}),
+  });
+  currentRoom = result.room;
+  return result;
+}
+
+export async function roomsList() {
+  const { rooms } = await call<{ rooms: RoomInfo[] }>('/api/rooms');
+  return rooms;
 }
 
 /**
@@ -82,13 +99,16 @@ export function getToken() {
 export function whipGet(source?: { sourceName?: string; sourceKind?: string }) {
   return call<WhipEndpoint>('/api/whip', {
     method: 'POST',
-    body: JSON.stringify(source ?? {}),
+    body: JSON.stringify({ ...source, room: currentRoom }),
   });
 }
 
 /** Removes this device's WHIP publisher from the room, if it is still there. */
 export function whipRelease() {
-  return call<{ ok: boolean; released: boolean }>('/api/whip/release', { method: 'POST' });
+  return call<{ ok: boolean; released: boolean }>('/api/whip/release', {
+    method: 'POST',
+    body: JSON.stringify({ room: currentRoom }),
+  });
 }
 
 /**
@@ -115,7 +135,8 @@ export function renameDevice(name: string) {
 }
 
 export function stageGet() {
-  return call<StageState>('/api/stage');
+  const query = currentRoom ? `?room=${encodeURIComponent(currentRoom)}` : '';
+  return call<StageState>(`/api/stage${query}`);
 }
 
 export async function stageClaim(): Promise<ClaimResult> {
@@ -124,6 +145,7 @@ export async function stageClaim(): Promise<ClaimResult> {
       '/api/stage/claim',
       {
         method: 'POST',
+        body: JSON.stringify({ room: currentRoom }),
         headers: { 'content-type': 'application/json' },
       },
     );
@@ -137,5 +159,8 @@ export async function stageClaim(): Promise<ClaimResult> {
 }
 
 export function stageRelease() {
-  return call<{ ok: boolean; released?: boolean }>('/api/stage/release', { method: 'POST' });
+  return call<{ ok: boolean; released?: boolean }>('/api/stage/release', {
+    method: 'POST',
+    body: JSON.stringify({ room: currentRoom }),
+  });
 }

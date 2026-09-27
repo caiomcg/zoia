@@ -3,6 +3,7 @@ import { Room, RoomEvent, Track } from 'https://cdn.jsdelivr.net/npm/livekit-cli
 const WHIP_SUFFIX = '-gpu';
 const state = {
   room: null,
+  channel: null,
   selected: new Set(),
   audioOwner: null,
   volumes: new Map(),
@@ -83,6 +84,7 @@ function videoPublication(participant) {
 }
 
 function applyMediaSettings() {
+  if (!state.room) return;
   for (const participant of state.room.remoteParticipants.values()) {
     const identity = ownerIdentity(participant.identity);
     const subscribed = state.selected.has(identity);
@@ -104,6 +106,8 @@ function applyMediaSettings() {
 }
 
 function refreshBroadcasters() {
+  // Events from a room being left can still arrive after it is cleared.
+  if (!state.room) return;
   const next = new Map();
   for (const participant of state.room.remoteParticipants.values()) {
     const video = videoPublication(participant);
@@ -306,8 +310,66 @@ function renderGrid() {
   }
 }
 
-async function connect() {
-  const token = await request('/api/token', { method: 'POST' });
+const CHANNEL_KEY = 'zoia.viewer.channel';
+const ROOMS_POLL_MS = 10_000;
+
+function rememberedChannel() {
+  try {
+    return localStorage.getItem(CHANNEL_KEY);
+  } catch {
+    return null;
+  }
+}
+
+/** Fills the channel picker: name, how many are there, how many are live. */
+async function loadChannels() {
+  const { rooms } = await request('/api/rooms');
+  const select = $('room-select');
+  const current = state.channel ?? select.value;
+  select.replaceChildren(
+    ...rooms.map((room) => {
+      const option = document.createElement('option');
+      option.value = room.id;
+      const live = room.broadcasters.length;
+      option.textContent =
+        `${room.name} · ${room.participants.length}` + (live > 0 ? ` · ${live} ao vivo` : '');
+      return option;
+    }),
+  );
+  if (current) select.value = current;
+  return rooms;
+}
+
+/** Leaves the current channel, forgetting what was being watched there. */
+async function leaveChannel() {
+  if (!state.room) return;
+  const room = state.room;
+  state.room = null;
+  await room.disconnect();
+  state.selected.clear();
+  state.broadcasters = new Map();
+  state.audioOwner = null;
+  renderSidebar();
+  renderGrid();
+}
+
+async function connect(channel = rememberedChannel()) {
+  // A remembered channel the server no longer has falls back to the first.
+  const token = await request('/api/token', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(channel ? { room: channel } : {}),
+  }).catch((error) => {
+    if (error.status !== 404) throw error;
+    return request('/api/token', { method: 'POST' });
+  });
+  state.channel = token.room;
+  try {
+    localStorage.setItem(CHANNEL_KEY, token.room);
+  } catch {
+    // Remembering is a convenience.
+  }
+  $('room-select').value = token.room;
   state.room = new Room({ adaptiveStream: true, dynacast: true });
   state.room
     .on(RoomEvent.ParticipantConnected, refreshBroadcasters)
@@ -330,7 +392,25 @@ async function connect() {
   await state.room.connect(token.wsUrl, token.token);
   setConnection('Conectado');
   refreshBroadcasters();
+  loadChannels().catch(() => {});
 }
+
+$('room-select').addEventListener('change', async (event) => {
+  const next = event.currentTarget.value;
+  if (next === state.channel) return;
+  setConnection('Conectando…');
+  try {
+    await leaveChannel();
+    await connect(next);
+  } catch (error) {
+    showMessage(`Não foi possível entrar no canal: ${error.message}`, true);
+    setConnection('Erro', true);
+  }
+});
+
+setInterval(() => {
+  if (state.room) loadChannels().catch(() => {});
+}, ROOMS_POLL_MS);
 
 async function start() {
   try {

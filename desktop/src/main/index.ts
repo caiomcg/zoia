@@ -190,7 +190,10 @@ function registerIpc(): void {
     return pairing.useInvite(path);
   });
 
-  ipcMain.handle(IPC.getToken, () => api.getToken());
+  ipcMain.handle(IPC.getToken, (_event, room?: string) =>
+    api.getToken(typeof room === 'string' ? room : undefined),
+  );
+  ipcMain.handle(IPC.roomsList, () => api.roomsList());
 
   ipcMain.handle(IPC.gpuStatus, () => gpuStatus);
 
