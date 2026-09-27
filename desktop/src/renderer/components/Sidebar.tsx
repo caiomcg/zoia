@@ -189,14 +189,14 @@ export default function Sidebar({
         >
           <IconPanel collapsed={collapsed} />
         </button>
+        {/* On the arrow's line rather than a row of its own below it. */}
+        {!collapsed && channels.length > 0 && <h2 className="sidebar-title">Channels</h2>}
       </div>
       <div className="sidebar-scroll">
         {channels.length > 0 && (
           <section className="member-group channel-group">
-            <h2 className="member-heading">Channels</h2>
             {channels.map((c) => {
               const current = c.id === currentChannel;
-              const live = c.broadcasters.length;
               if (editing === c.id) {
                 return (
                   <ChannelNameField
@@ -216,23 +216,23 @@ export default function Sidebar({
                       className={`channel${current ? ' current' : ''}`}
                       onClick={() => onJoinChannel(c.id)}
                       aria-current={current ? 'true' : undefined}
+                      // Only when collapsed, where the name is hidden. Expanded, the
+                      // name is on screen, and the tooltip only popped up over the
+                      // faces listed under the channel.
                       title={
-                        current
-                          ? `${c.name} — you are here`
-                          : `Join ${c.name} (${c.participants.length} ${
-                              c.participants.length === 1 ? 'person' : 'people'
-                            })`
+                        !collapsed
+                          ? undefined
+                          : current
+                            ? `${c.name} — you are here`
+                            : `Join ${c.name} (${c.participants.length} ${
+                                c.participants.length === 1 ? 'person' : 'people'
+                              })`
                       }
                     >
                       <span className="channel-short" aria-hidden="true">
                         {shortName(c.name)}
                       </span>
                       <span className="channel-name">{c.name}</span>
-                      {live > 0 && (
-                        <span className="channel-live" title={`${live} live`}>
-                          {live} live
-                        </span>
-                      )}
                       <span className="channel-count">
                         {current ? liveMembers.length : othersInChannel(c, here).length}
                       </span>
@@ -276,9 +276,6 @@ export default function Sidebar({
                           {viewerIds.has(m.identity) && <WatchingYou />}
                           {!m.isLocal && loadingRemoteIds.has(m.identity) && (
                             <span className="stream-state">Loading…</span>
-                          )}
-                          {m.isBroadcasting && (
-                            <span className="live-dot" title="Sharing their screen" />
                           )}
                         </div>
                       ))}
@@ -341,7 +338,6 @@ export default function Sidebar({
                 <span className="member-name">{m.name}</span>
                 {m.isLocal && <span className="you-tag">you</span>}
                 {viewerIds.has(m.identity) && <WatchingYou />}
-                {m.isBroadcasting && <span className="live-dot" title="Sharing their screen" />}
               </div>
             ))}
           </section>

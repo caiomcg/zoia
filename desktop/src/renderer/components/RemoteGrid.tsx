@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'rea
 import type { LocalVideoTrack, RemoteTrack } from 'livekit-client';
 import type { RemoteScreen } from '../livekit/useRoom';
 import Avatar from './Avatar';
-import { IconFullscreen, IconHeadphones, IconVolume } from './Player';
+import { IconEye, IconFullscreen, IconHeadphones, IconVolume } from './Player';
 
 /**
  * Every broadcast in the room, laid out one of two ways:
@@ -464,6 +464,9 @@ function Thumbnail({
   onWatch,
   onToggleListen,
   onStop,
+  preview,
+  peeking = false,
+  onTogglePeek,
 }: {
   name: string;
   label: string;
@@ -482,6 +485,14 @@ function Thumbnail({
   onToggleListen?: () => void;
   /** Your own preview: stop sharing, right from the strip. */
   onStop?: () => void;
+  /** Your own thumbnail: its eye shows or hides your preview instead. */
+  preview?: { on: boolean; onToggle: () => void };
+  /**
+   * Someone else's: the eye plays it live right here, sharp and with sound,
+   * without putting it on the stage. Clicking the tile is what does that.
+   */
+  peeking?: boolean;
+  onTogglePeek?: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   useMediaStream(videoRef, liveVideo, null);
@@ -491,7 +502,10 @@ function Thumbnail({
   const muted = Boolean(audio?.muted);
 
   return (
-    <div className={`thumb${listening ? ' listening' : ''}`} title={`${name} — ${label}`}>
+    <div
+      className={`thumb${listening || peeking ? ' listening' : ''}${peeking ? ' peeking' : ''}`}
+      title={`${name} — ${label}`}
+    >
       <button
         className="thumb-watch"
         onClick={onWatch}
@@ -509,30 +523,68 @@ function Thumbnail({
           <Avatar name={name} live />
           <span>{label}</span>
         </span>
+        {onWatch && (
+          <span className="thumb-hint" aria-hidden="true">
+            <Icon>
+              <path d="M3 9V3h6M21 9V3h-6M3 15v6h6M21 15v6h-6" />
+            </Icon>
+            Watch on stage
+          </span>
+        )}
       </button>
-      {listening && onAudioChange && (
-        <input
-          type="range"
-          min={0}
-          max={1}
-          step={0.01}
-          value={muted ? 0 : volume}
-          onChange={(event) => {
-            const value = Number(event.target.value);
-            onAudioChange({ volume: value, muted: value === 0 });
-          }}
-          className="thumb-volume"
-          aria-label={`Volume de ${name}`}
-        />
+      {/* Hover only: at this size the tile is for the picture. */}
+      {(listening || peeking) && onAudioChange && (
+        <div className="thumb-audio">
+          {/* Same as a watched tile: muting keeps the level, and unmuting
+              restores it, or full volume if it was at zero. */}
+          <button
+            className="thumb-action"
+            onClick={() =>
+              onAudioChange({ volume: muted && volume === 0 ? 1 : volume, muted: !muted })
+            }
+            title={muted ? 'Unmute' : 'Mute'}
+            aria-label={muted ? `Unmute ${name}` : `Mute ${name}`}
+          >
+            <IconVolume muted={muted || volume === 0} />
+          </button>
+          <input
+            type="range"
+            min={0}
+            max={1}
+            step={0.01}
+            value={muted ? 0 : volume}
+            onChange={(event) => {
+              const value = Number(event.target.value);
+              onAudioChange({ volume: value, muted: value === 0 });
+            }}
+            className="thumb-volume"
+            aria-label={`Volume for ${name}`}
+          />
+        </div>
       )}
       {onWatch && (
         <div className="thumb-actions">
-          <button className="thumb-action" onClick={onWatch} title="Watch" aria-label="Watch">
-            <Icon>
-              <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" />
-              <circle cx="12" cy="12" r="3" />
-            </Icon>
-          </button>
+          {preview ? (
+            <button
+              className={`thumb-action${preview.on ? ' active' : ''}`}
+              onClick={preview.onToggle}
+              aria-pressed={preview.on}
+              title={preview.on ? 'Hide your preview' : 'Show your preview'}
+              aria-label={preview.on ? 'Hide your preview' : 'Show your preview'}
+            >
+              <IconEye off={!preview.on} />
+            </button>
+          ) : onTogglePeek ? (
+            <button
+              className={`thumb-action${peeking ? ' active' : ''}`}
+              onClick={onTogglePeek}
+              aria-pressed={peeking}
+              title={peeking ? 'Stop the preview' : 'Preview here, with sound'}
+              aria-label={peeking ? 'Stop the preview' : 'Preview here, with sound'}
+            >
+              <IconEye off={!peeking} />
+            </button>
+          ) : null}
           {audioTrack && onToggleListen && (
             <button
               className={`thumb-action${listening ? ' active' : ''}`}
@@ -579,6 +631,9 @@ export default function RemoteGrid({
     track: LocalVideoTrack | null;
     name: string;
     onStop: () => void;
+    /** Whether you see your own picture, here and on the stage. */
+    showPreview: boolean;
+    onTogglePreview: () => void;
   };
   /** Called with the remote broadcasts shown large, which get full quality. */
   onFocusChange: (identities: string[]) => void;
@@ -632,6 +687,8 @@ export default function RemoteGrid({
   const remoteMains = mains.filter((id) => id !== LOCAL_SPOTLIGHT);
   // Broadcasts the viewer only listens to: they stay thumbnails, with sound.
   const [listening, setListening] = useState<Set<string>>(new Set());
+  // Broadcasts previewed live in their thumbnail, with sound, off the stage.
+  const [peeking, setPeeking] = useState<Set<string>>(new Set());
   // Broadcasts this viewer turned HQ off for. Per broadcast, not room-wide.
   const [lowQuality, setLowQuality] = useState<Set<string>>(new Set());
   // Latest thumbnail picture per broadcast, and which are being taken now.
@@ -665,8 +722,9 @@ export default function RemoteGrid({
     .map((screen) => screen.participantIdentity)
     .filter((id) => !mains.includes(id))
     .join('|');
+  // A previewed thumbnail keeps its video coming, on the low layer.
   const pausedKey = (remoteThumbKey ? remoteThumbKey.split('|') : [])
-    .filter((id) => stripHidden || !capturing.has(id))
+    .filter((id) => stripHidden || (!capturing.has(id) && !peeking.has(id)))
     .join('|');
   useEffect(() => {
     onPausedChange(pausedKey ? pausedKey.split('|') : []);
@@ -738,11 +796,38 @@ export default function RemoteGrid({
     else if (mode === 'mosaic')
       setPinned((current) => [...current.filter((other) => other !== id), id]);
     else setPinned([id]);
-    // Watching includes the sound; listening-only no longer applies.
-    setListening((current) => {
+    // Watching includes the sound; listening-only and the preview no longer apply.
+    const without = (current: Set<string>) => {
       if (!current.has(id)) return current;
       const next = new Set(current);
       next.delete(id);
+      return next;
+    };
+    setListening(without);
+    setPeeking(without);
+  }
+
+  function togglePeek(id: string) {
+    const starting = !peeking.has(id);
+    setPeeking((current) => {
+      const next = new Set(current);
+      if (starting) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+    if (starting) ensureAudible(id);
+  }
+
+  /** Choosing to hear something means hearing it, whatever it was left at. */
+  function ensureAudible(id: string) {
+    setAudio((current) => {
+      const setting = current[id];
+      if (!setting?.muted && (setting?.volume ?? DEFAULT_VOLUME) > 0) return current;
+      const next = {
+        ...current,
+        [id]: { volume: setting?.volume || DEFAULT_VOLUME, muted: false },
+      };
+      store(AUDIO_KEY, JSON.stringify(next));
       return next;
     });
   }
@@ -759,19 +844,7 @@ export default function RemoteGrid({
       else next.delete(id);
       return next;
     });
-    // Choosing to listen means hearing it, whatever it was left at before.
-    if (starting) {
-      setAudio((current) => {
-        const setting = current[id];
-        if (!setting?.muted && (setting?.volume ?? DEFAULT_VOLUME) > 0) return current;
-        const next = {
-          ...current,
-          [id]: { volume: setting?.volume || DEFAULT_VOLUME, muted: false },
-        };
-        store(AUDIO_KEY, JSON.stringify(next));
-        return next;
-      });
-    }
+    if (starting) ensureAudible(id);
   }
 
   function updateAudio(id: string, nextSetting: AudioSetting) {
@@ -792,7 +865,7 @@ export default function RemoteGrid({
   }
 
   function rank(id: string): number {
-    if (listening.has(id)) return 0;
+    if (listening.has(id) || peeking.has(id)) return 0;
     return id === LOCAL_SPOTLIGHT ? 1 : 2;
   }
 
@@ -821,7 +894,7 @@ export default function RemoteGrid({
               </p>
               <ol className="onboarding-list">
                 <li>
-                  Click <strong>Share screen</strong>.
+                  Click <strong>Screen</strong> at the top.
                 </li>
                 <li>Pick a window or a screen.</li>
               </ol>
@@ -972,7 +1045,7 @@ export default function RemoteGrid({
       <div className={`stage-area${fullscreen.idle ? ' idle' : ''}`} ref={areaRef}>
         {mainsView}
 
-        {[...listening]
+        {[...new Set([...listening, ...peeking])]
           .filter((id) => !mains.includes(id))
           .map((id) => {
             const track = screenById.get(id)?.audioTrack;
@@ -996,59 +1069,69 @@ export default function RemoteGrid({
           </div>
         )}
 
+        {/* The arrow has a spot of its own, bottom centre, and never moves:
+            it used to ride along with the strip as it lifted and collapsed. */}
         {stripCount > 0 && (
-          <div className={`thumb-overlay${stripHidden ? ' collapsed' : ''}`}>
-            <button
-              className="thumb-toggle"
-              onClick={toggleStrip}
-              aria-expanded={!stripHidden}
-              title={stripHidden ? 'Show broadcasts' : 'Hide broadcasts'}
-            >
-              <Icon>
-                <path d={stripHidden ? 'M6 15l6-6 6 6' : 'M6 9l6 6 6-6'} />
-              </Icon>
-              {stripHidden ? `${stripCount}` : null}
-            </button>
-            {!stripHidden && (
-              <div className="thumb-strip">
-                {thumbs.map((id) => {
-                  if (id === LOCAL_SPOTLIGHT) {
-                    return (
-                      <Thumbnail
-                        key={id}
-                        name={local?.name ?? ''}
-                        label="Your broadcast"
-                        liveVideo={local?.track ?? null}
-                        onWatch={() => watch(id)}
-                        onStop={local?.onStop}
-                      />
-                    );
-                  }
-                  const screen = screenById.get(id);
-                  if (!screen) return null;
+          <button
+            className="thumb-toggle"
+            onClick={toggleStrip}
+            aria-expanded={!stripHidden}
+            title={stripHidden ? 'Show broadcasts' : 'Hide broadcasts'}
+          >
+            <Icon>
+              <path d={stripHidden ? 'M6 15l6-6 6 6' : 'M6 9l6 6 6-6'} />
+            </Icon>
+            {stripHidden ? `${stripCount}` : null}
+          </button>
+        )}
+        {stripCount > 0 && !stripHidden && (
+          <div className="thumb-overlay">
+            <div className="thumb-strip">
+              {thumbs.map((id) => {
+                if (id === LOCAL_SPOTLIGHT) {
                   return (
                     <Thumbnail
                       key={id}
-                      name={screen.participantName}
-                      label={sourceText(screen.sourceName, screen.sourceKind)}
-                      snapshot={snapshots[id]?.url ?? null}
-                      captureTrack={screen.videoTrack}
-                      capture={capturing.has(id)}
-                      onCaptured={(url) => captured(id, url)}
-                      audioTrack={screen.audioTrack}
-                      audio={audioFor(id)}
-                      onAudioChange={(next) => updateAudio(id, next)}
-                      listening={listening.has(id)}
+                      name={local?.name ?? ''}
+                      label="Your broadcast"
+                      liveVideo={local?.track ?? null}
                       onWatch={() => watch(id)}
-                      onToggleListen={() => toggleListen(id)}
+                      onStop={local?.onStop}
+                      preview={
+                        local
+                          ? { on: local.showPreview, onToggle: local.onTogglePreview }
+                          : undefined
+                      }
                     />
                   );
-                })}
-                {loadingThumbs.map((broadcast) => (
-                  <Thumbnail key={broadcast.identity} name={broadcast.name} label="Loading…" />
-                ))}
-              </div>
-            )}
+                }
+                const screen = screenById.get(id);
+                if (!screen) return null;
+                return (
+                  <Thumbnail
+                    key={id}
+                    name={screen.participantName}
+                    label={sourceText(screen.sourceName, screen.sourceKind)}
+                    snapshot={snapshots[id]?.url ?? null}
+                    captureTrack={screen.videoTrack}
+                    capture={capturing.has(id)}
+                    onCaptured={(url) => captured(id, url)}
+                    audioTrack={screen.audioTrack}
+                    audio={audioFor(id)}
+                    onAudioChange={(next) => updateAudio(id, next)}
+                    listening={listening.has(id)}
+                    peeking={peeking.has(id)}
+                    onTogglePeek={() => togglePeek(id)}
+                    liveVideo={peeking.has(id) && !stripHidden ? screen.videoTrack : null}
+                    onWatch={() => watch(id)}
+                    onToggleListen={() => toggleListen(id)}
+                  />
+                );
+              })}
+              {loadingThumbs.map((broadcast) => (
+                <Thumbnail key={broadcast.identity} name={broadcast.name} label="Loading…" />
+              ))}
+            </div>
           </div>
         )}
       </div>
