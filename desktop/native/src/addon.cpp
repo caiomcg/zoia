@@ -32,6 +32,7 @@
 
 #include <ffnvcodec/nvEncodeAPI.h>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <mutex>
@@ -567,10 +568,18 @@ class Session {
     ComPtr<ID3D11Texture2D> captured;
     if (FAILED(access->GetInterface(IID_PPV_ARGS(captured.GetAddressOf())))) return;
 
+    D3D11_TEXTURE2D_DESC capturedDesc = {};
+    captured->GetDesc(&capturedDesc);
+    const UINT copyW = std::min(width_, capturedDesc.Width);
+    const UINT copyH = std::min(height_, capturedDesc.Height);
+    if (copyW == 0 || copyH == 0) return;
+
     // A region copy rather than CopyResource: the destination is rounded down
     // to even dimensions for the encoder, so on a window with an odd width the
     // two textures do not match and CopyResource would quietly do nothing.
-    const D3D11_BOX box{0, 0, 0, width_, height_, 1};
+    // Clamping against captured dimensions prevents D3D11 dropping the call if
+    // window geometry or borders differ from the capture item size.
+    const D3D11_BOX box{0, 0, 0, copyW, copyH, 1};
     context_->CopySubresourceRegion(input_.Get(), 0, 0, 0, 0, captured.Get(), 0, &box);
 
     ++arrivedCount_;

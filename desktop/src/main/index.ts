@@ -309,6 +309,11 @@ function registerIpc(): void {
     mainWindow: BrowserWindow,
     options: Omit<encoder.EncoderOptions, 'frames' | 'gpuVendor'> & { hwnd: number | null },
   ): void {
+    // Nobody picks a new source mid-broadcast, so refreshing the picker's
+    // thumbnail cache from here on buys nothing and repeatedly logs WGC
+    // "Source is not capturable" for windows it cannot grab.
+    sources.stopWarming();
+
     if (options.hwnd !== null) {
       // Native path: WGC captures the window. On an NVIDIA adapter the addon
       // also encodes it, without the pixels ever leaving the GPU, and ffmpeg
@@ -318,28 +323,34 @@ function registerIpc(): void {
       let lastRawFrameAt = 0;
       const minRawIntervalMs = Math.max(1, Math.floor(1000 / options.framerate) - 2);
 
-      const info = capture.start(
-        options.hwnd,
-        options.framerate,
-        options.bitrate,
-        (packet) => {
-          if (info.output === 'bgra') {
-            const now = Date.now();
-            if (now - lastRawFrameAt < minRawIntervalMs) return;
-            lastRawFrameAt = now;
-          }
-          encoder.writeFrame(packet);
-        },
-        (message) =>
-          mainWindow?.webContents.send(IPC.encoderStatus, {
-            running: false,
-            fps: 0,
-            encoder: encoder.encoderInUse(),
-            width: 0,
-            height: 0,
-            error: message,
-          }),
-      );
+      let info: ReturnType<typeof capture.start>;
+      try {
+        info = capture.start(
+          options.hwnd,
+          options.framerate,
+          options.bitrate,
+          (packet) => {
+            if (info.output === 'bgra') {
+              const now = Date.now();
+              if (now - lastRawFrameAt < minRawIntervalMs) return;
+              lastRawFrameAt = now;
+            }
+            encoder.writeFrame(packet);
+          },
+          (message) =>
+            mainWindow?.webContents.send(IPC.encoderStatus, {
+              running: false,
+              fps: 0,
+              encoder: encoder.encoderInUse(),
+              width: 0,
+              height: 0,
+              error: message,
+            }),
+        );
+      } catch (err) {
+        sources.startWarming();
+        throw err;
+      }
       if (info.fallbackReason) {
         // NVENC was there and declined — almost always a driver older than
         // the headers this was built against. The broadcast carries on over
