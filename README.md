@@ -47,7 +47,7 @@ notifications, your music and your other calls stay out of the stream.
  └──────────────────────┘                └────────────────────────┘
                                                    │  many streams in,
                                                    ▼  selected streams out
-                                            viewers (desktop app or browser)
+                                            viewers (desktop app)           
 ```
 
 Each broadcaster uploads one stream; the SFU fans each stream out. A mesh would make every
@@ -55,8 +55,7 @@ broadcaster upload once per viewer, which a home connection cannot do past two o
 The ceiling moves to the server's upstream bandwidth — roughly `streams × viewers × 2.5 Mbps` — and that,
 not CPU, is what limits the room.
 
-Longer version, including the browser viewer and what the hardware
-encoding path does: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+Longer version, including what the hardware encoding path does: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Install
 
@@ -72,13 +71,11 @@ The download itself carries no server and no credentials, so it is the same file
 everybody and safe to link publicly. The invite is the part that grants access, and the part
 to send privately.
 
-### Watching without installing the app
+### Watching
 
-Friends who only want to watch can open the invite in a supported browser and use the
-viewer page. They can select one or more people in the **Ao vivo** list, use **Assistir todas**
-or **Parar todas**, and choose which stream supplies audio. The viewer also shows each
-source's identity, such as `Janela: Chrome — YouTube`, and offers low-quality, focus and
-audio-only modes for slower connections.
+Everyone watches in the desktop app, including people who never share. The web address
+serves only a static page with a link to this repository; the browser viewer was retired
+([ADR 0021](docs/adr/0021-retire-the-browser-viewer.md)).
 
 The desktop app is still required for broadcasting, because capturing a window or an
 application's audio uses native Windows APIs.
@@ -190,8 +187,7 @@ how to revoke an invite that escapes.
 Stated plainly, because finding these out later is worse:
 
 - **Windows x64 for broadcasting.** The audio capture is WASAPI process loopback; there is no
-  equivalent on macOS or Linux. Browser viewing is available on supported desktop and mobile
-  browsers, but browsers cannot broadcast a single application's audio.
+  equivalent on macOS or Linux. There is no browser client, for watching or for sharing.
 - **Hardware encoding is opt-in and newer than the rest.** It covers NVIDIA, AMD and
   Intel GPUs, but only NVIDIA has been confirmed on real hardware. See
   [above](#hardware-encoding-whip).

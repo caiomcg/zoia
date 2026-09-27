@@ -21,13 +21,14 @@ record that supersedes it, so the history stays legible.
 | [0010](0010-invites-outside-the-binary.md) | The invitation lives outside the binary | accepted |
 | [0011](0011-hardware-encoding-over-the-internet.md) | Hardware encoding over the internet, on any GPU | accepted |
 | [0013](0013-multiple-broadcast-slots.md) | Multiple independent broadcast slots | accepted |
-| [0014](0014-browser-viewer.md) | Restore a viewer-only browser client | accepted |
+| [0014](0014-browser-viewer.md) | Restore a viewer-only browser client | superseded by 0021 |
 | [0015](0015-channels.md) | Channels | accepted |
 | [0016](0016-desktop-ota-updates.md) | OTA updates for desktop application code | accepted |
 | [0017](0017-desktop-preferences-and-update-discovery.md) | Desktop preferences and update discovery | accepted |
 | [0018](0018-local-audio-controls.md) | Local audio controls for camera and remote broadcasts | accepted |
 | [0019](0019-league-window-handoff.md) | Automatic League window handoff | accepted |
 | [0020](0020-sender-audio-controls.md) | Sender-side audio controls replace the monitor | accepted |
+| [0021](0021-retire-the-browser-viewer.md) | Retire the browser viewer | accepted |
 
 ## The two that explain the most
 

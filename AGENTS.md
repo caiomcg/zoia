@@ -106,8 +106,8 @@ These each cost hours if forgotten, and all of them fail in ways that look like 
   runbook.
 - **LAN hairpin**: if the router won't route a LAN client to the public hostname, the host PC
   can't reach the app. Fix with a local DNS override, not with code.
-- **Browser viewers**: the invite can be opened in a browser for watching only. The desktop
-  app is still required to capture a screen, window, camera or application audio.
+- **No browser client**: the web address serves a static page linking to the repository.
+  Watching and sharing both need the desktop app ([ADR 0021](docs/adr/0021-retire-the-browser-viewer.md)).
 - **Viewer bandwidth**: selecting several broadcasts downloads several independent streams.
   Use the viewer's automatic/low quality, focus, or audio-only controls when needed. Only one
   stream's audio is active by default to avoid an unintelligible mix.

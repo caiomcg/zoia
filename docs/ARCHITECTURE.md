@@ -33,8 +33,9 @@ A browser cannot send the audio of a single application. Not "does not yet" — 
 API for it, deliberately, because it would let any page listen to everything you play. That
 single limitation is why this is an Electron app calling WASAPI process loopback rather than
 a web page. [ADR 0006](adr/0006-native-desktop-client.md) has the full reasoning;
-[ADR 0008](adr/0008-retire-the-browser-client.md) covers why the browser client was retired
-rather than kept as a viewer-only fallback.
+[ADR 0008](adr/0008-retire-the-browser-client.md) covers why the browser client was retired;
+[ADR 0014](adr/0014-browser-viewer.md) brought back a viewer-only one, and
+[ADR 0021](adr/0021-retire-the-browser-viewer.md) retired that too.
 
 ## The audio path
 

@@ -3,6 +3,7 @@
 - **Status:** accepted
 - **Date:** 2026-09-25
 - **Supersedes:** [ADR 0008](0008-retire-the-browser-client.md)
+- **Superseded by:** [ADR 0021](0021-retire-the-browser-viewer.md)
 
 ## Context
 
