@@ -22,6 +22,7 @@ record that supersedes it, so the history stays legible.
 | [0011](0011-hardware-encoding-over-the-internet.md) | Hardware encoding over the internet, on any GPU | accepted |
 | [0013](0013-multiple-broadcast-slots.md) | Multiple independent broadcast slots | accepted |
 | [0014](0014-browser-viewer.md) | Restore a viewer-only browser client | accepted |
+| [0015](0015-channels.md) | Channels | accepted |
 
 ## The two that explain the most
 
