@@ -13,17 +13,17 @@ Either way the invitation is capped and revocable — see
 
 ## Public releases
 
-### Atualização OTA do código
+### OTA application-code updates
 
-O cliente Electron também suporta uma atualização leve de `app.asar`. Ela não substitui
-`Zoia.exe`, o runtime do Electron, o FFmpeg ou o addon nativo. Por isso, use OTA somente
-para mudanças em TypeScript/React e dependências JavaScript que já estejam no pacote. Uma
-mudança no Electron, FFmpeg ou `native/*.node` continua exigindo uma nova distribuição.
+The Electron client also supports a lightweight `app.asar` update. It does not replace
+`Zoia.exe`, the Electron runtime, FFmpeg, or the native addon. Use OTA only for TypeScript/
+React changes and JavaScript dependencies that are already included in the package. Changes
+to Electron, FFmpeg, or `native/*.node` still require a new distribution.
 
-O arquivo [desktop/updater-config.json](../desktop/updater-config.json) é o padrão empacotado
-e pode ser sobrescrito pelo usuário com outro `updater-config.json` ao lado do executável ou
-em `%APPDATA%/Zoia/updater-config.json`. Para um fork, altere apenas `repository`, `branch`
-e, se necessário, `manifestPath`/`manifestUrl`:
+The file [desktop/updater-config.json](../desktop/updater-config.json) is the packaged default
+and can be overridden with another `updater-config.json` next to the executable or at
+`%APPDATA%/Zoia/updater-config.json`. For a fork, change only `repository`, `branch`, and,
+if needed, `manifestPath`/`manifestUrl`:
 
 ```json
 {
@@ -35,39 +35,40 @@ e, se necessário, `manifestPath`/`manifestUrl`:
 }
 ```
 
-Usuários não precisam navegar até o AppData para fazer essa alteração: no desktop, abra o
-botão de engrenagem no canto superior direito e edite **Update settings**. A tela salva a
-configuração no local correto, valida URLs HTTPS e branch, permite restaurar os padrões e
-oferece **Check now**. O campo de instalação automática deve ser usado somente quando o
-repositório configurado for confiável.
+Users do not need to navigate to AppData to make this change: in the desktop app, open the
+gear button in the top-right corner and edit **Update settings**. The screen saves the
+configuration in the correct location, validates HTTPS URLs and the branch, restores the
+defaults, and provides **Check now**. Enable automatic installation only when the configured
+repository is trusted.
 
-Em um repositório GitHub, o updater consulta o commit da branch pela API e lê o manifesto
-em `raw.githubusercontent.com`. O manifesto publicado nessa branch deve ter este formato
-(um exemplo completo está em [desktop/updater-manifest.example.json](../desktop/updater-manifest.example.json)):
+For a GitHub repository, the updater queries the branch commit through the API and reads the
+manifest from `raw.githubusercontent.com`. The manifest published on that branch must use
+this format (a complete example is available at
+[desktop/updater-manifest.example.json](../desktop/updater-manifest.example.json)):
 
 ```json
 {
   "version": "0.2.14",
-  "commit": "<40 caracteres hexadecimais do commit da branch>",
+  "commit": "<40 hexadecimal characters from the branch commit>",
   "artifactType": "asar",
   "artifactUrl": "https://github.com/OWNER/REPOSITORY/releases/download/v0.2.14/Zoia-OTA-0.2.14.asar",
-  "sha256": "<SHA-256 do arquivo app.asar>",
-  "notes": "Resumo opcional"
+  "sha256": "<SHA-256 of the app.asar file>",
+  "notes": "Optional summary"
 }
 ```
 
-O `app.asar` deve ser produzido pelo mesmo build do release (`electron-builder --dir`) e
-extraído de `win-unpacked/resources/app.asar`. Publique-o como um asset da release e calcule
-o SHA-256 depois do upload/antes de atualizar o manifesto. A ordem operacional é: publicar
-o asset, atualizar o manifesto na branch, e só então distribuir a nova versão. `autoInstall`
-em `true` instala sem confirmação; o padrão `false` mostra o diálogo de atualização.
+The `app.asar` must be produced by the same release build (`electron-builder --dir`) and
+copied from `win-unpacked/resources/app.asar`. Publish it as a release asset and calculate
+its SHA-256 before updating the manifest. The operational order is: publish the asset, update
+the branch manifest, and only then distribute the new version. `autoInstall` set to `true`
+installs without confirmation; the default `false` shows the update dialog.
 
-O módulo [desktop/src/main/updater.ts](../desktop/src/main/updater.ts) é inicializado em
-`desktop/src/main/index.ts` após `config.init()` e `pairing.restoreSession()`. Ele baixa para
-`%APPDATA%/Zoia/updates`, valida SHA-256, cria um processo auxiliar, encerra o Electron e
-troca `resources/app.asar` com backup temporário antes de relançar o executável. O build
-portable é recusado deliberadamente: seu `app.asar` fica em uma extração temporária e seria
-apagado no próximo lançamento; para ele, distribua o novo `.exe` completo.
+The [desktop/src/main/updater.ts](../desktop/src/main/updater.ts) module starts from
+`desktop/src/main/index.ts` after `config.init()` and `pairing.restoreSession()`. It downloads
+to `%APPDATA%/Zoia/updates`, validates SHA-256, starts a helper process, quits Electron, and
+replaces `resources/app.asar` with a temporary backup before relaunching the executable. The
+portable build is deliberately rejected: its `app.asar` lives in a temporary extraction and
+would be deleted on the next launch; distribute a new `.exe` for portable users.
 
 The published binary contains **no server URL and no pairing token**, so it is not a
 credential and can be linked anywhere. It is inert until someone supplies an invite.
