@@ -12,6 +12,7 @@ files:
   - native/index.cjs
   - native/build/Release/zoia_capture.node
   - package.json
+  - updater-config.json
   # The window and tray icons, read at runtime from inside the asar.
   - build/icon.png
   - build/tray.png

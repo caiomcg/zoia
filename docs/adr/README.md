@@ -23,6 +23,7 @@ record that supersedes it, so the history stays legible.
 | [0013](0013-multiple-broadcast-slots.md) | Multiple independent broadcast slots | accepted |
 | [0014](0014-browser-viewer.md) | Restore a viewer-only browser client | accepted |
 | [0015](0015-channels.md) | Channels | accepted |
+| [0016](0016-desktop-ota-updates.md) | OTA updates for desktop application code | accepted |
 
 ## The two that explain the most
 

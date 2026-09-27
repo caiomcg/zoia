@@ -13,6 +13,56 @@ Either way the invitation is capped and revocable — see
 
 ## Public releases
 
+### Atualização OTA do código
+
+O cliente Electron também suporta uma atualização leve de `app.asar`. Ela não substitui
+`Zoia.exe`, o runtime do Electron, o FFmpeg ou o addon nativo. Por isso, use OTA somente
+para mudanças em TypeScript/React e dependências JavaScript que já estejam no pacote. Uma
+mudança no Electron, FFmpeg ou `native/*.node` continua exigindo uma nova distribuição.
+
+O arquivo [desktop/updater-config.json](../desktop/updater-config.json) é o padrão empacotado
+e pode ser sobrescrito pelo usuário com outro `updater-config.json` ao lado do executável ou
+em `%APPDATA%/Zoia/updater-config.json`. Para um fork, altere apenas `repository`, `branch`
+e, se necessário, `manifestPath`/`manifestUrl`:
+
+```json
+{
+  "repository": "https://github.com/OWNER/REPOSITORY",
+  "branch": "main",
+  "manifestPath": "desktop/updater-manifest.json",
+  "checkOnStartup": true,
+  "autoInstall": false
+}
+```
+
+Em um repositório GitHub, o updater consulta o commit da branch pela API e lê o manifesto
+em `raw.githubusercontent.com`. O manifesto publicado nessa branch deve ter este formato
+(um exemplo completo está em [desktop/updater-manifest.example.json](../desktop/updater-manifest.example.json)):
+
+```json
+{
+  "version": "0.2.14",
+  "commit": "<40 caracteres hexadecimais do commit da branch>",
+  "artifactType": "asar",
+  "artifactUrl": "https://github.com/OWNER/REPOSITORY/releases/download/v0.2.14/Zoia-OTA-0.2.14.asar",
+  "sha256": "<SHA-256 do arquivo app.asar>",
+  "notes": "Resumo opcional"
+}
+```
+
+O `app.asar` deve ser produzido pelo mesmo build do release (`electron-builder --dir`) e
+extraído de `win-unpacked/resources/app.asar`. Publique-o como um asset da release e calcule
+o SHA-256 depois do upload/antes de atualizar o manifesto. A ordem operacional é: publicar
+o asset, atualizar o manifesto na branch, e só então distribuir a nova versão. `autoInstall`
+em `true` instala sem confirmação; o padrão `false` mostra o diálogo de atualização.
+
+O módulo [desktop/src/main/updater.ts](../desktop/src/main/updater.ts) é inicializado em
+`desktop/src/main/index.ts` após `config.init()` e `pairing.restoreSession()`. Ele baixa para
+`%APPDATA%/Zoia/updates`, valida SHA-256, cria um processo auxiliar, encerra o Electron e
+troca `resources/app.asar` com backup temporário antes de relançar o executável. O build
+portable é recusado deliberadamente: seu `app.asar` fica em uma extração temporária e seria
+apagado no próximo lançamento; para ele, distribua o novo `.exe` completo.
+
 The published binary contains **no server URL and no pairing token**, so it is not a
 credential and can be linked anywhere. It is inert until someone supplies an invite.
 

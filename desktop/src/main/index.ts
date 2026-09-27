@@ -11,6 +11,7 @@ import * as capture from './capture';
 import { installTray, showWindow } from './tray';
 import { IPC } from '../shared/ipc';
 import type { GpuStatus } from '../shared/ipc';
+import { startUpdater } from './updater';
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -457,6 +458,7 @@ app.whenReady().then(async () => {
   // point at which restoring a stored credential can succeed.
   await pairing.restoreSession();
   mainWindow?.webContents.send('zoia:pairing:changed', pairing.getStatus());
+  void startUpdater();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

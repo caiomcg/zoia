@@ -137,6 +137,11 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $files = @(Get-ChildItem -Filter '*.exe')
           if ($files.Count -lt 2) { throw "expected an installer and a portable exe, found $($files.Count)" }
+          $asar = 'win-unpacked/resources/app.asar'
+          if (-not (Test-Path $asar)) { throw "missing OTA payload: $asar" }
+          $version = (Get-Content ../package.json | ConvertFrom-Json).version
+          Copy-Item $asar "Zoia-OTA-$version.asar"
+          $files += Get-Item "Zoia-OTA-$version.asar"
           # Two spaces, the format `sha256sum -c` expects.
           $files | ForEach-Object {
             "$((Get-FileHash $_ -Algorithm SHA256).Hash.ToLower())  $($_.Name)"
@@ -148,6 +153,7 @@ jobs:
           name: zoia-windows
           path: |
             desktop/release/*.exe
+            desktop/release/*.asar
             desktop/release/SHA256SUMS.txt
           retention-days: 7
           if-no-files-found: error
