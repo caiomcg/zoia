@@ -175,7 +175,7 @@ function createWindow(): void {
 }
 
 function registerIpc(): void {
-  ipcMain.handle(IPC.pairingStatus, () => pairing.getStatus());
+  ipcMain.handle(IPC.pairingStatus, () => pairing.getRestoredStatus());
 
   ipcMain.handle(IPC.pairingStart, (_event, deviceName?: string) => pairing.pair(deviceName));
 

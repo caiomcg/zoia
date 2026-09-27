@@ -170,9 +170,9 @@ function readAudioSettings(): Record<string, AudioSetting> {
 
 function sourceText(sourceName: string | null, sourceKind: RemoteScreen['sourceKind']): string {
   if (sourceName) return sourceName;
-  if (sourceKind === 'camera') return 'Câmera';
-  if (sourceKind === 'window') return 'Janela';
-  return 'Tela';
+  if (sourceKind === 'camera') return 'Camera';
+  if (sourceKind === 'window') return 'Window';
+  return 'Screen';
 }
 
 function Icon({ children }: { children: ReactNode }) {
@@ -196,7 +196,7 @@ function Icon({ children }: { children: ReactNode }) {
 const LAYOUTS: Array<{ mode: LayoutMode; label: string; icon: ReactNode }> = [
   {
     mode: 'spotlight',
-    label: 'Destaque',
+    label: 'Spotlight',
     icon: (
       <Icon>
         <rect x="3" y="4" width="18" height="11" rx="1.5" />
@@ -206,7 +206,7 @@ const LAYOUTS: Array<{ mode: LayoutMode; label: string; icon: ReactNode }> = [
   },
   {
     mode: 'mosaic',
-    label: 'Mosaico',
+    label: 'Mosaic',
     icon: (
       <Icon>
         <rect x="3" y="3" width="8" height="8" rx="1.5" />
@@ -290,8 +290,8 @@ function RemoteTile({
                 onClick={() =>
                   onAudioChange({ volume: muted && volume === 0 ? 1 : volume, muted: !muted })
                 }
-                title={muted ? 'Ativar áudio' : 'Silenciar'}
-                aria-label={muted ? 'Ativar áudio' : 'Silenciar'}
+                title={muted ? 'Unmute' : 'Mute'}
+                aria-label={muted ? 'Unmute' : 'Mute'}
               >
                 <IconVolume muted={muted || volume === 0} />
               </button>
@@ -319,8 +319,8 @@ function RemoteTile({
               aria-pressed={hq}
               title={
                 hq
-                  ? 'Alta qualidade ativada — clique para economizar banda'
-                  : 'Qualidade baixa — clique para voltar à alta qualidade'
+                  ? 'High quality on — click to save bandwidth'
+                  : 'Low quality — click to go back to high quality'
               }
             >
               HQ
@@ -329,8 +329,8 @@ function RemoteTile({
           <button
             className="icon-button"
             onClick={onToggleFullscreen}
-            title={isFullscreen ? 'Sair da tela cheia' : 'Tela cheia'}
-            aria-label={isFullscreen ? 'Sair da tela cheia' : 'Tela cheia'}
+            title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+            aria-label={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
           >
             <IconFullscreen active={isFullscreen} />
           </button>
@@ -338,8 +338,8 @@ function RemoteTile({
             <button
               className="icon-button"
               onClick={onClose}
-              title="Parar de assistir"
-              aria-label="Parar de assistir"
+              title="Stop watching"
+              aria-label="Stop watching"
             >
               <Icon>
                 <path d="M6 6l12 12M18 6L6 18" />
@@ -496,7 +496,7 @@ function Thumbnail({
         className="thumb-watch"
         onClick={onWatch}
         disabled={!onWatch}
-        aria-label={`Assistir ${name}`}
+        aria-label={`Watch ${name}`}
       >
         {liveVideo ? (
           <video className="thumb-live" ref={videoRef} playsInline autoPlay muted />
@@ -527,7 +527,7 @@ function Thumbnail({
       )}
       {onWatch && (
         <div className="thumb-actions">
-          <button className="thumb-action" onClick={onWatch} title="Assistir" aria-label="Assistir">
+          <button className="thumb-action" onClick={onWatch} title="Watch" aria-label="Watch">
             <Icon>
               <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" />
               <circle cx="12" cy="12" r="3" />
@@ -538,8 +538,8 @@ function Thumbnail({
               className={`thumb-action${listening ? ' active' : ''}`}
               onClick={onToggleListen}
               aria-pressed={listening}
-              title={listening ? 'Parar de ouvir' : 'Somente ouvir'}
-              aria-label={listening ? 'Parar de ouvir' : 'Somente ouvir'}
+              title={listening ? 'Stop listening' : 'Listen only'}
+              aria-label={listening ? 'Stop listening' : 'Listen only'}
             >
               <IconHeadphones />
             </button>
@@ -548,8 +548,8 @@ function Thumbnail({
             <button
               className="thumb-action danger"
               onClick={onStop}
-              title="Parar de compartilhar"
-              aria-label="Parar de compartilhar"
+              title="Stop sharing"
+              aria-label="Stop sharing"
             >
               <Icon>
                 <rect x="6" y="6" width="12" height="12" rx="1.5" />
@@ -806,39 +806,38 @@ export default function RemoteGrid({
         <div className="overlay">
           {loadingBroadcasts.length > 0 ? (
             <>
-              <h2>Carregando transmissão…</h2>
+              <h2>Loading broadcast…</h2>
               <p className="muted">
                 {loadingBroadcasts.map((broadcast) => broadcast.name).join(', ')}{' '}
-                {loadingBroadcasts.length === 1 ? 'está' : 'estão'} transmitindo, mas ainda
-                {loadingBroadcasts.length === 1 ? ' está' : ' estão'} carregando.
+                {loadingBroadcasts.length === 1 ? 'is' : 'are'} live, but still loading.
               </p>
             </>
           ) : showOnboarding ? (
             <div className="onboarding-card">
-              <p className="onboarding-step">Você entrou na sala</p>
-              <h2>Pronto para começar</h2>
+              <p className="onboarding-step">You are in the room</p>
+              <h2>Ready to start</h2>
               <p className="muted">
-                Assista a uma transmissão ao vivo pela lista ao lado ou compartilhe sua tela.
+                Watch a live broadcast from the list beside you, or share your screen.
               </p>
               <ol className="onboarding-list">
                 <li>
-                  Clique em <strong>Compartilhar</strong>.
+                  Click <strong>Share screen</strong>.
                 </li>
-                <li>Escolha uma janela ou tela.</li>
+                <li>Pick a window or a screen.</li>
               </ol>
               <div className="onboarding-actions">
                 <button className="primary" onClick={onStartSharing}>
-                  Compartilhar tela
+                  Share screen
                 </button>
                 <button className="link" onClick={onDismissOnboarding}>
-                  Agora não
+                  Not now
                 </button>
               </div>
             </div>
           ) : (
             <>
-              <h2>Ninguém está transmitindo</h2>
-              <p className="muted">Quando alguém compartilhar, a transmissão aparece aqui.</p>
+              <h2>Nobody is broadcasting</h2>
+              <p className="muted">When someone shares, their broadcast appears here.</p>
             </>
           )}
         </div>
@@ -868,8 +867,8 @@ export default function RemoteGrid({
             <button
               className="tile-close"
               onClick={() => stopWatching(id)}
-              title="Tirar da visualização"
-              aria-label="Tirar da visualização"
+              title="Remove from view"
+              aria-label="Remove from view"
             >
               <Icon>
                 <path d="M6 6l12 12M18 6L6 18" />
@@ -911,14 +910,14 @@ export default function RemoteGrid({
       // broadcasts waiting below.
       <section className="stage remote-empty">
         <div className="overlay">
-          <h2>Escolha uma transmissão</h2>
+          <h2>Pick a broadcast</h2>
           <p className="muted">
-            Assista ou apenas ouça uma das transmissões abaixo, ou compartilhe a sua.
+            Watch or just listen to one of the broadcasts below, or share your own.
           </p>
           {!local && onStartSharing && (
             <div className="onboarding-actions">
               <button className="primary" onClick={onStartSharing}>
-                Compartilhar tela
+                Share screen
               </button>
             </div>
           )}
@@ -936,7 +935,7 @@ export default function RemoteGrid({
           aria-valuemin={SPLIT_MIN * 100}
           aria-valuemax={SPLIT_MAX * 100}
           aria-valuenow={Math.round(split * 100)}
-          title="Arraste para redimensionar · clique duplo para dividir ao meio"
+          title="Drag to resize · double-click to split evenly"
           onPointerDown={(event) => {
             draggingRef.current = true;
             event.currentTarget.setPointerCapture(event.pointerId);
@@ -1003,7 +1002,7 @@ export default function RemoteGrid({
               className="thumb-toggle"
               onClick={toggleStrip}
               aria-expanded={!stripHidden}
-              title={stripHidden ? 'Mostrar transmissões' : 'Ocultar transmissões'}
+              title={stripHidden ? 'Show broadcasts' : 'Hide broadcasts'}
             >
               <Icon>
                 <path d={stripHidden ? 'M6 15l6-6 6 6' : 'M6 9l6 6 6-6'} />
@@ -1018,7 +1017,7 @@ export default function RemoteGrid({
                       <Thumbnail
                         key={id}
                         name={local?.name ?? ''}
-                        label="Sua transmissão"
+                        label="Your broadcast"
                         liveVideo={local?.track ?? null}
                         onWatch={() => watch(id)}
                         onStop={local?.onStop}
@@ -1046,7 +1045,7 @@ export default function RemoteGrid({
                   );
                 })}
                 {loadingThumbs.map((broadcast) => (
-                  <Thumbnail key={broadcast.identity} name={broadcast.name} label="Carregando…" />
+                  <Thumbnail key={broadcast.identity} name={broadcast.name} label="Loading…" />
                 ))}
               </div>
             )}

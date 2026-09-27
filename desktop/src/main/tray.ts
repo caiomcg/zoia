@@ -75,16 +75,16 @@ export function installTray(getWindow: () => BrowserWindow | null, iconPath: str
   rebuildMenu = () => {
     tray?.setContextMenu(
       Menu.buildFromTemplate([
-        { label: 'Abrir Zoia', click: () => showWindow(getWindow()) },
+        { label: 'Open Zoia', click: () => showWindow(getWindow()) },
         {
-          label: 'Manter na bandeja ao fechar',
+          label: 'Keep in tray when closed',
           type: 'checkbox',
           checked: getCloseToTray(),
           click: (item) => setCloseToTray(item.checked),
         },
         { type: 'separator' },
         {
-          label: 'Sair',
+          label: 'Quit',
           click: () => {
             quitting = true;
             app.quit();
@@ -110,8 +110,8 @@ export function installTray(getWindow: () => BrowserWindow | null, iconPath: str
       if (!toldAboutTray && process.platform === 'win32') {
         toldAboutTray = true;
         tray?.displayBalloon({
-          title: 'Zoia continua aberto',
-          content: 'Está na bandeja. Clique no ícone para voltar, ou em Sair para fechar.',
+          title: 'Zoia is still running',
+          content: 'It is in the tray. Click the icon to come back, or Quit to close it.',
           iconType: 'info',
         });
       }

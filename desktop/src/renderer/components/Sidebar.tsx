@@ -11,7 +11,7 @@ import { IconEye } from './Player';
 
 const COLLAPSED_KEY = 'zoia.sidebarCollapsed';
 
-/** "Sala 3" → "S3", "Jogos" → "JO": what a collapsed sidebar shows. */
+/** "Room 3" → "R3", "Games" → "GA": what a collapsed sidebar shows. */
 function shortName(name: string): string {
   const words = name.trim().split(/\s+/).filter(Boolean);
   if (words.length > 1) return (words[0]![0]! + words[words.length - 1]!.slice(0, 2)).toUpperCase();
@@ -109,8 +109,8 @@ function ChannelNameField({
         ref={inputRef}
         value={value}
         maxLength={32}
-        placeholder="Nome do canal"
-        aria-label="Nome do canal"
+        placeholder="Channel name"
+        aria-label="Channel name"
         onChange={(event) => setValue(event.target.value)}
         onKeyDown={(event) => {
           if (event.key === 'Enter') finish(value.trim() || null);
@@ -172,7 +172,7 @@ export default function Sidebar({
     });
   }
 
-  const label = (m: RoomMember) => (m.isLocal ? `${m.name} (você)` : m.name);
+  const label = (m: RoomMember) => (m.isLocal ? `${m.name} (you)` : m.name);
   // Which channel is being renamed, or 'new' while one is being named.
   const [editing, setEditing] = useState<string | null>(null);
 
@@ -183,8 +183,8 @@ export default function Sidebar({
           className="sidebar-toggle"
           onClick={toggleCollapsed}
           aria-expanded={!collapsed}
-          title={collapsed ? 'Expandir lista' : 'Recolher lista'}
-          aria-label={collapsed ? 'Expandir lista' : 'Recolher lista'}
+          title={collapsed ? 'Expand list' : 'Collapse list'}
+          aria-label={collapsed ? 'Expand list' : 'Collapse list'}
         >
           <IconPanel collapsed={collapsed} />
         </button>
@@ -192,7 +192,7 @@ export default function Sidebar({
       <div className="sidebar-scroll">
         {channels.length > 0 && (
           <section className="member-group channel-group">
-            <h2 className="member-heading">Canais</h2>
+            <h2 className="member-heading">Channels</h2>
             {channels.map((c) => {
               const current = c.id === currentChannel;
               const live = c.broadcasters.length;
@@ -217,9 +217,9 @@ export default function Sidebar({
                       aria-current={current ? 'true' : undefined}
                       title={
                         current
-                          ? `${c.name} — você está aqui`
-                          : `Entrar em ${c.name} (${c.participants.length} ${
-                              c.participants.length === 1 ? 'pessoa' : 'pessoas'
+                          ? `${c.name} — you are here`
+                          : `Join ${c.name} (${c.participants.length} ${
+                              c.participants.length === 1 ? 'person' : 'people'
                             })`
                       }
                     >
@@ -228,8 +228,8 @@ export default function Sidebar({
                       </span>
                       <span className="channel-name">{c.name}</span>
                       {live > 0 && (
-                        <span className="channel-live" title={`${live} ao vivo`}>
-                          {live} ao vivo
+                        <span className="channel-live" title={`${live} live`}>
+                          {live} live
                         </span>
                       )}
                       <span className="channel-count">
@@ -240,8 +240,8 @@ export default function Sidebar({
                       <button
                         className="channel-action"
                         onClick={() => setEditing(c.id)}
-                        title={`Renomear ${c.name}`}
-                        aria-label={`Renomear ${c.name}`}
+                        title={`Rename ${c.name}`}
+                        aria-label={`Rename ${c.name}`}
                       >
                         <IconPencil />
                       </button>
@@ -250,8 +250,8 @@ export default function Sidebar({
                         <button
                           className="channel-action"
                           onClick={() => onRemoveChannel(c.id)}
-                          title={`Apagar ${c.name}`}
-                          aria-label={`Apagar ${c.name}`}
+                          title={`Delete ${c.name}`}
+                          aria-label={`Delete ${c.name}`}
                         >
                           <IconTrash />
                         </button>
@@ -274,7 +274,7 @@ export default function Sidebar({
                           {m.isLocal && <span className="you-tag">you</span>}
                           {viewerIds.has(m.identity) && <WatchingYou />}
                           {!m.isLocal && loadingRemoteIds.has(m.identity) && (
-                            <span className="stream-state">Carregando…</span>
+                            <span className="stream-state">Loading…</span>
                           )}
                           {m.isBroadcasting && (
                             <span className="live-dot" title="Sharing their screen" />
@@ -313,12 +313,12 @@ export default function Sidebar({
                 <button
                   className="channel channel-new"
                   onClick={() => setEditing('new')}
-                  title={`Novo canal (${channels.length} de ${maxChannels})`}
+                  title={`New channel (${channels.length} of ${maxChannels})`}
                 >
                   <span className="channel-short" aria-hidden="true">
                     +
                   </span>
-                  <span className="channel-name">+ Novo canal</span>
+                  <span className="channel-name">+ New channel</span>
                 </button>
               )
             )}

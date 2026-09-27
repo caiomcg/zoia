@@ -7,6 +7,7 @@ import RemoteGrid, { type LoadingBroadcast } from './components/RemoteGrid';
 import Sidebar from './components/Sidebar';
 import SourcePicker from './components/SourcePicker';
 import SettingsDialog from './components/SettingsDialog';
+import Splash from './components/Splash';
 import StatusLight, { type StatusTone } from './components/StatusLight';
 import { useRoom } from './livekit/useRoom';
 import { useGpuBroadcast } from './livekit/useGpuBroadcast';
@@ -135,11 +136,11 @@ export default function App() {
   }, [status?.paired, channel, room.state, channelsVersion]);
 
   const CHANNEL_ERRORS: Record<string, string> = {
-    room_limit: 'O servidor já tem o máximo de canais.',
-    room_not_empty: 'Só dá para apagar um canal vazio.',
-    room_is_default: 'O canal principal não pode ser apagado.',
-    invalid_name: 'Dê um nome de 1 a 32 caracteres.',
-    unknown_room: 'Esse canal não existe mais.',
+    room_limit: 'The server already has the most channels it allows.',
+    room_not_empty: 'Only an empty channel can be deleted.',
+    room_is_default: 'The main channel cannot be deleted.',
+    invalid_name: 'Use a name of 1 to 32 characters.',
+    unknown_room: 'That channel no longer exists.',
   };
 
   /** Runs a channel change, reports a refusal, and refreshes the list. */
@@ -147,12 +148,10 @@ export default function App() {
     try {
       const result = await change;
       setChannelError(
-        result.ok
-          ? null
-          : (CHANNEL_ERRORS[result.error ?? ''] ?? 'Não foi possível alterar o canal.'),
+        result.ok ? null : (CHANNEL_ERRORS[result.error ?? ''] ?? 'Could not change the channel.'),
       );
     } catch {
-      setChannelError('Não foi possível falar com o servidor.');
+      setChannelError('Could not reach the server.');
     }
     setChannelsVersion((v) => v + 1);
   }
@@ -171,6 +170,18 @@ export default function App() {
     await room.disconnect();
   }
 
+  // Held on the splash until the first connection settles, so a launch goes
+  // straight from the logo to a populated room rather than through an empty
+  // one. Capped, so a slow or failing server still gets its say on screen.
+  const [booted, setBooted] = useState(false);
+  useEffect(() => {
+    if (room.state === 'connected' || room.state === 'error') setBooted(true);
+  }, [room.state]);
+  useEffect(() => {
+    const timer = setTimeout(() => setBooted(true), 8000);
+    return () => clearTimeout(timer);
+  }, []);
+
   const handleRename = useCallback(
     async (name: string) => {
       // Stored server-side so it survives a restart, and pushed into the
@@ -184,8 +195,9 @@ export default function App() {
     [room],
   );
 
-  if (!status) return <div className="loading">Loading…</div>;
+  if (!status) return <Splash />;
   if (!status.paired) return <PairingScreen status={status} onPaired={setStatus} />;
+  if (!booted) return <Splash />;
 
   /** Messages are keyed by content, so a new one reappears after a dismissal. */
   const show = (key: string, text: string | null | undefined) =>
@@ -208,7 +220,7 @@ export default function App() {
     if (!switching) {
       const claim = await window.zoia.stage.claim();
       if (!claim.ok) {
-        setStageError('Não foi possível iniciar sua transmissão.');
+        setStageError('Could not start your broadcast.');
         return;
       }
     }
@@ -314,13 +326,11 @@ export default function App() {
 
         <div className="topbar-centre">
           {room.isReconnecting ? (
-            <span className="connection-message">
-              Reconectando… suas escolhas serão restauradas.
-            </span>
+            <span className="connection-message">Reconnecting… your choices will be restored.</span>
           ) : isStarting ? (
             <span className="muted">Starting…</span>
           ) : room.state === 'connecting' ? (
-            <span className="muted">Conectando…</span>
+            <span className="muted">Connecting…</span>
           ) : null}
         </div>
 

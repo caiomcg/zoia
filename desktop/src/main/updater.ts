@@ -383,11 +383,12 @@ export async function startUpdater(): Promise<void> {
     if (!config.autoInstall) {
       const result = await dialog.showMessageBox({
         type: 'info',
-        title: 'Atualização disponível',
-        message: `A versão ${update.version} está disponível.`,
+        title: 'Update available',
+        message: `Version ${update.version} is available.`,
         detail:
-          update.notes ?? 'O código da aplicação será atualizado sem baixar novamente o Electron.',
-        buttons: ['Atualizar agora', 'Depois'],
+          update.notes ??
+          'Only the application code is updated; nothing large is downloaded again.',
+        buttons: ['Update now', 'Later'],
         defaultId: 0,
         cancelId: 1,
       });
@@ -399,8 +400,8 @@ export async function startUpdater(): Promise<void> {
     console.warn('[updater] update skipped:', message);
     await dialog.showMessageBox({
       type: 'error',
-      title: 'Atualização não concluída',
-      message: 'Não foi possível instalar a atualização.',
+      title: 'Update not finished',
+      message: 'The update could not be installed.',
       detail: message,
       buttons: ['OK'],
     });

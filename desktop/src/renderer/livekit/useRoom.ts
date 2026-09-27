@@ -192,8 +192,8 @@ function broadcastMetadata(participant: Participant): {
 
 function sourceLabel(sourceName: string | null, sourceKind: string | null): string | null {
   if (!sourceName) return null;
-  if (sourceKind === 'window') return `Janela: ${sourceName}`;
-  if (sourceKind === 'screen') return `Tela: ${sourceName}`;
+  if (sourceKind === 'window') return `Window: ${sourceName}`;
+  if (sourceKind === 'screen') return `Screen: ${sourceName}`;
   return sourceName;
 }
 
@@ -537,8 +537,8 @@ export function useRoom() {
           setState('disconnected');
           setError(
             reason
-              ? `Conexão encerrada (${reason}). Verifique a rede e tente novamente.`
-              : 'Conexão encerrada. Verifique a rede e tente novamente.',
+              ? `Connection closed (${reason}). Check the network and try again.`
+              : 'Connection closed. Check the network and try again.',
           );
           setBroadcastState('idle');
           localTrackRef.current = null;
@@ -552,7 +552,7 @@ export function useRoom() {
         refresh();
       } catch (err) {
         setState('error');
-        setError(`Não foi possível conectar: ${err instanceof Error ? err.message : String(err)}`);
+        setError(`Could not connect: ${err instanceof Error ? err.message : String(err)}`);
       }
     },
     [findRemoteScreens, announceWatching],
@@ -697,7 +697,7 @@ export function useRoom() {
       const claim = await window.zoia.stage.claim();
       if (!claim.ok) {
         setBroadcastState('idle');
-        setBroadcastError('Não foi possível iniciar sua transmissão.');
+        setBroadcastError('Could not start your broadcast.');
         return false;
       }
       try {
@@ -709,7 +709,7 @@ export function useRoom() {
         const room = roomRef.current;
         if (!room) throw new Error('Not connected to the room.');
         await room.localParticipant.setMetadata(
-          JSON.stringify({ sourceName: 'Câmera', sourceKind: 'camera' }),
+          JSON.stringify({ sourceName: 'Camera', sourceKind: 'camera' }),
         );
 
         // 'motion' rather than 'detail': a camera image is moving video, not
@@ -796,7 +796,7 @@ export function useRoom() {
         const claim = await window.zoia.stage.claim();
         if (!claim.ok) {
           setBroadcastState('idle');
-          setBroadcastError('Não foi possível iniciar sua transmissão.');
+          setBroadcastError('Could not start your broadcast.');
           return false;
         }
       }
