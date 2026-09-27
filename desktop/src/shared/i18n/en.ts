@@ -34,11 +34,9 @@ export const en = {
   'top.connecting': 'Connecting…',
   'top.whatToShare': 'What to share',
   'top.screen': 'Screen',
-  'top.screenSharing': 'Sharing',
   'top.screenTitle': 'Share a screen or window',
   'top.screenTitleLive': 'Sharing a screen or window — click to switch',
   'top.camera': 'Camera',
-  'top.cameraOn': 'Camera on',
   'top.cameraTitle': 'Share your camera',
   'top.cameraTitleLive': 'Sharing your camera — click to stop',
 

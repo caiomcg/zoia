@@ -2168,14 +2168,33 @@ button.danger {
   border-radius: 3px;
 }
 
-.watching-you {
+/* The eye sits on the avatar's bottom-right corner, as a badge, so it never
+   takes room in the row: in a collapsed sidebar it knocked avatars out of
+   line. */
+.avatar-wrap {
+  position: relative;
   display: inline-flex;
-  color: var(--accent);
+  flex: 0 0 auto;
+}
+
+.watching-you {
+  position: absolute;
+  /* Mostly outside the circle, so it clears the initials. */
+  right: -7px;
+  bottom: -6px;
+  display: grid;
+  place-items: center;
+  width: 13px;
+  height: 13px;
+  color: #fff;
+  background: var(--accent);
+  border: 2px solid var(--surface);
+  border-radius: 50%;
 }
 
 .watching-you svg {
-  width: 14px;
-  height: 14px;
+  width: 8px;
+  height: 8px;
 }
 
 .avatar {
@@ -2464,6 +2483,35 @@ button.danger {
 
 .share-button svg {
   flex: 0 0 auto;
+}
+
+/* A label too long for its half of the width ends in an ellipsis rather
+   than spilling out of the button. */
+.share-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.share-live-dot {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  background: #fff;
+  border-radius: 50%;
+  animation: share-live-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes share-live-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .share-live-dot {
+    animation: none;
+  }
 }
 
 .share-button:hover:not(:disabled) {

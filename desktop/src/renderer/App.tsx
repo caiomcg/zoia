@@ -414,7 +414,10 @@ export default function App() {
                 <rect x="2.5" y="4" width="19" height="13" rx="2" />
                 <path d="M8 20.5h8" strokeLinecap="round" />
               </svg>
-              {screenLive ? t('top.screenSharing') : t('top.screen')}
+              {/* The label stays put when live: green and the dot say so, and
+                  "Compartilhando" did not fit. */}
+              <span className="share-label">{t('top.screen')}</span>
+              {screenLive && <span className="share-live-dot" aria-hidden="true" />}
             </button>
 
             <button
@@ -435,7 +438,8 @@ export default function App() {
                 <rect x="2.5" y="6" width="13" height="12" rx="2" />
                 <path d="M15.5 11l6-3.5v9l-6-3.5z" strokeLinejoin="round" />
               </svg>
-              {cameraLive ? t('top.cameraOn') : t('top.camera')}
+              <span className="share-label">{t('top.camera')}</span>
+              {cameraLive && <span className="share-live-dot" aria-hidden="true" />}
             </button>
           </div>
         </div>

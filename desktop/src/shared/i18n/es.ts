@@ -30,11 +30,9 @@ export const es: Messages = {
   'top.connecting': 'Conectando…',
   'top.whatToShare': 'Qué compartir',
   'top.screen': 'Pantalla',
-  'top.screenSharing': 'Compartiendo',
   'top.screenTitle': 'Compartir una pantalla o ventana',
   'top.screenTitleLive': 'Compartiendo una pantalla o ventana — haz clic para cambiar',
   'top.camera': 'Cámara',
-  'top.cameraOn': 'Cámara activa',
   'top.cameraTitle': 'Compartir tu cámara',
   'top.cameraTitleLive': 'Compartiendo tu cámara — haz clic para detener',
 

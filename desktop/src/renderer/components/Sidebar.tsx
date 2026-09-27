@@ -278,10 +278,12 @@ export default function Sidebar({
                           key={m.identity}
                           title={label(m)}
                         >
-                          <Avatar name={m.name} live={m.isBroadcasting} />
+                          <span className="avatar-wrap">
+                            <Avatar name={m.name} live={m.isBroadcasting} />
+                            {viewerIds.has(m.identity) && <WatchingYou />}
+                          </span>
                           <span className="member-name">{m.name}</span>
                           {m.isLocal && <span className="you-tag">{t('common.youTag')}</span>}
-                          {viewerIds.has(m.identity) && <WatchingYou />}
                           {!m.isLocal && loadingRemoteIds.has(m.identity) && (
                             <span className="stream-state">{t('common.loading')}</span>
                           )}
@@ -342,10 +344,12 @@ export default function Sidebar({
                 key={m.identity}
                 title={label(m)}
               >
-                <Avatar name={m.name} live={m.isBroadcasting} />
+                <span className="avatar-wrap">
+                  <Avatar name={m.name} live={m.isBroadcasting} />
+                  {viewerIds.has(m.identity) && <WatchingYou />}
+                </span>
                 <span className="member-name">{m.name}</span>
                 {m.isLocal && <span className="you-tag">{t('common.youTag')}</span>}
-                {viewerIds.has(m.identity) && <WatchingYou />}
               </div>
             ))}
           </section>
