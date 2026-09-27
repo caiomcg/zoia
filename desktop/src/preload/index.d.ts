@@ -42,7 +42,7 @@ export interface ZoiaBridge {
     release(): Promise<{ ok: boolean; released?: boolean }>;
   };
   sources: {
-    list(): Promise<SourceInfo[]>;
+    list(fresh?: boolean): Promise<SourceInfo[]>;
     select(source: Pick<SourceInfo, 'id' | 'name' | 'processId'>): Promise<void>;
     /** A window's current title, or null once it is gone. */
     title(hwnd: number): Promise<string | null>;
