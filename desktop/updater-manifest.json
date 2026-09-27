@@ -1,6 +1,7 @@
 {
-  "version": "0.2.14",
-  "updateType": "full",
-  "installerUrl": "https://github.com/caiomcg/zoia/releases/download/v0.2.14/Zoia-Setup-0.2.14-x64.exe",
-  "notes": "First release with the built-in updater. Install this once; later app-code updates arrive over OTA."
+  "version": "0.2.15",
+  "updateType": "asar",
+  "artifactUrl": "https://github.com/caiomcg/zoia/releases/download/v0.2.15/Zoia-OTA-0.2.15.asar",
+  "sha256": "94b7c64fdd5805c5cafbd50fdba9023a8574b999268092a7ac545af728905702",
+  "notes": "Settings: turn off keeping Zoia in the system tray; lighter settings icon."
 }
