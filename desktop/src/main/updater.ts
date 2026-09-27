@@ -11,7 +11,7 @@ const CONFIG_NAME = 'updater-config.json';
 const STATE_NAME = 'updater-state.json';
 const HELPER_NAME = 'zoia-update-helper.cjs';
 
-interface UpdaterConfig {
+export interface UpdaterConfig {
   repository: string;
   branch: string;
   manifestPath: string;
@@ -37,6 +37,12 @@ interface UpdateState {
 interface RemoteUpdate extends UpdateManifest {
   commit: string;
 }
+
+export type UpdaterCheckResult =
+  | { status: 'up-to-date' }
+  | { status: 'available'; version: string; notes: string | null }
+  | { status: 'disabled' }
+  | { status: 'error'; message: string };
 
 const HELPER_SOURCE = String.raw`const fs = require('node:fs/promises');
 const { spawn } = require('node:child_process');
@@ -122,6 +128,55 @@ async function loadConfig(): Promise<UpdaterConfig | null> {
     return config;
   }
   return null;
+}
+
+const defaultConfig: UpdaterConfig = {
+  repository: 'https://github.com/caiomcg/zoia',
+  branch: 'main',
+  manifestPath: 'desktop/updater-manifest.json',
+  checkOnStartup: true,
+  autoInstall: false,
+};
+
+function userConfigPath(): string {
+  return join(app.getPath('userData'), CONFIG_NAME);
+}
+
+function validateConfig(input: unknown): UpdaterConfig {
+  if (!input || typeof input !== 'object') throw new Error('Configuration must be an object');
+  const value = input as Partial<UpdaterConfig>;
+  if (!isUrl(value.repository)) throw new Error('Repository must be an HTTPS URL');
+  if (!value.branch?.trim() || value.branch.length > 200) throw new Error('Branch is required');
+  if (!value.manifestPath?.trim() && !isUrl(value.manifestUrl)) {
+    throw new Error('Manifest path or HTTPS manifest URL is required');
+  }
+  if (value.manifestUrl && !isUrl(value.manifestUrl)) throw new Error('Manifest URL must be HTTPS');
+  if (value.commitUrl && !isUrl(value.commitUrl)) throw new Error('Commit URL must be HTTPS');
+  return {
+    repository: value.repository,
+    branch: value.branch.trim(),
+    manifestPath: value.manifestPath?.trim() || defaultConfig.manifestPath,
+    ...(value.manifestUrl ? { manifestUrl: value.manifestUrl } : {}),
+    ...(value.commitUrl ? { commitUrl: value.commitUrl } : {}),
+    checkOnStartup: value.checkOnStartup !== false,
+    autoInstall: value.autoInstall === true,
+  };
+}
+
+export async function getUpdaterConfig(): Promise<UpdaterConfig> {
+  return (await loadConfig()) ?? defaultConfig;
+}
+
+export async function saveUpdaterConfig(input: unknown): Promise<UpdaterConfig> {
+  const config = validateConfig(input);
+  await mkdir(app.getPath('userData'), { recursive: true });
+  await writeFile(userConfigPath(), JSON.stringify(config, null, 2), 'utf8');
+  return config;
+}
+
+export async function resetUpdaterConfig(): Promise<UpdaterConfig> {
+  await rm(userConfigPath(), { force: true });
+  return (await loadConfig()) ?? defaultConfig;
 }
 
 async function fetchJson<T>(url: string): Promise<T> {
@@ -222,6 +277,27 @@ async function install(update: RemoteUpdate): Promise<void> {
     env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
   }).unref();
   app.quit();
+}
+
+export async function checkForUpdate(force = false): Promise<UpdaterCheckResult> {
+  if (!app.isPackaged) return { status: 'disabled' };
+  const config = await loadConfig();
+  if (!config || (!force && config.checkOnStartup === false)) return { status: 'disabled' };
+  try {
+    const update = await getRemoteUpdate(config);
+    const state = await readJson<UpdateState>(join(app.getPath('userData'), STATE_NAME));
+    if (state?.commit === update.commit) return { status: 'up-to-date' };
+    const versionUpgrade = newerVersion(update.version, app.getVersion());
+    const commitUpgrade = Boolean(state?.commit && state.commit !== update.commit);
+    return versionUpgrade || commitUpgrade
+      ? { status: 'available', version: update.version, notes: update.notes ?? null }
+      : { status: 'up-to-date' };
+  } catch (error) {
+    return {
+      status: 'error',
+      message: error instanceof Error ? error.message : String(error),
+    };
+  }
 }
 
 export async function startUpdater(): Promise<void> {

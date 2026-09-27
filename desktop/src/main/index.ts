@@ -11,7 +11,13 @@ import * as capture from './capture';
 import { installTray, showWindow } from './tray';
 import { IPC } from '../shared/ipc';
 import type { GpuStatus } from '../shared/ipc';
-import { startUpdater } from './updater';
+import {
+  checkForUpdate,
+  getUpdaterConfig,
+  resetUpdaterConfig,
+  saveUpdaterConfig,
+  startUpdater,
+} from './updater';
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -203,6 +209,11 @@ function registerIpc(): void {
   ipcMain.handle(IPC.roomsRemove, (_event, id: string) => api.roomsRemove(String(id)));
 
   ipcMain.handle(IPC.gpuStatus, () => gpuStatus);
+
+  ipcMain.handle(IPC.updaterConfigGet, () => getUpdaterConfig());
+  ipcMain.handle(IPC.updaterConfigSave, (_event, next) => saveUpdaterConfig(next));
+  ipcMain.handle(IPC.updaterConfigReset, () => resetUpdaterConfig());
+  ipcMain.handle(IPC.updaterCheck, () => checkForUpdate(true));
 
   ipcMain.handle(IPC.stageGet, () => api.stageGet());
   ipcMain.handle(IPC.stageClaim, () => api.stageClaim());

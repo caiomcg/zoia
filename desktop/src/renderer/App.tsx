@@ -6,6 +6,7 @@ import Player from './components/Player';
 import RemoteGrid, { type LoadingBroadcast } from './components/RemoteGrid';
 import Sidebar from './components/Sidebar';
 import SourcePicker from './components/SourcePicker';
+import SettingsDialog from './components/SettingsDialog';
 import StatusLight, { type StatusTone } from './components/StatusLight';
 import { useRoom } from './livekit/useRoom';
 import { useGpuBroadcast } from './livekit/useGpuBroadcast';
@@ -46,6 +47,7 @@ export default function App() {
   const [status, setStatus] = useState<PairingStatus | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [cameraOpen, setCameraOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(
     () => localStorage.getItem(ONBOARDING_STORAGE_KEY) !== 'true',
   );
@@ -377,6 +379,17 @@ export default function App() {
               </svg>
             </button>
           </div>
+          <button
+            className="icon-button settings-button"
+            onClick={() => setSettingsOpen(true)}
+            title="Update settings"
+            aria-label="Update settings"
+          >
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Z" />
+              <path d="m19.4 15 .1.1a1.8 1.8 0 0 1-2.5 2.5l-.1-.1a1.8 1.8 0 0 0-3 .9v.2a1.8 1.8 0 0 1-3.6 0v-.2a1.8 1.8 0 0 0-3-.9l-.1.1a1.8 1.8 0 0 1-2.5-2.5l.1-.1a1.8 1.8 0 0 0-.9-3h-.2a1.8 1.8 0 0 1 0-3h.2a1.8 1.8 0 0 0 .9-3l-.1-.1a1.8 1.8 0 0 1 2.5-2.5l.1.1a1.8 1.8 0 0 0 3-.9v-.2a1.8 1.8 0 0 1 3.6 0v.2a1.8 1.8 0 0 0 3 .9l.1-.1a1.8 1.8 0 0 1 2.5 2.5l-.1.1a1.8 1.8 0 0 0 .9 3h.2a1.8 1.8 0 0 1 0 3h-.2a1.8 1.8 0 0 0-.9 3Z" />
+            </svg>
+          </button>
         </div>
       </header>
 
@@ -501,6 +514,8 @@ export default function App() {
           onCancel={() => setCameraOpen(false)}
         />
       )}
+
+      {settingsOpen && <SettingsDialog onClose={() => setSettingsOpen(false)} />}
     </div>
   );
 }
