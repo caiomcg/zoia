@@ -193,6 +193,12 @@ jobs:
         with:
           name: zoia-windows
           path: dist
+      - name: Download OTA artifact
+        if: needs.build.outputs.update_type == 'asar'
+        uses: actions/download-artifact@v4
+        with:
+          name: zoia-ota
+          path: dist
       # --verify-tag refuses to invent a tag that does not exist, so a typo
       # fails instead of publishing under a name nobody tagged. Re-running a
       # tag fails too, which is correct: deleting the old release is a
