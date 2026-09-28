@@ -548,7 +548,7 @@ function bestError(): string | null {
       return line;
     }
   }
-  return recent.filter(Boolean).slice(-1)[0] ?? null;
+  return recent.filter((l) => Boolean(l.trim()) && !GENERIC.test(l.trim())).slice(-1)[0] ?? null;
 }
 
 function logLine(line: string): void {
@@ -590,8 +590,8 @@ export function setOnExit(handler: (() => void) | null): void {
   onExit = handler;
 }
 
-export function start(win: BrowserWindow, options: EncoderOptions): void {
-  stop();
+export async function start(win: BrowserWindow, options: EncoderOptions): Promise<void> {
+  await stop();
   lastError = null;
   frameCount = 0;
   captureWidth = options.frames?.width ?? 0;
@@ -649,7 +649,14 @@ export function start(win: BrowserWindow, options: EncoderOptions): void {
     if (fps?.[1]) lastFps = Number(fps[1]);
 
     if (/Error|failed|Invalid|Cannot/i.test(chunk) && !/Last message repeated/.test(chunk)) {
-      lastError = chunk.trim().split('\n').slice(-1)[0] ?? null;
+      const candidates = chunk
+        .trim()
+        .split('\n')
+        .map((l) => l.trim())
+        .filter((l) => Boolean(l) && !GENERIC.test(l));
+      if (candidates.length > 0) {
+        lastError = candidates[candidates.length - 1] ?? null;
+      }
     }
 
     if (!win.isDestroyed()) {
@@ -659,7 +666,7 @@ export function start(win: BrowserWindow, options: EncoderOptions): void {
         encoder: currentEncoder,
         width: captureWidth,
         height: captureHeight,
-        error: lastError,
+        error: bestError() ?? lastError,
       } satisfies EncoderStatus);
     }
   });
@@ -698,13 +705,14 @@ export function start(win: BrowserWindow, options: EncoderOptions): void {
       });
     }
     if (!win.isDestroyed()) {
+      const err = bestError() ?? lastError;
       win.webContents.send('zoia:encoder:status', {
         running: false,
         fps: 0,
         encoder: currentEncoder,
         width: 0,
         height: 0,
-        error: code === 0 ? null : (lastError ?? `ffmpeg exited with code ${code}`),
+        error: code === 0 ? null : (err ?? `ffmpeg exited with code ${code}`),
       } satisfies EncoderStatus);
     }
   });
@@ -714,8 +722,8 @@ export function start(win: BrowserWindow, options: EncoderOptions): void {
 }
 
 /** Ends the broadcast for good, as opposed to the restart start() performs. */
-export function shutdown(): void {
-  stop();
+export async function shutdown(): Promise<void> {
+  await stop();
 }
 
 /** Feeds one chunk of captured PCM to the encoder. */
@@ -763,7 +771,7 @@ export function writeFrame(frame: Buffer): void {
   }
 }
 
-export function stop(): void {
+export async function stop(): Promise<void> {
   isPassthrough = false;
   if (watchdog) clearInterval(watchdog);
   watchdog = null;
@@ -775,4 +783,15 @@ export function stop(): void {
   child = null;
   dying.stdin.end();
   dying.kill();
+  await new Promise<void>((resolve) => {
+    if (dying.exitCode !== null) {
+      resolve();
+      return;
+    }
+    const timeout = setTimeout(resolve, 1500);
+    dying.once('exit', () => {
+      clearTimeout(timeout);
+      resolve();
+    });
+  });
 }

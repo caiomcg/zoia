@@ -279,7 +279,11 @@ function registerIpc(): void {
           sourceName: options.sourceName,
           sourceKind: options.sourceKind,
         });
-        return startEncoding(mainWindow, { ...options, whipUrl: whip.url, whipToken: whip.token });
+        return await startEncoding(mainWindow, {
+          ...options,
+          whipUrl: whip.url,
+          whipToken: whip.token,
+        });
       } catch (err) {
         // Capture can refuse before ffmpeg is ever spawned — a window that has
         // gone, a minimised one, an adapter with no encoder. Those threw
@@ -315,10 +319,10 @@ function registerIpc(): void {
     ].join('\n');
   }
 
-  function startEncoding(
+  async function startEncoding(
     mainWindow: BrowserWindow,
     options: Omit<encoder.EncoderOptions, 'frames' | 'gpuVendor'> & { hwnd: number | null },
-  ): void {
+  ): Promise<void> {
     // Nobody picks a new source mid-broadcast, so refreshing the picker's
     // thumbnail cache from here on buys nothing and repeatedly logs WGC
     // "Source is not capturable" for windows it cannot grab.
@@ -385,9 +389,9 @@ function registerIpc(): void {
           context: attemptContext(options),
         });
       }
-      encoder.start(mainWindow, { ...options, frames: info });
+      await encoder.start(mainWindow, { ...options, frames: info });
     } else {
-      encoder.start(mainWindow, { ...options, frames: null, gpuVendor: gpuStatus.gpuVendor });
+      await encoder.start(mainWindow, { ...options, frames: null, gpuVendor: gpuStatus.gpuVendor });
     }
 
     // Only a window carries audio; a screen share is deliberately silent.
@@ -406,15 +410,15 @@ function registerIpc(): void {
     void api.whipRelease().catch(() => {});
   });
 
-  ipcMain.handle(IPC.encoderStop, () => {
+  ipcMain.handle(IPC.encoderStop, async () => {
     capture.stop();
-    encoder.shutdown();
+    await encoder.shutdown();
     audioCapture.stopCapture();
     sources.startWarming();
     // ffmpeg's own WHIP teardown request does not reliably reach the SFU —
     // measured: "Failed to read response from DELETE". Removing the publisher
     // server-side makes stopping definite instead of waiting on a timeout.
-    void api.whipRelease().catch(() => {});
+    await api.whipRelease().catch(() => {});
   });
 
   ipcMain.handle(IPC.audioStart, (_event, processId: number | null) => {
