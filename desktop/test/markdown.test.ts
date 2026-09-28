@@ -21,6 +21,21 @@ describe('parseMarkdown', () => {
     });
   });
 
+  test('an indented line continues the item above it', () => {
+    const blocks = parseMarkdown('- **Bold** starts\n  and carries on.\n- Next\nAfter');
+    assert.deepEqual(blocks[0], {
+      kind: 'list',
+      items: [
+        [
+          { kind: 'bold', children: [{ kind: 'text', text: 'Bold' }] },
+          { kind: 'text', text: ' starts and carries on.' },
+        ],
+        [{ kind: 'text', text: 'Next' }],
+      ],
+    });
+    assert.equal(blocks[1].kind, 'paragraph');
+  });
+
   test("reads GitHub's generated notes, which use * bullets", () => {
     const blocks = parseMarkdown(
       "## What's Changed\n* Fix by @someone in https://github.com/o/r/pull/1",

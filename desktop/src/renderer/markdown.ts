@@ -60,7 +60,9 @@ export function parseInline(text: string): Inline[] {
 export function parseMarkdown(source: string): Block[] {
   const blocks: Block[] = [];
   let paragraph: string[] = [];
-  let list: Inline[][] | null = null;
+  // Item text is kept raw until the list ends, so a wrapped item's following
+  // lines can join it before it is parsed.
+  let list: string[] | null = null;
 
   const flush = () => {
     if (paragraph.length) {
@@ -68,7 +70,7 @@ export function parseMarkdown(source: string): Block[] {
       paragraph = [];
     }
     if (list) {
-      blocks.push({ kind: 'list', items: list });
+      blocks.push({ kind: 'list', items: list.map(parseInline) });
       list = null;
     }
   };
@@ -89,7 +91,11 @@ export function parseMarkdown(source: string): Block[] {
     } else if (item) {
       if (paragraph.length) flush();
       list ??= [];
-      list.push(parseInline(item[1] ?? ''));
+      list.push(item[1] ?? '');
+    } else if (list && /^\s/.test(raw)) {
+      // An indented line under an item continues it, as a hard-wrapped
+      // bullet does; GitHub renders it as one item and so must this.
+      list[list.length - 1] += ` ${line}`;
     } else {
       if (list) flush();
       paragraph.push(line);
