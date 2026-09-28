@@ -322,6 +322,7 @@ function registerIpc(): void {
       // which, and buildArgs follows it.
       let lastRawFrameAt = 0;
       const minRawIntervalMs = Math.max(1, Math.floor(1000 / options.framerate) - 2);
+      let sampleFrames = 0;
 
       let info: ReturnType<typeof capture.start>;
       try {
@@ -334,6 +335,19 @@ function registerIpc(): void {
               const now = Date.now();
               if (now - lastRawFrameAt < minRawIntervalMs) return;
               lastRawFrameAt = now;
+              if (sampleFrames < 5 || sampleFrames % 120 === 0) {
+                let nonZero = 0;
+                const step = Math.max(4, Math.floor(packet.length / 5000));
+                for (let i = 0; i < packet.length - 4; i += step) {
+                  if (packet[i] !== 0 || packet[i + 1] !== 0 || packet[i + 2] !== 0) {
+                    nonZero++;
+                  }
+                }
+                console.log(
+                  `[gpu-diag] frame ${sampleFrames}: ${packet.length} bytes, nonZeroPixels=${nonZero}/5000 (${Math.round((nonZero / 5000) * 100)}%)`,
+                );
+              }
+              sampleFrames++;
             }
             encoder.writeFrame(packet);
           },
