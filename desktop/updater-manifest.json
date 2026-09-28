@@ -1,9 +1,9 @@
 {
-  "version": "0.3.16",
+  "version": "0.3.17",
   "updateType": "asar",
   "minimumVersion": "0.3.14",
-  "artifactUrl": "https://github.com/caiomcg/zoia/releases/download/v0.3.16/Zoia-OTA-0.3.16.asar",
-  "sha256": "b8fc283bc4bb96ef879ec7384682941b5f6f54f2165a7ef6a5aeb4ebb431ba9d",
-  "installerUrl": "https://github.com/caiomcg/zoia/releases/download/v0.3.16/Zoia-Setup-0.3.16-x64.exe",
-  "notes": "Updates now check that your installation can take them, and offer the full installer when it cannot."
+  "artifactUrl": "https://github.com/caiomcg/zoia/releases/download/v0.3.17/Zoia-OTA-0.3.17.asar",
+  "sha256": "9ee047d4b7bfa3a396490b68b9bda11b4d3b2173690cea2554f5a6e6a94ef36e",
+  "installerUrl": "https://github.com/caiomcg/zoia/releases/download/v0.3.17/Zoia-Setup-0.3.17-x64.exe",
+  "notes": "Zoia now shows what changed after each update. Click the version in Settings > About to read the notes again."
 }
