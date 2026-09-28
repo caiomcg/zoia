@@ -370,3 +370,21 @@ When discussing Zoia in technical publications or portfolio reviews, emphasize t
 
 5. **Lean Production Architecture**:
    - How combining Caddy DNS-01 automation, Docker Compose isolation, and atomic file persistence achieved reliable operations without the maintenance footprint of external databases.
+
+---
+
+## 9. Core Engineering Contributions (Nycholas)
+
+The following engineering features were designed and implemented directly by Nycholas:
+
+1. **Over-The-Air (OTA) Desktop Updates**:
+   - Seamless runtime application updates for the desktop client (ADR 0016 and ADR 0017), deploying rapid fixes and UI features without requiring users to download and reinstall full installers for non-native changes.
+
+2. **Simultaneous Multi-Stream Broadcasting**:
+   - Architecture for independent concurrent broadcast slots within a single channel (ADR 0013), enabling multiple participants to share their screens at the same time while viewers select focus and manage individual audio streams.
+
+3. **Intelligent League of Legends Stream Handoff**:
+   - Real-time process tracking and automatic bidirectional switching between the launcher UI (`LeagueClientUx.exe`) and the in-game match process (`League of Legends.exe`), including a 7.5-second post-game grace recovery period (ADR 0022).
+
+4. **Hardware Acceleration for AMD GPUs**:
+   - Hardware video encoding integration for AMD graphics cards utilizing the AMF encoder (`h264_amf`) with FFmpeg and direct WHIP ingestion (ADR 0011 and ADR 0024), significantly reducing CPU overhead during high-performance gameplay.

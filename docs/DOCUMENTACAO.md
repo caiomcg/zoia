@@ -370,3 +370,21 @@ Caso queira compartilhar a construcao deste projeto no LinkedIn, em artigos tecn
 
 5. **Infraestrutura Enxuta e Imutavel**:
    - Uso eficiente do Caddy com certificados via DNS-01, eliminando a exposicao desnecessaria da porta 80 HTTP, e persistencia atomica em disco via padrao write-then-rename, garantindo resiliencia operacional sem a complexidade de manter bancos de dados externos para dados pequenos de autenticacao.
+
+---
+
+## 9. Contribuicoes Principais (Nycholas)
+
+As seguintes frentes de engenharia foram projetadas e implementadas diretamente por Nycholas no projeto:
+
+1. **Atualizacoes Over-The-Air (OTA)**:
+   - Mecanismo de atualizacao transparente de codigo da aplicacao desktop em runtime (ADR 0016 e ADR 0017), permitindo implantar melhorias e correcoes rapidamente sem exigir reinstalacao completa do executavel para alteracoes que nao tocam o core nativo ou Electron.
+
+2. **Transmissoes Simultaneas (Multi-Stream)**:
+   - Arquitetura de multiplos slots de transmissao independentes no mesmo canal (ADR 0013), permitindo que varios participantes transmitam suas telas simultaneamente e que cada espectador escolha dinamicamente quais streams assistir e ouvir.
+
+3. **Chaveamento Inteligente de Transmissao do League of Legends**:
+   - Deteccao de processos em tempo real e alternancia bidirecional automatica entre o inicializador Chromium (`LeagueClientUx.exe`) e o executavel da partida (`League of Legends.exe`), com tolerancia de 7.5 segundos pos-partida para evitar quedas de transmissao (ADR 0022).
+
+4. **Aceleracao de Hardware para AMD**:
+   - Integracao e suporte de codificacao de video por hardware para placas de video AMD via encoder AMF (`h264_amf`) com FFmpeg e pipeline WHIP (ADR 0011 e ADR 0024), reduzindo substancialmente a carga sobre a CPU durante jogos.

@@ -271,7 +271,8 @@ export const en = {
   'about.github': 'View on GitHub',
   'about.madeBy': 'Made by',
   'about.role.caio': 'Started Zoia: capture, channels and the server.',
-  'about.role.nycholas': 'Updates, League hand-off and multi-stream viewing.',
+  'about.role.nycholas':
+    'OTA updates, simultaneous broadcasts, LoL stream hand-off, and AMD hardware acceleration.',
 
   // ---- main process: tray and update dialogs
   'tray.open': 'Open Zoia',

@@ -264,7 +264,8 @@ export const pt: Messages = {
   'about.github': 'Ver no GitHub',
   'about.madeBy': 'Feito por',
   'about.role.caio': 'Criou o Zoia: captura, canais e o servidor.',
-  'about.role.nycholas': 'Atualizações, troca automática do League e várias transmissões.',
+  'about.role.nycholas':
+    'Atualizações OTA, transmissões simultâneas, chaveamento de transmissão do LoL e aceleração de hardware para AMD.',
 
   'tray.open': 'Abrir o Zoia',
   'tray.keep': 'Manter na bandeja ao fechar',

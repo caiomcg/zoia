@@ -264,7 +264,7 @@ export const es: Messages = {
   'about.madeBy': 'Hecho por',
   'about.role.caio': 'Creó Zoia: captura, canales y el servidor.',
   'about.role.nycholas':
-    'Actualizaciones, el cambio automático de League y la vista de varias transmisiones.',
+    'Actualizaciones OTA, transmisiones simultáneas, cambio de transmisión de LoL y aceleración de hardware para AMD.',
 
   'tray.open': 'Abrir Zoia',
   'tray.keep': 'Mantener en la bandeja al cerrar',
