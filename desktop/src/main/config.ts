@@ -43,7 +43,13 @@ let current: Resolved = {
  * Every directory an invite might sit in, most specific first.
  */
 function searchDirs(): string[] {
-  return [dirname(process.execPath), userDataDir()];
+  // On macOS the executable is buried at Zoia.app/Contents/MacOS, where nobody
+  // will put a file. "Beside the app" there means beside the .app bundle.
+  const besideApp =
+    process.platform === 'darwin'
+      ? join(dirname(process.execPath), '..', '..', '..')
+      : dirname(process.execPath);
+  return [besideApp, userDataDir()];
 }
 
 function userDataDir(): string {

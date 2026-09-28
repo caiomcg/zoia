@@ -77,6 +77,7 @@ const bridge: ZoiaBridge = {
   },
   app: {
     version: () => ipcRenderer.invoke(IPC.appVersion) as Promise<string>,
+    platform: process.platform,
   },
   language: {
     get: () => ipcRenderer.invoke(IPC.languageGet),

@@ -85,6 +85,8 @@ export interface ZoiaBridge {
   };
   app: {
     version(): Promise<string>;
+    /** The OS this copy runs on; application audio is Windows-only. */
+    platform: NodeJS.Platform;
   };
   /** The interface language: the user's choice, and what it resolves to. */
   language: {
