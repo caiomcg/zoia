@@ -1,7 +1,6 @@
 {
-  "version": "0.3.13",
-  "updateType": "asar",
-  "artifactUrl": "https://github.com/caiomcg/zoia/releases/download/v0.3.13/Zoia-OTA-0.3.13.asar",
-  "sha256": "b9e76e13c1ad7bad7bd3553655c286122f2b9e2c6b0a3edb04fe5d76176ec371",
-  "notes": "The watching eye sits on the avatar, and the Screen and Camera buttons fit in every language."
+  "version": "0.3.14",
+  "updateType": "full",
+  "installerUrl": "https://github.com/caiomcg/zoia/releases/download/v0.3.14/Zoia-Setup-0.3.14-x64.exe",
+  "notes": "GPU broadcasting is more resilient: it falls back cleanly on encoder failure, keeps audio and video in sync, and avoids stutter. Developer tools can be toggled in settings."
 }
