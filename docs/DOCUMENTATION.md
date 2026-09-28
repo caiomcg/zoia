@@ -14,17 +14,22 @@ Web browsers do not provide an API to isolate audio by process identifier (PID).
 
 Capturing the global system mix inevitably exposes personal notifications, background conversations in voice apps, and media player playback. Commercial platforms bypass this limitation only through proprietary desktop clients, while browser-based streaming forces silent screen sharing or complete mix leakage.
 
-Zoia solves this by combining an Electron desktop application with low-level Win32 Windows Audio Session API (WASAPI) process loopback capture. The audio of the selected window is captured directly from its process, formatted as linear PCM S16LE at 48 kHz stereo, completely isolated from other applications on the host system.
+Zoia addresses this limitation by deploying an Electron desktop client paired with platform-native capture integrations:
+- On Windows: low-level Win32 Windows Audio Session API (WASAPI) process loopback capture, isolating the chosen application audio stream as linear PCM S16LE at 48 kHz stereo.
+- On macOS: ScreenCaptureKit system audio loopback with native loopback suppression (`restrictOwnAudio`), isolating the system mix while preventing participant audio echo.
 
 ### Core System Features
 
-- Per-process audio isolation: audio capture locked strictly to the PID of the chosen application window.
-- Claimable rotating stage model: any authenticated participant can claim a broadcast slot in the current channel without requiring administrative roles.
+- Multi-platform client: native desktop builds for Windows x64 and macOS 13+ (Apple Silicon and Intel).
+- Per-process audio isolation on Windows: audio capture constrained strictly to the target window PID.
+- Self-echo suppressed system audio on macOS: captures system playback while excluding Zoia's own output to prevent audio loops.
+- Claimable rotating stage model: any authenticated participant can claim a broadcast slot in the current channel without administrative roles.
 - Selective Forwarding Unit (SFU) topology: each broadcaster uploads a single media stream to the LiveKit SFU, which distributes raw RTP packets to subscribed viewers without performing server-side transcoding.
 - Independent multi-channel support: up to 5 concurrent channels per deployment, each operating as an isolated LiveKit room with its own stage and permissions.
-- Device-oriented security model: public application binaries contain no credentials or server addresses. Access is granted through individual invite files and stored locally using Windows DPAPI, with immediate per-request revocation validation on the server.
-- Hardware-accelerated encoding and WHIP ingestion: optional direct GPU encoding (NVIDIA NVENC, AMD AMF, Intel Quick Sync) published via the WebRTC-HTTP Ingestion Protocol (WHIP) straight into the LiveKit SFU.
-- Dynamic game window handoff: automated, bidirectional tracking for multi-process games (such as League of Legends), shifting video and audio between launcher and match windows seamlessly.
+- Device-oriented security model: public application binaries contain no credentials or server addresses. Access is granted through individual invite files and stored locally using Windows DPAPI (or macOS Keychain), with immediate per-request revocation validation on the server.
+- Hardware-accelerated encoding: native Apple VideoToolbox encoding on macOS and GPU encoding (NVENC, AMF, Quick Sync) via WHIP on Windows.
+- Dynamic game window handoff: automated, bidirectional tracking for multi-process games (such as League of Legends on Windows), shifting video and audio between launcher and match windows seamlessly.
+- Integrated release notes: in-app release changelog dialog accessible directly from Settings and shown following application updates.
 
 ---
 
@@ -73,9 +78,9 @@ The architecture consists of three core operational layers:
    - Utilizes atomic JSON storage with memory mutex locks and write-then-rename operations, avoiding database overhead for small-scale deployments.
 
 4. **Desktop Application (Electron 44 + React 19 + TypeScript)**:
-   - Target platform: Windows x64.
-   - Built with modern React 19, functional components, and native support for English, Spanish, and Portuguese.
-   - Houses a native C++ module for Win32 and DirectX 11 integrations.
+   - Target platforms: Windows x64 and macOS 13+ (dedicated binaries for Apple Silicon arm64 and Intel x64).
+   - Built with modern React 19, functional components, in-app release notes, and native support for English, Spanish, and Portuguese.
+   - Houses a native C++ module for Win32 and DirectX 11 integrations on Windows; native ScreenCaptureKit and VideoToolbox integrations on macOS.
 
 ---
 
@@ -106,8 +111,18 @@ WASAPI loopback           Main Process                     Audio Format
    - Priming cushion: retains initial frames upon startup to absorb transmission jitter.
    - Latency ceiling: if the sender machine experiences temporary processing lag, the worklet systematically discards oldest frames to enforce a bounded audio-video offset, preventing latency from accumulating over time.
 
-4. **Screen Share Audio Invariant**:
-   When a user shares an entire desktop display rather than an individual application window, audio capture is intentionally disabled. A desktop display does not belong to a single process; the only possible audio would be the global OS mix, which violates the privacy principle of the application.
+4. **Screen Share Audio Invariant on Windows**:
+   When a user shares an entire desktop display rather than an individual application window on Windows, audio capture is intentionally disabled. A desktop display does not belong to a single process; the only possible audio would be the global OS mix, which violates the privacy principle of the application.
+
+#### Audio on macOS (ScreenCaptureKit and Self-Echo Suppression)
+
+Unlike Windows, macOS does not provide a public API for process-isolated audio loopback without kernel extensions or virtual audio drivers (per-process capture would require a Core Audio process tap, available only on macOS 14.2+).
+
+To provide clean audio capture on Mac without complex system extensions, Zoia implements the following architecture (ADR 0025):
+- Display capture requests system loopback audio through ScreenCaptureKit.
+- The stream specifies `channelCount: 2` (stereo) while explicitly disabling browser echo cancellation, noise suppression, and automatic gain control, preserving original gaming and media acoustics.
+- The `restrictOwnAudio: true` parameter is enforced. This tells macOS to subtract Zoia's own output from the captured mix, ensuring viewers never hear their own voices looped back.
+- Broadcasters on macOS receive an explicit interface reminder that system-wide audio (notifications and background apps) is included in their share.
 
 ### Video Subsystem and Hardware Encoding (WHIP and WGC)
 
@@ -146,6 +161,14 @@ Broadcasting from gaming rigs revealed several critical stability challenges tha
 
 - **Atomic Software Fallback**:
   If GPU initialization or WHIP negotiation fails during broadcast startup, the client switches transparently to CPU window capture while retaining its reserved stage slot, avoiding stream disruption or user-facing crashes.
+
+#### Video Encoding on macOS (Apple VideoToolbox and Single Layer)
+
+While Windows requires bypassing Chromium via WGC and WHIP to access hardware encoding, Chromium on macOS includes native WebRTC hardware H.264 encoding through Apple VideoToolbox (`powerEfficientEncoder: true`).
+
+However, performance analysis on Apple Silicon identified a critical browser quirk (ADR 0025):
+- Adding a second simulcast layer (lower resolution streams for weak connections) causes Chromium to disable VideoToolbox entirely and encode all layers in software via OpenH264 on the CPU. During screen sharing, this resulted in dropped frames and framerate collapse from 58 fps down to 25 to 50 fps.
+- To keep VideoToolbox hardware acceleration active at a steady 60 fps, screen sharing on macOS publishes a single video layer without simulcast. Camera sharing retains simulcast support.
 
 ### Dynamic Multi-Process Tracking: League of Legends
 
@@ -301,31 +324,46 @@ Securely deliver the generated `zoia-invite.json` file to the intended participa
 
 ### Requirements
 
-- Operating System: Windows 10 or Windows 11 (64-bit).
-- Standard WASAPI-compatible sound output device.
+- Windows: Windows 10 or Windows 11 (64-bit), standard WASAPI-compatible audio output device.
+- macOS: macOS 13 (Ventura) or newer, compatible with Apple Silicon (arm64) and Intel (x64).
 
-### Initial Setup
+### Installation and Initial Setup
 
+#### On Windows
 1. Download the latest installer (`Zoia-Setup-x.x.x-x64.exe`) from the GitHub Releases page.
-2. Run the installer (confirm the initial Windows SmartScreen notice if prompted).
-3. Drag the `zoia-invite.json` file directly into the application window.
-4. The client will complete the pairing exchange and store the credentials in Windows DPAPI.
+2. Run the installer (confirm the Windows SmartScreen notice by clicking "More info" and "Run anyway" if prompted).
+3. Drag the `zoia-invite.json` file received from your server administrator into the application window.
+
+#### On macOS
+1. Download the appropriate disk image from the GitHub Releases page:
+   - `Zoia-x.x.x-mac-arm64.dmg` for Apple Silicon Macs (M1, M2, M3, M4).
+   - `Zoia-x.x.x-mac-x64.dmg` for Intel Macs.
+2. Open the `.dmg` file and drag the Zoia icon into your Applications folder.
+3. On first launch, right-click the application icon and select **Open** (required due to ad-hoc code signing without a paid Apple Developer certificate).
+4. When initiating your first broadcast, grant the requested system authorization under: *System Settings > Privacy & Security > Screen & System Audio Recording*, and restart the app if prompted.
+5. Drag your `zoia-invite.json` file into the window to complete device pairing.
 
 ### Broadcasting Content
 
 1. Select a channel from the sidebar.
 2. Click the broadcast action button to open the source picker.
 3. Select your desired input:
-   - **Application Window**: captures visual window contents and isolated audio for that specific process.
-   - **Entire Screen**: captures the full desktop visual without audio (preserving private notifications).
+   - **Application Window**: captures visual window contents. On Windows, transmits isolated audio for that process; on macOS, transmits system-wide audio except Zoia's own output.
+   - **Entire Screen**: captures the full desktop visual. On Windows, intentionally muted; on macOS, transmits system-wide audio except Zoia's own output.
    - **Camera**: publishes webcam video alongside your chosen microphone with live level metering.
-4. For supported multi-process games (such as League of Legends), click the dedicated "Transmit LoL" banner to enable automated window and audio handoff.
+4. For supported multi-process games (such as League of Legends on Windows), click the dedicated "Transmit LoL" banner to enable automated window and audio tracking.
 
 ### Viewing Streams
 
 - Multiple participants can broadcast concurrently within the same channel.
 - Each viewer chooses which stream to enlarge or focus.
 - To prevent conflicting audio playback, only one remote audio stream is active by default. Viewers can adjust individual stream volumes or switch audio focus via controls on each stream tile.
+
+### Release Notes and Update Policies
+
+- Zoia provides an in-app changelog dialog accessible via the About section and shown automatically after each application update.
+- On Windows: application logic and UI updates deploy transparently via Over-The-Air (OTA) updates. Full installers are required only when upgrading Electron or native C++ components.
+- On macOS: updates are applied by downloading the new `.dmg` disk image from the releases page (the "Check now" button in Settings directs users to the GitHub release), preserving application bundle signing integrity.
 
 ---
 

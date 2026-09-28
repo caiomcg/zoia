@@ -14,17 +14,22 @@ Nenhum navegador web comum disponibiliza uma API capaz de isolar o fluxo de audi
 
 Ao transmitir o som do sistema completo, o usuario expoe notificacoes de mensagens, conversas paralelas de outros aplicativos de voz e sons de navegacao pessoal. Servicos corporativos e plataformas de videoconferencia geralmente contornam isso apenas atraves de clientes desktop nativos proprietarios ou forcam o compartilhamento sem som.
 
-O Zoia resolve essa barreira integrando uma aplicacao desktop desenvolvida em Electron com chamadas de baixo nivel a API WASAPI (Windows Audio Session API) em modo de loopback de processo. O audio do executavel selecionado e capturado de forma isolada, em formato PCM linear S16LE a 48 kHz estereo, sem misturar com nenhum outro som do sistema.
+O Zoia resolve essa barreira integrando uma aplicacao desktop desenvolvida em Electron com integracoes nativas do sistema operacional:
+- No Windows: chamadas de baixo nivel a API WASAPI (Windows Audio Session API) em modo de loopback de processo, capturando o audio isolado do executavel selecionado em PCM linear S16LE a 48 kHz estereo.
+- No macOS: integracao com ScreenCaptureKit para captura de audio do sistema com supressao do retorno do proprio app (restrictOwnAudio), evitando eco entre participantes.
 
 ### Principais Caracteristicas
 
-- Isolamento acustico de processos: captura de som restrita ao identificador de processo (PID) da janela selecionada.
+- Suporte multiplataforma: cliente desktop disponivel para Windows x64 e macOS 13 ou superior (Apple Silicon e Intel).
+- Isolamento acustico de processos no Windows: captura de som restrita ao identificador de processo (PID) da janela selecionada.
+- Audio com supressao de eco proprio no macOS: captura do som do sistema com exclusao automatica do audio do Zoia para evitar microfonia e eco entre participantes.
 - Modelo de palco rotativo (Stage): qualquer participante autenticado pode reivindicar um slot de transmissao no canal ativo sem necessidade de privilegios de administrador pre-definidos.
 - Topologia com SFU (Selective Forwarding Unit): o transmissor envia seu fluxo apenas uma vez para o servidor LiveKit, que replica os pacotes brutos para os espectadores conectados sem realizar transcodificacao no servidor.
 - Multiplos canais independentes: suporte a ate 5 canais simultaneos por servidor, cada um operando como uma sala LiveKit isolada com seu proprio palco.
-- Seguranca orientada a dispositivos: o instalador publico do software nao contem credenciais nem endereco do servidor. O pareamento e realizado mediante arquivo de convite individual, com chave criptografada via DPAPI do Windows e revogacao imediata no servidor a cada requisicao.
-- Aceleracao por hardware e ingestao WHIP: pipeline opcional de codificacao em placa de video (NVIDIA NVENC, AMD AMF e Intel Quick Sync) com envio direto por WebRTC-HTTP Ingestion Protocol (WHIP) para o LiveKit SFU.
-- Transicao inteligente de janelas em jogos: suporte a jogos com arquitetura multiprocesso (como League of Legends), alternando automaticamente entre a janela do inicializador e a tela da partida sem interrupcao do streaming.
+- Seguranca orientada a dispositivos: o instalador publico do software nao contem credenciais nem endereco do servidor. O pareamento e realizado mediante arquivo de convite individual, com chave criptografada via DPAPI no Windows (ou Keychain no macOS) e revogacao imediata no servidor a cada requisicao.
+- Aceleracao por hardware: codificacao em placa de video via VideoToolbox no macOS (nativo via Chromium) e pipeline WHIP com GPU (NVIDIA NVENC, AMD AMF e Intel Quick Sync) no Windows.
+- Transicao inteligente de janelas em jogos: suporte a jogos com arquitetura multiprocesso (como League of Legends no Windows), alternando automaticamente entre a janela do inicializador e a tela da partida sem interrupcao do streaming.
+- Notas de atualizacao integradas: historico de alteracoes (Release Notes) acessivel diretamente pela interface do aplicativo e exibido apos atualizacoes.
 
 ---
 
@@ -73,9 +78,9 @@ A solucao e dividida em tres blocos principais de infraestrutura e software:
    - Nao utiliza bancos de dados relacionais ou servicos externos complexos: os dados de chaves, dispositivos e pareamentos sao persistidos em arquivos JSON com operacoes atomicas de gravacao e renomeacao sob controle de mutex em memoria.
 
 4. **Cliente Desktop (Electron 44 + React 19 + TypeScript)**:
-   - Plataforma alvo: Windows x64.
-   - Interface construida com React 19, componentes funcionais e suporte nativo aos idiomas portugues, ingles e espanhol.
-   - Modulo C++ nativo para integracao com APIs Win32 e DirectX 11.
+   - Plataformas alvo: Windows x64 e macOS 13 ou superior (binarios nativos para Apple Silicon arm64 e Intel x64).
+   - Interface construida com React 19, componentes funcionais, janela integrada de notas de versao (Release Notes) e suporte nativo aos idiomas portugues, ingles e espanhol.
+   - Modulo C++ nativo para integracao com APIs Win32 e DirectX 11 no Windows; integracao nativa com ScreenCaptureKit e VideoToolbox no macOS.
 
 ---
 
@@ -107,7 +112,17 @@ WASAPI loopback           Processo Principal               Formato
    - Teto maximo de latencia (Latency ceiling): caso o transmissor atrase a entrega de dados ou o sistema sofra sobrecarga temporaria, o worklet descarta os blocos mais antigos para manter o atraso estritamente delimitado, impedindo que a defasagem entre audio e video cresca indefinidamente.
 
 4. **Regra de Seguranca para Telas Cheias**:
-   Ao selecionar o compartilhamento de tela inteira (desktop), o Zoia desativa expressamente o envio de audio. Uma tela completa nao pertence a um processo unico; o unico audio possivel seria a mixagem geral do sistema operacional, violando a premissa de privacidade do software.
+   Ao selecionar o compartilhamento de tela inteira (desktop) no Windows, o Zoia desativa expressamente o envio de audio. Uma tela completa nao pertence a um processo unico; o unico audio possivel seria a mixagem geral do sistema operacional, violando a premissa de privacidade do software.
+
+#### Audio no macOS (ScreenCaptureKit e Supressao de Eco Proprio)
+
+Diferente do Windows, o macOS nao disponibiliza uma API publica para captura de audio isolado por PID sem o uso de extensoes de kernel ou drivers de audio virtuais. No macOS, a separacao por processo exigiria um modulo nativo baseado em Core Audio process tap (recurso disponivel apenas a partir do macOS 14.2).
+
+Para entregar transmissao com som estavel no Mac sem exigir extensoes intrusivas de sistema, o Zoia adota a seguinte arquitetura no macOS (ADR 0025):
+- A captura de tela requisita o canal de loopback de audio do sistema via ScreenCaptureKit.
+- O fluxo e padronizado em 2 canais estereo (`channelCount: 2`), desativando cancelamento de eco, supressao de ruido e controle automatico de ganho do navegador, mantendo a sonoridade natural e fiel de jogos e midias.
+- A flag `restrictOwnAudio: true` e expressamente aplicada. Essa configuracao instrui o macOS a remover o som emitido pelo proprio Zoia da mixagem capturada, impedindo que as falas dos espectadores retornem em eco.
+- O aplicativo exibe um aviso informativo ao transmissor no macOS lembrando que os sons gerais do sistema (notificacoes e outros aplicativos abertos) estao sendo enviados na transmissao.
 
 ### Pipeline de Video e Aceleracao por Hardware (WHIP e WGC)
 
@@ -146,6 +161,14 @@ Testes em cenarios reais de jogos exigiram o desenvolvimento de mecanismos avanc
 
 - **Fallback Automatico e Atomico**:
   Caso ocorra falha na inicializacao do encoder da GPU ou na negociacao WHIP, o cliente transfere a transmissao automaticamente para o modo de captura tradicional por CPU mantendo o slot do palco previamente reservado, sem que a sessao caia ou exiba mensagens de erro impeditivas para o usuario.
+
+#### Video e Codificacao por Hardware no macOS (VideoToolbox e Camada Unica)
+
+Enquanto o Windows depende de contornar o Chromium atraves de WGC e WHIP para acessar a GPU, o Chromium no macOS dispoe de suporte nativo a codificacao H.264 por hardware no WebRTC atraves da API Apple VideoToolbox (`powerEfficientEncoder: true`).
+
+Entretanto, analises de telemetria com Electron 44 em processadores Apple Silicon identificaram um comportamento critico do navegador (ADR 0025):
+- Ao adicionar uma segunda camada de simulcast (resolucoes menores para conexoes fracas), o Chromium desliga a aceleracao por hardware e passa a codificar todas as camadas em software (CPU) via OpenH264. Em compartilhamentos de tela, isso causava congelamentos e queda brusca de 58 fps para 25 a 50 fps.
+- Para assegurar que o codificador VideoToolbox permaneca sempre ativo a 60 fps estaveis, o compartilhamento de tela no macOS e publicado com uma camada unica de video (sem simulcast). A transmissao de camera mantem simulcast ativado.
 
 ### Transicao Inteligente em Jogos: Caso League of Legends
 
@@ -301,31 +324,46 @@ O comando criara o arquivo `zoia-invite.json`. Envie esse arquivo de forma priva
 
 ### Requisitos do Sistema
 
-- Sistema Operacional: Windows 10 ou Windows 11 (64-bit).
-- Dispositivo de audio compativel com WASAPI.
+- Windows: Windows 10 ou Windows 11 (64-bit), dispositivo de audio compativel com WASAPI.
+- macOS: macOS 13 (Ventura) ou superior, compativel com Apple Silicon (arm64) e processadores Intel (x64).
 
-### Primeiro Uso
+### Instalacao e Primeiro Uso
 
+#### No Windows
 1. Baixe o instalador mais recente (`Zoia-Setup-x.x.x-x64.exe`) na secao de Releases do repositorio.
-2. Execute o instalador (por nao possuir certificado comercial assinado, confirme o aviso inicial do SmartScreen clicando em "Mais informacoes" e depois em "Executar assim mesmo").
-3. Na tela inicial de boas-vindas, arraste o arquivo `zoia-invite.json` recebido do administrador ou clique para seleciona-lo no disco.
-4. O aplicativo realizara o pareamento automatico com o servidor e salvara a credencial no cofre seguro do Windows.
+2. Execute o instalador (caso exibido, confirme o aviso inicial do SmartScreen clicando em "Mais informacoes" e depois em "Executar assim mesmo").
+3. Na tela de pareamento, arraste o arquivo `zoia-invite.json` recebido do administrador ou selecione-o no disco.
+
+#### No macOS
+1. Baixe a imagem de disco correspondente na secao de Releases:
+   - `Zoia-x.x.x-mac-arm64.dmg` para computadores Apple Silicon (M1, M2, M3, M4).
+   - `Zoia-x.x.x-mac-x64.dmg` para computadores com processador Intel.
+2. Abra o arquivo `.dmg` e arraste o aplicativo para a pasta Aplicativos.
+3. No primeiro acesso, clique com o botao direito no icone do Zoia e selecione **Abrir** (procedimento padrao para aplicacoes com assinatura ad-hoc sem Apple Developer ID comercial).
+4. Ao iniciar a primeira transmissao, confirme a permissao solicitada pelo sistema em: *Ajustes do Sistema > Privacidade e Seguranca > Gravacao de Tela e Audio do Sistema*, e reinicie o aplicativo se solicitado.
+5. Arraste o arquivo `zoia-invite.json` para dentro da janela do aplicativo para concluir o pareamento.
 
 ### Transmitindo Conteudo
 
 1. Escolha o canal desejado no menu lateral.
 2. Clique no botao de compartilhamento para abrir o seletor de fontes.
 3. Escolha entre:
-   - **Janela de Aplicativo**: captura a janela visual e transmite o audio exclusivo daquele processo.
-   - **Tela Inteira**: captura a area de trabalho completa (sem audio, preservando sua privacidade).
+   - **Janela de Aplicativo**: captura a janela visual. No Windows, transmite exclusivamente o audio daquele processo; no macOS, transmite com o audio geral do sistema exceto o proprio Zoia.
+   - **Tela Inteira**: captura a area de trabalho completa. No Windows, e transmitida intencionalmente sem audio; no macOS, transmite com o audio geral do sistema exceto o proprio Zoia.
    - **Camera**: transmite sua webcam acompanhada do microfone selecionado com medidor de volume previo.
-4. Para jogos com processos duplos (como League of Legends), basta clicar no banner dedicado "Transmitir LoL"; o Zoia sincronizara as janelas e os audios da partida e do lobby de forma automatica.
+4. Para jogos com processos duplos (como League of Legends no Windows), clique no banner dedicado "Transmitir LoL" para ativar o rastreamento e a alternancia automatica entre o lobby e a partida.
 
 ### Assistindo Transmissoes
 
 - Multiplas pessoas podem transmitir ao mesmo tempo no mesmo canal.
 - Cada espectador pode selecionar quais telas deseja expandir ou focar.
 - Para evitar sobreposicao sonora confusa, apenas uma transmissao de audio permanece ativa por padrao. O espectador pode alternar qual transmissao deseja ouvir ou ajustar volumes individuais diretamente no reprodutor de cada tela.
+
+### Notas de Atualizacao e Politica de Updates
+
+- O aplicativo disponibiliza um historico integrado de alteracoes (Release Notes) acessivel na secao Sobre (About) ou exibido automaticamente apos cada atualizacao.
+- No Windows: atualizacoes de codigo da interface e regras de negocio ocorrem de forma automatica via mecanismo Over-The-Air (OTA). Atualizacoes completas com instalador so sao exigidas quando houver atualizacao da versao do Electron ou de modulos nativos em C++.
+- No macOS: atualizacoes sao aplicadas baixando a nova imagem `.dmg` na pagina de releases, preservando a integridade da assinatura do aplicativo. O botao "Verificar agora" nas configuracoes redireciona diretamente para a versao correspondente.
 
 ---
 
