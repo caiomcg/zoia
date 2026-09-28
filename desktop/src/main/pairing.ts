@@ -13,6 +13,7 @@ import { hostname } from 'node:os';
 import * as api from './api';
 import { ApiError, NoServerError } from './api';
 import * as config from './config';
+import { t } from './language';
 import { loadCredential, saveCredential, clearCredential } from './credential-store';
 import type { PairingStatus } from '../shared/ipc';
 
@@ -83,10 +84,7 @@ async function restore(): Promise<PairingStatus> {
   // a build that does not. The credential is probably still good, but there is
   // nowhere to present it, and an invite for the same server is what fixes it.
   if (!config.getServerUrl()) {
-    status = unpaired(
-      'This machine is paired, but this build does not know which server to. ' +
-        'Add the invite for it to reconnect.',
-    );
+    status = unpaired(t('pair.error.noServer'));
     return status;
   }
 
@@ -108,14 +106,14 @@ async function restore(): Promise<PairingStatus> {
     // everybody at once.
     if (err instanceof ApiError && err.status === 401) {
       await clearCredential();
-      status = unpaired('This device was removed. Pair again to continue.');
+      status = unpaired(t('pair.error.removed'));
       return status;
     }
 
     status = {
       paired: false,
       deviceName: stored.deviceName,
-      error: `Could not reach the server: ${(err as Error).message}`,
+      error: t('pair.error.unreachable', { error: (err as Error).message }),
       serverUrl: config.getServerUrl(),
       // The credential is still there and still believed good, so this is not
       // a state an invite fixes. Saying otherwise sends people hunting for a
@@ -136,10 +134,7 @@ export async function pair(deviceName?: string): Promise<PairingStatus> {
   const pairingToken = config.getPairingToken();
 
   if (!serverUrl || !pairingToken) {
-    status = unpaired(
-      config.describe().error ??
-        'This copy of Zoia has no invite yet. Add the zoia-invite.json you were sent.',
-    );
+    status = unpaired(config.describe().error ?? t('pair.error.noInvite'));
     return status;
   }
 
@@ -168,7 +163,7 @@ export async function pair(deviceName?: string): Promise<PairingStatus> {
         ? pairingErrorMessage(err)
         : err instanceof NoServerError
           ? err.message
-          : `Could not reach the server: ${(err as Error).message}`,
+          : t('pair.error.unreachable', { error: (err as Error).message }),
     );
   }
   return status;
@@ -193,14 +188,14 @@ function pairingErrorMessage(err: ApiError): string {
   const code = (err.body as { error?: string })?.error;
   switch (code) {
     case 'invalid':
-      return 'This invite’s pairing token was not accepted. It may have been revoked.';
+      return t('pair.error.tokenRejected');
     case 'exhausted':
-      return 'This invite has already been used on the maximum number of machines.';
+      return t('pair.error.exhausted');
     case 'device_name_required':
-      return 'A device name is required.';
+      return t('pair.error.nameRequired');
     case 'pairing_not_configured':
-      return 'That server is not set up for pairing.';
+      return t('pair.error.notSetUp');
     default:
-      return `Pairing failed (${err.status}).`;
+      return t('pair.error.failed', { status: err.status });
   }
 }

@@ -29,6 +29,7 @@ import {
 } from '../../shared/league';
 import { createCaptureAudioTrack, type CaptureTrackHandle } from '../audio/capture-track';
 import { WATCHING_ATTRIBUTE, isWatching, watchingValue } from './watching';
+import { tNow } from '../i18n';
 
 /**
  * The identity suffix a hardware-encoded broadcast publishes under. Must match
@@ -194,9 +195,10 @@ function broadcastMetadata(participant: Participant): {
 }
 
 function sourceLabel(sourceName: string | null, sourceKind: string | null): string | null {
-  if (!sourceName) return null;
-  if (sourceKind === 'window') return `Window: ${sourceName}`;
-  if (sourceKind === 'screen') return `Screen: ${sourceName}`;
+  // A camera sends no name: each viewer calls it "Camera" in their own language.
+  if (!sourceName) return sourceKind === 'camera' ? tNow('grid.source.camera') : null;
+  if (sourceKind === 'window') return tNow('grid.sourceWindow', { name: sourceName });
+  if (sourceKind === 'screen') return tNow('grid.sourceScreen', { name: sourceName });
   return sourceName;
 }
 
@@ -554,7 +556,7 @@ export function useRoom() {
           const name = broadcastingNamesRef.current.get(ownerId);
           refresh();
           if (name && !broadcastingNamesRef.current.has(ownerId)) {
-            setRoomNotice(`${name} parou de transmitir`);
+            setRoomNotice(tNow('room.stoppedSharing', { name }));
           }
         })
         // Every handler below first checks this is still the current room: a
@@ -581,11 +583,7 @@ export function useRoom() {
           if (reason === DisconnectReason.CLIENT_INITIATED) return;
           setIsReconnecting(false);
           setState('disconnected');
-          setError(
-            reason
-              ? `Connection closed (${reason}). Check the network and try again.`
-              : 'Connection closed. Check the network and try again.',
-          );
+          setError(reason ? tNow('room.closedReason', { reason }) : tNow('room.closed'));
           setBroadcastState('idle');
           localTrackRef.current = null;
           setLocalTrack(null);
@@ -598,7 +596,11 @@ export function useRoom() {
         refresh();
       } catch (err) {
         setState('error');
-        setError(`Could not connect: ${err instanceof Error ? err.message : String(err)}`);
+        setError(
+          tNow('room.couldNotConnect', {
+            error: err instanceof Error ? err.message : String(err),
+          }),
+        );
       }
     },
     [findRemoteScreens, announceWatching],
@@ -749,19 +751,19 @@ export function useRoom() {
       const claim = await window.zoia.stage.claim();
       if (!claim.ok) {
         setBroadcastState('idle');
-        setBroadcastError('Could not start your broadcast.');
+        setBroadcastError(tNow('room.couldNotStart'));
         return false;
       }
       try {
         setSharingKind('camera');
         const stream = await navigator.mediaDevices.getUserMedia(constraints);
         const [videoTrack] = stream.getVideoTracks();
-        if (!videoTrack) throw new Error('That camera returned no video.');
+        if (!videoTrack) throw new Error(tNow('room.cameraNoVideo'));
 
         const room = roomRef.current;
-        if (!room) throw new Error('Not connected to the room.');
+        if (!room) throw new Error(tNow('room.notConnected'));
         await room.localParticipant.setMetadata(
-          JSON.stringify({ sourceName: 'Camera', sourceKind: 'camera' }),
+          JSON.stringify({ sourceName: null, sourceKind: 'camera' }),
         );
 
         // 'motion' rather than 'detail': a camera image is moving video, not
@@ -802,7 +804,7 @@ export function useRoom() {
           localAudioRef.current = { track: audioTrack, capture: null };
           setSendingAudio(true);
         } else {
-          setAudioWarning('No microphone was available, so the camera is being shared silently.');
+          setAudioWarning(tNow('room.noMicrophone'));
         }
 
         return true;
@@ -861,7 +863,7 @@ export function useRoom() {
         const claim = await window.zoia.stage.claim();
         if (!claim.ok) {
           setBroadcastState('idle');
-          setBroadcastError('Could not start your broadcast.');
+          setBroadcastError(tNow('room.couldNotStart'));
           return false;
         }
       }
@@ -889,7 +891,7 @@ export function useRoom() {
           },
         });
         const [mediaTrack] = stream.getVideoTracks();
-        if (!mediaTrack) throw new Error('No video track was returned for that source.');
+        if (!mediaTrack) throw new Error(tNow('room.noVideoTrack'));
 
         // 'detail'/'text' tell Chromium to favour per-frame quality, which
         // in practice steers it to a *software* encoder (OpenH264) — measured
@@ -901,7 +903,7 @@ export function useRoom() {
         track.source = Track.Source.ScreenShare;
 
         const room = roomRef.current;
-        if (!room) throw new Error('Not connected to the room.');
+        if (!room) throw new Error(tNow('room.notConnected'));
         await room.localParticipant.setMetadata(
           JSON.stringify({ sourceName: source.name, sourceKind: source.kind }),
         );
@@ -959,7 +961,7 @@ export function useRoom() {
 
           void (async () => {
             if (leagueFollowRef.current && restartWindowRef.current) {
-              setRoomNotice('Partida encerrada. Aguardando o cliente do League of Legends…');
+              setRoomNotice(tNow('league.matchEnded'));
               await window.zoia.sources.list(true).catch(() => []);
               for (let attempt = 0; attempt < 24; attempt += 1) {
                 if (!leagueFollowRef.current) return;
@@ -971,9 +973,7 @@ export function useRoom() {
                     leagueFollowRef.current.current = target;
                     if (isLeagueClient(target)) leagueFollowRef.current.client = target;
                     setRoomNotice(
-                      isLeagueGame(target)
-                        ? 'League of Legends: alternado para a partida em andamento'
-                        : 'League of Legends: alternado para o cliente / saguão',
+                      isLeagueGame(target) ? tNow('league.toGame') : tNow('league.toClient'),
                     );
                     return;
                   }
@@ -1001,9 +1001,7 @@ export function useRoom() {
         // audio available for a whole screen is the whole system's.
         if (source.kind !== 'window' || source.processId === null) {
           setAudioWarning(
-            source.kind === 'window'
-              ? 'That window\u2019s audio could not be identified, so it is being shared silently.'
-              : 'Sharing a screen sends no audio. Share a window to send that app\u2019s sound.',
+            source.kind === 'window' ? tNow('room.windowNoAudio') : tNow('room.screenNoAudio'),
           );
           return true;
         }
@@ -1028,9 +1026,9 @@ export function useRoom() {
           });
         } catch (audioErr) {
           setAudioWarning(
-            `Audio capture failed for this window: ${
-              audioErr instanceof Error ? audioErr.message : String(audioErr)
-            }`,
+            tNow('room.audioFailed', {
+              error: audioErr instanceof Error ? audioErr.message : String(audioErr),
+            }),
           );
         }
 
@@ -1077,9 +1075,9 @@ export function useRoom() {
         if (ok) {
           follow.current = target;
           if (isLeagueGame(target)) {
-            setRoomNotice('League of Legends: alternado para a partida em andamento');
+            setRoomNotice(tNow('league.toGame'));
           } else if (isLeagueClient(target)) {
-            setRoomNotice('League of Legends: alternado para o cliente / saguão');
+            setRoomNotice(tNow('league.toClient'));
           }
         }
       } finally {

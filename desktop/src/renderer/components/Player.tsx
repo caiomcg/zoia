@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { LocalVideoTrack } from 'livekit-client';
 import type { SendAudio } from '../livekit/useRoom';
 import Avatar from './Avatar';
+import { useT } from '../i18n';
 
 /**
  * Renders this device's own capture while it is broadcasting. Remote
@@ -119,6 +120,7 @@ export default function Player({
    */
   fullscreen?: { active: boolean; toggle: () => void };
 }) {
+  const t = useT();
   const videoRef = useRef<HTMLVideoElement>(null);
   const stageRef = useRef<HTMLElement>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -162,18 +164,15 @@ export default function Player({
 
       {localTrack && !showPreview && (
         <div className="overlay">
-          <h2>You&rsquo;re live</h2>
-          <p className="muted">Your preview is hidden. Viewers see your broadcast as normal.</p>
+          <h2>{t('player.youreLive')}</h2>
+          <p className="muted">{t('player.previewHidden')}</p>
         </div>
       )}
 
       {!localTrack && gpuBroadcasting && (
         <div className="overlay">
-          <h2>Sharing your screen</h2>
-          <p className="muted">
-            Encoded on the GPU and sent straight to the server, so there is no local preview.
-            Viewers see it as normal.
-          </p>
+          <h2>{t('player.gpuTitle')}</h2>
+          <p className="muted">{t('player.gpuBody')}</p>
         </div>
       )}
 
@@ -183,7 +182,11 @@ export default function Player({
           <span>
             {name}
             <small className="stream-source">
-              {!sendAudio ? 'Sharing without audio' : silent ? 'Viewers hear nothing' : 'Sharing'}
+              {!sendAudio
+                ? t('player.withoutAudio')
+                : silent
+                  ? t('player.viewersHearNothing')
+                  : t('player.sharing')}
             </small>
           </span>
         </span>
@@ -193,8 +196,8 @@ export default function Player({
               className={`icon-button${showPreview ? ' active' : ''}`}
               onClick={onTogglePreview}
               aria-pressed={showPreview}
-              title={showPreview ? 'Hide your preview' : 'Show your preview'}
-              aria-label={showPreview ? 'Hide your preview' : 'Show your preview'}
+              title={showPreview ? t('player.hidePreview') : t('player.showPreview')}
+              aria-label={showPreview ? t('player.hidePreview') : t('player.showPreview')}
             >
               <IconEye off={!showPreview} />
             </button>
@@ -211,8 +214,8 @@ export default function Player({
                     muted: !audio.muted,
                   })
                 }
-                title={audio.muted ? 'Send your audio again' : 'Mute your audio for viewers'}
-                aria-label={audio.muted ? 'Unmute your audio' : 'Mute your audio'}
+                title={audio.muted ? t('player.sendAudioAgain') : t('player.muteForViewers')}
+                aria-label={audio.muted ? t('player.unmuteAudio') : t('player.muteAudio')}
               >
                 <IconVolume muted={silent} />
               </button>
@@ -228,7 +231,7 @@ export default function Player({
                     sendAudio.onChange({ volume, muted: volume === 0 });
                   }}
                   className="remote-volume"
-                  aria-label="How loud viewers hear your audio"
+                  aria-label={t('player.sendVolume')}
                 />
               )}
             </>
@@ -236,24 +239,24 @@ export default function Player({
           <button
             className="icon-button"
             onClick={onSwitch}
-            title="Share something else without stopping"
-            aria-label="Switch what you are sharing"
+            title={t('player.switchTitle')}
+            aria-label={t('player.switch')}
           >
             <IconSwitch />
           </button>
           <button
             className="icon-button stop"
             onClick={onStop}
-            title="Stop sharing"
-            aria-label="Stop sharing"
+            title={t('common.stopSharing')}
+            aria-label={t('common.stopSharing')}
           >
             <IconStop />
           </button>
           <button
             className="icon-button"
             onClick={() => (fullscreen ? fullscreen.toggle() : void toggleFullscreen())}
-            title={fullscreenActive ? 'Exit fullscreen' : 'Fullscreen'}
-            aria-label={fullscreenActive ? 'Exit fullscreen' : 'Fullscreen'}
+            title={fullscreenActive ? t('common.exitFullscreen') : t('common.fullscreen')}
+            aria-label={fullscreenActive ? t('common.exitFullscreen') : t('common.fullscreen')}
           >
             <IconFullscreen active={fullscreenActive} />
           </button>

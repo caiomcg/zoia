@@ -4,13 +4,14 @@
  * Closing the window hides it to the tray instead of quitting, so a broadcast
  * or a channel you are listening in keeps going. The tray's menu is the way
  * back, and the way out. Whether closing hides or quits is a choice kept in the
- * user's data folder; hiding is the default. It can be changed from the tray
+ * user's data folder; quitting is the default, and the tray is opt-in. It can be changed from the tray
  * menu or from the settings dialog, and both read the same preference.
  */
 
 import { app, BrowserWindow, Menu, Tray, nativeImage } from 'electron';
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { onLanguageChange, t } from './language';
 
 interface TrayPrefs {
   closeToTray: boolean;
@@ -21,9 +22,9 @@ const prefsPath = () => join(app.getPath('userData'), 'tray.json');
 function readPrefs(): TrayPrefs {
   try {
     const saved = JSON.parse(readFileSync(prefsPath(), 'utf8')) as Partial<TrayPrefs>;
-    return { closeToTray: saved.closeToTray !== false };
+    return { closeToTray: saved.closeToTray === true };
   } catch {
-    return { closeToTray: true };
+    return { closeToTray: false };
   }
 }
 
@@ -75,16 +76,16 @@ export function installTray(getWindow: () => BrowserWindow | null, iconPath: str
   rebuildMenu = () => {
     tray?.setContextMenu(
       Menu.buildFromTemplate([
-        { label: 'Open Zoia', click: () => showWindow(getWindow()) },
+        { label: t('tray.open'), click: () => showWindow(getWindow()) },
         {
-          label: 'Keep in tray when closed',
+          label: t('tray.keep'),
           type: 'checkbox',
           checked: getCloseToTray(),
           click: (item) => setCloseToTray(item.checked),
         },
         { type: 'separator' },
         {
-          label: 'Quit',
+          label: t('tray.quit'),
           click: () => {
             quitting = true;
             app.quit();
@@ -94,6 +95,7 @@ export function installTray(getWindow: () => BrowserWindow | null, iconPath: str
     );
   };
   rebuildMenu();
+  onLanguageChange(() => rebuildMenu());
 
   app.on('before-quit', () => {
     quitting = true;
@@ -110,8 +112,8 @@ export function installTray(getWindow: () => BrowserWindow | null, iconPath: str
       if (!toldAboutTray && process.platform === 'win32') {
         toldAboutTray = true;
         tray?.displayBalloon({
-          title: 'Zoia is still running',
-          content: 'It is in the tray. Click the icon to come back, or Quit to close it.',
+          title: t('tray.stillRunningTitle'),
+          content: t('tray.stillRunningBody'),
           iconType: 'info',
         });
       }

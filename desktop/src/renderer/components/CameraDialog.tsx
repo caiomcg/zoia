@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useCameraDevices } from '../livekit/useCamera';
+import { useT } from '../i18n';
 
 const MUTE_MICROPHONE_KEY = 'zoia.cameraMuteMicrophone';
 
@@ -26,6 +27,7 @@ export default function CameraDialog({
   onStart: (constraints: MediaStreamConstraints, muteMicrophone: boolean) => void;
   onCancel: () => void;
 }) {
+  const t = useT();
   const camera = useCameraDevices();
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -115,7 +117,7 @@ export default function CameraDialog({
     <div className="picker-backdrop" onClick={onCancel}>
       <div className="camera-dialog" onClick={(e) => e.stopPropagation()}>
         <header>
-          <h2>Share your camera</h2>
+          <h2>{t('camera.title')}</h2>
         </header>
 
         <div className="camera-preview">
@@ -125,9 +127,9 @@ export default function CameraDialog({
 
         <div className="camera-controls">
           <label>
-            <span className="muted">Camera</span>
+            <span className="muted">{t('camera.camera')}</span>
             <select value={cameraId} onChange={(e) => camera.chooseCamera(e.target.value)}>
-              <option value="">Default</option>
+              <option value="">{t('common.default')}</option>
               {camera.devices.cameras.map((c) => (
                 <option key={c.deviceId} value={c.deviceId}>
                   {c.label}
@@ -137,9 +139,9 @@ export default function CameraDialog({
           </label>
 
           <label>
-            <span className="muted">Microphone</span>
+            <span className="muted">{t('camera.microphone')}</span>
             <select value={microphoneId} onChange={(e) => camera.chooseMicrophone(e.target.value)}>
-              <option value="">Default</option>
+              <option value="">{t('common.default')}</option>
               {camera.devices.microphones.map((m) => (
                 <option key={m.deviceId} value={m.deviceId}>
                   {m.label}
@@ -153,8 +155,8 @@ export default function CameraDialog({
             right microphone", which is a question about the choice just made
             above it, and it needs the width to be readable. */}
         <div className="camera-level">
-          <span className="muted">Microphone level</span>
-          <div className="level-meter" title="Microphone level">
+          <span className="muted">{t('camera.micLevel')}</span>
+          <div className="level-meter" title={t('camera.micLevel')}>
             {Array.from({ length: segments }, (_, i) => (
               <span key={i} className={`level-seg${i < lit ? ' on' : ''}`} />
             ))}
@@ -167,13 +169,13 @@ export default function CameraDialog({
             checked={muteMicrophone}
             onChange={(event) => setMuteMicrophone(event.target.checked)}
           />
-          Mute microphone when sharing the camera
+          {t('camera.muteMic')}
         </label>
 
         <footer>
-          <button onClick={onCancel}>Cancel</button>
+          <button onClick={onCancel}>{t('common.cancel')}</button>
           <button className="primary" onClick={start} disabled={Boolean(error)}>
-            Share camera
+            {t('camera.share')}
           </button>
         </footer>
       </div>

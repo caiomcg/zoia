@@ -76,6 +76,10 @@ const bridge: ZoiaBridge = {
   app: {
     version: () => ipcRenderer.invoke(IPC.appVersion) as Promise<string>,
   },
+  language: {
+    get: () => ipcRenderer.invoke(IPC.languageGet),
+    set: (preference) => ipcRenderer.invoke(IPC.languageSet, preference),
+  },
   tray: {
     closeToTray: () => ipcRenderer.invoke(IPC.trayCloseGet),
     setCloseToTray: (value) => ipcRenderer.invoke(IPC.trayCloseSet, value),

@@ -1,7 +1,7 @@
 {
-  "version": "0.3.10",
+  "version": "0.3.13",
   "updateType": "asar",
-  "artifactUrl": "https://github.com/caiomcg/zoia/releases/download/v0.3.10/Zoia-OTA-0.3.10.asar",
-  "sha256": "b50ac2eeea1ce5fde55c03a85d4e642739b9d4697fbd5b0ecfa30774b89fe817",
-  "notes": "Live thumbnail previews, your own preview hidden by default, clearer share buttons and sidebar, window labels that follow the window, and an About section."
+  "artifactUrl": "https://github.com/caiomcg/zoia/releases/download/v0.3.13/Zoia-OTA-0.3.13.asar",
+  "sha256": "b9e76e13c1ad7bad7bd3553655c286122f2b9e2c6b0a3edb04fe5d76176ec371",
+  "notes": "The watching eye sits on the avatar, and the Screen and Camera buttons fit in every language."
 }

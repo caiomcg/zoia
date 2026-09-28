@@ -1,4 +1,4 @@
-# 23. Resilient GPU broadcasting pipeline with opt-in fallback
+# 24. Resilient GPU broadcasting pipeline with opt-in fallback
 
 - **Status:** accepted
 - **Date:** 2026-09-27

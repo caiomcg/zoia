@@ -1099,6 +1099,127 @@ button.danger {
   border-radius: 999px;
 }
 
+/* ---- settings: language ------------------------------------------------ */
+
+/* A dropdown that looks like the other settings fields, with room for flags.
+   Its list scrolls past eight or so, however many languages are added. */
+.language-picker {
+  position: relative;
+  max-width: 320px;
+}
+
+.language-trigger,
+.language-option {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.language-trigger {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  text-align: left;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.language-trigger:hover,
+.language-trigger.open {
+  border-color: var(--accent);
+}
+
+.language-trigger:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.language-chevron,
+.language-check {
+  width: 16px;
+  height: 16px;
+  margin-left: auto;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.language-chevron {
+  color: var(--muted);
+  transition: transform 0.15s ease;
+}
+
+.language-trigger.open .language-chevron {
+  transform: rotate(180deg);
+}
+
+.language-list {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  left: 0;
+  z-index: 5;
+  max-height: 290px;
+  margin: 0;
+  padding: 4px;
+  overflow-y: auto;
+  list-style: none;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.35);
+}
+
+.language-option {
+  padding: 8px 10px;
+  font-size: 13px;
+  color: var(--text);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.language-option.active {
+  background: var(--raised);
+}
+
+.language-check {
+  color: var(--accent);
+}
+
+.language-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--muted);
+}
+
+.language-icon svg {
+  width: 24px;
+  height: 16px;
+  border-radius: 3px;
+  box-shadow: 0 0 0 1px rgb(255 255 255 / 0.12);
+}
+
+/* The system icon is a drawing, not a flag: no frame around it. */
+.language-icon.system svg {
+  box-shadow: none;
+}
+
+.language-name {
+  font-weight: 600;
+}
+
+.language-detail {
+  font-size: 12px;
+  color: var(--muted);
+}
+
 /* ---- settings: about ----------------------------------------------------- */
 
 .about {
@@ -2047,14 +2168,33 @@ button.danger {
   border-radius: 3px;
 }
 
-.watching-you {
+/* The eye sits on the avatar's bottom-right corner, as a badge, so it never
+   takes room in the row: in a collapsed sidebar it knocked avatars out of
+   line. */
+.avatar-wrap {
+  position: relative;
   display: inline-flex;
-  color: var(--accent);
+  flex: 0 0 auto;
+}
+
+.watching-you {
+  position: absolute;
+  /* Mostly outside the circle, so it clears the initials. */
+  right: -7px;
+  bottom: -6px;
+  display: grid;
+  place-items: center;
+  width: 13px;
+  height: 13px;
+  color: #fff;
+  background: var(--accent);
+  border: 2px solid var(--surface);
+  border-radius: 50%;
 }
 
 .watching-you svg {
-  width: 14px;
-  height: 14px;
+  width: 8px;
+  height: 8px;
 }
 
 .avatar {
@@ -2343,6 +2483,35 @@ button.danger {
 
 .share-button svg {
   flex: 0 0 auto;
+}
+
+/* A label too long for its half of the width ends in an ellipsis rather
+   than spilling out of the button. */
+.share-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.share-live-dot {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  background: #fff;
+  border-radius: 50%;
+  animation: share-live-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes share-live-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .share-live-dot {
+    animation: none;
+  }
 }
 
 .share-button:hover:not(:disabled) {

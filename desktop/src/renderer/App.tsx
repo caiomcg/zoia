@@ -21,7 +21,11 @@ import {
   type SourceInfo,
 } from '../shared/ipc';
 import { isLeagueSource, resolveLeagueTarget } from '../shared/league';
+import { useT } from './i18n';
+import type { MessageKey } from '../shared/i18n';
 
+/** WebRTC's quality-limitation reasons, each with a translation. */
+const LIMITS = ['none', 'cpu', 'bandwidth', 'other'] as const;
 const PRESET_STORAGE_KEY = 'zoia.qualityPreset';
 const HARDWARE_STORAGE_KEY = 'zoia.hardwareAcceleration';
 const PREVIEW_STORAGE_KEY = 'zoia.showOwnPreview';
@@ -50,6 +54,7 @@ function readChannel(): string | null {
 }
 
 export default function App() {
+  const t = useT();
   const [status, setStatus] = useState<PairingStatus | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [cameraOpen, setCameraOpen] = useState(false);
@@ -164,12 +169,12 @@ export default function App() {
     if (memberKey) setChannelsVersion((v) => v + 1);
   }, [memberKey]);
 
-  const CHANNEL_ERRORS: Record<string, string> = {
-    room_limit: 'The server already has the most channels it allows.',
-    room_not_empty: 'Only an empty channel can be deleted.',
-    room_is_default: 'The main channel cannot be deleted.',
-    invalid_name: 'Use a name of 1 to 32 characters.',
-    unknown_room: 'That channel no longer exists.',
+  const CHANNEL_ERRORS: Record<string, MessageKey> = {
+    room_limit: 'channel.error.limit',
+    room_not_empty: 'channel.error.notEmpty',
+    room_is_default: 'channel.error.isDefault',
+    invalid_name: 'channel.error.invalidName',
+    unknown_room: 'channel.error.unknown',
   };
 
   /** Runs a channel change, reports a refusal, and refreshes the list. */
@@ -177,10 +182,10 @@ export default function App() {
     try {
       const result = await change;
       setChannelError(
-        result.ok ? null : (CHANNEL_ERRORS[result.error ?? ''] ?? 'Could not change the channel.'),
+        result.ok ? null : t(CHANNEL_ERRORS[result.error ?? ''] ?? 'channel.error.generic'),
       );
     } catch {
-      setChannelError('Could not reach the server.');
+      setChannelError(t('channel.error.unreachable'));
     }
     setChannelsVersion((v) => v + 1);
   }
@@ -265,7 +270,7 @@ export default function App() {
     if (!switching) {
       const claim = await window.zoia.stage.claim();
       if (!claim.ok) {
-        setStageError('Could not start your broadcast.');
+        setStageError(t('room.couldNotStart'));
         return;
       }
     }
@@ -312,33 +317,41 @@ export default function App() {
   // server, and while you are sharing, how your broadcast is being encoded.
   const connectionStats: StatusStat[] = [];
   if (room.state === 'connected' && room.pingMs !== null) {
-    connectionStats.push({ label: 'Ping', value: `${room.pingMs} ms` });
+    connectionStats.push({ label: t('stats.ping'), value: `${room.pingMs} ms` });
   }
   if (gpuLive) {
     const g = gpuCast.status;
     const encName = g?.encoder || gpu?.gpuEncoder || 'GPU';
     connectionStats.push(
-      { label: 'Encoder', value: `${encName.toUpperCase()} on ${gpu?.adapter || 'the GPU'}` },
       {
-        label: 'Resolution',
-        value: g && g.width > 0 ? `${g.width}×${g.height}` : 'starting…',
+        label: t('stats.encoder'),
+        value: t('broadcast.encoderOn', {
+          encoder: encName.toUpperCase(),
+          adapter: gpu?.adapter || t('stats.theGpu'),
+        }),
       },
-      { label: 'Frame rate', value: g && g.width > 0 ? `${Math.round(g.fps)} fps` : '—' },
-      { label: 'Bitrate', value: `${(preset.maxBitrate / 1e6).toFixed(0)} Mbps` },
+      {
+        label: t('stats.resolution'),
+        value: g && g.width > 0 ? `${g.width}×${g.height}` : t('stats.starting'),
+      },
+      { label: t('stats.frameRate'), value: g && g.width > 0 ? `${Math.round(g.fps)} fps` : '—' },
+      { label: t('stats.bitrate'), value: `${(preset.maxBitrate / 1e6).toFixed(0)} Mbps` },
     );
   } else if (encodingLive && stats) {
     connectionStats.push(
-      { label: 'Target', value: preset.label },
+      { label: t('stats.target'), value: preset.label },
       {
-        label: 'Capture',
+        label: t('stats.capture'),
         value: `${stats.captureWidth}×${stats.captureHeight} · ${stats.captureFps} fps`,
       },
-      { label: 'Sending', value: `${stats.width}×${stats.height} · ${stats.fps} fps` },
-      { label: 'Bitrate', value: `${(stats.kbps / 1000).toFixed(1)} Mbps` },
-      { label: 'Encoder', value: `${stats.encoder} (${stats.codec})` },
+      { label: t('stats.sending'), value: `${stats.width}×${stats.height} · ${stats.fps} fps` },
+      { label: t('stats.bitrate'), value: `${(stats.kbps / 1000).toFixed(1)} Mbps` },
+      { label: t('stats.encoder'), value: `${stats.encoder} (${stats.codec})` },
       {
-        label: 'Limited by',
-        value: stats.limitation === 'none' ? 'nothing' : stats.limitation,
+        label: t('stats.limitedBy'),
+        value: LIMITS.includes(stats.limitation as (typeof LIMITS)[number])
+          ? t(`stats.limit.${stats.limitation as (typeof LIMITS)[number]}`)
+          : stats.limitation,
       },
     );
   }
@@ -387,33 +400,29 @@ export default function App() {
               broadcast is encoding are on its hover card. */}
           <StatusLight
             tone={connectionTone}
-            label={`Connection: ${room.state}`}
+            label={t('top.connection', { state: t(`top.state.${room.state}`) })}
             stats={connectionStats}
           />
         </div>
 
         <div className="topbar-centre">
           {room.isReconnecting ? (
-            <span className="connection-message">Reconnecting… your choices will be restored.</span>
+            <span className="connection-message">{t('top.reconnecting')}</span>
           ) : isStarting ? (
-            <span className="muted">Starting…</span>
+            <span className="muted">{t('top.starting')}</span>
           ) : room.state === 'connecting' ? (
-            <span className="muted">Connecting…</span>
+            <span className="muted">{t('top.connecting')}</span>
           ) : null}
         </div>
 
         <div className="topbar-right">
-          <div className="share-icons" role="group" aria-label="What to share">
+          <div className="share-icons" role="group" aria-label={t('top.whatToShare')}>
             <button
               className={`share-button${screenLive ? ' active' : ''}`}
               disabled={room.state !== 'connected' || isStarting}
               onClick={() => setPickerOpen(true)}
-              title={
-                screenLive
-                  ? 'Sharing a screen or window — click to switch'
-                  : 'Share a screen or window'
-              }
-              aria-label="Share a screen or window"
+              title={screenLive ? t('top.screenTitleLive') : t('top.screenTitle')}
+              aria-label={t('top.screenTitle')}
             >
               <svg
                 viewBox="0 0 24 24"
@@ -426,15 +435,18 @@ export default function App() {
                 <rect x="2.5" y="4" width="19" height="13" rx="2" />
                 <path d="M8 20.5h8" strokeLinecap="round" />
               </svg>
-              {screenLive ? 'Sharing' : 'Screen'}
+              {/* The label stays put when live: green and the dot say so, and
+                  "Compartilhando" did not fit. */}
+              <span className="share-label">{t('top.screen')}</span>
+              {screenLive && <span className="share-live-dot" aria-hidden="true" />}
             </button>
 
             <button
               className={`share-button${cameraLive ? ' active' : ''}`}
               disabled={room.state !== 'connected' || isStarting}
               onClick={() => void toggleCamera()}
-              title={cameraLive ? 'Sharing your camera — click to stop' : 'Share your camera'}
-              aria-label="Share your camera"
+              title={cameraLive ? t('top.cameraTitleLive') : t('top.cameraTitle')}
+              aria-label={t('top.cameraTitle')}
             >
               <svg
                 viewBox="0 0 24 24"
@@ -447,7 +459,8 @@ export default function App() {
                 <rect x="2.5" y="6" width="13" height="12" rx="2" />
                 <path d="M15.5 11l6-3.5v9l-6-3.5z" strokeLinejoin="round" />
               </svg>
-              {cameraLive ? 'Camera on' : 'Camera'}
+              <span className="share-label">{t('top.camera')}</span>
+              {cameraLive && <span className="share-live-dot" aria-hidden="true" />}
             </button>
           </div>
         </div>
@@ -494,7 +507,7 @@ export default function App() {
                     renderStage: (fullscreen) => (
                       <Player
                         fullscreen={fullscreen}
-                        name={status.deviceName ?? 'You'}
+                        name={status.deviceName ?? t('common.you')}
                         showPreview={showPreview}
                         onTogglePreview={togglePreview}
                         localTrack={room.localTrack}
@@ -517,7 +530,7 @@ export default function App() {
                     showPreview,
                     onTogglePreview: togglePreview,
                     onStop: () => void stopSharing(),
-                    name: status.deviceName ?? 'You',
+                    name: status.deviceName ?? t('common.you'),
                   }
                 : undefined
             }
@@ -534,7 +547,7 @@ export default function App() {
 
         <Sidebar
           members={room.members}
-          myName={status.deviceName ?? 'You'}
+          myName={status.deviceName ?? t('common.you')}
           viewerIds={viewerIds}
           onOpenSettings={() => setSettingsOpen(true)}
           loadingRemoteIds={loadingRemoteIds}
@@ -579,12 +592,15 @@ export default function App() {
       {settingsOpen && (
         <SettingsDialog
           onClose={() => setSettingsOpen(false)}
-          myName={status.deviceName ?? 'You'}
+          myName={status.deviceName ?? t('common.you')}
           onRename={handleRename}
           hardwareDetail={
             gpu?.hardwareEncoder
-              ? `${(gpu.gpuEncoder ?? '').toUpperCase()} on ${gpu.adapter}`
-              : (gpu?.encoderReason ?? 'No hardware encoder was found on this machine.')
+              ? t('broadcast.encoderOn', {
+                  encoder: (gpu.gpuEncoder ?? '').toUpperCase(),
+                  adapter: gpu.adapter,
+                })
+              : (gpu?.encoderReason ?? t('broadcast.noEncoder'))
           }
           hardware={hardware}
           onHardwareChange={handleHardwareChange}
