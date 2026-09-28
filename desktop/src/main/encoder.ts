@@ -717,10 +717,17 @@ export async function start(win: BrowserWindow, options: EncoderOptions): Promis
   return new Promise<void>((resolve, reject) => {
     let settled = false;
 
+    const cleanup = () => {
+      proc.removeListener('exit', onEarlyExit);
+      proc.removeListener('error', onEarlyError);
+      proc.stderr.removeListener('data', checkStartup);
+    };
+
     const settleResolve = () => {
       if (settled) return;
       settled = true;
       clearTimeout(startupTimeout);
+      cleanup();
       resolve();
     };
 
@@ -728,6 +735,7 @@ export async function start(win: BrowserWindow, options: EncoderOptions): Promis
       if (settled) return;
       settled = true;
       clearTimeout(startupTimeout);
+      cleanup();
       reject(err);
     };
 
@@ -760,9 +768,7 @@ export async function start(win: BrowserWindow, options: EncoderOptions): Promis
     proc.once('error', onEarlyError);
 
     const checkStartup = (chunk: string) => {
-      if (!settled && (/Output #0/i.test(chunk) || /frame=\s*[1-9]/.test(chunk))) {
-        proc.removeListener('exit', onEarlyExit);
-        proc.removeListener('error', onEarlyError);
+      if (!settled && (/frame=\s*[1-9]/.test(chunk) || frameCount > 0)) {
         settleResolve();
       }
     };
