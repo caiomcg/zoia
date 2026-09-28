@@ -276,7 +276,12 @@ export default function App() {
     }
 
     setStageError(null);
-    const ok = await gpuCast.start(preset, target);
+    let ok = await gpuCast.start(preset, target);
+    if (!ok && !switching) {
+      console.warn('[gpu] GPU broadcast start failed, retrying once before fallback...');
+      await new Promise((r) => setTimeout(r, 400));
+      ok = await gpuCast.start(preset, target);
+    }
     if (!ok) {
       console.warn('[gpu] GPU broadcast failed, falling back to window broadcast');
       try {

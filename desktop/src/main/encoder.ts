@@ -94,7 +94,9 @@ const SAMPLE_RATE = 48000;
 const CHANNELS = 2;
 
 // Windows named pipe. ffmpeg opens this as an ordinary input file.
-const AUDIO_PIPE = '\\\\.\\pipe\\zoia-audio';
+// A unique name is used per session so restarting or switching windows never
+// encounters an EADDRINUSE or access conflict while the OS kernel cleans up the old pipe.
+let currentAudioPipe = '\\\\.\\pipe\\zoia-audio';
 
 /**
  * Bundled rather than assumed present: the build that ships must be one with
@@ -133,24 +135,42 @@ let lastAudioAt = 0;
  * channel; stdin carries video frames, and this pipe carries PCM. The server
  * is started before ffmpeg so the pipe exists when ffmpeg opens it.
  */
-function startAudioPipe(): void {
-  stopAudioPipe();
-  audioServer = createServer((socket) => {
-    audioSocket = socket;
-    socket.on('error', () => {});
-    socket.on('close', () => {
-      if (audioSocket === socket) audioSocket = null;
+async function startAudioPipe(): Promise<void> {
+  await stopAudioPipe();
+  currentAudioPipe = `\\\\.\\pipe\\zoia-audio-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+  await new Promise<void>((resolve, reject) => {
+    const server = createServer((socket) => {
+      audioSocket = socket;
+      socket.on('error', () => {});
+      socket.on('close', () => {
+        if (audioSocket === socket) audioSocket = null;
+      });
+    });
+    server.once('error', (err) => {
+      reject(err);
+    });
+    server.listen(currentAudioPipe, () => {
+      server.removeAllListeners('error');
+      server.on('error', () => {});
+      audioServer = server;
+      resolve();
     });
   });
-  audioServer.on('error', () => {});
-  audioServer.listen(AUDIO_PIPE);
 }
 
-function stopAudioPipe(): void {
+async function stopAudioPipe(): Promise<void> {
   audioSocket?.destroy();
   audioSocket = null;
-  audioServer?.close();
+  if (!audioServer) return;
+  const server = audioServer;
   audioServer = null;
+  await new Promise<void>((resolve) => {
+    const timer = setTimeout(resolve, 500);
+    server.close(() => {
+      clearTimeout(timer);
+      resolve();
+    });
+  });
 }
 let keepAlive: ReturnType<typeof setInterval> | null = null;
 
@@ -373,7 +393,7 @@ function buildArgs(options: EncoderOptions): string[] {
           '-thread_queue_size',
           '512',
           '-i',
-          AUDIO_PIPE,
+          currentAudioPipe,
         ]
       : []),
 
@@ -591,7 +611,7 @@ export async function start(win: BrowserWindow, options: EncoderOptions): Promis
   captureWidth = options.frames?.width ?? 0;
   captureHeight = options.frames?.height ?? 0;
 
-  if (options.withAudio) startAudioPipe();
+  if (options.withAudio) await startAudioPipe();
   const binary = ffmpegPath();
   const args = buildArgs(options);
   // The command first, because an argument this rejects is invisible in the
@@ -755,7 +775,7 @@ export async function start(win: BrowserWindow, options: EncoderOptions): Promis
     }, 10000);
 
     const onEarlyExit = (code: number | null) => {
-      if (!isCurrent()) {
+      if (proc.killed || (proc as { stoppedByApp?: boolean }).stoppedByApp) {
         settleReject(new Error('ffmpeg stopped'));
         return;
       }
@@ -838,10 +858,11 @@ export async function stop(): Promise<void> {
   watchdog = null;
   if (keepAlive) clearInterval(keepAlive);
   keepAlive = null;
-  stopAudioPipe();
+  await stopAudioPipe();
   if (!child) return;
   const dying = child;
   child = null;
+  (dying as ChildProcessWithoutNullStreams & { stoppedByApp?: boolean }).stoppedByApp = true;
   dying.stdin.end();
   dying.kill();
   await new Promise<void>((resolve) => {
