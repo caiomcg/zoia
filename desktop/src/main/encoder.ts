@@ -719,6 +719,62 @@ export async function start(win: BrowserWindow, options: EncoderOptions): Promis
 
   startWatchdog(win);
   if (options.withAudio) startKeepAlive();
+
+  return new Promise<void>((resolve, reject) => {
+    let settled = false;
+
+    const settleResolve = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(startupTimeout);
+      resolve();
+    };
+
+    const settleReject = (err: Error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(startupTimeout);
+      reject(err);
+    };
+
+    const startupTimeout = setTimeout(() => {
+      if (!settled) {
+        if (isCurrent() && !proc.killed && (frameCount > 0 || lastFps > 0)) {
+          settleResolve();
+        } else {
+          const msg =
+            bestError() ?? lastError ?? 'ffmpeg startup timed out waiting for WHIP connection';
+          settleReject(new Error(msg));
+        }
+      }
+    }, 10000);
+
+    const onEarlyExit = (code: number | null) => {
+      if (!isCurrent()) {
+        settleReject(new Error('ffmpeg stopped'));
+        return;
+      }
+      const msg = bestError() ?? lastError ?? `ffmpeg exited with code ${code} during startup`;
+      settleReject(new Error(msg));
+    };
+
+    const onEarlyError = (err: Error) => {
+      settleReject(err);
+    };
+
+    proc.once('exit', onEarlyExit);
+    proc.once('error', onEarlyError);
+
+    const checkStartup = (chunk: string) => {
+      if (!settled && (/Output #0/i.test(chunk) || /frame=\s*[1-9]/.test(chunk))) {
+        proc.removeListener('exit', onEarlyExit);
+        proc.removeListener('error', onEarlyError);
+        settleResolve();
+      }
+    };
+
+    proc.stderr.on('data', checkStartup);
+  });
 }
 
 /** Ends the broadcast for good, as opposed to the restart start() performs. */

@@ -279,7 +279,15 @@ export default function App() {
     const ok = await gpuCast.start(preset, target);
     if (!ok) {
       console.warn('[gpu] GPU broadcast failed, falling back to window broadcast');
-      await room.startBroadcast(target, preset, { keepStage: true });
+      try {
+        const fallbackOk = await room.startBroadcast(target, preset, { keepStage: true });
+        if (!fallbackOk) {
+          await window.zoia.stage.release().catch(() => {});
+        }
+      } catch (fallbackErr) {
+        await window.zoia.stage.release().catch(() => {});
+        setStageError(fallbackErr instanceof Error ? fallbackErr.message : t('room.couldNotStart'));
+      }
     }
   }
 
