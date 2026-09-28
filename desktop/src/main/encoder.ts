@@ -354,13 +354,6 @@ function buildArgs(options: EncoderOptions): string[] {
             `${frames.width}x${frames.height}`,
             '-framerate',
             String(framerate),
-            // Like passthrough H.264, window capture is event-driven and frame
-            // delivery depends on redraws and pipe pacing. Without wall clock
-            // timestamps, FFmpeg assumes constant-interval frames; any dropped
-            // or delayed frame causes video PTS to fall permanently behind real
-            // time and audio, leading to WebRTC desync and black screen.
-            '-use_wallclock_as_timestamps',
-            '1',
             '-thread_queue_size',
             '16',
             '-i',
