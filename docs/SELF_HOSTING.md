@@ -150,7 +150,7 @@ That writes a small file, mode `0600`:
 ```
 
 The token inside is shown **once** and is not recoverable. `--max-activations` caps how many
-machines the invite can ever pair, which bounds the damage if it is forwarded.
+live machines the invite can have paired at once — revoking a device frees its seat — which bounds the damage if it is forwarded.
 
 **This file is the credential.** Send it over something private.
 

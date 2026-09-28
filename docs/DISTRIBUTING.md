@@ -158,8 +158,8 @@ Send it over something private. The person then drags it onto the Zoia window or
 **Choose invite file…** on the pairing screen. Zoia copies it into its own data directory,
 so it does not have to stay where they put it.
 
-`--max-activations` caps how many machines that invite can ever pair, which bounds the damage
-if it is forwarded. One invite per group makes it possible to cut off a group without touching
+`--max-activations` caps how many live machines that invite can have paired at once, which
+bounds the damage if it is forwarded. Revoking a device frees its seat. One invite per group makes it possible to cut off a group without touching
 anyone else.
 
 ## Private builds
@@ -220,5 +220,5 @@ interval.
 Because the invitation is no longer inside the binary, **revoking one no longer means
 rebuilding or re-sending anything** — issue a new invite and carry on.
 
-`pair:list` and `device:list` show what exists, including how many activations an invite has
-left and when each device was last seen.
+`pair:list` and `device:list` show what exists, including how many seats an invite has in use
+and when each device was last seen.

@@ -175,15 +175,21 @@ switch (command) {
       console.log('No pairing tokens yet. Mint one with: keytool pair:new --name "v1"');
       break;
     }
-    console.table(
-      all.map((p) => ({
+    // Seats are live devices against the cap; activations is the lifetime
+    // tally, which keeps growing as revoked machines are replaced.
+    const rows = [];
+    for (const p of all) {
+      const seats = await devices.countActiveByPairing(p.id);
+      rows.push({
         id: p.id,
         name: p.name,
         status: status(p),
-        activations: `${p.activations}${p.maxActivations === null ? '' : `/${p.maxActivations}`}`,
+        seats: `${seats}${p.maxActivations === null ? '' : `/${p.maxActivations}`}`,
+        activations: p.activations,
         lastSeen: p.lastSeen ?? 'never',
-      })),
-    );
+      });
+    }
+    console.table(rows);
     break;
   }
 

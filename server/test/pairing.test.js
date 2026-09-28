@@ -127,6 +127,18 @@ describe('pairing tokens', () => {
     assert.equal(third.body.error, 'exhausted', 'exhausted is not the same problem as wrong');
   });
 
+  test('revoking a device frees its seat', async () => {
+    const { raw } = await pairings.add({ name: 'limited', maxActivations: 2 });
+
+    const one = await pair(raw, 'one');
+    assert.equal((await pair(raw, 'two')).status, 200);
+    assert.equal((await pair(raw, 'three')).status, 409);
+
+    await devices.revoke(one.body.deviceId);
+    assert.equal((await pair(raw, 'three')).status, 200, 'a revoked machine holds no seat');
+    assert.equal((await pair(raw, 'four')).status, 409);
+  });
+
   test('no raw token or credential reaches a log line', async () => {
     const { raw } = await pairings.add({ name: 'v1 build' });
     const res = await pair(raw);
