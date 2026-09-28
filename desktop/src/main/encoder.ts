@@ -251,25 +251,11 @@ function encoderFor(vendor: string): string {
 function encoderTuning(encoder: string): string[] {
   switch (encoder) {
     case 'h264_amf':
-      // AMF counts B-frames in frames; above zero buys compression with
-      // latency a viewer feels. forced_idr and header_spacing ensure every
-      // keyframe is an IDR and repeats SPS/PPS for WebRTC decoders.
-      return [
-        '-usage',
-        'ultralowlatency',
-        '-quality',
-        'speed',
-        '-rc',
-        'cbr',
-        '-bf',
-        '0',
-        '-forced_idr',
-        '1',
-        '-header_spacing',
-        '0',
-        '-aud',
-        '0',
-      ];
+      // AMF's ultralowlatency usage preset disables periodic IDR keyframes (-g)
+      // in favor of external RTCP feedback, which WHIP does not support.
+      // Omitting -usage allows -g to insert periodic IDRs. -aud 0 disables AUD
+      // so dump_extra can cleanly prepend SPS/PPS before every IDR keyframe.
+      return ['-quality', 'speed', '-rc', 'cbr', '-bf', '0', '-forced_idr', '1', '-aud', '0'];
     case 'h264_qsv':
       return ['-preset', 'veryfast', '-look_ahead', '0', '-bf', '0', '-forced_idr', '1'];
     case 'libx264':
@@ -407,7 +393,9 @@ function buildArgs(options: EncoderOptions): string[] {
           '-bufsize',
           String(Math.floor(bitrate / 2)),
           '-g',
-          String(framerate * 2),
+          String(framerate),
+          '-bsf:v',
+          'dump_extra=freq=keyframe',
         ]),
 
     // Stereo, explicitly: the WHIP muxer refuses anything else with
@@ -582,6 +570,8 @@ export function start(win: BrowserWindow, options: EncoderOptions): void {
   stop();
   lastError = null;
   frameCount = 0;
+  captureWidth = options.frames?.width ?? 0;
+  captureHeight = options.frames?.height ?? 0;
 
   if (options.withAudio) startAudioPipe();
   const binary = ffmpegPath();
@@ -622,7 +612,7 @@ export function start(win: BrowserWindow, options: EncoderOptions): void {
 
     // ffmpeg announces the input stream once; that line carries the real
     // capture resolution, which is the only honest thing to show the user.
-    const size = chunk.match(/Video: wrapped_avframe[^\n]*?(\d{3,5})x(\d{3,5})/);
+    const size = chunk.match(/Video:\s*(?:[a-zA-Z0-9_]+)[^\n]*?(\d{3,5})x(\d{3,5})/);
     if (size?.[1] && size[2]) {
       captureWidth = Number(size[1]);
       captureHeight = Number(size[2]);
