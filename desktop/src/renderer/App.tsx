@@ -11,6 +11,7 @@ import Splash from './components/Splash';
 import StatusLight, { type StatusStat, type StatusTone } from './components/StatusLight';
 import { useRoom } from './livekit/useRoom';
 import { useGpuBroadcast } from './livekit/useGpuBroadcast';
+import { useSoundCues } from './sounds/useSoundCues';
 import {
   DEFAULT_PRESET_ID,
   QUALITY_PRESETS,
@@ -103,6 +104,7 @@ export default function App() {
 
   const isLive = room.broadcastState === 'live' || gpuCast.state === 'live';
   const isStarting = room.broadcastState === 'starting' || gpuCast.state === 'starting';
+  useSoundCues(room.members, room.state === 'connected', channel, isLive);
 
   useEffect(() => {
     window.zoia.pairing.status().then(setStatus);

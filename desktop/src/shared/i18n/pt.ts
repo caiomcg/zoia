@@ -214,6 +214,7 @@ export const pt: Messages = {
   'settings.nav.profile': 'Perfil',
   'settings.nav.broadcast': 'Transmissão',
   'settings.nav.general': 'Geral',
+  'settings.nav.sounds': 'Sons',
   'settings.nav.updates': 'Atualizações',
   'settings.nav.about': 'Sobre',
   'settings.save': 'Salvar',
@@ -282,4 +283,18 @@ export const pt: Messages = {
   'update.updateNow': 'Atualizar agora',
   'update.failedTitle': 'Atualização não concluída',
   'update.failedMessage': 'Não foi possível instalar a atualização.',
+
+  // ---- sounds
+  'sounds.intro': 'Sons curtos para o que acontece no seu canal. Tocam só neste computador.',
+  'sounds.volume': 'Volume',
+  'sounds.event.join': 'Alguém entra no canal',
+  'sounds.event.leave': 'Alguém sai do canal',
+  'sounds.event.streamStart': 'Uma transmissão começa',
+  'sounds.event.streamStop': 'Uma transmissão termina',
+  'sounds.style': 'Som',
+  'sounds.style.chime': 'Sino',
+  'sounds.style.pop': 'Pop',
+  'sounds.style.soft': 'Suave',
+  'sounds.pitch': 'Tom',
+  'sounds.preview': 'Ouvir',
 };

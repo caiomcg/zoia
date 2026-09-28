@@ -51,11 +51,19 @@ this format (a complete example is available at
   "version": "0.2.14",
   "commit": "<40 hexadecimal characters from the branch commit>",
   "updateType": "asar",
+  "minimumVersion": "0.2.10",
   "artifactUrl": "https://github.com/OWNER/REPOSITORY/releases/download/v0.2.14/Zoia-OTA-0.2.14.asar",
   "sha256": "<SHA-256 of the app.asar file>",
+  "installerUrl": "https://github.com/OWNER/REPOSITORY/releases/download/v0.2.14/Zoia-Setup-0.2.14-x64.exe",
   "notes": "Optional summary"
 }
 ```
+
+`minimumVersion` is the last `full` release. An `app.asar` is built against that release's
+Electron, FFmpeg and native addon, so an installation older than it must not receive the
+OTA: it gets the `full-required` prompt with `installerUrl` instead, and the manifest is
+rejected if that URL is missing. Always set both on an `asar` manifest. The classifier prints
+the value to use (`Minimum installed version for OTA`) in the release run's log.
 
 The `app.asar` must be produced by the same release build (`electron-builder --dir`) and
 copied from `win-unpacked/resources/app.asar`. Publish it as a release asset and calculate
