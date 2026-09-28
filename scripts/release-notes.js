@@ -11,7 +11,7 @@
  */
 
 import { existsSync, readFileSync } from 'node:fs';
-import { classify, git, minimumVersion } from './lib/desktop-update.js';
+import { git, previousTag } from './lib/desktop-update.js';
 import { formatReleaseNotes } from './lib/release-notes.js';
 
 const tag = process.argv[2];
@@ -28,18 +28,9 @@ function repository() {
   return match[1];
 }
 
-const { base, updateType, reasons } = classify(tag);
+const base = previousTag(tag);
 const entryFile = new URL(`../changelog/${tag.replace(/^v/, '')}.md`, import.meta.url);
 const entry = existsSync(entryFile) ? readFileSync(entryFile, 'utf8') : null;
-// Releases from before the Mac build have no Mac section in their packaging.
-function hasMacBuild() {
-  try {
-    return /^mac:/m.test(git(['show', `${tag}:desktop/electron-builder.yml`]));
-  } catch {
-    return false;
-  }
-}
-const macos = hasMacBuild();
 const range = base ? `${base}..${tag}` : tag;
 const log = git(['log', '--no-merges', '--format=%H%x1f%s', range]);
 const commits = log
@@ -55,10 +46,6 @@ process.stdout.write(
     base,
     repository: repository(),
     commits,
-    updateType,
-    minimumVersion: updateType === 'asar' && base ? minimumVersion(base) : null,
-    reasons,
     entry,
-    macos,
   }),
 );

@@ -11,10 +11,10 @@ whose entry is missing or empty, and the release workflow runs it before buildin
 
 ## Writing an entry
 
-Leave out what is generated around it: the opening line saying whether the release installs
-in-app (and from which version) or needs the installer, and the link to the full list of
-commits. `scripts/release-notes.js` adds both, from the same logic the updater uses, so they
-cannot disagree with it.
+Say what changed, and nothing about how to install it: no "in-app update", "installer
+required" or download instructions. The updater already handles that, and the app shows these
+notes to people who have just installed the release. The only thing added around the entry is
+the link to the full list of commits, by `scripts/release-notes.js`.
 
 - Group under `### New`, `### Fixed`, `### Improved` — only the headings that apply.
 - Say what changed for someone using the app, and where to find it: "Settings → Sounds",

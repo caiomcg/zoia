@@ -132,10 +132,9 @@ Every release needs a changelog entry, `changelog/<version>.md`, committed befor
 the release workflow refuses a tag without one before it builds anything. See
 [changelog/README.md](../changelog/README.md) for how to write it. The entry becomes the
 body of the GitHub release, and the desktop app shows the same text after an update and from
-Settings → About. [`scripts/release-notes.js`](../scripts/release-notes.js) wraps it with the
-parts that must match the updater: whether the release installs in-app (and from which
-version) or needs the installer, and a link to the full comparison. Preview the result before
-pushing the tag:
+Settings → About, so it says what changed and never how to install it.
+[`scripts/release-notes.js`](../scripts/release-notes.js) adds only a link to the full
+comparison. Preview the result before pushing the tag:
 
 ```bash
 node scripts/release-notes.js v0.2.0   # after tagging locally, before pushing the tag

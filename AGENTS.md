@@ -148,7 +148,9 @@ updated by hand as the last step. Details: [docs/DISTRIBUTING.md](docs/DISTRIBUT
      (Settings › Sounds). Leave out refactors, CI and version bumps.
    - Add a **Good to know** section for anything a person will run into: permissions, first-run
      prompts, platform differences, a setting that is on by default.
-   - Say which platform a change applies to, and why a `full` release needs the installer.
+   - Say which platform a change applies to. Never write install instructions ("in-app
+     update", "installer required", which file to download): the notes are shown in the app
+     to people who have just installed the release.
    - Claim nothing the diff does not show. Show the entry to the maintainer before tagging.
 4. **Verify:** `node scripts/check-release-version.js vX.Y.Z` (versions agree, entry exists),
    `npm run lint` and `npm test` at the root and in `desktop/` — judged by exit code. Preview

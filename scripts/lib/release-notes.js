@@ -1,9 +1,9 @@
 /**
  * Release notes written from the Conventional Commits between two tags,
  * grouped by what they mean to someone running the app rather than listed in
- * merge order. The desktop app shows these same notes in Settings → What's
- * new, so they are written for the people using it: what is new, what is
- * fixed, and whether the update installs itself or needs the installer.
+ * merge order. The desktop app shows these same notes after an update and
+ * from Settings → About, so they say what changed and nothing else: no
+ * install instructions, which only repeat what the updater already handles.
  */
 
 const CONVENTIONAL = /^(?<type>[a-z]+)(?:\((?<scope>[^)]+)\))?(?<breaking>!)?:\s*(?<text>.+)$/;
@@ -40,58 +40,21 @@ export function parseCommit({ hash, subject }) {
 }
 
 /**
- * A Mac never updates in-app (see docs/adr/0025-macos-client.md): whatever
- * the Windows build does, it downloads the disk image for its processor.
- */
-function macDownload(version) {
-  return `**Mac:** download \`Zoia-${version}-mac-arm64.dmg\` (Apple silicon) or \`Zoia-${version}-mac-x64.dmg\` (Intel) below.`;
-}
-
-function describeUpdate({ version, updateType, minimumVersion, reasons, macos }) {
-  const mac = macos ? ['', macDownload(version)] : [];
-  if (updateType === 'asar') {
-    const minimum = minimumVersion
-      ? ` It needs Zoia ${minimumVersion} or newer; an older installation is offered the installer instead.`
-      : '';
-    const who = macos ? '**Windows: in-app update.**' : '**In-app update.**';
-    return [
-      `${who} Zoia downloads and installs this by itself, or from Settings → Updates → Check now.${minimum}`,
-      ...mac,
-    ].join('\n');
-  }
-  if (updateType === 'full') {
-    const why = reasons.length ? ` (${[...new Set(reasons)].join('; ')})` : '';
-    const who = macos ? '**Windows: installer required.**' : '**Installer required.**';
-    return [
-      `${who} This release changes more than the app code${why}, so it cannot be installed in-app. Download \`Zoia-Setup-${version}-x64.exe\` below.`,
-      ...mac,
-    ].join('\n');
-  }
-  return '**No desktop changes.** Nothing to install; this release changes the server only.';
-}
-
-/**
  * @param {{
  *   tag: string,
  *   base: string | null,
  *   repository: string,
  *   commits: { hash: string, subject: string }[],
- *   updateType: 'asar' | 'full' | 'none',
- *   minimumVersion: string | null,
- *   reasons: string[],
  *   entry?: string | null,
- *   macos?: boolean,
  * }} release
  *
  * `entry` is the release's changelog/<version>.md. When there is one it is the
  * body; the grouped commits are the fallback for releases from before the
- * changelog existed. The install line and the comparison link are generated
- * either way, so they always match what the updater will do.
+ * changelog existed. Either way it closes with the link to the full list.
  */
 export function formatReleaseNotes(release) {
   const { tag, base, repository } = release;
-  const version = tag.replace(/^v/, '');
-  const lines = [describeUpdate({ ...release, version }), ''];
+  const lines = [];
 
   if (release.entry?.trim()) {
     lines.push(release.entry.trim(), '');

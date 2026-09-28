@@ -1,6 +1,6 @@
 /**
- * These notes are what people read in the app before updating, so the
- * install instructions in them must match what the updater will really do.
+ * These notes are what people read in the app after updating, so they say
+ * what changed, in a sensible order, and nothing about how to install it.
  */
 
 import { test, describe } from 'node:test';
@@ -13,9 +13,6 @@ const release = (overrides) => ({
   base: 'v1.2.2',
   repository: 'owner/zoia',
   commits: [],
-  updateType: 'asar',
-  minimumVersion: null,
-  reasons: [],
   ...overrides,
 });
 
@@ -61,42 +58,24 @@ describe('formatReleaseNotes', () => {
     assert.match(notes, /compare\/v1\.2\.2\.\.\.v1\.2\.3/);
   });
 
-  test('an OTA names the version it needs', () => {
-    const notes = formatReleaseNotes(release({ minimumVersion: '1.2.0' }));
-    assert.match(notes, /In-app update/);
-    assert.match(notes, /needs Zoia 1\.2\.0 or newer/);
-  });
-
-  test('a full release points at the installer and says why', () => {
-    const notes = formatReleaseNotes(
-      release({ updateType: 'full', reasons: ['native addon changed', 'native addon changed'] }),
-    );
-    assert.match(notes, /Installer required/);
-    assert.match(notes, /\(native addon changed\)/);
-    assert.match(notes, /Zoia-Setup-1\.2\.3-x64\.exe/);
-  });
-
-  test('a changelog entry replaces the commit list, keeping the install line', () => {
+  test('a changelog entry replaces the commit list', () => {
     const notes = formatReleaseNotes(
       release({
         entry: '### New\n\n- Sounds for joins and leaves.\n',
         commits: [{ hash: hash(6), subject: 'feat(desktop): add sound cues' }],
       }),
     );
-    assert.match(notes, /^\*\*In-app update\.\*\*/);
+    assert.ok(notes.startsWith('### New'));
     assert.match(notes, /Sounds for joins and leaves/);
     assert.doesNotMatch(notes, /Add sound cues/);
     assert.match(notes, /Full changelog/);
   });
 
-  test('a release with Mac builds tells a Mac which disk image to download', () => {
-    const ota = formatReleaseNotes(release({ macos: true }));
-    assert.match(ota, /\*\*Windows: in-app update\.\*\*/);
-    assert.match(ota, /\*\*Mac:\*\* download `Zoia-1\.2\.3-mac-arm64\.dmg` \(Apple silicon\)/);
-    const full = formatReleaseNotes(release({ macos: true, updateType: 'full' }));
-    assert.match(full, /\*\*Windows: installer required\.\*\*/);
-    assert.match(full, /mac-x64\.dmg` \(Intel\)/);
-    assert.doesNotMatch(formatReleaseNotes(release()), /Mac/);
+  test('never says how to install', () => {
+    const notes = formatReleaseNotes(
+      release({ commits: [{ hash: hash(8), subject: 'fix(desktop): steady the picture' }] }),
+    );
+    assert.doesNotMatch(notes, /install|\.exe|\.dmg|in-app update/i);
   });
 
   test('a release of only bookkeeping still says something', () => {
