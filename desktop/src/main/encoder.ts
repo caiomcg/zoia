@@ -267,6 +267,8 @@ function encoderTuning(encoder: string): string[] {
         '1',
         '-header_spacing',
         '0',
+        '-aud',
+        '0',
       ];
     case 'h264_qsv':
       return ['-preset', 'veryfast', '-look_ahead', '0', '-bf', '0', '-forced_idr', '1'];
@@ -406,9 +408,6 @@ function buildArgs(options: EncoderOptions): string[] {
           String(Math.floor(bitrate / 2)),
           '-g',
           String(framerate * 2),
-          // Inject SPS/PPS before every keyframe so late-joining WebRTC viewers can decode immediately
-          '-bsf:v',
-          'dump_extra=freq=keyframe',
         ]),
 
     // Stereo, explicitly: the WHIP muxer refuses anything else with
