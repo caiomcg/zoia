@@ -9,6 +9,7 @@ import * as audioCapture from './audio';
 import * as encoder from './encoder';
 import * as capture from './capture';
 import { getCloseToTray, installTray, setCloseToTray, showWindow } from './tray';
+import { isDevToolsEnabled, openDevTools, setDevToolsEnabled } from './devtools';
 import * as language from './language';
 import { isLanguagePreference } from '../shared/i18n';
 import { IPC } from '../shared/ipc';
@@ -66,6 +67,9 @@ function requestHardwareEncoding(): void {
   // ANGLE on D3D11 is what lets the GPU process come up at all on Windows;
   // being explicit avoids falling back to the basic render driver.
   app.commandLine.appendSwitch('use-angle', 'd3d11');
+
+  // Suppress Chromium/WebRTC internal C++ error spam (e.g. WGC CreateForWindow on invisible/tray windows)
+  app.commandLine.appendSwitch('log-level', '3');
 
   // Windows Graphics Capture is deliberately left ENABLED (it is the default).
   // It hands frames over as D3D11 textures that can go straight into the
@@ -171,6 +175,16 @@ function createWindow(): void {
     return { action: 'deny' };
   });
 
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown') return;
+    if (input.key === 'F12' || (input.control && input.shift && input.key.toLowerCase() === 'i')) {
+      if (isDevToolsEnabled()) {
+        mainWindow?.webContents.toggleDevTools();
+        event.preventDefault();
+      }
+    }
+  });
+
   if (process.env.ELECTRON_RENDERER_URL) {
     mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL);
     mainWindow.webContents.openDevTools({ mode: 'detach' });
@@ -240,6 +254,15 @@ function registerIpc(): void {
 
   ipcMain.handle(IPC.trayCloseGet, () => getCloseToTray());
   ipcMain.handle(IPC.trayCloseSet, (_event, value: boolean) => setCloseToTray(value === true));
+  ipcMain.handle(IPC.devToolsGet, () => isDevToolsEnabled());
+  ipcMain.handle(IPC.devToolsSet, (_event, value: boolean) =>
+    setDevToolsEnabled(value === true, mainWindow),
+  );
+  ipcMain.handle(IPC.devToolsOpen, () => {
+    if (isDevToolsEnabled()) {
+      openDevTools(mainWindow);
+    }
+  });
 
   ipcMain.handle(IPC.stageGet, () => api.stageGet());
   ipcMain.handle(IPC.stageClaim, () => api.stageClaim());
@@ -282,7 +305,11 @@ function registerIpc(): void {
           sourceName: options.sourceName,
           sourceKind: options.sourceKind,
         });
-        return startEncoding(mainWindow, { ...options, whipUrl: whip.url, whipToken: whip.token });
+        return await startEncoding(mainWindow, {
+          ...options,
+          whipUrl: whip.url,
+          whipToken: whip.token,
+        });
       } catch (err) {
         // Capture can refuse before ffmpeg is ever spawned — a window that has
         // gone, a minimised one, an adapter with no encoder. Those threw
@@ -318,31 +345,61 @@ function registerIpc(): void {
     ].join('\n');
   }
 
-  function startEncoding(
+  async function startEncoding(
     mainWindow: BrowserWindow,
     options: Omit<encoder.EncoderOptions, 'frames' | 'gpuVendor'> & { hwnd: number | null },
-  ): void {
+  ): Promise<void> {
+    // Nobody picks a new source mid-broadcast, so refreshing the picker's
+    // thumbnail cache from here on buys nothing and repeatedly logs WGC
+    // "Source is not capturable" for windows it cannot grab.
+    sources.stopWarming();
+
     if (options.hwnd !== null) {
       // Native path: WGC captures the window. On an NVIDIA adapter the addon
       // also encodes it, without the pixels ever leaving the GPU, and ffmpeg
       // only muxes. On a Radeon or an Intel GPU it hands back raw frames and
       // ffmpeg encodes them with AMF or Quick Sync — `info.output` says
       // which, and buildArgs follows it.
-      const info = capture.start(
-        options.hwnd,
-        options.framerate,
-        options.bitrate,
-        (packet) => encoder.writeFrame(packet),
-        (message) =>
-          mainWindow?.webContents.send(IPC.encoderStatus, {
-            running: false,
-            fps: 0,
-            encoder: encoder.encoderInUse(),
-            width: 0,
-            height: 0,
-            error: message,
-          }),
-      );
+      let sampleFrames = 0;
+
+      let info: ReturnType<typeof capture.start>;
+      try {
+        info = capture.start(
+          options.hwnd,
+          options.framerate,
+          options.bitrate,
+          (packet) => {
+            if (info.output === 'bgra') {
+              if (sampleFrames < 5 || sampleFrames % 120 === 0) {
+                let nonZero = 0;
+                const step = Math.max(4, Math.floor(packet.length / 5000));
+                for (let i = 0; i < packet.length - 4; i += step) {
+                  if (packet[i] !== 0 || packet[i + 1] !== 0 || packet[i + 2] !== 0) {
+                    nonZero++;
+                  }
+                }
+                console.log(
+                  `[gpu-diag] frame ${sampleFrames}: ${packet.length} bytes, nonZeroPixels=${nonZero}/5000 (${Math.round((nonZero / 5000) * 100)}%)`,
+                );
+              }
+              sampleFrames++;
+            }
+            encoder.writeFrame(packet);
+          },
+          (message) =>
+            mainWindow?.webContents.send(IPC.encoderStatus, {
+              running: false,
+              fps: 0,
+              encoder: encoder.encoderInUse(),
+              width: 0,
+              height: 0,
+              error: message,
+            }),
+        );
+      } catch (err) {
+        sources.startWarming();
+        throw err;
+      }
       if (info.fallbackReason) {
         // NVENC was there and declined — almost always a driver older than
         // the headers this was built against. The broadcast carries on over
@@ -358,9 +415,9 @@ function registerIpc(): void {
           context: attemptContext(options),
         });
       }
-      encoder.start(mainWindow, { ...options, frames: info });
+      await encoder.start(mainWindow, { ...options, frames: info });
     } else {
-      encoder.start(mainWindow, { ...options, frames: null, gpuVendor: gpuStatus.gpuVendor });
+      await encoder.start(mainWindow, { ...options, frames: null, gpuVendor: gpuStatus.gpuVendor });
     }
 
     // Only a window carries audio; a screen share is deliberately silent.
@@ -379,15 +436,15 @@ function registerIpc(): void {
     void api.whipRelease().catch(() => {});
   });
 
-  ipcMain.handle(IPC.encoderStop, () => {
+  ipcMain.handle(IPC.encoderStop, async () => {
     capture.stop();
-    encoder.shutdown();
+    await encoder.shutdown();
     audioCapture.stopCapture();
     sources.startWarming();
     // ffmpeg's own WHIP teardown request does not reliably reach the SFU —
     // measured: "Failed to read response from DELETE". Removing the publisher
     // server-side makes stopping definite instead of waiting on a timeout.
-    void api.whipRelease().catch(() => {});
+    await api.whipRelease().catch(() => {});
   });
 
   ipcMain.handle(IPC.audioStart, (_event, processId: number | null) => {

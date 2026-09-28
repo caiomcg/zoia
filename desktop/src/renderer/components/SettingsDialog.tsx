@@ -21,6 +21,9 @@ interface SettingsDialogProps {
   onRename: (name: string) => Promise<void>;
   /** Which encoder and card, or why there isn't one. */
   hardwareDetail: string;
+  hardware?: boolean;
+  onHardwareChange?: (enabled: boolean) => void;
+  hardwareAvailable?: boolean;
 }
 
 /**
@@ -33,6 +36,9 @@ export default function SettingsDialog({
   myName,
   onRename,
   hardwareDetail,
+  hardware,
+  onHardwareChange,
+  hardwareAvailable,
 }: SettingsDialogProps) {
   const t = useT();
   const [section, setSection] = useState<Section>('profile');
@@ -73,7 +79,14 @@ export default function SettingsDialog({
 
           <div className="settings-pane">
             {section === 'profile' && <ProfileSection myName={myName} onRename={onRename} />}
-            {section === 'broadcast' && <BroadcastSection hardwareDetail={hardwareDetail} />}
+            {section === 'broadcast' && (
+              <BroadcastSection
+                hardwareDetail={hardwareDetail}
+                hardware={hardware ?? false}
+                onHardwareChange={onHardwareChange}
+                hardwareAvailable={hardwareAvailable ?? false}
+              />
+            )}
             {section === 'general' && <GeneralSection />}
             {section === 'updates' && <UpdatesSection />}
             {section === 'about' && <AboutSection />}
@@ -151,35 +164,60 @@ function ProfileSection({
   );
 }
 
-function BroadcastSection({ hardwareDetail }: { hardwareDetail: string }) {
+function BroadcastSection({
+  hardwareDetail,
+  hardware,
+  onHardwareChange,
+  hardwareAvailable,
+}: {
+  hardwareDetail: string;
+  hardware: boolean;
+  onHardwareChange?: (enabled: boolean) => void;
+  hardwareAvailable: boolean;
+}) {
   const t = useT();
   return (
     <>
       <h3>{t('settings.nav.broadcast')}</h3>
-      {/* Switched off for now: the GPU path is the one that has broken on
-          other people's machines. Shown, so its absence is not a mystery. */}
-      <label className="settings-check unavailable" title={hardwareDetail}>
-        <input type="checkbox" checked={false} disabled readOnly />
+      <label
+        className={`settings-check ${!hardwareAvailable ? 'unavailable' : ''}`}
+        title={hardwareDetail}
+      >
+        <input
+          type="checkbox"
+          checked={hardware && hardwareAvailable}
+          disabled={!hardwareAvailable}
+          onChange={(event) => onHardwareChange?.(event.target.checked)}
+        />
         <span>
           {t('broadcast.hardware')}
-          <span className="settings-badge">{t('broadcast.comingSoon')}</span>
+          <span className="settings-badge">{hardwareAvailable ? 'Beta' : 'Unavailable'}</span>
           <small>{hardwareDetail}</small>
         </span>
       </label>
+      <p className="muted" style={{ marginTop: '8px', fontSize: '12px' }}>
+        Uses your GPU for video encoding (WHIP/WebRTC) to reduce CPU load. If you experience UI
+        freezes, encoder errors, or legacy GPU incompatibilities, turn this off to use standard CPU
+        broadcasting.
+      </p>
     </>
   );
 }
 
 function GeneralSection() {
   const t = useT();
-  // Applied as soon as it is toggled, like the same checkbox in the tray menu.
   const [closeToTray, setCloseToTray] = useState(false);
+  const [devToolsEnabled, setDevToolsEnabled] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     window.zoia.tray
       .closeToTray()
       .then(setCloseToTray)
+      .catch(() => {});
+    window.zoia.devTools
+      .isEnabled()
+      .then(setDevToolsEnabled)
       .catch(() => {});
   }, []);
 
@@ -194,6 +232,17 @@ function GeneralSection() {
     }
   }
 
+  async function toggleDevTools(value: boolean) {
+    setDevToolsEnabled(value);
+    setError(null);
+    try {
+      setDevToolsEnabled(await window.zoia.devTools.setEnabled(value));
+    } catch {
+      setDevToolsEnabled(!value);
+      setError('Could not change the developer tools setting.');
+    }
+  }
+
   return (
     <>
       <h3>{t('settings.nav.general')}</h3>
@@ -205,6 +254,28 @@ function GeneralSection() {
         />
         {t('general.tray')}
       </label>
+
+      <label className="settings-check">
+        <input
+          type="checkbox"
+          checked={devToolsEnabled}
+          onChange={(event) => void toggleDevTools(event.target.checked)}
+        />
+        Enable Developer Tools (F12 or Ctrl+Shift+I)
+      </label>
+
+      {devToolsEnabled && (
+        <div>
+          <button
+            type="button"
+            onClick={() => void window.zoia.devTools.open()}
+            style={{ fontSize: '12px', padding: '6px 14px' }}
+          >
+            Open Developer Tools
+          </button>
+        </div>
+      )}
+
       {error && <p className="settings-error">{error}</p>}
 
       <div className="settings-field">

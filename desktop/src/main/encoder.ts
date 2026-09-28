@@ -213,13 +213,16 @@ function scaleArgs(): string[] {
  * has no low-latency controls worth the name.
  */
 function encoderFor(vendor: string): string {
-  switch (vendor) {
+  switch (vendor?.toLowerCase()) {
     case 'amd':
       return 'h264_amf';
     case 'intel':
       return 'h264_qsv';
-    default:
+    case 'nvidia':
       return 'h264_nvenc';
+    default:
+      // Safe fallback for machines without dedicated GPU or unknown adapters.
+      return 'libx264';
   }
 }
 
@@ -248,11 +251,34 @@ function encoderFor(vendor: string): string {
 function encoderTuning(encoder: string): string[] {
   switch (encoder) {
     case 'h264_amf':
-      // AMF counts B-frames in frames; above zero buys compression with
-      // latency a viewer feels.
-      return ['-usage', 'ultralowlatency', '-quality', 'speed', '-rc', 'cbr', '-bf', '0'];
+      // AMF's ultralowlatency usage preset disables periodic IDR keyframes (-g)
+      // in favor of external RTCP feedback, which WHIP does not support.
+      // Omitting -usage allows -g to insert periodic IDRs. -aud 0 disables AUD
+      // so dump_extra can cleanly prepend SPS/PPS before every IDR keyframe.
+      // -vbaq 1 enables Variance-Based Adaptive Quantization to prevent
+      // macroblocking ("craquelamento") in complex game textures.
+      // -enforce_hrd 1 strictly clamps output to the HRD buffer model.
+      return [
+        '-quality',
+        'speed',
+        '-rc',
+        'cbr',
+        '-bf',
+        '0',
+        '-forced_idr',
+        '1',
+        '-vbaq',
+        '1',
+        '-enforce_hrd',
+        '1',
+        '-aud',
+        '0',
+      ];
     case 'h264_qsv':
-      return ['-preset', 'veryfast', '-look_ahead', '0', '-bf', '0'];
+      return ['-preset', 'veryfast', '-look_ahead', '0', '-bf', '0', '-forced_idr', '1'];
+    case 'libx264':
+      // Ultra-low latency software fallback for CPU encoding.
+      return ['-preset', 'ultrafast', '-tune', 'zerolatency', '-bf', '0'];
     default:
       return ['-preset', 'p4', '-tune', 'll', '-bf', '0'];
   }
@@ -264,6 +290,7 @@ function encoderTuning(encoder: string): string[] {
  * number worth reading — what is doing the encoding — misleading.
  */
 let currentEncoder = 'unknown';
+let isPassthrough = false;
 
 export function encoderInUse(): string {
   return currentEncoder;
@@ -277,6 +304,7 @@ function buildArgs(options: EncoderOptions): string[] {
   // hwupload_cuda` into h264_nvenc a second time — which cost quality and GPU
   // for nothing.
   const passthrough = frames?.output === 'h264';
+  isPassthrough = passthrough;
   const encoder = encoderFor(frames?.vendor ?? options.gpuVendor ?? 'nvidia');
   // ddagrab hands over D3D11 surfaces, which NVENC takes directly. AMF and
   // Quick Sync are given ordinary frames instead, downloaded once, rather than
@@ -327,7 +355,7 @@ function buildArgs(options: EncoderOptions): string[] {
             '-framerate',
             String(framerate),
             '-thread_queue_size',
-            '64',
+            '16',
             '-i',
             'pipe:0',
           ]),
@@ -356,6 +384,11 @@ function buildArgs(options: EncoderOptions): string[] {
 
     ...scaleArgs(),
 
+    // Explicit stream mapping to ensure proper video/audio association
+    '-map',
+    '0:v',
+    ...(options.withAudio ? ['-map', '1:a'] : []),
+
     ...(passthrough
       ? // Nothing to do but carry the bitstream to the muxer.
         ['-c:v', 'copy']
@@ -367,27 +400,49 @@ function buildArgs(options: EncoderOptions): string[] {
           String(bitrate),
           '-maxrate',
           String(bitrate),
+          // Constrained VBV buffer (2 frames of data) to smooth packet pacing
+          // and eliminate UDP bursts that cause buffer overflows and NACK storms
           '-bufsize',
-          String(bitrate),
+          String(Math.floor((bitrate / framerate) * 2)),
+          // 0.5-second GOP ensures near-instantaneous (500ms) recovery from packet drops
           '-g',
-          String(framerate * 2),
+          String(Math.round(framerate * 0.5)),
+          '-bsf:v',
+          'dump_extra=freq=keyframe',
         ]),
 
     // Stereo, explicitly: the WHIP muxer refuses anything else with
     // "Unsupported audio channels 1 by RTC". WASAPI loopback is already stereo,
     // so this only makes the requirement visible rather than incidental.
     ...(options.withAudio
-      ? ['-c:a', 'libopus', '-ac', '2', '-b:a', '128k', '-application', 'lowdelay']
+      ? [
+          '-c:a',
+          'libopus',
+          '-ac',
+          '2',
+          '-ar',
+          String(SAMPLE_RATE),
+          '-b:a',
+          '128k',
+          '-application',
+          'lowdelay',
+        ]
       : ['-an']),
 
     // Without dtls_active ffmpeg tries to be the DTLS server and fails to
     // create a security context; measured on Windows.
     '-whip_flags',
     'dtls_active',
+    // Maximize RTP retransmission history so WHIP can satisfy NACK requests
+    '-rtp_history',
+    '2048',
+    // Standard WebRTC MTU packet size to prevent IP fragmentation
+    '-pkt_size',
+    '1200',
     // Without a generous buffer the muxer fails sends with EAGAIN (-11) as
     // soon as bitrate rises.
     '-ts_buffer_size',
-    '16000000',
+    '32000000',
     // The SFU authenticates a WHIP publisher like any other participant: with
     // a LiveKit token, sent as `Authorization: Bearer`. ffmpeg adds the
     // "Bearer " itself. Verified end to end against the real SFU before this
@@ -486,7 +541,7 @@ function bestError(): string | null {
       return line;
     }
   }
-  return recent.filter(Boolean).slice(-1)[0] ?? null;
+  return recent.filter((l) => Boolean(l.trim()) && !GENERIC.test(l.trim())).slice(-1)[0] ?? null;
 }
 
 function logLine(line: string): void {
@@ -528,10 +583,13 @@ export function setOnExit(handler: (() => void) | null): void {
   onExit = handler;
 }
 
-export function start(win: BrowserWindow, options: EncoderOptions): void {
-  stop();
+export async function start(win: BrowserWindow, options: EncoderOptions): Promise<void> {
+  await stop();
   lastError = null;
+  lastFps = 0;
   frameCount = 0;
+  captureWidth = options.frames?.width ?? 0;
+  captureHeight = options.frames?.height ?? 0;
 
   if (options.withAudio) startAudioPipe();
   const binary = ffmpegPath();
@@ -572,7 +630,7 @@ export function start(win: BrowserWindow, options: EncoderOptions): void {
 
     // ffmpeg announces the input stream once; that line carries the real
     // capture resolution, which is the only honest thing to show the user.
-    const size = chunk.match(/Video: wrapped_avframe[^\n]*?(\d{3,5})x(\d{3,5})/);
+    const size = chunk.match(/Video:\s*(?:[a-zA-Z0-9_]+)[^\n]*?(\d{3,5})x(\d{3,5})/);
     if (size?.[1] && size[2]) {
       captureWidth = Number(size[1]);
       captureHeight = Number(size[2]);
@@ -585,7 +643,17 @@ export function start(win: BrowserWindow, options: EncoderOptions): void {
     if (fps?.[1]) lastFps = Number(fps[1]);
 
     if (/Error|failed|Invalid|Cannot/i.test(chunk) && !/Last message repeated/.test(chunk)) {
-      lastError = chunk.trim().split('\n').slice(-1)[0] ?? null;
+      const candidates = chunk
+        .trim()
+        .split('\n')
+        .map((l) => l.trim())
+        .filter(
+          (l) =>
+            Boolean(l) && !GENERIC.test(l) && /error|failed|invalid|cannot|unsupported/i.test(l),
+        );
+      if (candidates.length > 0) {
+        lastError = candidates[candidates.length - 1] ?? null;
+      }
     }
 
     if (!win.isDestroyed()) {
@@ -634,24 +702,87 @@ export function start(win: BrowserWindow, options: EncoderOptions): void {
       });
     }
     if (!win.isDestroyed()) {
+      const err = bestError() ?? lastError;
       win.webContents.send('zoia:encoder:status', {
         running: false,
         fps: 0,
         encoder: currentEncoder,
         width: 0,
         height: 0,
-        error: code === 0 ? null : (lastError ?? `ffmpeg exited with code ${code}`),
+        error: code === 0 ? null : (err ?? `ffmpeg exited with code ${code}`),
       } satisfies EncoderStatus);
     }
   });
 
   startWatchdog(win);
   if (options.withAudio) startKeepAlive();
+
+  return new Promise<void>((resolve, reject) => {
+    let settled = false;
+
+    const cleanup = () => {
+      proc.removeListener('exit', onEarlyExit);
+      proc.removeListener('error', onEarlyError);
+      proc.stderr.removeListener('data', checkStartup);
+    };
+
+    const settleResolve = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(startupTimeout);
+      cleanup();
+      resolve();
+    };
+
+    const settleReject = (err: Error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(startupTimeout);
+      cleanup();
+      reject(err);
+    };
+
+    const startupTimeout = setTimeout(() => {
+      if (!settled) {
+        if (isCurrent() && !proc.killed && (frameCount > 0 || lastFps > 0)) {
+          settleResolve();
+        } else {
+          const msg =
+            bestError() ?? lastError ?? 'ffmpeg startup timed out waiting for WHIP connection';
+          settleReject(new Error(msg));
+        }
+      }
+    }, 10000);
+
+    const onEarlyExit = (code: number | null) => {
+      if (!isCurrent()) {
+        settleReject(new Error('ffmpeg stopped'));
+        return;
+      }
+      const msg = bestError() ?? lastError ?? `ffmpeg exited with code ${code} during startup`;
+      settleReject(new Error(msg));
+    };
+
+    const onEarlyError = (err: Error) => {
+      settleReject(err);
+    };
+
+    proc.once('exit', onEarlyExit);
+    proc.once('error', onEarlyError);
+
+    const checkStartup = (chunk: string) => {
+      if (!settled && (/frame=\s*[1-9]/.test(chunk) || frameCount > 0)) {
+        settleResolve();
+      }
+    };
+
+    proc.stderr.on('data', checkStartup);
+  });
 }
 
 /** Ends the broadcast for good, as opposed to the restart start() performs. */
-export function shutdown(): void {
-  stop();
+export async function shutdown(): Promise<void> {
+  await stop();
 }
 
 /** Feeds one chunk of captured PCM to the encoder. */
@@ -681,6 +812,15 @@ export function writeAudio(chunk: Buffer): void {
 export function writeFrame(frame: Buffer): void {
   const stdin = child?.stdin;
   if (!stdin || stdin.destroyed || !stdin.writable) return;
+  // If the pipe is experiencing backpressure, drop the frame rather than
+  // queuing multiple frames in Node's V8 heap.
+  // For passthrough H.264, frames are small NAL units (<256KB threshold).
+  // For raw BGRA, each frame is ~14MB. When written, Node buffers bytes in stdin
+  // while the OS pipe drains. Dropping at threshold=0 causes nearly every frame
+  // to be dropped because writableLength stays >0 while the single in-flight frame
+  // is being transferred. Only drop if more than a full frame is already buffered.
+  const threshold = isPassthrough ? 256 * 1024 : Math.max(256 * 1024, frame.length);
+  if (stdin.writableLength > threshold) return;
   try {
     // Back-pressure is handled by dropping: a frame that cannot be written
     // now is better skipped than queued, which would only add latency.
@@ -690,7 +830,10 @@ export function writeFrame(frame: Buffer): void {
   }
 }
 
-export function stop(): void {
+export async function stop(): Promise<void> {
+  isPassthrough = false;
+  lastFps = 0;
+  frameCount = 0;
   if (watchdog) clearInterval(watchdog);
   watchdog = null;
   if (keepAlive) clearInterval(keepAlive);
@@ -701,4 +844,15 @@ export function stop(): void {
   child = null;
   dying.stdin.end();
   dying.kill();
+  await new Promise<void>((resolve) => {
+    if (dying.exitCode !== null) {
+      resolve();
+      return;
+    }
+    const timeout = setTimeout(resolve, 1500);
+    dying.once('exit', () => {
+      clearTimeout(timeout);
+      resolve();
+    });
+  });
 }

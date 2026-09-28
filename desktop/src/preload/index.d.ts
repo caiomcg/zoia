@@ -93,6 +93,12 @@ export interface ZoiaBridge {
     closeToTray(): Promise<boolean>;
     setCloseToTray(value: boolean): Promise<boolean>;
   };
+  devTools: {
+    /** Whether developer tools can be opened via shortcuts or UI. */
+    isEnabled(): Promise<boolean>;
+    setEnabled(value: boolean): Promise<boolean>;
+    open(): Promise<void>;
+  };
   audio: {
     /** `processId: null` captures the whole system's output instead of one app. */
     start(processId: number | null): Promise<void>;

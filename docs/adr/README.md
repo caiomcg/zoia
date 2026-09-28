@@ -30,8 +30,8 @@ record that supersedes it, so the history stays legible.
 | [0020](0020-sender-audio-controls.md)                    | Sender-side audio controls replace the monitor                | accepted                                                                           |
 | [0021](0021-retire-the-browser-viewer.md)                | Retire the browser viewer                                     | accepted                                                                           |
 | [0022](0022-unified-league-streaming.md)                 | Unified League of Legends streaming and bidirectional handoff | accepted                                                                           |
-| [0023](0023-interface-languages.md) | Interface languages | accepted |
-| [0024](0024-activation-cap-counts-seats.md) | The activation cap counts seats | accepted |
+| [0023](0023-interface-languages.md)                      | Interface languages                                           | accepted                                                                           |
+| [0024](0024-resilient-gpu-broadcasting-pipeline.md)      | Resilient GPU broadcasting pipeline with opt-in fallback      | accepted                                                                           |
 
 ## The two that explain the most
 

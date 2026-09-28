@@ -234,7 +234,12 @@ function useMediaStream(
     if (!element) return;
     const tracks = video ? [video.mediaStreamTrack] : [];
     if (audio) tracks.push(audio.mediaStreamTrack);
-    element.srcObject = tracks.length > 0 ? new MediaStream(tracks) : null;
+    if (tracks.length > 0) {
+      element.srcObject = new MediaStream(tracks);
+      void element.play().catch(() => {});
+    } else {
+      element.srcObject = null;
+    }
     return () => {
       element.srcObject = null;
     };
