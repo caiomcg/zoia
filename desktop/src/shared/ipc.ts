@@ -262,6 +262,7 @@ export const IPC = {
   sourcesList: 'zoia:sources:list',
   sourcesSelect: 'zoia:sources:select',
   sourcesTitle: 'zoia:sources:title',
+  sourcesLeague: 'zoia:sources:league',
   languageGet: 'zoia:language:get',
   languageSet: 'zoia:language:set',
   audioStart: 'zoia:audio:start',

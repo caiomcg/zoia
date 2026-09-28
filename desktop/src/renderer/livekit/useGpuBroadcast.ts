@@ -17,12 +17,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { EncoderStatus, QualityPreset, SourceInfo } from '../../shared/ipc';
-import {
-  findLeagueSources,
-  isLeagueClient,
-  isLeagueSource,
-  resolveLeagueTarget,
-} from '../../shared/league';
+import { isLeagueClient, isLeagueSource } from '../../shared/league';
 
 export type GpuBroadcastState = 'idle' | 'starting' | 'live';
 
@@ -51,11 +46,12 @@ export function useGpuBroadcast() {
         // try to switch back to client instead of going idle immediately.
         if (leagueFollowRef.current && startRef.current && presetRef.current) {
           void (async () => {
-            await window.zoia.sources.list(true).catch(() => []);
             for (let attempt = 0; attempt < 24; attempt += 1) {
               if (!activeRef.current) return;
-              const currentSources = await window.zoia.sources.list().catch(() => []);
-              const target = resolveLeagueTarget(currentSources);
+              const { game, client } = await window.zoia.sources
+                .league()
+                .catch(() => ({ game: null, client: null }));
+              const target = game ?? client;
               if (target && target.id !== activeSourceRef.current?.id) {
                 const ok = await startRef.current!(presetRef.current!, target);
                 if (ok) {
@@ -99,8 +95,9 @@ export function useGpuBroadcast() {
       presetRef.current = preset;
 
       if (source && isLeagueSource(source)) {
-        const allSources = await window.zoia.sources.list().catch(() => []);
-        const { game, client } = findLeagueSources(allSources);
+        const { game, client } = await window.zoia.sources
+          .league()
+          .catch(() => ({ game: null, client: null }));
         const target = game ?? client ?? source;
         leagueFollowRef.current = {
           client: client ?? (isLeagueClient(source) ? source : null),
@@ -151,10 +148,11 @@ export function useGpuBroadcast() {
       const follow = leagueFollowRef.current;
       if (!activeRef.current || !follow || switchingRef.current) return;
 
-      const sources = await window.zoia.sources.list().catch(() => []);
+      const { game, client } = await window.zoia.sources
+        .league()
+        .catch(() => ({ game: null, client: null }));
       if (disposed) return;
 
-      const { game, client } = findLeagueSources(sources);
       if (client) {
         follow.client = client;
       }

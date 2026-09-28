@@ -48,6 +48,8 @@ export interface ZoiaBridge {
     select(source: Pick<SourceInfo, 'id' | 'name' | 'processId'>): Promise<void>;
     /** A window's current title, or null once it is gone. */
     title(hwnd: number): Promise<string | null>;
+    /** Fast resolution of League of Legends game and client windows via native Win32 window manager. */
+    league(): Promise<{ game: SourceInfo | null; client: SourceInfo | null }>;
   };
   /** The hardware-encoding path: ffmpeg + NVENC + WHIP, bypassing Chromium. */
   encoder: {

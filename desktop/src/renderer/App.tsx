@@ -24,7 +24,7 @@ import {
   type RoomInfo,
   type SourceInfo,
 } from '../shared/ipc';
-import { isLeagueSource, resolveLeagueTarget } from '../shared/league';
+import { isLeagueSource } from '../shared/league';
 import { useT } from './i18n';
 import type { MessageKey } from '../shared/i18n';
 import type { ReleaseInfo } from '../shared/ipc';
@@ -345,8 +345,10 @@ export default function App() {
 
     let target = source;
     if (isLeagueSource(source)) {
-      const allSources = await window.zoia.sources.list().catch(() => []);
-      const resolved = resolveLeagueTarget(allSources, source);
+      const { game, client } = await window.zoia.sources
+        .league()
+        .catch(() => ({ game: null, client: null }));
+      const resolved = game ?? client;
       if (resolved) target = resolved;
     }
 
