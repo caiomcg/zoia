@@ -52,7 +52,7 @@ jobs:
         working-directory: .
         run: node scripts/classify-desktop-update.js HEAD
 
-      - name: Refuse a tag that disagrees with package.json
+      - name: Refuse a tag that disagrees with package.json or has no changelog entry
         if: github.event_name == 'push'
         working-directory: .
         run: node scripts/check-release-version.js "${{ github.ref_name }}"

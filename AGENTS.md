@@ -120,3 +120,5 @@ These each cost hours if forgotten, and all of them fail in ways that look like 
   browser code — it is small enough to read.
 - Tests use `node:test` + `supertest`. No test framework dependency.
 - Decisions that a future reader would otherwise re-litigate go in `docs/adr/`.
+- Every release needs `changelog/<version>.md`, written for the people using the app; the
+  release workflow refuses a tag without it. See `changelog/README.md`.

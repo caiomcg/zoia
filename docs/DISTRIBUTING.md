@@ -117,6 +117,8 @@ Tag a version and CI does the rest:
 ```bash
 npm version 0.2.0 --no-git-tag-version
 npm version 0.2.0 --no-git-tag-version --prefix desktop
+$EDITOR changelog/0.2.0.md    # required: the release notes
+git add changelog/0.2.0.md
 git commit -am "chore: release 0.2.0"
 git tag v0.2.0
 git push --follow-tags
@@ -126,12 +128,14 @@ git push --follow-tags
 and the Windows installer — and attaches it to a GitHub Release with a
 `SHA256SUMS.txt`.
 
-The release notes are written by [`scripts/release-notes.js`](../scripts/release-notes.js) from
-the Conventional Commits since the previous tag: grouped into New, Fixed, Faster and Under the
-hood, with `chore` commits left out, and opened by whether the release installs in-app (and
-from which version) or needs the installer. Commit subjects are therefore user-facing; write
-them for the people running the app. The desktop app shows the same notes under
-Settings → What's new, read live from the GitHub Releases API. Preview them before tagging:
+Every release needs a changelog entry, `changelog/<version>.md`, committed before tagging;
+the release workflow refuses a tag without one before it builds anything. See
+[changelog/README.md](../changelog/README.md) for how to write it. The entry becomes the
+body of the GitHub release, and the desktop app shows the same text after an update and from
+Settings → About. [`scripts/release-notes.js`](../scripts/release-notes.js) wraps it with the
+parts that must match the updater: whether the release installs in-app (and from which
+version) or needs the installer, and a link to the full comparison. Preview the result before
+pushing the tag:
 
 ```bash
 node scripts/release-notes.js v0.2.0   # after tagging locally, before pushing the tag

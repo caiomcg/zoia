@@ -4,10 +4,13 @@
  *
  *   node scripts/release-notes.js v0.3.16 > notes.md
  *
- * The repository is GITHUB_REPOSITORY in CI, or read from the origin remote.
+ * The body is changelog/<version>.md when it exists, and the commits since the
+ * previous tag otherwise. The repository is GITHUB_REPOSITORY in CI, or read
+ * from the origin remote.
  * Needs the tags in the checkout, like the classifier it shares logic with.
  */
 
+import { existsSync, readFileSync } from 'node:fs';
 import { classify, git, minimumVersion } from './lib/desktop-update.js';
 import { formatReleaseNotes } from './lib/release-notes.js';
 
@@ -26,6 +29,8 @@ function repository() {
 }
 
 const { base, updateType, reasons } = classify(tag);
+const entryFile = new URL(`../changelog/${tag.replace(/^v/, '')}.md`, import.meta.url);
+const entry = existsSync(entryFile) ? readFileSync(entryFile, 'utf8') : null;
 const range = base ? `${base}..${tag}` : tag;
 const log = git(['log', '--no-merges', '--format=%H%x1f%s', range]);
 const commits = log
@@ -44,5 +49,6 @@ process.stdout.write(
     updateType,
     minimumVersion: updateType === 'asar' && base ? minimumVersion(base) : null,
     reasons,
+    entry,
   }),
 );

@@ -76,6 +76,19 @@ describe('formatReleaseNotes', () => {
     assert.match(notes, /Zoia-Setup-1\.2\.3-x64\.exe/);
   });
 
+  test('a changelog entry replaces the commit list, keeping the install line', () => {
+    const notes = formatReleaseNotes(
+      release({
+        entry: '### New\n\n- Sounds for joins and leaves.\n',
+        commits: [{ hash: hash(6), subject: 'feat(desktop): add sound cues' }],
+      }),
+    );
+    assert.match(notes, /^\*\*In-app update\.\*\*/);
+    assert.match(notes, /Sounds for joins and leaves/);
+    assert.doesNotMatch(notes, /Add sound cues/);
+    assert.match(notes, /Full changelog/);
+  });
+
   test('a release of only bookkeeping still says something', () => {
     const notes = formatReleaseNotes(
       release({ commits: [{ hash: hash(5), subject: 'chore: bump version' }] }),

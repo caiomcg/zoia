@@ -62,13 +62,33 @@ function describeUpdate({ version, updateType, minimumVersion, reasons }) {
  *   updateType: 'asar' | 'full' | 'none',
  *   minimumVersion: string | null,
  *   reasons: string[],
+ *   entry?: string | null,
  * }} release
+ *
+ * `entry` is the release's changelog/<version>.md. When there is one it is the
+ * body; the grouped commits are the fallback for releases from before the
+ * changelog existed. The install line and the comparison link are generated
+ * either way, so they always match what the updater will do.
  */
 export function formatReleaseNotes(release) {
-  const { tag, base, repository, commits } = release;
+  const { tag, base, repository } = release;
   const version = tag.replace(/^v/, '');
   const lines = [describeUpdate({ ...release, version }), ''];
 
+  if (release.entry?.trim()) {
+    lines.push(release.entry.trim(), '');
+  } else {
+    lines.push(...commitSections(release));
+  }
+
+  if (base) {
+    lines.push(`**Full changelog:** https://github.com/${repository}/compare/${base}...${tag}`, '');
+  }
+  return lines.join('\n');
+}
+
+function commitSections({ repository, commits }) {
+  const lines = [];
   const parsed = commits.map(parseCommit).filter((commit) => !SKIPPED_TYPES.has(commit.type));
   const item = (commit) => {
     const scope = commit.scope && !UNNAMED_SCOPES.has(commit.scope) ? `**${commit.scope}:** ` : '';
@@ -90,9 +110,5 @@ export function formatReleaseNotes(release) {
     lines.push(`### ${section.title}`, '', ...section.commits.map(item), '');
   }
   if (!parsed.length) lines.push('Maintenance only: no changes to describe.', '');
-
-  if (base) {
-    lines.push(`**Full changelog:** https://github.com/${repository}/compare/${base}...${tag}`, '');
-  }
-  return lines.join('\n');
+  return lines;
 }
