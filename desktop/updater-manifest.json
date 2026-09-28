@@ -1,6 +1,9 @@
 {
-  "version": "0.3.18",
-  "updateType": "full",
-  "installerUrl": "https://github.com/caiomcg/zoia/releases/download/v0.3.18/Zoia-Setup-0.3.18-x64.exe",
-  "notes": "Zoia now runs on the Mac. On Windows nothing changes, but this version needs the installer because the app's packaging changed."
+  "version": "0.3.19",
+  "updateType": "asar",
+  "minimumVersion": "0.3.18",
+  "artifactUrl": "https://github.com/caiomcg/zoia/releases/download/v0.3.19/Zoia-OTA-0.3.19.asar",
+  "sha256": "628fa169d38b46bda65b88b6d645b418fb517835065a659e78131e3b9ecc2bfa",
+  "installerUrl": "https://github.com/caiomcg/zoia/releases/download/v0.3.19/Zoia-Setup-0.3.19-x64.exe",
+  "notes": "Smoother animations throughout, seamless channel switching, and credits for everyone who built Zoia."
 }
