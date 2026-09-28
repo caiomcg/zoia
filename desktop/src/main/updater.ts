@@ -26,6 +26,13 @@ interface UpdateManifest {
   version: string;
   commit: string;
   updateType?: 'asar' | 'full';
+  /**
+   * The oldest installed version an `asar` update may be applied to: the last
+   * full release. The OTA replaces app.asar only, so an install older than
+   * that would run new code against an Electron, FFmpeg or native addon it
+   * was not built for. Such an install is sent to `installerUrl` instead.
+   */
+  minimumVersion?: string;
   artifactUrl?: string;
   sha256?: string;
   installerUrl?: string;
@@ -251,6 +258,21 @@ async function getRemoteUpdate(config: UpdaterConfig): Promise<RemoteUpdate> {
     }
   } else {
     throw new Error('Updater manifest has an unknown update type');
+  }
+  if (
+    updateType === 'asar' &&
+    manifest.minimumVersion &&
+    newerVersion(manifest.minimumVersion, app.getVersion())
+  ) {
+    // Refused rather than applied without the installer to fall back on: a
+    // mismatched app.asar can fail to start at all, and then the updater
+    // that would fix it never runs again.
+    if (!manifest.installerUrl || !isUrl(manifest.installerUrl)) {
+      throw new Error(
+        `This update needs Zoia ${manifest.minimumVersion} or newer, and the manifest has no installer URL`,
+      );
+    }
+    return { ...manifest, commit, updateType: 'full' };
   }
   return { ...manifest, commit };
 }
