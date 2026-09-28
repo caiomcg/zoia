@@ -1,6 +1,9 @@
 {
-  "version": "0.3.14",
-  "updateType": "full",
-  "installerUrl": "https://github.com/caiomcg/zoia/releases/download/v0.3.14/Zoia-Setup-0.3.14-x64.exe",
-  "notes": "GPU broadcasting is more resilient: it falls back cleanly on encoder failure, keeps audio and video in sync, and avoids stutter. Developer tools can be toggled in settings."
+  "version": "0.3.15",
+  "updateType": "asar",
+  "minimumVersion": "0.3.14",
+  "artifactUrl": "https://github.com/caiomcg/zoia/releases/download/v0.3.15/Zoia-OTA-0.3.15.asar",
+  "sha256": "a22c03a7cd832cdc159c22a4d4c6c5c36b9b28d8ab5ebc892e34301320f239d3",
+  "installerUrl": "https://github.com/caiomcg/zoia/releases/download/v0.3.15/Zoia-Setup-0.3.15-x64.exe",
+  "notes": "Sounds for people joining, leaving and streaming, adjustable in Settings. Check now no longer offers the version you already have."
 }
