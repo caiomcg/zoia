@@ -1,6 +1,6 @@
 name: Release
 
-# Builds the Windows binaries and publishes them.
+# Builds the Windows and macOS binaries and publishes them.
 #
 # This needs no secrets, which is the whole point of the change that
 # introduced it: the published exe carries no server URL and no pairing token,
@@ -179,8 +179,69 @@ jobs:
           retention-days: 7
           if-no-files-found: error
 
+  # The macOS build shares none of the Windows toolchain: no ffmpeg, no
+  # capture addon, no MSVC. Sharing goes through Chromium's WebRTC encoder,
+  # which is VideoToolbox there. See docs/adr/0025-macos-client.md.
+  build-macos:
+    # Pinned for the same reason as windows-2025: the Xcode toolchain compiles
+    # node-window-manager, and is an input to the artifact.
+    runs-on: macos-15
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Refuse a tag that disagrees with package.json
+        if: github.event_name == 'push'
+        working-directory: .
+        run: node scripts/check-release-version.js "${{ github.ref_name }}"
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      # With scripts, for node-window-manager's native build. loopback-capture
+      # is an optional dependency and npm skips it here, as it should: it is
+      # WASAPI and has nothing to offer a Mac.
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Bundle main, preload and renderer
+        env:
+          ZOIA_TOKENLESS_BUILD: '1'
+        run: npm run build
+
+      # Both architectures from one runner; electron-builder rebuilds the
+      # native module for each. Ad-hoc signed (see electron-builder.yml).
+      - name: Package the macOS disk images
+        run: npx electron-builder --mac --arm64 --x64 --publish never
+
+      - name: Checksum the artifacts
+        working-directory: desktop/release
+        run: |
+          set -euo pipefail
+          ls *.dmg >/dev/null
+          shasum -a 256 *.dmg > SHA256SUMS-macos.txt
+          cat SHA256SUMS-macos.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: zoia-macos
+          path: |
+            desktop/release/*.dmg
+            desktop/release/SHA256SUMS-macos.txt
+          retention-days: 7
+          if-no-files-found: error
+
   publish:
-    needs: build
+    needs: [build, build-macos]
     if: github.event_name == 'push' || inputs.publish
     runs-on: ubuntu-latest
     # The only elevated permission in the repo, on the only job that needs it.
@@ -192,6 +253,10 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: zoia-windows
+          path: dist
+      - uses: actions/download-artifact@v4
+        with:
+          name: zoia-macos
           path: dist
       - name: Download OTA artifact
         if: needs.build.outputs.update_type == 'asar'

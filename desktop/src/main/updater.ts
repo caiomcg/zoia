@@ -259,6 +259,13 @@ async function getRemoteUpdate(config: UpdaterConfig): Promise<RemoteUpdate> {
   } else {
     throw new Error('Updater manifest has an unknown update type');
   }
+  if (process.platform === 'darwin') {
+    // The OTA swap is Windows plumbing throughout (a .bat runner, elevate.exe,
+    // PowerShell), and replacing app.asar inside a signed .app would break its
+    // seal. The manifest's installer is the Windows .exe. So a Mac is always
+    // sent to the release page, where the .dmg sits beside it.
+    return { ...manifest, commit, updateType: 'full', installerUrl: releasePage(config, manifest) };
+  }
   if (
     updateType === 'asar' &&
     manifest.minimumVersion &&
@@ -275,6 +282,13 @@ async function getRemoteUpdate(config: UpdaterConfig): Promise<RemoteUpdate> {
     return { ...manifest, commit, updateType: 'full' };
   }
   return { ...manifest, commit };
+}
+
+function releasePage(config: UpdaterConfig, manifest: UpdateManifest): string {
+  const repo = githubRepository(config.repository);
+  if (!repo) return config.repository;
+  const version = manifest.version.replace(/^v/, '');
+  return `https://github.com/${repo.owner}/${repo.name}/releases/tag/v${version}`;
 }
 
 function newerVersion(remote: string, local: string): boolean {

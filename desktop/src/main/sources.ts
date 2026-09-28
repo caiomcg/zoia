@@ -24,9 +24,11 @@
  * the same trick every screen-share picker that feels instant is doing.
  */
 
-import { desktopCapturer, type NativeImage } from 'electron';
+import { desktopCapturer, systemPreferences, type NativeImage } from 'electron';
+import { t } from './language';
 import { windowManager } from 'node-window-manager';
 import { isShareableWindow, type Bounds } from './window-filter';
+import { perAppAudioSupported } from './audio';
 
 export interface SourceInfo {
   id: string;
@@ -57,12 +59,28 @@ function safeBounds(window: { getBounds(): Bounds }): Bounds | null {
   }
 }
 
+/**
+ * On macOS desktopCapturer fails outright ("Failed to get sources.") until
+ * Zoia is allowed to record the screen. That says nothing about the fix, and
+ * the fix is a trip to System Settings, so say that instead.
+ */
+function macScreenPermissionError(): Error | null {
+  if (process.platform !== 'darwin') return null;
+  const status = systemPreferences.getMediaAccessStatus('screen');
+  return status === 'granted' ? null : new Error(t('picker.macScreenPermission'));
+}
+
 async function captureSources(): Promise<SourceInfo[]> {
-  const sources = await desktopCapturer.getSources({
-    types: ['screen', 'window'],
-    thumbnailSize: { width: 320, height: 180 },
-    fetchWindowIcons: false,
-  });
+  let sources: Electron.DesktopCapturerSource[];
+  try {
+    sources = await desktopCapturer.getSources({
+      types: ['screen', 'window'],
+      thumbnailSize: { width: 320, height: 180 },
+      fetchWindowIcons: false,
+    });
+  } catch (err) {
+    throw macScreenPermissionError() ?? err;
+  }
 
   // One native call, reused for every window source below rather than one
   // enumeration per source. This part is cheap (~15ms) — it is never the
@@ -101,7 +119,10 @@ async function captureSources(): Promise<SourceInfo[]> {
       }
     }
 
-    const processId = nativeWindow?.processId ?? null;
+    // The PID is only ever used to capture that application's audio, which is
+    // WASAPI and Windows-only. Elsewhere it stays null, so the renderer shares
+    // the window silently rather than attempting a capture that cannot work.
+    const processId = perAppAudioSupported ? (nativeWindow?.processId ?? null) : null;
 
     return [
       {
@@ -145,7 +166,9 @@ function refresh(): Promise<SourceInfo[]> {
  */
 export function startWarming(_intervalMs = 4000): void {
   warmingActive = true;
-  void refresh();
+  // Nobody is waiting on a warm-up, so a failure here (on macOS, before Screen
+  // Recording is allowed) is left for the picker's own request to report.
+  refresh().catch(() => {});
 }
 
 export function stopWarming(): void {
@@ -166,7 +189,7 @@ export async function listSources(fresh = false): Promise<SourceInfo[]> {
     // When warming is stopped (e.g. during a live broadcast or idle), avoid
     // invoking desktopCapturer which burns CPU/GPU.
     if (warmingActive && Date.now() - cacheTime > 2500) {
-      void refresh();
+      refresh().catch(() => {});
     }
     return cache;
   }
@@ -190,6 +213,10 @@ export function selectSource(source: { id: string; name: string; processId: numb
  * the window is gone.
  */
 export function windowTitle(hwnd: number): string | null {
+  // On macOS node-window-manager answers with the owning application's name
+  // (kCGWindowOwnerName), not the window's title, which would replace a
+  // precise label with a vaguer one three seconds into the share.
+  if (process.platform === 'darwin') return null;
   try {
     const window = windowManager.getWindows().find((w) => w.id === hwnd);
     return window?.getTitle() || null;

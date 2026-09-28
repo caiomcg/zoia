@@ -54,6 +54,16 @@ let loadError: string | null = null;
 
 function load(): CaptureAddon | null {
   if (addon || loadError) return addon;
+  // The addon is Windows Graphics Capture and D3D11; there is nothing to load
+  // anywhere else. On macOS Chromium's own WebRTC encoder is VideoToolbox,
+  // which is already hardware, so the ordinary path is the right one there.
+  if (process.platform !== 'win32') {
+    loadError =
+      process.platform === 'darwin'
+        ? 'Not needed on macOS: sharing already encodes on the GPU through VideoToolbox.'
+        : 'Native GPU capture is only available on Windows.';
+    return null;
+  }
   try {
     addon = require('../../native/index.cjs') as CaptureAddon;
   } catch (err) {

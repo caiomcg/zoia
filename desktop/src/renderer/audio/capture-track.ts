@@ -100,3 +100,62 @@ export async function createCaptureAudioTrack(
     },
   };
 }
+
+/** How often the level meter is refreshed for a wrapped track. */
+const METER_MS = 100;
+
+/**
+ * The same handle, for audio Chromium already captured — on macOS, the system
+ * loopback that ScreenCaptureKit hands back with the display stream. There is
+ * no PCM relay and no worklet here, only a gain stage (so the send volume
+ * works as it does on Windows) and an analyser for the level meter.
+ */
+export async function wrapAudioTrack(input: MediaStreamTrack): Promise<CaptureTrackHandle> {
+  const ctx = new AudioContext({ sampleRate: SAMPLE_RATE });
+  const source = ctx.createMediaStreamSource(new MediaStream([input]));
+  const sendGain = ctx.createGain();
+  const analyser = ctx.createAnalyser();
+  analyser.fftSize = 2048;
+  const destination = ctx.createMediaStreamDestination();
+  source.connect(sendGain);
+  sendGain.connect(analyser);
+  sendGain.connect(destination);
+
+  const [track] = destination.stream.getAudioTracks();
+  if (!track) throw new Error('MediaStreamAudioDestinationNode produced no audio track.');
+
+  const listeners = new Set<(stats: CaptureStats) => void>();
+  const samples = new Float32Array(analyser.fftSize);
+  const meter = setInterval(() => {
+    if (listeners.size === 0) return;
+    analyser.getFloatTimeDomainData(samples);
+    let peak = 0;
+    for (const value of samples) peak = Math.max(peak, Math.abs(value));
+    const stats: CaptureStats = {
+      underruns: 0,
+      overruns: 0,
+      peak,
+      latencyMs: Math.round((ctx.baseLatency + (ctx.outputLatency || 0)) * 1000),
+      drifted: 0,
+    };
+    for (const cb of listeners) cb(stats);
+  }, METER_MS);
+
+  return {
+    track,
+    setSendGain(value: number) {
+      sendGain.gain.value = value;
+    },
+    onStats(cb) {
+      listeners.add(cb);
+      return () => listeners.delete(cb);
+    },
+    async stop() {
+      clearInterval(meter);
+      listeners.clear();
+      source.disconnect();
+      input.stop();
+      await ctx.close();
+    },
+  };
+}

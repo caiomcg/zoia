@@ -154,6 +154,10 @@ export const en = {
     'That window’s audio could not be identified, so it is being shared silently.',
   'room.screenNoAudio': 'Sharing a screen sends no audio. Share a window to send that app’s sound.',
   'room.audioFailed': 'Audio capture failed for this window: {error}',
+  'room.macNoAudio':
+    'On macOS the system audio could not be captured, so this is being shared silently.',
+  'room.macSystemAudio':
+    'On macOS the whole system’s audio is sent (except Zoia’s own), including notifications and other apps.',
   'league.matchEnded': 'Match over. Waiting for the League of Legends client…',
   'league.toGame': 'League of Legends: switched to the match in progress',
   'league.toClient': 'League of Legends: switched to the client / lobby',
@@ -162,6 +166,8 @@ export const en = {
   'picker.title': 'Choose what to share',
   'picker.search': 'Search windows…',
   'picker.loading': 'Loading sources…',
+  'picker.macScreenPermission':
+    'Zoia needs permission to record the screen. Turn it on in System Settings › Privacy & Security › Screen & System Audio Recording, then reopen Zoia.',
   'picker.screens': 'Screens',
   'picker.windows': 'Windows',
   'picker.none': 'No matching sources.',
