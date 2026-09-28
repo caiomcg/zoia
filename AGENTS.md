@@ -127,3 +127,39 @@ These each cost hours if forgotten, and all of them fail in ways that look like 
 - Decisions that a future reader would otherwise re-litigate go in `docs/adr/`.
 - Every release needs `changelog/<version>.md`, written for the people using the app; the
   release workflow refuses a tag without it. See `changelog/README.md`.
+
+## Releasing
+
+A release is a `vX.Y.Z` tag on `main`. CI builds the Windows installer and the Mac disk images,
+decides whether Windows can take it as an in-app (OTA) update, and publishes the GitHub Release.
+The installed apps only learn about it from `desktop/updater-manifest.json` on `main`, which is
+updated by hand as the last step. Details: [docs/DISTRIBUTING.md](docs/DISTRIBUTING.md).
+
+1. **Check what kind of release it is.** `node scripts/classify-desktop-update.js HEAD` prints
+   `asar` (in-app on Windows), `full` (installer needed) or `none`, the reasons, and for `asar`
+   the minimum installed version. Macs always download the disk image, whatever it says.
+2. **Bump both versions**, kept equal:
+   `npm version patch --no-git-tag-version` and the same with `--prefix desktop`.
+3. **Write `changelog/<version>.md`** (format in [changelog/README.md](changelog/README.md)):
+   - Read the commits *and the diffs* since the previous tag
+     (`git log v<prev>..HEAD`, `git diff v<prev>..HEAD`), plus any new ADR and new UI strings
+     in `desktop/src/shared/i18n/en.ts`. Commit subjects alone undersell and mislabel changes.
+   - Keep what someone using the app would notice, and say where to find it
+     (Settings › Sounds). Leave out refactors, CI and version bumps.
+   - Add a **Good to know** section for anything a person will run into: permissions, first-run
+     prompts, platform differences, a setting that is on by default.
+   - Say which platform a change applies to, and why a `full` release needs the installer.
+   - Claim nothing the diff does not show. Show the entry to the maintainer before tagging.
+4. **Verify:** `node scripts/check-release-version.js vX.Y.Z` (versions agree, entry exists),
+   `npm run lint` and `npm test` at the root and in `desktop/` — judged by exit code. Preview
+   the notes with a local tag: `git tag vX.Y.Z && node scripts/release-notes.js vX.Y.Z`.
+5. **Push `main`, wait for CI to pass, then push the tag.** The release workflow refuses a tag
+   without a changelog entry or with mismatched versions before it builds anything.
+6. **When the release is published,** download its `SHA256SUMS.txt` and check the assets.
+7. **Publish the manifest** as `chore(desktop): publish OTA manifest for X.Y.Z` on `main`:
+   - `asar`: `updateType: "asar"`, `artifactUrl` and `sha256` of `Zoia-OTA-X.Y.Z.asar`,
+     `minimumVersion` from step 1, and `installerUrl` of the Windows `.exe` as the fallback.
+   - `full`: `updateType: "full"` and `installerUrl` of the Windows `.exe`.
+   - `notes`: one sentence for the update prompt.
+
+Never retag or delete a published release to fix it; ship the next patch version instead.
