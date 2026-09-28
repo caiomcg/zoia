@@ -1411,6 +1411,89 @@ button.danger {
   align-self: flex-start;
 }
 
+.settings-note {
+  margin: -8px 0 0;
+  font-size: 12px;
+}
+
+.settings-range {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.sound-cue {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.sound-cue-head {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.sound-cue-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 16px;
+  align-items: center;
+}
+
+.sound-cue.off .sound-cue-controls {
+  opacity: 0.45;
+}
+
+.sound-preview {
+  font-size: 12px;
+  padding: 4px 10px;
+}
+
+.sound-styles {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.sound-styles button {
+  font-size: 12px;
+  padding: 4px 10px;
+  border: 0;
+  border-radius: 0;
+  background: var(--bg);
+  color: var(--muted);
+}
+
+.sound-styles button + button {
+  border-left: 1px solid var(--border);
+}
+
+.sound-styles button.active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.sound-pitch {
+  display: flex;
+  flex: 1;
+  min-width: 160px;
+  gap: 8px;
+  align-items: center;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.sound-pitch span {
+  min-width: 52px;
+  white-space: nowrap;
+}
+
 .settings-actions {
   display: flex;
   gap: 8px;

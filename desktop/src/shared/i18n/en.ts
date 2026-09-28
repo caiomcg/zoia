@@ -222,6 +222,7 @@ export const en = {
   'settings.nav.profile': 'Profile',
   'settings.nav.broadcast': 'Broadcast',
   'settings.nav.general': 'General',
+  'settings.nav.sounds': 'Sounds',
   'settings.nav.updates': 'Updates',
   'settings.nav.about': 'About',
   'settings.save': 'Save',
@@ -290,6 +291,20 @@ export const en = {
   'update.updateNow': 'Update now',
   'update.failedTitle': 'Update not finished',
   'update.failedMessage': 'The update could not be installed.',
+
+  // ---- sounds
+  'sounds.intro': 'Short sounds for what happens in your channel. They play on this computer only.',
+  'sounds.volume': 'Volume',
+  'sounds.event.join': 'Someone joins the channel',
+  'sounds.event.leave': 'Someone leaves the channel',
+  'sounds.event.streamStart': 'A stream starts',
+  'sounds.event.streamStop': 'A stream stops',
+  'sounds.style': 'Sound',
+  'sounds.style.chime': 'Chime',
+  'sounds.style.pop': 'Pop',
+  'sounds.style.soft': 'Soft',
+  'sounds.pitch': 'Pitch',
+  'sounds.preview': 'Preview',
 } as const;
 
 export type MessageKey = keyof typeof en;
