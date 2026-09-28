@@ -174,7 +174,12 @@ export async function listSources(fresh = false): Promise<SourceInfo[]> {
     return refresh();
   }
   if (cache) {
-    void refresh();
+    // Only refresh in the background if warming is active. When warming is stopped
+    // (e.g. during a live broadcast), avoid invoking desktopCapturer which burns CPU/GPU
+    // capturing thumbnails and spams WGC 'Source is not capturable' logs.
+    if (refreshTimer) {
+      void refresh();
+    }
     return cache;
   }
   return refresh();

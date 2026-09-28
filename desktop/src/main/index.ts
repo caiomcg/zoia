@@ -320,8 +320,6 @@ function registerIpc(): void {
       // only muxes. On a Radeon or an Intel GPU it hands back raw frames and
       // ffmpeg encodes them with AMF or Quick Sync — `info.output` says
       // which, and buildArgs follows it.
-      let lastRawFrameAt = 0;
-      const minRawIntervalMs = Math.max(1, Math.floor(1000 / options.framerate) - 2);
       let sampleFrames = 0;
 
       let info: ReturnType<typeof capture.start>;
@@ -332,9 +330,6 @@ function registerIpc(): void {
           options.bitrate,
           (packet) => {
             if (info.output === 'bgra') {
-              const now = Date.now();
-              if (now - lastRawFrameAt < minRawIntervalMs) return;
-              lastRawFrameAt = now;
               if (sampleFrames < 5 || sampleFrames % 120 === 0) {
                 let nonZero = 0;
                 const step = Math.max(4, Math.floor(packet.length / 5000));
