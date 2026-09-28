@@ -1,6 +1,6 @@
 {
   "name": "zoia-desktop",
-  "version": "0.3.18",
+  "version": "0.3.19",
   "private": true,
   "description": "Zoia broadcaster — screen and per-application audio over WebRTC.",
   "main": "./out/main/index.js",
