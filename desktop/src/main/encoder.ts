@@ -647,7 +647,10 @@ export async function start(win: BrowserWindow, options: EncoderOptions): Promis
         .trim()
         .split('\n')
         .map((l) => l.trim())
-        .filter((l) => Boolean(l) && !GENERIC.test(l));
+        .filter(
+          (l) =>
+            Boolean(l) && !GENERIC.test(l) && /error|failed|invalid|cannot|unsupported/i.test(l),
+        );
       if (candidates.length > 0) {
         lastError = candidates[candidates.length - 1] ?? null;
       }
@@ -660,7 +663,7 @@ export async function start(win: BrowserWindow, options: EncoderOptions): Promis
         encoder: currentEncoder,
         width: captureWidth,
         height: captureHeight,
-        error: bestError() ?? lastError,
+        error: lastError,
       } satisfies EncoderStatus);
     }
   });
