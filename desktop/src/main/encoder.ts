@@ -391,9 +391,9 @@ function buildArgs(options: EncoderOptions): string[] {
           String(bitrate),
           // Constrained VBV buffer to prevent UDP bursts that cause NACK storm
           '-bufsize',
-          String(Math.floor(bitrate / 2)),
+          String(Math.floor(bitrate / 4)),
           '-g',
-          String(framerate),
+          String(Math.round(framerate * 1.5)),
           '-bsf:v',
           'dump_extra=freq=keyframe',
         ]),
@@ -420,8 +420,12 @@ function buildArgs(options: EncoderOptions): string[] {
     // create a security context; measured on Windows.
     '-whip_flags',
     'dtls_active',
-    '-reorder_queue_size',
-    '1024',
+    // Maximize RTP retransmission history so WHIP can satisfy NACK requests
+    '-rtp_history',
+    '2048',
+    // Standard WebRTC MTU packet size to prevent IP fragmentation
+    '-pkt_size',
+    '1200',
     // Without a generous buffer the muxer fails sends with EAGAIN (-11) as
     // soon as bitrate rises.
     '-ts_buffer_size',
