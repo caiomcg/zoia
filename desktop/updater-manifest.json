@@ -1,9 +1,9 @@
 {
-  "version": "0.3.15",
+  "version": "0.3.16",
   "updateType": "asar",
   "minimumVersion": "0.3.14",
-  "artifactUrl": "https://github.com/caiomcg/zoia/releases/download/v0.3.15/Zoia-OTA-0.3.15.asar",
-  "sha256": "a22c03a7cd832cdc159c22a4d4c6c5c36b9b28d8ab5ebc892e34301320f239d3",
-  "installerUrl": "https://github.com/caiomcg/zoia/releases/download/v0.3.15/Zoia-Setup-0.3.15-x64.exe",
-  "notes": "Sounds for people joining, leaving and streaming, adjustable in Settings. Check now no longer offers the version you already have."
+  "artifactUrl": "https://github.com/caiomcg/zoia/releases/download/v0.3.16/Zoia-OTA-0.3.16.asar",
+  "sha256": "b8fc283bc4bb96ef879ec7384682941b5f6f54f2165a7ef6a5aeb4ebb431ba9d",
+  "installerUrl": "https://github.com/caiomcg/zoia/releases/download/v0.3.16/Zoia-Setup-0.3.16-x64.exe",
+  "notes": "Updates now check that your installation can take them, and offer the full installer when it cannot."
 }
