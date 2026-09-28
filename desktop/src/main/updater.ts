@@ -32,10 +32,6 @@ interface UpdateManifest {
   notes?: string;
 }
 
-interface UpdateState {
-  commit: string;
-}
-
 interface RemoteUpdate extends UpdateManifest {
   commit: string;
 }
@@ -451,11 +447,10 @@ export async function checkForUpdate(force = false): Promise<UpdaterCheckResult>
   if (!config || (!force && config.checkOnStartup === false)) return { status: 'disabled' };
   try {
     const update = await getRemoteUpdate(config);
-    const state = await readJson<UpdateState>(join(app.getPath('userData'), STATE_NAME));
-    if (state?.commit === update.commit) return { status: 'up-to-date' };
-    const versionUpgrade = newerVersion(update.version, app.getVersion());
-    const commitUpgrade = Boolean(state?.commit && state.commit !== update.commit);
-    if (!versionUpgrade && !commitUpgrade) return { status: 'up-to-date' };
+    // The version alone decides. The branch commit moves on every push, so
+    // comparing it offered the running version again after any unrelated
+    // commit, and after a full install left an older OTA commit behind.
+    if (!newerVersion(update.version, app.getVersion())) return { status: 'up-to-date' };
     if (update.updateType === 'full') {
       return {
         status: 'full-required',
@@ -491,11 +486,7 @@ export async function runUpdateCheck(force = false): Promise<void> {
     let userConfirmed = false;
     try {
       const update = await getRemoteUpdate(config);
-      const state = await readJson<UpdateState>(join(app.getPath('userData'), STATE_NAME));
-      if (state?.commit === update.commit) return;
-      const versionUpgrade = newerVersion(update.version, app.getVersion());
-      const commitUpgrade = Boolean(state?.commit && state.commit !== update.commit);
-      if (!versionUpgrade && !commitUpgrade) return;
+      if (!newerVersion(update.version, app.getVersion())) return;
 
       if (!force && dismissedVersion === update.version) return;
 
@@ -567,6 +558,9 @@ export async function installCurrentUpdate(): Promise<void> {
     const config = await loadConfig();
     if (!config) throw new Error('Updater configuration not found');
     const update = await getRemoteUpdate(config);
+    if (!newerVersion(update.version, app.getVersion())) {
+      throw new Error(`Zoia is already on ${app.getVersion()}`);
+    }
     if (update.updateType === 'full' || !update.artifactUrl || !update.sha256) {
       throw new Error('This release requires the full installer');
     }
