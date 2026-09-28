@@ -201,6 +201,8 @@ Stated plainly, because finding these out later is worse:
 
 | | |
 |---|---|
+| [Full Guide (EN)](docs/DOCUMENTATION.md) | Complete end-to-end technical guide |
+| [Manual Completo (PT)](docs/DOCUMENTACAO.md) | Documentação técnica completa em português |
 | [Self-hosting](docs/SELF_HOSTING.md) | Run your own server, start to finish |
 | [Distributing](docs/DISTRIBUTING.md) | Build an `.exe`, hand it out, revoke it |
 | [Architecture](docs/ARCHITECTURE.md) | How the pieces fit, and the audio path in detail |
