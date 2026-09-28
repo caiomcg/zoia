@@ -475,9 +475,12 @@ function Thumbnail({
   preview,
   peeking = false,
   onTogglePeek,
+  loading = false,
 }: {
   name: string;
   label: string;
+  /** A broadcast that has started but not arrived yet: its blank shimmers. */
+  loading?: boolean;
   /** Your own preview, which costs no bandwidth, stays live and sharp. */
   liveVideo?: LocalVideoTrack | RemoteTrack | null;
   /** A remote broadcast shows its latest snapshot instead of live video. */
@@ -526,7 +529,7 @@ function Thumbnail({
         ) : snapshot ? (
           <img src={snapshot} alt="" />
         ) : (
-          <span className="thumb-blank" />
+          <span className={`thumb-blank${loading ? ' loading' : ''}`} />
         )}
         <span className="thumb-label">
           <Avatar name={name} live />
@@ -1142,6 +1145,7 @@ export default function RemoteGrid({
                   key={broadcast.identity}
                   name={broadcast.name}
                   label={t('common.loading')}
+                  loading
                 />
               ))}
             </div>

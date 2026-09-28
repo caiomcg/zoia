@@ -23,9 +23,12 @@ function readMuteMicrophonePreference(): boolean {
 export default function CameraDialog({
   onStart,
   onCancel,
+  closing = false,
 }: {
   onStart: (constraints: MediaStreamConstraints, muteMicrophone: boolean) => void;
   onCancel: () => void;
+  /** Fading out: it stays on screen for that, and ignores clicks. */
+  closing?: boolean;
 }) {
   const t = useT();
   const camera = useCameraDevices();
@@ -114,7 +117,7 @@ export default function CameraDialog({
   const lit = Math.round(level * segments);
 
   return (
-    <div className="picker-backdrop" onClick={onCancel}>
+    <div className={`picker-backdrop${closing ? ' closing' : ''}`} onClick={onCancel}>
       <div className="camera-dialog" onClick={(e) => e.stopPropagation()}>
         <header>
           <h2>{t('camera.title')}</h2>

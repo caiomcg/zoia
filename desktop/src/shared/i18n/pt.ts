@@ -270,7 +270,10 @@ export const pt: Messages = {
   'about.github': 'Ver no GitHub',
   'about.madeBy': 'Feito por',
   'about.role.caio': 'Criou o Zoia: captura, canais e o servidor.',
-  'about.role.nycholas': 'Atualizações, troca automática do League e várias transmissões.',
+  'about.role.nycholas':
+    'A codificação por hardware em AMD e uma transmissão por GPU que se recupera sozinha, atualizações, troca automática do League e várias transmissões.',
+  'about.role.victor':
+    'Levou o Zoia para o Mac: o app para macOS, o compartilhamento com o áudio do sistema e a tela codificada por hardware.',
 
   'tray.open': 'Abrir o Zoia',
   'tray.keep': 'Manter na bandeja ao fechar',

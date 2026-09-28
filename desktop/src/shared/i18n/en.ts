@@ -277,7 +277,10 @@ export const en = {
   'about.github': 'View on GitHub',
   'about.madeBy': 'Made by',
   'about.role.caio': 'Started Zoia: capture, channels and the server.',
-  'about.role.nycholas': 'Updates, League hand-off and multi-stream viewing.',
+  'about.role.nycholas':
+    'AMD hardware encoding and a GPU broadcast that recovers on its own, updates, League hand-off and multi-stream viewing.',
+  'about.role.victor':
+    "Brought Zoia to the Mac: the macOS app, sharing with the system's audio, and hardware-encoded screens.",
 
   // ---- main process: tray and update dialogs
   'tray.open': 'Open Zoia',

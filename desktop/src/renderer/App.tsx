@@ -10,10 +10,11 @@ import SettingsDialog from './components/SettingsDialog';
 import ReleaseNotesDialog from './components/ReleaseNotesDialog';
 import Splash from './components/Splash';
 import StatusLight, { type StatusStat, type StatusTone } from './components/StatusLight';
-import { useRoom } from './livekit/useRoom';
+import { WHIP_SUFFIX, useRoom, type RoomMember } from './livekit/useRoom';
 import { useGpuBroadcast } from './livekit/useGpuBroadcast';
 import { useSoundCues } from './sounds/useSoundCues';
 import { LAST_VERSION_STORAGE_KEY, shouldShowReleaseNotes } from './whats-new';
+import { useExit } from './presence';
 import {
   DEFAULT_PRESET_ID,
   QUALITY_PRESETS,
@@ -55,6 +56,33 @@ function readChannel(): string | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * Who to list in a channel being hopped to, before its room has connected:
+ * the people the channel poll last saw there, plus this device. The old
+ * room's list would otherwise sit under the new channel for a moment. The
+ * identities match the room's own, so nobody re-animates when it arrives.
+ */
+function hopMembers(
+  members: RoomMember[],
+  channels: RoomInfo[],
+  target: string | null,
+): RoomMember[] {
+  const me = members.find((member) => member.isLocal);
+  const info = channels.find((c) => c.id === target);
+  const broadcasting = new Set(info?.broadcasters.map((b) => b.identity.replace(WHIP_SUFFIX, '')));
+  const others: RoomMember[] = (info?.participants ?? [])
+    .filter((p) => !p.identity.endsWith(WHIP_SUFFIX) && p.identity !== me?.identity)
+    .map((p) => ({
+      identity: p.identity,
+      name: p.name || p.identity,
+      isLocal: false,
+      isBroadcasting: broadcasting.has(p.identity),
+      isIngress: false,
+      broadcastSource: null,
+    }));
+  return me ? [{ ...me, isBroadcasting: false, broadcastSource: null }, ...others] : others;
 }
 
 export default function App() {
@@ -204,6 +232,7 @@ export default function App() {
   async function switchChannel(id: string) {
     if (id === channel) return;
     if (isLive || isStarting) await stopSharing();
+    setHopping(true);
     setChannel(id);
     storeChannel(id);
     await room.disconnect();
@@ -213,6 +242,12 @@ export default function App() {
   // straight from the logo to a populated room rather than through an empty
   // one. Capped, so a slow or failing server still gets its say on screen.
   const [booted, setBooted] = useState(false);
+  // From a click on another channel until its room is connected. The app is
+  // still connected in every sense that matters to the person, so the hop
+  // shows as a move, not as a disconnect and a fresh connect: no
+  // "Connecting…", no dimmed buttons, and the new channel's people listed
+  // from the channel poll straight away.
+  const [hopping, setHopping] = useState(false);
   // Seeing your own broadcast is opt-in, and the choice is remembered.
   const [showPreview, setShowPreview] = useState(
     () => localStorage.getItem(PREVIEW_STORAGE_KEY) === 'true',
@@ -223,7 +258,9 @@ export default function App() {
       return !current;
     });
   useEffect(() => {
-    if (room.state === 'connected' || room.state === 'error') setBooted(true);
+    if (room.state !== 'connected' && room.state !== 'error') return;
+    setBooted(true);
+    setHopping(false);
   }, [room.state]);
   useEffect(() => {
     const timer = setTimeout(() => setBooted(true), 8000);
@@ -266,6 +303,15 @@ export default function App() {
       // Offline or rate-limited: try again on the next start.
     });
   }, [status?.paired, booted, showOnboarding]);
+
+  // Dialogs fade out however they are closed; see useExit. The notes are
+  // kept while theirs fades, since the state holding them is already cleared.
+  const picker = useExit(pickerOpen);
+  const camera = useExit(cameraOpen);
+  const settings = useExit(settingsOpen);
+  const notesDialog = useExit(releaseNotes !== null);
+  const [shownNotes, setShownNotes] = useState<ReleaseInfo | null>(null);
+  if (releaseNotes && releaseNotes !== shownNotes) setShownNotes(releaseNotes);
 
   const handleRename = useCallback(
     async (name: string) => {
@@ -361,7 +407,7 @@ export default function App() {
   }
 
   const connectionTone: StatusTone =
-    room.state === 'connected' ? 'ok' : room.state === 'error' ? 'bad' : 'idle';
+    room.state === 'connected' || hopping ? 'ok' : room.state === 'error' ? 'bad' : 'idle';
 
   // What the connection light's hover card lists: always the link to the
   // server, and while you are sharing, how your broadcast is being encoded.
@@ -450,7 +496,9 @@ export default function App() {
               broadcast is encoding are on its hover card. */}
           <StatusLight
             tone={connectionTone}
-            label={t('top.connection', { state: t(`top.state.${room.state}`) })}
+            label={t('top.connection', {
+              state: t(`top.state.${hopping ? 'connected' : room.state}`),
+            })}
             stats={connectionStats}
           />
         </div>
@@ -460,7 +508,7 @@ export default function App() {
             <span className="connection-message">{t('top.reconnecting')}</span>
           ) : isStarting ? (
             <span className="muted">{t('top.starting')}</span>
-          ) : room.state === 'connecting' ? (
+          ) : room.state === 'connecting' && !hopping ? (
             <span className="muted">{t('top.connecting')}</span>
           ) : null}
         </div>
@@ -468,7 +516,7 @@ export default function App() {
         <div className="topbar-right">
           <div className="share-icons" role="group" aria-label={t('top.whatToShare')}>
             <button
-              className={`share-button${screenLive ? ' active' : ''}`}
+              className={`share-button${screenLive ? ' active' : ''}${hopping ? ' hopping' : ''}`}
               disabled={room.state !== 'connected' || isStarting}
               onClick={() => setPickerOpen(true)}
               title={screenLive ? t('top.screenTitleLive') : t('top.screenTitle')}
@@ -492,7 +540,7 @@ export default function App() {
             </button>
 
             <button
-              className={`share-button${cameraLive ? ' active' : ''}`}
+              className={`share-button${cameraLive ? ' active' : ''}${hopping ? ' hopping' : ''}`}
               disabled={room.state !== 'connected' || isStarting}
               onClick={() => void toggleCamera()}
               title={cameraLive ? t('top.cameraTitleLive') : t('top.cameraTitle')}
@@ -585,7 +633,7 @@ export default function App() {
                 : undefined
             }
             loadingBroadcasts={loadingBroadcasts}
-            showOnboarding={showOnboarding && room.state === 'connected'}
+            showOnboarding={showOnboarding && (room.state === 'connected' || hopping)}
             onStartSharing={() => {
               dismissOnboarding();
               setPickerOpen(true);
@@ -596,7 +644,7 @@ export default function App() {
         </main>
 
         <Sidebar
-          members={room.members}
+          members={hopping ? hopMembers(room.members, channels, channel) : room.members}
           myName={status.deviceName ?? t('common.you')}
           viewerIds={viewerIds}
           onOpenSettings={() => setSettingsOpen(true)}
@@ -611,8 +659,9 @@ export default function App() {
         />
       </div>
 
-      {pickerOpen && (
+      {picker.mounted && (
         <SourcePicker
+          closing={picker.closing}
           onPick={handlePick}
           onCancel={() => setPickerOpen(false)}
           presetId={presetId}
@@ -623,8 +672,9 @@ export default function App() {
         />
       )}
 
-      {cameraOpen && (
+      {camera.mounted && (
         <CameraDialog
+          closing={camera.closing}
           onStart={(constraints, muteMicrophone) => {
             setCameraOpen(false);
             // A camera always goes through the Chromium path: there is no
@@ -639,8 +689,9 @@ export default function App() {
         />
       )}
 
-      {settingsOpen && (
+      {settings.mounted && (
         <SettingsDialog
+          closing={settings.closing}
           onClose={() => setSettingsOpen(false)}
           myName={status.deviceName ?? t('common.you')}
           onRename={handleRename}
@@ -658,8 +709,12 @@ export default function App() {
         />
       )}
 
-      {releaseNotes && (
-        <ReleaseNotesDialog release={releaseNotes} onClose={() => setReleaseNotes(null)} />
+      {notesDialog.mounted && shownNotes && (
+        <ReleaseNotesDialog
+          closing={notesDialog.closing}
+          release={shownNotes}
+          onClose={() => setReleaseNotes(null)}
+        />
       )}
     </div>
   );

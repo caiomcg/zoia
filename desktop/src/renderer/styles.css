@@ -531,6 +531,10 @@ button:disabled {
   gap: 8px;
   min-width: 0;
   overflow-x: auto;
+  /* Set explicitly: with overflow-x scrolling, the other axis would compute
+   * to auto and show a scrollbar whenever a thumbnail pokes out, as one does
+   * for a moment while it animates in. */
+  overflow-y: hidden;
 }
 
 .thumb-toggle {
@@ -1986,7 +1990,6 @@ button.danger {
   width: 240px;
   background: var(--surface);
   border-left: 1px solid var(--border);
-  transition: width 0.15s ease;
 }
 
 .sidebar-header {
@@ -2372,6 +2375,13 @@ button.danger {
   border-radius: 50%;
 }
 
+.avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+}
+
 .avatar.live {
   box-shadow:
     0 0 0 2px var(--surface),
@@ -2538,7 +2548,15 @@ button.danger {
   top: calc(100% + 8px);
   left: -6px;
   z-index: 20;
-  display: none;
+  display: flex;
+  visibility: hidden;
+  opacity: 0;
+  transform: translateY(-4px);
+  /* Hidden after the fade, not before it, so it can fade out too. */
+  transition:
+    opacity 140ms ease,
+    transform 140ms ease,
+    visibility 0s linear 140ms;
   flex-direction: column;
   gap: 8px;
   min-width: 200px;
@@ -2555,7 +2573,13 @@ button.danger {
 
 .status-light:hover .status-card,
 .status-light:focus-visible .status-card {
-  display: flex;
+  visibility: visible;
+  opacity: 1;
+  transform: none;
+  transition:
+    opacity 140ms ease,
+    transform 140ms ease,
+    visibility 0s;
 }
 
 .status-card strong {
@@ -2801,4 +2825,258 @@ button.danger {
   display: flex;
   gap: 8px;
   justify-content: flex-end;
+}
+
+/* ---- Motion
+ *
+ * Short and cheap on purpose: people use Zoia while gaming or encoding, so
+ * everything here animates only opacity and transform, finishes within about
+ * 200ms, and never moves over live video. Exits exist only where they carry
+ * meaning (someone leaving, a dismissed banner); presence.ts and Banner.tsx
+ * keep those on screen for LEAVE_MS while they fade. All of it is switched off
+ * for "reduce motion" at the end of this section. */
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.97);
+  }
+}
+
+@keyframes fade-out {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes pop-out {
+  to {
+    opacity: 0;
+    transform: translateY(6px) scale(0.97);
+  }
+}
+
+@keyframes grow-in {
+  from {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+}
+
+@keyframes slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(-8px);
+  }
+}
+
+@keyframes slide-out {
+  to {
+    opacity: 0;
+    transform: translateX(-8px);
+  }
+}
+
+@keyframes drop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+
+@keyframes lift-out {
+  to {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+
+@keyframes live-pop {
+  40% {
+    transform: scale(1.18);
+  }
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 150% 0;
+  }
+  to {
+    background-position: -50% 0;
+  }
+}
+
+/* Dialogs: the backdrop fades, the panel rises into place, and on closing
+ * both go back the way they came. */
+.picker-backdrop {
+  animation: fade-in 150ms ease both;
+}
+
+.picker {
+  animation: pop-in 170ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.picker-backdrop.closing {
+  animation: fade-out 150ms ease both;
+  pointer-events: none;
+}
+
+.picker-backdrop.closing .picker {
+  animation: pop-out 150ms ease both;
+}
+
+/* The language list drops open under its button and folds back up. */
+.language-list {
+  transform-origin: top center;
+  animation: drop-in 130ms ease both;
+}
+
+.language-list.closing {
+  animation: lift-out 130ms ease both;
+  pointer-events: none;
+}
+
+/* Settings: each section fades in as it is chosen. */
+.settings-pane {
+  animation: fade-in 150ms ease both;
+}
+
+/* Members: in from the left on arrival, back out on leaving. Paired with the
+ * join and leave sounds. */
+.member {
+  animation: slide-in 180ms ease both;
+}
+
+.member.leaving {
+  animation: slide-out 180ms ease both;
+  pointer-events: none;
+}
+
+/* Going live: the avatar gives one pulse as its ring appears. */
+.avatar.live {
+  animation: live-pop 420ms ease;
+}
+
+/* Channels: one highlight that glides to the channel you hop to. */
+.channel-group {
+  position: relative;
+}
+
+.channel-indicator {
+  position: absolute;
+  top: 0;
+  left: 0;
+  background: var(--surface-2);
+  border-radius: 4px;
+  box-shadow: inset 2px 0 0 var(--accent);
+  pointer-events: none;
+}
+
+.channel-indicator.animate {
+  transition:
+    transform 200ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    width 200ms ease,
+    height 200ms ease;
+}
+
+.channel-group.has-indicator .channel.current {
+  background: transparent;
+  box-shadow: none;
+}
+
+/* Mid-hop the share buttons are briefly disabled, but the app is not
+ * disconnected in any way a person cares about, so they do not dim. */
+.share-button.hopping:disabled {
+  opacity: 1;
+}
+
+/* Broadcasts: a tile arriving fades up instead of popping. */
+.tile-slot {
+  animation: pop-in 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+/* A thumbnail grows from its own centre rather than rising, so it never
+ * leaves the strip, which scrolls sideways and clips the rest. */
+.thumb {
+  animation: grow-in 200ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+/* A broadcast that is still on its way shimmers where its picture will be. */
+.thumb-blank.loading {
+  background: linear-gradient(100deg, #0b0c0e 30%, #1a1c20 50%, #0b0c0e 70%) #0b0c0e;
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+
+/* Banners: drop in from the top bar, lift away when dismissed. */
+.banner {
+  animation: drop-in 180ms ease both;
+}
+
+.banner.leaving {
+  animation: lift-out 180ms ease both;
+  pointer-events: none;
+}
+
+/* The main actions press in slightly, so a click is felt. */
+button.primary:active:not(:disabled),
+button.danger:active:not(:disabled),
+.share-button:active:not(:disabled),
+.sound-preview:active:not(:disabled),
+.channel:active {
+  transform: scale(0.97);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .picker-backdrop,
+  .picker,
+  .picker-backdrop.closing,
+  .picker-backdrop.closing .picker,
+  .language-list,
+  .language-list.closing,
+  .settings-pane,
+  .member,
+  .member.leaving,
+  .avatar.live,
+  .tile-slot,
+  .thumb,
+  .thumb-blank.loading,
+  .banner,
+  .banner.leaving {
+    animation: none;
+  }
+
+  /* Still hidden, so a leaving row or banner does not flash back at full
+   * opacity for the moment before it is removed. */
+  .member.leaving,
+  .banner.leaving,
+  .picker-backdrop.closing,
+  .language-list.closing {
+    opacity: 0;
+  }
+
+  .status-card,
+  .status-light:hover .status-card,
+  .status-light:focus-visible .status-card {
+    transition: none;
+    transform: none;
+  }
+
+  .channel-indicator.animate {
+    transition: none;
+  }
+
+  button.primary:active:not(:disabled),
+  button.danger:active:not(:disabled),
+  .share-button:active:not(:disabled),
+  .sound-preview:active:not(:disabled),
+  .channel:active {
+    transform: none;
+  }
 }

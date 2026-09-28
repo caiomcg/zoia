@@ -6,6 +6,7 @@ import {
 } from '../../shared/i18n';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useLanguage, useT } from '../i18n';
+import { useExit } from '../presence';
 
 /**
  * The language choice as a dropdown that can show flags: a native select
@@ -17,6 +18,7 @@ export default function LanguagePicker() {
   const t = useT();
   const { preference, system, setPreference } = useLanguage();
   const [open, setOpen] = useState(false);
+  const list = useExit(open);
   const [active, setActive] = useState(0);
   const rootRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -109,8 +111,12 @@ export default function LanguagePicker() {
         </svg>
       </button>
 
-      {open && (
-        <ul className="language-list" role="listbox" aria-label={t('general.language')}>
+      {list.mounted && (
+        <ul
+          className={`language-list${list.closing ? ' closing' : ''}`}
+          role="listbox"
+          aria-label={t('general.language')}
+        >
           {options.map((option, index) => (
             <li
               key={option.value}

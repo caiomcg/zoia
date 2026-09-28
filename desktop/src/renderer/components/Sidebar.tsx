@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { RoomMember } from '../livekit/useRoom';
 import type { RoomInfo } from '../../shared/ipc';
 import Avatar from './Avatar';
 import { IconEye } from './Player';
 import { useT } from '../i18n';
+import { useLeaving } from '../presence';
 
 /**
  * Who is in the room, and who is sharing. Your own name sits in the footer,
@@ -162,6 +163,9 @@ export default function Sidebar({
     ...members.filter((m) => !m.isBroadcasting),
   ];
   const here = new Set(members.map((m) => m.identity));
+  // Someone who leaves fades out rather than vanishing; see presence.ts.
+  const shownMembers = useLeaving(liveMembers, (m) => m.identity, currentChannel ?? '');
+
   // Collapsed keeps only the avatars; names move into tooltips.
   const [collapsed, setCollapsed] = useState(readCollapsed);
 
@@ -179,6 +183,62 @@ export default function Sidebar({
   const label = (m: RoomMember) => (m.isLocal ? `${m.name} (${t('common.youTag')})` : m.name);
   // Which channel is being renamed, or 'new' while one is being named.
   const [editing, setEditing] = useState<string | null>(null);
+
+  // The current channel's highlight is one element that glides from channel
+  // to channel on a hop, instead of jumping. It only glides for a hop: when
+  // the sidebar opens (its width animates) or a member list above shifts a
+  // channel, it follows the button's size and place at once, through a
+  // ResizeObserver, since a single measurement mid-animation is stale.
+  // Collapsed, the current channel is marked by a ring on its badge instead.
+  const channelGroupRef = useRef<HTMLElement>(null);
+  const [indicator, setIndicator] = useState<{
+    top: number;
+    left: number;
+    width: number;
+    height: number;
+    animate: boolean;
+  } | null>(null);
+  const placedChannel = useRef<string | null>(null);
+  useLayoutEffect(() => {
+    const group = channelGroupRef.current;
+    if (collapsed || !group) {
+      placedChannel.current = null;
+      setIndicator(null);
+      return undefined;
+    }
+    const measure = () => {
+      const button = group.querySelector<HTMLElement>('.channel.current');
+      if (!button) {
+        placedChannel.current = null;
+        setIndicator((previous) => (previous ? null : previous));
+        return;
+      }
+      const outer = group.getBoundingClientRect();
+      const inner = button.getBoundingClientRect();
+      const next = {
+        top: inner.top - outer.top,
+        left: inner.left - outer.left,
+        width: inner.width,
+        height: inner.height,
+      };
+      // A glide only when the channel itself changed and one was placed.
+      const hop = placedChannel.current !== null && placedChannel.current !== currentChannel;
+      placedChannel.current = currentChannel;
+      setIndicator((previous) =>
+        previous &&
+        previous.top === next.top &&
+        previous.left === next.left &&
+        previous.width === next.width &&
+        previous.height === next.height
+          ? previous
+          : { ...next, animate: hop },
+      );
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(group);
+    return () => observer.disconnect();
+  }, [channels, currentChannel, collapsed, editing, members]);
 
   return (
     <aside className={`sidebar${collapsed ? ' collapsed' : ''}`}>
@@ -199,7 +259,21 @@ export default function Sidebar({
       </div>
       <div className="sidebar-scroll">
         {channels.length > 0 && (
-          <section className="member-group channel-group">
+          <section
+            className={`member-group channel-group${indicator ? ' has-indicator' : ''}`}
+            ref={channelGroupRef}
+          >
+            {indicator && (
+              <span
+                className={`channel-indicator${indicator.animate ? ' animate' : ''}`}
+                aria-hidden="true"
+                style={{
+                  transform: `translate(${indicator.left}px, ${indicator.top}px)`,
+                  width: indicator.width,
+                  height: indicator.height,
+                }}
+              />
+            )}
             {channels.map((c) => {
               const current = c.id === currentChannel;
               if (editing === c.id) {
@@ -272,10 +346,10 @@ export default function Sidebar({
                       glance. */}
                   {current ? (
                     <div className="channel-members">
-                      {liveMembers.map((m) => (
+                      {shownMembers.map(({ item: m, key, leaving }) => (
                         <div
-                          className={`member${m.isBroadcasting ? ' live' : ''}`}
-                          key={m.identity}
+                          className={`member${m.isBroadcasting ? ' live' : ''}${leaving ? ' leaving' : ''}`}
+                          key={key}
                           title={label(m)}
                         >
                           <span className="avatar-wrap">
@@ -338,10 +412,10 @@ export default function Sidebar({
         {channels.length === 0 && (
           <section className="member-group">
             <h2 className="member-heading">{t('sidebar.inRoom', { count: liveMembers.length })}</h2>
-            {liveMembers.map((m) => (
+            {shownMembers.map(({ item: m, key, leaving }) => (
               <div
-                className={`member${m.isBroadcasting ? ' live' : ''}`}
-                key={m.identity}
+                className={`member${m.isBroadcasting ? ' live' : ''}${leaving ? ' leaving' : ''}`}
+                key={key}
                 title={label(m)}
               >
                 <span className="avatar-wrap">

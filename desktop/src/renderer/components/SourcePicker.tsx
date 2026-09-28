@@ -14,11 +14,14 @@ export default function SourcePicker({
   onCancel,
   presetId,
   onPresetChange,
+  closing = false,
 }: {
   onPick: (source: SourceInfo) => void;
   onCancel: () => void;
   presetId: string;
   onPresetChange: (id: string) => void;
+  /** Fading out: it stays on screen for that, and ignores clicks. */
+  closing?: boolean;
 }) {
   const t = useT();
   const [sources, setSources] = useState<SourceInfo[] | null>(null);
@@ -81,7 +84,7 @@ export default function SourcePicker({
   const windows = filtered.filter((s) => s.kind === 'window');
 
   return (
-    <div className="picker-backdrop" onClick={onCancel}>
+    <div className={`picker-backdrop${closing ? ' closing' : ''}`} onClick={onCancel}>
       <div className="picker" onClick={(e) => e.stopPropagation()}>
         <header>
           <h2>{t('picker.title')}</h2>

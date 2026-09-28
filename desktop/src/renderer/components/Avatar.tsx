@@ -1,6 +1,10 @@
+import { useState } from 'react';
+
 /**
  * A person's initials on a stable colour. Used in the member list and on the
- * broadcast thumbnails, so a sharer looks the same in both places.
+ * broadcast thumbnails, so a sharer looks the same in both places. With an
+ * `image` it shows that instead, and falls back to the initials if the image
+ * cannot be loaded (offline, say).
  */
 
 /** Stable per-person colour, so the same person keeps the same avatar. */
@@ -17,14 +21,27 @@ function initials(name: string): string {
   return (parts[0]![0]! + parts[parts.length - 1]![0]!).toUpperCase();
 }
 
-export default function Avatar({ name, live }: { name: string; live: boolean }) {
+export default function Avatar({
+  name,
+  live,
+  image,
+}: {
+  name: string;
+  live: boolean;
+  image?: string;
+}) {
+  const [failed, setFailed] = useState(false);
   return (
     <span
       className={`avatar${live ? ' live' : ''}`}
       style={{ background: `hsl(${avatarHue(name)} 45% 32%)` }}
       aria-hidden="true"
     >
-      {initials(name)}
+      {image && !failed ? (
+        <img src={image} alt="" draggable={false} onError={() => setFailed(true)} />
+      ) : (
+        initials(name)
+      )}
     </span>
   );
 }

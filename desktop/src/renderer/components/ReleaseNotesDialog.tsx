@@ -7,6 +7,8 @@ interface ReleaseNotesDialogProps {
   onClose: () => void;
   /** Notes already read, as after an update; otherwise they are read on open. */
   release?: ReleaseInfo;
+  /** Fading out: it stays on screen for that, and ignores clicks. */
+  closing?: boolean;
 }
 
 /**
@@ -14,7 +16,11 @@ interface ReleaseNotesDialogProps {
  * by itself on the first start after an update, and from the version number
  * in Settings → About at any time.
  */
-export default function ReleaseNotesDialog({ onClose, release }: ReleaseNotesDialogProps) {
+export default function ReleaseNotesDialog({
+  onClose,
+  release,
+  closing = false,
+}: ReleaseNotesDialogProps) {
   const t = useT();
   // undefined while loading; null when this version has no published release.
   const [loaded, setLoaded] = useState<ReleaseInfo | null | undefined>(release);
@@ -48,7 +54,7 @@ export default function ReleaseNotesDialog({ onClose, release }: ReleaseNotesDia
   }, [onClose]);
 
   return (
-    <div className="picker-backdrop" onClick={onClose}>
+    <div className={`picker-backdrop${closing ? ' closing' : ''}`} onClick={onClose}>
       <section
         className="picker release-dialog"
         role="dialog"

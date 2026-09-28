@@ -15,6 +15,7 @@ import {
 import { setSoundSettings, useSoundSettings } from '../sounds/settings';
 import { playCue } from '../sounds/synth';
 import ReleaseNotesDialog from './ReleaseNotesDialog';
+import { useExit } from '../presence';
 
 type Section = 'profile' | 'broadcast' | 'general' | 'sounds' | 'updates' | 'about';
 
@@ -36,6 +37,8 @@ interface SettingsDialogProps {
   hardware?: boolean;
   onHardwareChange?: (enabled: boolean) => void;
   hardwareAvailable?: boolean;
+  /** Fading out: it stays on screen for that, and ignores clicks. */
+  closing?: boolean;
 }
 
 /**
@@ -51,12 +54,13 @@ export default function SettingsDialog({
   hardware,
   onHardwareChange,
   hardwareAvailable,
+  closing = false,
 }: SettingsDialogProps) {
   const t = useT();
   const [section, setSection] = useState<Section>('profile');
 
   return (
-    <div className="picker-backdrop" onClick={onClose}>
+    <div className={`picker-backdrop${closing ? ' closing' : ''}`} onClick={onClose}>
       <section
         className="picker settings-dialog"
         role="dialog"
@@ -89,7 +93,8 @@ export default function SettingsDialog({
             ))}
           </nav>
 
-          <div className="settings-pane">
+          {/* Keyed by section, so each one fades in rather than swapping. */}
+          <div className="settings-pane" key={section}>
             {section === 'profile' && <ProfileSection myName={myName} onRename={onRename} />}
             {section === 'broadcast' && (
               <BroadcastSection
@@ -645,12 +650,26 @@ const PEOPLE = [
     handle: 'nycholassousa',
     role: 'about.role.nycholas' as MessageKey,
   },
+  {
+    name: 'Victor',
+    handle: 'Rotciv18',
+    role: 'about.role.victor' as MessageKey,
+  },
 ];
+
+/**
+ * The avatar each person has on GitHub, read from GitHub when About opens.
+ * The only remote images the page may load (see the CSP in index.html).
+ */
+function githubAvatar(handle: string): string {
+  return `https://avatars.githubusercontent.com/${handle}?s=96`;
+}
 
 function AboutSection() {
   const t = useT();
   const [version, setVersion] = useState<string | null>(null);
   const [notesOpen, setNotesOpen] = useState(false);
+  const notes = useExit(notesOpen);
   useEffect(() => {
     window.zoia.app
       .version()
@@ -685,7 +704,7 @@ function AboutSection() {
       <ul className="about-people">
         {PEOPLE.map((person) => (
           <li key={person.handle}>
-            <Avatar name={person.name} live={false} />
+            <Avatar name={person.name} live={false} image={githubAvatar(person.handle)} />
             <div>
               <a href={`https://github.com/${person.handle}`} target="_blank" rel="noreferrer">
                 {person.name}
@@ -697,7 +716,9 @@ function AboutSection() {
         ))}
       </ul>
 
-      {notesOpen && <ReleaseNotesDialog onClose={() => setNotesOpen(false)} />}
+      {notes.mounted && (
+        <ReleaseNotesDialog closing={notes.closing} onClose={() => setNotesOpen(false)} />
+      )}
     </div>
   );
 }

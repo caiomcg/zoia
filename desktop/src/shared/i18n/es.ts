@@ -270,7 +270,9 @@ export const es: Messages = {
   'about.madeBy': 'Hecho por',
   'about.role.caio': 'Creó Zoia: captura, canales y el servidor.',
   'about.role.nycholas':
-    'Actualizaciones, el cambio automático de League y la vista de varias transmisiones.',
+    'La codificación por hardware en AMD y una transmisión por GPU que se recupera sola, actualizaciones, el cambio automático de League y la vista de varias transmisiones.',
+  'about.role.victor':
+    'Llevó Zoia al Mac: la app para macOS, compartir con el audio del sistema y la pantalla codificada por hardware.',
 
   'tray.open': 'Abrir Zoia',
   'tray.keep': 'Mantener en la bandeja al cerrar',
