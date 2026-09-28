@@ -248,7 +248,7 @@ function encoderFor(vendor: string): string {
  * Nothing is lost by dropping it. Every viewer is this same app, and Chromium
  * decodes whatever these encoders pick by default.
  */
-function encoderTuning(encoder: string, bitrate: number, framerate: number): string[] {
+function encoderTuning(encoder: string): string[] {
   switch (encoder) {
     case 'h264_amf':
       // AMF's ultralowlatency usage preset disables periodic IDR keyframes (-g)
@@ -258,7 +258,6 @@ function encoderTuning(encoder: string, bitrate: number, framerate: number): str
       // -vbaq 1 enables Variance-Based Adaptive Quantization to prevent
       // macroblocking ("craquelamento") in complex game textures.
       // -enforce_hrd 1 strictly clamps output to the HRD buffer model.
-      // -max_au_size caps frame burst size to prevent overflowing UDP buffers.
       return [
         '-quality',
         'speed',
@@ -272,8 +271,6 @@ function encoderTuning(encoder: string, bitrate: number, framerate: number): str
         '1',
         '-enforce_hrd',
         '1',
-        '-max_au_size',
-        String(Math.floor((bitrate / framerate) * 3)),
         '-aud',
         '0',
       ];
@@ -405,17 +402,18 @@ function buildArgs(options: EncoderOptions): string[] {
       : [
           '-c:v',
           encoder,
-          ...encoderTuning(encoder, bitrate, framerate),
+          ...encoderTuning(encoder),
           '-b:v',
           String(bitrate),
           '-maxrate',
           String(bitrate),
-          // Constrained VBV buffer to prevent UDP bursts that cause NACK storm
+          // Constrained VBV buffer (2 frames of data) to smooth packet pacing
+          // and eliminate UDP bursts that cause buffer overflows and NACK storms
           '-bufsize',
-          String(Math.floor(bitrate / 4)),
-          // 1.0-second GOP ensures fast recovery from packet drops
+          String(Math.floor((bitrate / framerate) * 2)),
+          // 0.5-second GOP ensures near-instantaneous (500ms) recovery from packet drops
           '-g',
-          String(Math.round(framerate)),
+          String(Math.round(framerate * 0.5)),
           '-bsf:v',
           'dump_extra=freq=keyframe',
         ]),
