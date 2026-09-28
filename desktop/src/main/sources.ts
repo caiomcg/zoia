@@ -29,17 +29,10 @@ import { t } from './language';
 import { windowManager } from 'node-window-manager';
 import { isShareableWindow, type Bounds } from './window-filter';
 import { perAppAudioSupported } from './audio';
+import type { SourceInfo } from '../shared/ipc';
+import { isLeagueClient, isLeagueGame, isLeagueSource } from '../shared/league';
 
-export interface SourceInfo {
-  id: string;
-  name: string;
-  kind: 'screen' | 'window';
-  thumbnailDataUrl: string;
-  /** The window's owning PID, when resolvable — the whole point of this app. */
-  processId: number | null;
-  /** Full executable path of the window's owning process, when available. */
-  processPath: string | null;
-}
+export type { SourceInfo };
 
 function hwndFromSourceId(id: string): number | null {
   const match = /^window:(\d+):/.exec(id);
@@ -190,6 +183,8 @@ export async function listSources(fresh = false): Promise<SourceInfo[]> {
     // invoking desktopCapturer which burns CPU/GPU.
     if (warmingActive && Date.now() - cacheTime > 2500) {
       refresh().catch(() => {});
+    } else {
+      findLeagueWindows();
     }
     return cache;
   }
@@ -227,4 +222,95 @@ export function windowTitle(hwnd: number): string | null {
 
 export function getSelectedSource() {
   return selected;
+}
+
+/**
+ * Fast resolution of League of Legends windows directly via native window
+ * manager (~15ms) without calling desktopCapturer or generating thumbnails.
+ * Used during active broadcasts to follow match transitions without burning
+ * CPU/GPU or triggering WGC capture warnings.
+ */
+export function findLeagueWindows(): {
+  game: SourceInfo | null;
+  client: SourceInfo | null;
+} {
+  if (process.platform !== 'win32') {
+    return { game: null, client: null };
+  }
+
+  let windows: ReturnType<typeof windowManager.getWindows>;
+  try {
+    windows = windowManager.getWindows();
+  } catch {
+    return { game: null, client: null };
+  }
+
+  let game: SourceInfo | null = null;
+  let client: SourceInfo | null = null;
+
+  for (const win of windows) {
+    let path = '';
+    let title = '';
+    try {
+      path = win.path || '';
+      title = win.getTitle() || '';
+    } catch {
+      continue;
+    }
+
+    const isPotentialLeague =
+      /league of legends\.exe$/i.test(path) ||
+      /leagueclient(ux)?\.exe$/i.test(path) ||
+      /league of legends/i.test(title);
+
+    if (!isPotentialLeague) continue;
+
+    try {
+      if (!win.isVisible() || !isShareableWindow(safeBounds(win))) {
+        if (/leagueclient(ux)?\.exe$/i.test(path)) {
+          win.restore();
+        }
+      }
+      if (!win.isVisible() || !isShareableWindow(safeBounds(win))) {
+        continue;
+      }
+    } catch {
+      continue;
+    }
+
+    const source: SourceInfo = {
+      id: `window:${win.id}:0`,
+      name: title,
+      kind: 'window',
+      thumbnailDataUrl: '',
+      processId: perAppAudioSupported ? (win.processId ?? null) : null,
+      processPath: path || null,
+      hwnd: win.id,
+    };
+
+    if (isLeagueGame(source) && !game) {
+      game = source;
+    } else if (isLeagueClient(source) && !client) {
+      client = source;
+    }
+
+    if (game && client) break;
+  }
+
+  if (cache) {
+    const existingClient = cache.find(isLeagueClient);
+    if (client && existingClient?.thumbnailDataUrl) {
+      client.thumbnailDataUrl = existingClient.thumbnailDataUrl;
+    }
+    const existingGame = cache.find(isLeagueGame);
+    if (game && existingGame?.thumbnailDataUrl) {
+      game.thumbnailDataUrl = existingGame.thumbnailDataUrl;
+    }
+
+    cache = cache.filter((s) => !isLeagueSource(s));
+    if (client) cache.push(client);
+    if (game) cache.push(game);
+  }
+
+  return { game, client };
 }

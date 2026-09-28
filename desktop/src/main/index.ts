@@ -307,6 +307,7 @@ function registerIpc(): void {
   ipcMain.handle(IPC.stageRelease, () => api.stageRelease());
 
   ipcMain.handle(IPC.sourcesList, (_event, fresh?: boolean) => sources.listSources(fresh === true));
+  ipcMain.handle(IPC.sourcesLeague, () => sources.findLeagueWindows());
   ipcMain.handle(
     IPC.sourcesSelect,
     (_event, source: { id: string; name: string; processId: number | null }) => {

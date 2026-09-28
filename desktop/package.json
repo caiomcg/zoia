@@ -16,7 +16,7 @@
     "pack:mac": "npm run build && electron-builder --mac --arm64 --x64 && electron-builder install-app-deps",
     "lint": "eslint .",
     "format:check": "prettier --check .",
-    "test": "node --test test/*.test.ts",
+    "test": "node --experimental-strip-types --test test/*.test.ts",
     "build:native": "cd native && npm ci && node-gyp rebuild --target=44.4.3 --dist-url=https://electronjs.org/headers --arch=x64"
   },
   "dependencies": {

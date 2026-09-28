@@ -20,13 +20,7 @@ import {
   type RemoteTrack,
 } from 'livekit-client';
 import type { QualityPreset, SourceInfo, TokenResult } from '../../shared/ipc';
-import {
-  findLeagueSources,
-  isLeagueClient,
-  isLeagueGame,
-  isLeagueSource,
-  resolveLeagueTarget,
-} from '../../shared/league';
+import { isLeagueClient, isLeagueGame, isLeagueSource } from '../../shared/league';
 import {
   createCaptureAudioTrack,
   wrapAudioTrack,
@@ -842,8 +836,9 @@ export function useRoom() {
       if (!keepStage) {
         if (isLeagueSource(source)) {
           // When starting a League broadcast, opt for game if open, otherwise client
-          const allSources = await window.zoia.sources.list().catch(() => []);
-          const { game, client } = findLeagueSources(allSources);
+          const { game, client } = await window.zoia.sources
+            .league()
+            .catch(() => ({ game: null, client: null }));
           const target = game ?? client ?? source;
           leagueFollowRef.current = {
             client: client ?? (isLeagueClient(source) ? source : null),
@@ -999,11 +994,12 @@ export function useRoom() {
           void (async () => {
             if (leagueFollowRef.current && restartWindowRef.current) {
               setRoomNotice(tNow('league.matchEnded'));
-              await window.zoia.sources.list(true).catch(() => []);
               for (let attempt = 0; attempt < 24; attempt += 1) {
                 if (!leagueFollowRef.current) return;
-                const currentSources = await window.zoia.sources.list().catch(() => []);
-                const target = resolveLeagueTarget(currentSources);
+                const { game, client } = await window.zoia.sources
+                  .league()
+                  .catch(() => ({ game: null, client: null }));
+                const target = game ?? client;
                 if (target && target.id !== source.id) {
                   const ok = await restartWindowRef.current(target, leagueFollowRef.current.preset);
                   if (ok) {
@@ -1110,10 +1106,11 @@ export function useRoom() {
       const follow = leagueFollowRef.current;
       if (!follow || !localTrackRef.current || switchingWindowRef.current) return;
 
-      const sources = await window.zoia.sources.list().catch(() => []);
+      const { game, client } = await window.zoia.sources
+        .league()
+        .catch(() => ({ game: null, client: null }));
       if (disposed) return;
 
-      const { game, client } = findLeagueSources(sources);
       if (client) {
         follow.client = client;
       }
