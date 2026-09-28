@@ -223,6 +223,17 @@ export type UpdaterCheckResult =
   | { status: 'disabled' }
   | { status: 'error'; message: string };
 
+/** A published release: the notes shown after an update and from About. */
+export interface ReleaseInfo {
+  version: string;
+  title: string;
+  /** ISO 8601, or null for a release GitHub has not dated. */
+  publishedAt: string | null;
+  /** The release notes, as GitHub-flavoured Markdown. */
+  notes: string;
+  url: string;
+}
+
 export interface SourceInfo {
   id: string;
   name: string;
@@ -268,6 +279,7 @@ export const IPC = {
   updaterCheck: 'zoia:updater:check',
   updaterInstall: 'zoia:updater:install',
   updaterOpenInstaller: 'zoia:updater:installer:open',
+  updaterReleaseNotes: 'zoia:updater:release-notes',
   appVersion: 'zoia:app:version',
   trayCloseGet: 'zoia:tray:close:get',
   trayCloseSet: 'zoia:tray:close:set',

@@ -18,6 +18,7 @@ import {
   checkForUpdate,
   getUpdaterConfig,
   installCurrentUpdate,
+  currentReleaseNotes,
   resetUpdaterConfig,
   runUpdateCheck,
   saveUpdaterConfig,
@@ -234,6 +235,7 @@ function registerIpc(): void {
   ipcMain.handle(IPC.updaterConfigReset, () => resetUpdaterConfig());
   ipcMain.handle(IPC.updaterCheck, () => checkForUpdate(true));
   ipcMain.handle(IPC.updaterInstall, () => installCurrentUpdate());
+  ipcMain.handle(IPC.updaterReleaseNotes, () => currentReleaseNotes());
   ipcMain.handle(IPC.updaterOpenInstaller, (_event, installerUrl: unknown) => {
     if (typeof installerUrl !== 'string') throw new Error('Installer URL is required');
     const url = new URL(installerUrl);

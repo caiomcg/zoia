@@ -11,6 +11,7 @@ import type {
   PairingStatus,
   UpdaterConfig,
   UpdaterCheckResult,
+  ReleaseInfo,
 } from '../shared/ipc';
 import type { ZoiaBridge } from './index.d';
 
@@ -72,6 +73,7 @@ const bridge: ZoiaBridge = {
     check: () => ipcRenderer.invoke(IPC.updaterCheck) as Promise<UpdaterCheckResult>,
     install: () => ipcRenderer.invoke(IPC.updaterInstall) as Promise<void>,
     openInstaller: (url: string) => ipcRenderer.invoke(IPC.updaterOpenInstaller, url),
+    releaseNotes: () => ipcRenderer.invoke(IPC.updaterReleaseNotes) as Promise<ReleaseInfo | null>,
   },
   app: {
     version: () => ipcRenderer.invoke(IPC.appVersion) as Promise<string>,

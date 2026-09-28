@@ -297,4 +297,13 @@ export const pt: Messages = {
   'sounds.style.soft': 'Suave',
   'sounds.pitch': 'Tom',
   'sounds.preview': 'Ouvir',
+
+  // ---- what's new
+  'changelog.title': 'Novidades',
+  'changelog.titleVersion': 'Novidades da {version}',
+  'changelog.none': 'Esta versão não tem notas publicadas.',
+  'about.versionNotes': 'Ver as novidades desta versão',
+  'changelog.failed': 'Não foi possível carregar as notas de versão do GitHub.',
+  'changelog.retry': 'Tentar de novo',
+  'changelog.viewOnGitHub': 'Ver no GitHub',
 };

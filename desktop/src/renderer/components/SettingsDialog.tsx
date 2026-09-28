@@ -14,6 +14,7 @@ import {
 } from '../sounds/cues';
 import { setSoundSettings, useSoundSettings } from '../sounds/settings';
 import { playCue } from '../sounds/synth';
+import ReleaseNotesDialog from './ReleaseNotesDialog';
 
 type Section = 'profile' | 'broadcast' | 'general' | 'sounds' | 'updates' | 'about';
 
@@ -649,6 +650,7 @@ const PEOPLE = [
 function AboutSection() {
   const t = useT();
   const [version, setVersion] = useState<string | null>(null);
+  const [notesOpen, setNotesOpen] = useState(false);
   useEffect(() => {
     window.zoia.app
       .version()
@@ -660,7 +662,16 @@ function AboutSection() {
     <div className="about">
       <div className="about-hero">
         <img className="about-logo" src="logo.png" alt="Zoia" draggable={false} />
-        {version && <span className="about-version">v{version}</span>}
+        {version && (
+          <button
+            type="button"
+            className="about-version"
+            onClick={() => setNotesOpen(true)}
+            title={t('about.versionNotes')}
+          >
+            v{version}
+          </button>
+        )}
       </div>
 
       <p className="about-lede">{t('about.lede')}</p>
@@ -685,6 +696,8 @@ function AboutSection() {
           </li>
         ))}
       </ul>
+
+      {notesOpen && <ReleaseNotesDialog onClose={() => setNotesOpen(false)} />}
     </div>
   );
 }

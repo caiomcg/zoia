@@ -11,6 +11,7 @@ import type {
   UpdaterConfig,
   LanguageState,
   UpdaterCheckResult,
+  ReleaseInfo,
 } from '../shared/ipc';
 
 export interface ZoiaBridge {
@@ -79,6 +80,8 @@ export interface ZoiaBridge {
     check(): Promise<UpdaterCheckResult>;
     install(): Promise<void>;
     openInstaller(url: string): Promise<void>;
+    /** The running version's GitHub release, or null if it has none. */
+    releaseNotes(): Promise<ReleaseInfo | null>;
   };
   app: {
     version(): Promise<string>;

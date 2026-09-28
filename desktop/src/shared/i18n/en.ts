@@ -305,6 +305,15 @@ export const en = {
   'sounds.style.soft': 'Soft',
   'sounds.pitch': 'Pitch',
   'sounds.preview': 'Preview',
+
+  // ---- what's new
+  'changelog.title': "What's new",
+  'changelog.titleVersion': "What's new in {version}",
+  'changelog.none': 'This version has no published release notes.',
+  'about.versionNotes': 'See what is new in this version',
+  'changelog.failed': 'Could not load the release notes from GitHub.',
+  'changelog.retry': 'Try again',
+  'changelog.viewOnGitHub': 'View on GitHub',
 } as const;
 
 export type MessageKey = keyof typeof en;
