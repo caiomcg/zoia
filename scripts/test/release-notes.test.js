@@ -89,6 +89,16 @@ describe('formatReleaseNotes', () => {
     assert.match(notes, /Full changelog/);
   });
 
+  test('a release with Mac builds tells a Mac which disk image to download', () => {
+    const ota = formatReleaseNotes(release({ macos: true }));
+    assert.match(ota, /\*\*Windows: in-app update\.\*\*/);
+    assert.match(ota, /\*\*Mac:\*\* download `Zoia-1\.2\.3-mac-arm64\.dmg` \(Apple silicon\)/);
+    const full = formatReleaseNotes(release({ macos: true, updateType: 'full' }));
+    assert.match(full, /\*\*Windows: installer required\.\*\*/);
+    assert.match(full, /mac-x64\.dmg` \(Intel\)/);
+    assert.doesNotMatch(formatReleaseNotes(release()), /Mac/);
+  });
+
   test('a release of only bookkeeping still says something', () => {
     const notes = formatReleaseNotes(
       release({ commits: [{ hash: hash(5), subject: 'chore: bump version' }] }),

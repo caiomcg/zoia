@@ -31,6 +31,13 @@ function repository() {
 const { base, updateType, reasons } = classify(tag);
 const entryFile = new URL(`../changelog/${tag.replace(/^v/, '')}.md`, import.meta.url);
 const entry = existsSync(entryFile) ? readFileSync(entryFile, 'utf8') : null;
+// Releases from before the Mac build have no Mac section in their packaging.
+let macos = false;
+try {
+  macos = /^mac:/m.test(git(['show', `${tag}:desktop/electron-builder.yml`]));
+} catch {
+  macos = false;
+}
 const range = base ? `${base}..${tag}` : tag;
 const log = git(['log', '--no-merges', '--format=%H%x1f%s', range]);
 const commits = log
@@ -50,5 +57,6 @@ process.stdout.write(
     minimumVersion: updateType === 'asar' && base ? minimumVersion(base) : null,
     reasons,
     entry,
+    macos,
   }),
 );
