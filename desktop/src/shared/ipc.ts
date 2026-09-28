@@ -260,4 +260,7 @@ export const IPC = {
   appVersion: 'zoia:app:version',
   trayCloseGet: 'zoia:tray:close:get',
   trayCloseSet: 'zoia:tray:close:set',
+  devToolsGet: 'zoia:devtools:get',
+  devToolsSet: 'zoia:devtools:set',
+  devToolsOpen: 'zoia:devtools:open',
 } as const;

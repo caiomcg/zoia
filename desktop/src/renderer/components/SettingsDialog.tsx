@@ -203,12 +203,17 @@ function BroadcastSection({
 function GeneralSection() {
   // Applied as soon as it is toggled, like the same checkbox in the tray menu.
   const [closeToTray, setCloseToTray] = useState(true);
+  const [devToolsEnabled, setDevToolsEnabled] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     window.zoia.tray
       .closeToTray()
       .then(setCloseToTray)
+      .catch(() => {});
+    window.zoia.devTools
+      .isEnabled()
+      .then(setDevToolsEnabled)
       .catch(() => {});
   }, []);
 
@@ -223,6 +228,17 @@ function GeneralSection() {
     }
   }
 
+  async function toggleDevTools(value: boolean) {
+    setDevToolsEnabled(value);
+    setError(null);
+    try {
+      setDevToolsEnabled(await window.zoia.devTools.setEnabled(value));
+    } catch {
+      setDevToolsEnabled(!value);
+      setError('Could not change the developer tools setting.');
+    }
+  }
+
   return (
     <>
       <h3>General</h3>
@@ -234,6 +250,28 @@ function GeneralSection() {
         />
         Keep Zoia in the system tray when the window is closed
       </label>
+
+      <label className="settings-check">
+        <input
+          type="checkbox"
+          checked={devToolsEnabled}
+          onChange={(event) => void toggleDevTools(event.target.checked)}
+        />
+        Enable Developer Tools (F12 or Ctrl+Shift+I)
+      </label>
+
+      {devToolsEnabled && (
+        <div>
+          <button
+            type="button"
+            onClick={() => void window.zoia.devTools.open()}
+            style={{ fontSize: '12px', padding: '6px 14px' }}
+          >
+            Open Developer Tools
+          </button>
+        </div>
+      )}
+
       {error && <p className="settings-error">{error}</p>}
     </>
   );

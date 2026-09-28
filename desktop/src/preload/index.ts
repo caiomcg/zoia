@@ -80,6 +80,11 @@ const bridge: ZoiaBridge = {
     closeToTray: () => ipcRenderer.invoke(IPC.trayCloseGet),
     setCloseToTray: (value) => ipcRenderer.invoke(IPC.trayCloseSet, value),
   },
+  devTools: {
+    isEnabled: () => ipcRenderer.invoke(IPC.devToolsGet),
+    setEnabled: (value) => ipcRenderer.invoke(IPC.devToolsSet, value),
+    open: () => ipcRenderer.invoke(IPC.devToolsOpen),
+  },
   audio: {
     start: (processId) => ipcRenderer.invoke(IPC.audioStart, processId),
     stop: () => ipcRenderer.invoke(IPC.audioStop),

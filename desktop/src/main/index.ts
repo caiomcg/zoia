@@ -9,6 +9,7 @@ import * as audioCapture from './audio';
 import * as encoder from './encoder';
 import * as capture from './capture';
 import { getCloseToTray, installTray, setCloseToTray, showWindow } from './tray';
+import { isDevToolsEnabled, openDevTools, setDevToolsEnabled } from './devtools';
 import { IPC } from '../shared/ipc';
 import type { GpuStatus } from '../shared/ipc';
 import {
@@ -173,9 +174,12 @@ function createWindow(): void {
   });
 
   mainWindow.webContents.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown') return;
     if (input.key === 'F12' || (input.control && input.shift && input.key.toLowerCase() === 'i')) {
-      mainWindow?.webContents.toggleDevTools();
-      event.preventDefault();
+      if (isDevToolsEnabled()) {
+        mainWindow?.webContents.toggleDevTools();
+        event.preventDefault();
+      }
     }
   });
 
@@ -237,6 +241,15 @@ function registerIpc(): void {
   ipcMain.handle(IPC.appVersion, () => app.getVersion());
   ipcMain.handle(IPC.trayCloseGet, () => getCloseToTray());
   ipcMain.handle(IPC.trayCloseSet, (_event, value: boolean) => setCloseToTray(value === true));
+  ipcMain.handle(IPC.devToolsGet, () => isDevToolsEnabled());
+  ipcMain.handle(IPC.devToolsSet, (_event, value: boolean) =>
+    setDevToolsEnabled(value === true, mainWindow),
+  );
+  ipcMain.handle(IPC.devToolsOpen, () => {
+    if (isDevToolsEnabled()) {
+      openDevTools(mainWindow);
+    }
+  });
 
   ipcMain.handle(IPC.stageGet, () => api.stageGet());
   ipcMain.handle(IPC.stageClaim, () => api.stageClaim());
