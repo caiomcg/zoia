@@ -118,8 +118,9 @@ async function captureSources(): Promise<SourceInfo[]> {
 }
 
 let cache: SourceInfo[] | null = null;
+let cacheTime = 0;
 let inFlight: Promise<SourceInfo[]> | null = null;
-let refreshTimer: ReturnType<typeof setInterval> | null = null;
+let warmingActive = false;
 
 /** Runs one capture, deduped against any already in flight. */
 function refresh(): Promise<SourceInfo[]> {
@@ -127,6 +128,7 @@ function refresh(): Promise<SourceInfo[]> {
     inFlight = captureSources()
       .then((result) => {
         cache = result;
+        cacheTime = Date.now();
         return result;
       })
       .finally(() => {
@@ -137,36 +139,22 @@ function refresh(): Promise<SourceInfo[]> {
 }
 
 /**
- * Starts a background refresh loop. Call as early as possible — at app
- * launch, not gated on pairing or the room connecting — since capturing a
- * source needs no auth, and every extra second before the user could
- * plausibly click "Share" is a second the first (expensive) capture gets to
- * finish in. Stop it when the window closes, since it is pure overhead
- * otherwise.
+ * Primes the source cache. We fetch once at startup so the picker is instant
+ * without having to run a continuous 4s capture loop that wastes CPU/GPU and
+ * spams WGC logs for uncapturable windows.
  */
-/**
- * Keeps the cached list fresh in the background.
- *
- * The interval is a floor imposed by the work itself: a full capture with
- * thumbnails was measured at ~3.3s, almost all of it Chromium grabbing the
- * images. Asking more often would simply queue captures behind each other.
- */
-export function startWarming(intervalMs = 4000): void {
-  if (refreshTimer) return;
+export function startWarming(_intervalMs = 4000): void {
+  warmingActive = true;
   void refresh();
-  refreshTimer = setInterval(() => void refresh(), intervalMs);
 }
 
 export function stopWarming(): void {
-  if (refreshTimer) clearInterval(refreshTimer);
-  refreshTimer = null;
+  warmingActive = false;
 }
 
 /**
- * Returns the source list. If a warm cache exists, returns it immediately and
- * triggers a background refresh for next time; the caller never waits on
- * that refresh. Only the very first call in a session — before warming has
- * had a chance to complete — pays the full capture cost.
+ * Returns the source list. If a warm cache exists, returns it immediately.
+ * If warming is active and the cache is older than 2.5s, triggers a background refresh.
  */
 export async function listSources(fresh = false): Promise<SourceInfo[]> {
   if (fresh) {
@@ -174,10 +162,10 @@ export async function listSources(fresh = false): Promise<SourceInfo[]> {
     return refresh();
   }
   if (cache) {
-    // Only refresh in the background if warming is active. When warming is stopped
-    // (e.g. during a live broadcast), avoid invoking desktopCapturer which burns CPU/GPU
-    // capturing thumbnails and spams WGC 'Source is not capturable' logs.
-    if (refreshTimer) {
+    // Only refresh in the background if warming is active and cache is stale.
+    // When warming is stopped (e.g. during a live broadcast or idle), avoid
+    // invoking desktopCapturer which burns CPU/GPU.
+    if (warmingActive && Date.now() - cacheTime > 2500) {
       void refresh();
     }
     return cache;

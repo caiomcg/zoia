@@ -65,6 +65,9 @@ function requestHardwareEncoding(): void {
   // being explicit avoids falling back to the basic render driver.
   app.commandLine.appendSwitch('use-angle', 'd3d11');
 
+  // Suppress Chromium/WebRTC internal C++ error spam (e.g. WGC CreateForWindow on invisible/tray windows)
+  app.commandLine.appendSwitch('log-level', '3');
+
   // Windows Graphics Capture is deliberately left ENABLED (it is the default).
   // It hands frames over as D3D11 textures that can go straight into the
   // hardware encoder; the older GDI/DXGI capturer produces CPU-side frames,
