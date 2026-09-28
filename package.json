@@ -1,6 +1,6 @@
 {
   "name": "zoia",
-  "version": "0.3.16",
+  "version": "0.3.18",
   "private": true,
   "description": "Private one-to-many screen broadcast over a self-hosted LiveKit SFU.",
   "type": "module",
@@ -10,7 +10,7 @@
   "scripts": {
     "start": "node server/src/index.js",
     "dev": "node --watch server/src/index.js",
-    "test": "node --test server/test/*.test.js",
+    "test": "node --test server/test/*.test.js scripts/test/*.test.js",
     "test:coverage": "node --test --experimental-test-coverage server/test/*.test.js",
     "lint": "eslint .",
     "format": "prettier --write .",

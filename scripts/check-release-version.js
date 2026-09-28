@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
- * Refuses a release tag that disagrees with the package versions.
+ * Refuses a release tag that disagrees with the package versions, or that
+ * has no changelog entry.
  *
  * electron-builder names its artifacts from `desktop/package.json`, not from
  * the git tag. Tagging v0.2.0 while package.json still says 0.1.0 therefore
@@ -12,9 +13,13 @@
  * the artifact came from would no longer be the tree at the tag. For an
  * unsigned binary people download from the internet, being able to rebuild it
  * from the tag is the only provenance story there is.
+ *
+ * The changelog entry, `changelog/<version>.md`, is what the release page and
+ * the app's post-update notes say about the release. Written and reviewed
+ * before tagging, so a release cannot go out with nothing to say about it.
  */
 
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 
 const tag = process.argv[2] ?? '';
 const expected = tag.replace(/^v/, '');
@@ -42,4 +47,14 @@ if (!ok) {
   process.exit(1);
 }
 
+const changelog = new URL(`../changelog/${expected}.md`, import.meta.url);
+if (!existsSync(changelog) || !readFileSync(changelog, 'utf8').trim()) {
+  console.error(
+    `changelog/${expected}.md is missing or empty.\n\n` +
+      `Write the entry for this release (see changelog/README.md), commit it, then re-tag.`,
+  );
+  process.exit(1);
+}
+
 console.log(`Version ${expected} agrees across package.json and desktop/package.json.`);
+console.log(`changelog/${expected}.md is present.`);

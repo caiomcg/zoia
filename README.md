@@ -7,7 +7,7 @@
 [![CI](https://github.com/caiomcg/zoia/actions/workflows/ci.yml/badge.svg)](https://github.com/caiomcg/zoia/actions/workflows/ci.yml)
 [![coverage](https://img.shields.io/badge/coverage-95%25-brightgreen)](scripts/coverage-check.js)
 [![licence](https://img.shields.io/badge/licence-MIT-blue)](LICENSE)
-[![platform](https://img.shields.io/badge/platform-Windows%20x64-lightgrey)](#install)
+[![platform](https://img.shields.io/badge/platform-Windows%20x64%20%7C%20macOS-lightgrey)](#install)
 
 </div>
 
@@ -59,10 +59,13 @@ Longer version, including what the hardware encoding path does: [docs/ARCHITECTU
 
 ## Install
 
-Zoia is **Windows x64 only**, and unsigned — SmartScreen will warn on first run.
+Zoia runs on **Windows x64** and **macOS 13+** (Apple Silicon and Intel). Neither build is
+signed with a paid certificate — SmartScreen will warn on first run on Windows, and on a Mac
+the first open is right-click › **Open**.
 
-1. Download the Windows installer from [Releases](https://github.com/caiomcg/zoia/releases),
-   or build it yourself (below).
+1. Download the Windows installer or the Mac `.dmg` (`-mac-arm64` for Apple Silicon,
+   `-mac-x64` for Intel) from [Releases](https://github.com/caiomcg/zoia/releases), or build
+   it yourself (below).
 2. Get a `zoia-invite.json` from whoever runs the server you are joining.
 3. Run Zoia and drag the invite onto the window, or choose it when prompted.
 4. Share something.
@@ -78,7 +81,8 @@ serves only a static page with a link to this repository; the browser viewer was
 ([ADR 0021](docs/adr/0021-retire-the-browser-viewer.md)).
 
 The desktop app is still required for broadcasting, because capturing a window or an
-application's audio uses native Windows APIs.
+application's audio uses native APIs. On macOS a share carries the whole system's audio
+(except Zoia's own), and macOS asks for the Screen Recording permission the first time ([ADR 0025](docs/adr/0025-macos-client.md)).
 
 ## Run your own
 
@@ -176,8 +180,8 @@ the common messages to their causes.
 
 ## Distributing builds
 
-Pushing a version tag builds the Windows binaries in CI and attaches them to a GitHub
-Release with checksums. `desktop/make-exe.bat` still produces a private build with a token
+Pushing a version tag builds the Windows and macOS binaries in CI and attaches them to a
+GitHub Release with checksums. `desktop/make-exe.bat` still produces a private build with a token
 baked in, for when you would rather hand over one file than two. See
 [docs/DISTRIBUTING.md](docs/DISTRIBUTING.md) for both paths, what SmartScreen will say, and
 how to revoke an invite that escapes.
@@ -186,8 +190,10 @@ how to revoke an invite that escapes.
 
 Stated plainly, because finding these out later is worse:
 
-- **Windows x64 for broadcasting.** The audio capture is WASAPI process loopback; there is no
-  equivalent on macOS or Linux. There is no browser client, for watching or for sharing.
+- **Per-application audio is Windows-only.** The audio capture is WASAPI process loopback.
+  On macOS, sharing sends the whole system's audio instead (except Zoia's own), and there is
+  no GPU/WHIP path or OTA update there. Linux is not supported. There is no browser client, for
+  watching or for sharing.
 - **Hardware encoding is opt-in and newer than the rest.** It covers NVIDIA, AMD and
   Intel GPUs, but only NVIDIA has been confirmed on real hardware. See
   [above](#hardware-encoding-whip).

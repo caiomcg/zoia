@@ -149,6 +149,10 @@ export const pt: Messages = {
   'room.screenNoAudio':
     'Compartilhar uma tela não envia áudio. Compartilhe uma janela para enviar o som daquele app.',
   'room.audioFailed': 'A captura de áudio desta janela falhou: {error}',
+  'room.macNoAudio':
+    'No macOS não foi possível capturar o áudio do sistema, então o compartilhamento está sem som.',
+  'room.macSystemAudio':
+    'No macOS vai o áudio do sistema inteiro (menos o do próprio Zoia), incluindo notificações e outros aplicativos.',
   'league.matchEnded': 'Partida encerrada. Aguardando o cliente do League of Legends…',
   'league.toGame': 'League of Legends: alternado para a partida em andamento',
   'league.toClient': 'League of Legends: alternado para o cliente / saguão',
@@ -156,6 +160,8 @@ export const pt: Messages = {
   'picker.title': 'Escolha o que compartilhar',
   'picker.search': 'Buscar janelas…',
   'picker.loading': 'Carregando fontes…',
+  'picker.macScreenPermission':
+    'O Zoia precisa de permissão para gravar a tela. Ative em Ajustes do Sistema › Privacidade e Segurança › Gravação de Tela e Áudio do Sistema, e abra o Zoia de novo.',
   'picker.screens': 'Telas',
   'picker.windows': 'Janelas',
   'picker.none': 'Nenhuma fonte encontrada.',
@@ -298,4 +304,13 @@ export const pt: Messages = {
   'sounds.style.soft': 'Suave',
   'sounds.pitch': 'Tom',
   'sounds.preview': 'Ouvir',
+
+  // ---- what's new
+  'changelog.title': 'Novidades',
+  'changelog.titleVersion': 'Novidades da {version}',
+  'changelog.none': 'Esta versão não tem notas publicadas.',
+  'about.versionNotes': 'Ver as novidades desta versão',
+  'changelog.failed': 'Não foi possível carregar as notas de versão do GitHub.',
+  'changelog.retry': 'Tentar de novo',
+  'changelog.viewOnGitHub': 'Ver no GitHub',
 };

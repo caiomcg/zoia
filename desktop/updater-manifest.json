@@ -1,9 +1,6 @@
 {
-  "version": "0.3.16",
-  "updateType": "asar",
-  "minimumVersion": "0.3.14",
-  "artifactUrl": "https://github.com/caiomcg/zoia/releases/download/v0.3.16/Zoia-OTA-0.3.16.asar",
-  "sha256": "b8fc283bc4bb96ef879ec7384682941b5f6f54f2165a7ef6a5aeb4ebb431ba9d",
-  "installerUrl": "https://github.com/caiomcg/zoia/releases/download/v0.3.16/Zoia-Setup-0.3.16-x64.exe",
-  "notes": "Updates now check that your installation can take them, and offer the full installer when it cannot."
+  "version": "0.3.18",
+  "updateType": "full",
+  "installerUrl": "https://github.com/caiomcg/zoia/releases/download/v0.3.18/Zoia-Setup-0.3.18-x64.exe",
+  "notes": "Zoia now runs on the Mac. On Windows nothing changes, but this version needs the installer because the app's packaging changed."
 }

@@ -7,11 +7,13 @@ import RemoteGrid, { type LoadingBroadcast } from './components/RemoteGrid';
 import Sidebar from './components/Sidebar';
 import SourcePicker from './components/SourcePicker';
 import SettingsDialog from './components/SettingsDialog';
+import ReleaseNotesDialog from './components/ReleaseNotesDialog';
 import Splash from './components/Splash';
 import StatusLight, { type StatusStat, type StatusTone } from './components/StatusLight';
 import { useRoom } from './livekit/useRoom';
 import { useGpuBroadcast } from './livekit/useGpuBroadcast';
 import { useSoundCues } from './sounds/useSoundCues';
+import { LAST_VERSION_STORAGE_KEY, shouldShowReleaseNotes } from './whats-new';
 import {
   DEFAULT_PRESET_ID,
   QUALITY_PRESETS,
@@ -24,6 +26,7 @@ import {
 import { isLeagueSource, resolveLeagueTarget } from '../shared/league';
 import { useT } from './i18n';
 import type { MessageKey } from '../shared/i18n';
+import type { ReleaseInfo } from '../shared/ipc';
 
 /** WebRTC's quality-limitation reasons, each with a translation. */
 const LIMITS = ['none', 'cpu', 'bandwidth', 'other'] as const;
@@ -226,6 +229,43 @@ export default function App() {
     const timer = setTimeout(() => setBooted(true), 8000);
     return () => clearTimeout(timer);
   }, []);
+
+  // The notes of a version open by themselves on its first start, once the
+  // app is in use rather than over the splash or pairing. The version is only
+  // recorded once they have been read, so being offline on that start means
+  // they appear on the next one instead of never.
+  const [releaseNotes, setReleaseNotes] = useState<ReleaseInfo | null>(null);
+  const releaseNotesChecked = useRef(false);
+  useEffect(() => {
+    if (!status?.paired || !booted || releaseNotesChecked.current) return;
+    releaseNotesChecked.current = true;
+    void (async () => {
+      const version = await window.zoia.app.version();
+      let lastVersion: string | null = null;
+      try {
+        lastVersion = localStorage.getItem(LAST_VERSION_STORAGE_KEY);
+      } catch {
+        // Unreadable storage: treated as unknown, as on a first run.
+      }
+      const existingUser = !showOnboarding;
+      const remember = () => {
+        try {
+          localStorage.setItem(LAST_VERSION_STORAGE_KEY, version);
+        } catch {
+          // Remembering is a convenience; at worst the notes show again.
+        }
+      };
+      if (!shouldShowReleaseNotes(lastVersion, version, existingUser)) {
+        remember();
+        return;
+      }
+      const notes = await window.zoia.updater.releaseNotes();
+      remember();
+      if (notes?.notes.trim()) setReleaseNotes(notes);
+    })().catch(() => {
+      // Offline or rate-limited: try again on the next start.
+    });
+  }, [status?.paired, booted, showOnboarding]);
 
   const handleRename = useCallback(
     async (name: string) => {
@@ -616,6 +656,10 @@ export default function App() {
           onHardwareChange={handleHardwareChange}
           hardwareAvailable={Boolean(gpu?.hardwareEncoder)}
         />
+      )}
+
+      {releaseNotes && (
+        <ReleaseNotesDialog release={releaseNotes} onClose={() => setReleaseNotes(null)} />
       )}
     </div>
   );

@@ -1243,12 +1243,20 @@ button.danger {
 
 .about-version {
   padding: 2px 8px;
+  font: inherit;
   font-size: 12px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   color: var(--muted);
+  background: transparent;
   border: 1px solid var(--border);
   border-radius: 999px;
+  cursor: pointer;
+}
+
+.about-version:hover {
+  color: var(--text);
+  border-color: var(--accent);
 }
 
 .about-lede {
@@ -1492,6 +1500,78 @@ button.danger {
 .sound-pitch span {
   min-width: 52px;
   white-space: nowrap;
+}
+
+.release-dialog {
+  width: min(560px, 92vw);
+}
+
+.release-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px 20px;
+  overflow-y: auto;
+}
+
+.release-date {
+  font-size: 12px;
+}
+
+.release-footer {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 12px 20px;
+  border-top: 1px solid var(--border);
+}
+
+.release-footer .release-link {
+  margin-right: auto;
+}
+
+.release-link {
+  font-size: 12px;
+  color: var(--accent);
+}
+
+.markdown {
+  font-size: 13px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.markdown h5 {
+  margin: 10px 0 4px;
+  font-size: 12px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.markdown p,
+.markdown ul {
+  margin: 0 0 6px;
+}
+
+.markdown ul {
+  padding-left: 18px;
+}
+
+.markdown li + li {
+  margin-top: 3px;
+}
+
+.markdown a {
+  color: var(--accent);
+}
+
+.markdown code {
+  padding: 0 4px;
+  font-size: 12px;
+  background: var(--bg);
+  border-radius: 4px;
 }
 
 .settings-actions {

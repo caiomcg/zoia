@@ -32,6 +32,7 @@ record that supersedes it, so the history stays legible.
 | [0022](0022-unified-league-streaming.md)                 | Unified League of Legends streaming and bidirectional handoff | accepted                                                                           |
 | [0023](0023-interface-languages.md)                      | Interface languages                                           | accepted                                                                           |
 | [0024](0024-resilient-gpu-broadcasting-pipeline.md)      | Resilient GPU broadcasting pipeline with opt-in fallback      | accepted                                                                           |
+| [0025](0025-macos-client.md)                             | A macOS desktop client with system audio                      | accepted                                                                           |
 
 ## The two that explain the most
 

@@ -1,4 +1,13 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, session, shell } from 'electron';
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  Menu,
+  session,
+  shell,
+  systemPreferences,
+} from 'electron';
 import { join } from 'node:path';
 import * as pairing from './pairing';
 import * as config from './config';
@@ -18,6 +27,7 @@ import {
   checkForUpdate,
   getUpdaterConfig,
   installCurrentUpdate,
+  currentReleaseNotes,
   resetUpdaterConfig,
   runUpdateCheck,
   saveUpdaterConfig,
@@ -65,8 +75,9 @@ function requestHardwareEncoding(): void {
   app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
 
   // ANGLE on D3D11 is what lets the GPU process come up at all on Windows;
-  // being explicit avoids falling back to the basic render driver.
-  app.commandLine.appendSwitch('use-angle', 'd3d11');
+  // being explicit avoids falling back to the basic render driver. There is
+  // no D3D11 on macOS, where ANGLE's own default (Metal) is the right one.
+  if (process.platform === 'win32') app.commandLine.appendSwitch('use-angle', 'd3d11');
 
   // Suppress Chromium/WebRTC internal C++ error spam (e.g. WGC CreateForWindow on invisible/tray windows)
   app.commandLine.appendSwitch('log-level', '3');
@@ -100,9 +111,6 @@ let gpuStatus: GpuStatus = {
  * all and no encoder flag will help.
  */
 async function refreshGpuStatus(): Promise<void> {
-  const features = app.getGPUFeatureStatus();
-  const videoEncode = features.video_encode ?? 'unknown';
-
   let adapter = 'unknown';
   try {
     const info = (await app.getGPUInfo('complete')) as {
@@ -121,6 +129,12 @@ async function refreshGpuStatus(): Promise<void> {
   } catch (err) {
     adapter = `lookup failed: ${err instanceof Error ? err.message : String(err)}`;
   }
+
+  // Read after getGPUInfo, not before: until the GPU process has answered,
+  // every feature reports disabled_software, which is what this log used to
+  // say on a machine whose GPU was working fine.
+  const features = app.getGPUFeatureStatus();
+  const videoEncode = features.video_encode ?? 'unknown';
 
   const caps = capture.capabilities();
   gpuStatus = {
@@ -141,6 +155,23 @@ async function refreshGpuStatus(): Promise<void> {
   console.log('[gpu] video_decode:', features.video_decode ?? 'unknown');
   console.log('[gpu] gpu_compositing:', features.gpu_compositing ?? 'unknown');
   console.log('[gpu] adapter:', adapter);
+}
+
+/**
+ * macOS gates every capture behind the Screen Recording permission. Without
+ * it desktopCapturer still answers, but with windows that have no titles and
+ * thumbnails of the wallpaper, and sharing looks broken rather than refused —
+ * so the state is written to the log, where a report will carry it.
+ */
+function logScreenRecordingAccess(): void {
+  const status = systemPreferences.getMediaAccessStatus('screen');
+  console.log('[mac] screen recording permission:', status);
+  if (status === 'denied' || status === 'restricted') {
+    console.warn(
+      '[mac] Screen Recording is not allowed. Enable Zoia in System Settings > ' +
+        'Privacy & Security > Screen Recording, then restart it.',
+    );
+  }
 }
 
 function createWindow(): void {
@@ -177,7 +208,13 @@ function createWindow(): void {
 
   mainWindow.webContents.on('before-input-event', (event, input) => {
     if (input.type !== 'keyDown') return;
-    if (input.key === 'F12' || (input.control && input.shift && input.key.toLowerCase() === 'i')) {
+    const key = input.key.toLowerCase();
+    if (
+      input.key === 'F12' ||
+      (input.control && input.shift && key === 'i') ||
+      // Cmd+Option+I, the macOS spelling of the same shortcut.
+      (input.meta && input.alt && key === 'i')
+    ) {
       if (isDevToolsEnabled()) {
         mainWindow?.webContents.toggleDevTools();
         event.preventDefault();
@@ -234,6 +271,7 @@ function registerIpc(): void {
   ipcMain.handle(IPC.updaterConfigReset, () => resetUpdaterConfig());
   ipcMain.handle(IPC.updaterCheck, () => checkForUpdate(true));
   ipcMain.handle(IPC.updaterInstall, () => installCurrentUpdate());
+  ipcMain.handle(IPC.updaterReleaseNotes, () => currentReleaseNotes());
   ipcMain.handle(IPC.updaterOpenInstaller, (_event, installerUrl: unknown) => {
     if (typeof installerUrl !== 'string') throw new Error('Installer URL is required');
     const url = new URL(installerUrl);
@@ -470,7 +508,7 @@ function registerIpc(): void {
  * whatever the renderer chose immediately beforehand via sourcesSelect.
  */
 function registerDisplayMediaHandler(): void {
-  session.defaultSession.setDisplayMediaRequestHandler((_request, callback) => {
+  session.defaultSession.setDisplayMediaRequestHandler((request, callback) => {
     const chosen = sources.getSelectedSource();
     if (!chosen) {
       // Nothing was chosen — refuse rather than let Chromium fall back to
@@ -482,7 +520,15 @@ function registerDisplayMediaHandler(): void {
     console.log(
       `[display-media] resolving with "${chosen.name}" (pid ${chosen.processId ?? 'unresolved'})`,
     );
-    callback({ video: { id: chosen.id, name: chosen.name } });
+    // macOS only, and only when the renderer asked: ScreenCaptureKit's system
+    // loopback is the Mac's share audio (see useRoom's startBroadcast). The
+    // typings still say loopback is Windows-only; measured working on macOS
+    // 26 with Electron 44. Windows keeps its per-application WASAPI capture.
+    const loopback = process.platform === 'darwin' && request.audioRequested;
+    callback({
+      video: { id: chosen.id, name: chosen.name },
+      ...(loopback && { audio: 'loopback' as const }),
+    });
   });
 }
 
@@ -538,8 +584,17 @@ app.whenReady().then(async () => {
   installCrashReporting();
   // Created before the window, so its close handler is attached to it.
   installTray(() => mainWindow, join(__dirname, '../../build/tray.png'));
-  // Removes the default menu outright, so Alt reveals nothing.
-  Menu.setApplicationMenu(null);
+  // Removes the default menu outright, so Alt reveals nothing. macOS is the
+  // exception: there the menu bar is where Cmd+Q, Cmd+H and — easy to miss —
+  // copy and paste in every text field live, so it keeps the standard roles.
+  if (process.platform === 'darwin') {
+    Menu.setApplicationMenu(
+      Menu.buildFromTemplate([{ role: 'appMenu' }, { role: 'editMenu' }, { role: 'windowMenu' }]),
+    );
+    logScreenRecordingAccess();
+  } else {
+    Menu.setApplicationMenu(null);
+  }
   await refreshGpuStatus();
   registerIpc();
   registerDisplayMediaHandler();
@@ -561,8 +616,11 @@ app.whenReady().then(async () => {
   mainWindow?.webContents.send('zoia:pairing:changed', pairing.getStatus());
   void startUpdater();
 
+  // Clicking the Dock icon. With close-to-tray on, the window still exists
+  // but is hidden, and the Dock is the obvious way back to it.
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    else showWindow(mainWindow);
   });
 });
 

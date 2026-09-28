@@ -5,6 +5,7 @@ import { access, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises
 import { dirname, join } from 'node:path';
 import { spawn } from 'node:child_process';
 import { t } from './language';
+import type { ReleaseInfo } from '../shared/ipc';
 import { pipeline } from 'node:stream/promises';
 import { Readable } from 'node:stream';
 
@@ -259,6 +260,13 @@ async function getRemoteUpdate(config: UpdaterConfig): Promise<RemoteUpdate> {
   } else {
     throw new Error('Updater manifest has an unknown update type');
   }
+  if (process.platform === 'darwin') {
+    // The OTA swap is Windows plumbing throughout (a .bat runner, elevate.exe,
+    // PowerShell), and replacing app.asar inside a signed .app would break its
+    // seal. The manifest's installer is the Windows .exe. So a Mac is always
+    // sent to the release page, where the .dmg sits beside it.
+    return { ...manifest, commit, updateType: 'full', installerUrl: releasePage(config, manifest) };
+  }
   if (
     updateType === 'asar' &&
     manifest.minimumVersion &&
@@ -275,6 +283,13 @@ async function getRemoteUpdate(config: UpdaterConfig): Promise<RemoteUpdate> {
     return { ...manifest, commit, updateType: 'full' };
   }
   return { ...manifest, commit };
+}
+
+function releasePage(config: UpdaterConfig, manifest: UpdateManifest): string {
+  const repo = githubRepository(config.repository);
+  if (!repo) return config.repository;
+  const version = manifest.version.replace(/^v/, '');
+  return `https://github.com/${repo.owner}/${repo.name}/releases/tag/v${version}`;
 }
 
 function newerVersion(remote: string, local: string): boolean {
@@ -461,6 +476,53 @@ async function install(update: RemoteUpdate): Promise<void> {
     }
   }
   app.quit();
+}
+
+interface GitHubRelease {
+  tag_name: string;
+  name: string | null;
+  body: string | null;
+  html_url: string;
+  published_at: string | null;
+  draft: boolean;
+}
+
+/**
+ * Kept for the session: a release's notes do not change once it is out, and
+ * GitHub allows 60 unauthenticated API calls an hour, shared with the update
+ * check. Only a success is kept, so a failed read can be retried.
+ */
+let notesCache: ReleaseInfo | null = null;
+
+/**
+ * The GitHub release of the running version, for the notes shown after an
+ * update and from Settings → About. Null when that version was never
+ * published as a release (a local build, say).
+ */
+export async function currentReleaseNotes(): Promise<ReleaseInfo | null> {
+  if (notesCache) return notesCache;
+  const config = await loadConfig();
+  const repo = config ? githubRepository(config.repository) : null;
+  if (!repo) throw new Error('Release notes need a GitHub repository in the update settings');
+  const tag = `v${app.getVersion()}`;
+  let release: GitHubRelease;
+  try {
+    release = await fetchJson<GitHubRelease>(
+      `https://api.github.com/repos/${repo.owner}/${repo.name}/releases/tags/${encodeURIComponent(tag)}`,
+    );
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('(404)')) return null;
+    throw error;
+  }
+  if (release.draft) return null;
+  notesCache = {
+    version: release.tag_name.replace(/^v/, ''),
+    title: release.name || release.tag_name,
+    publishedAt: release.published_at,
+    notes: release.body ?? '',
+    url: release.html_url,
+  };
+  return notesCache;
 }
 
 export async function checkForUpdate(force = false): Promise<UpdaterCheckResult> {

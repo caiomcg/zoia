@@ -1,4 +1,5 @@
-# Windows x64 only — see README.md and docs/adr for why.
+# Windows x64, plus macOS (arm64 and x64) — see README.md and
+# docs/adr/0025-macos-client.md for what differs between them.
 appId: com.github.caiomcg.zoia
 productName: Zoia
 copyright: 'Copyright © 2026 Caio Marcelo Campoy Guedes'
@@ -23,16 +24,8 @@ files:
 # .node files on its own, but these two ARE the product (per-application
 # audio capture and window->PID resolution), so they are pinned explicitly
 # rather than left to heuristics.
-# ffmpeg is the GPU encoding path (see src/main/nvenc.ts). It goes in
-# resources/ffmpeg rather than the asar, because it is executed, not read.
-extraResources:
-  - from: vendor/ffmpeg-gnutls.exe
-    to: ffmpeg/ffmpeg-gnutls.exe
-  # The WGC+NVENC capture module, and the shim that loads it.
-  - from: native/build/Release/zoia_capture.node
-    to: app.asar.unpacked/native/build/Release/zoia_capture.node
-  - from: native/index.cjs
-    to: app.asar.unpacked/native/index.cjs
+# ffmpeg and the capture addon are the Windows GPU path only, so their
+# extraResources live under `win:` below; a Mac build has neither.
 
 asarUnpack:
   # The capture addon is dlopen'd, so it has to be a real file on disk, and
@@ -51,6 +44,44 @@ win:
     - target: nsis
       arch: [x64]
   artifactName: '${productName}-${version}-${arch}.${ext}'
+  # ffmpeg is the GPU encoding path (see src/main/encoder.ts). It goes in
+  # resources/ffmpeg rather than the asar, because it is executed, not read.
+  extraResources:
+    - from: vendor/ffmpeg-gnutls.exe
+      to: ffmpeg/ffmpeg-gnutls.exe
+    # The WGC+NVENC capture module, and the shim that loads it.
+    - from: native/build/Release/zoia_capture.node
+      to: app.asar.unpacked/native/build/Release/zoia_capture.node
+    - from: native/index.cjs
+      to: app.asar.unpacked/native/index.cjs
+
+# macOS shares through Chromium's WebRTC path, whose encoder is VideoToolbox —
+# already hardware — so there is no ffmpeg and no capture addon here. Audio is
+# ScreenCaptureKit's system loopback rather than WASAPI's per-application capture.
+# node-window-manager is rebuilt per arch by electron-builder.
+mac:
+  icon: build/icon.png
+  category: public.app-category.social-networking
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+  artifactName: '${productName}-${version}-mac-${arch}.${ext}'
+  # Ad-hoc signed, not Developer ID: there is no Apple account behind this
+  # repo. Apple Silicon refuses to run unsigned code at all, and ad-hoc is
+  # enough for that; Gatekeeper still asks on first open (right-click > Open).
+  # Hardened runtime is off because it only matters for notarization, and with
+  # it on the camera and microphone would also need entitlements.
+  identity: '-'
+  hardenedRuntime: false
+  gatekeeperAssess: false
+  # Shown by macOS the first time the camera button asks for them. Screen
+  # Recording has no usage string; macOS prompts for it on the first capture.
+  extendInfo:
+    NSCameraUsageDescription: Zoia shares your camera with the channel when you turn it on.
+    NSMicrophoneUsageDescription: Zoia sends your microphone with your camera when you turn it on.
+
+dmg:
+  artifactName: '${productName}-${version}-mac-${arch}.${ext}'
 
 nsis:
   oneClick: false

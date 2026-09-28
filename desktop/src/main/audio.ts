@@ -37,9 +37,25 @@ interface LoopbackCaptureInstance {
 // process on this machine (verified: saved to a WAV file, confirmed
 // non-silent — see the runbook). Same code path, not a new guess.
 const require = createRequire(import.meta.url);
-const { LoopbackCapture: LoopbackCaptureCtor } = require('loopback-capture') as {
-  LoopbackCapture: new () => LoopbackCaptureInstance;
-};
+
+type LoopbackCaptureCtor = new () => LoopbackCaptureInstance;
+
+// Loaded on first use, not at import: loopback-capture is WASAPI and is an
+// optional dependency that npm skips entirely on macOS. Requiring it at module
+// scope took the whole main process down with it there.
+let LoopbackCaptureCtor: LoopbackCaptureCtor | null = null;
+
+function loadCtor(): LoopbackCaptureCtor {
+  if (process.platform !== 'win32') {
+    throw new Error('Application audio capture is only available on Windows.');
+  }
+  LoopbackCaptureCtor ??= (require('loopback-capture') as { LoopbackCapture: LoopbackCaptureCtor })
+    .LoopbackCapture;
+  return LoopbackCaptureCtor;
+}
+
+/** Whether a window share can carry its application's audio on this OS. */
+export const perAppAudioSupported = process.platform === 'win32';
 
 let capture: LoopbackCaptureInstance | null = null;
 
@@ -60,7 +76,8 @@ export function startCapture(
 ): void {
   stopCapture();
 
-  capture = new LoopbackCaptureCtor();
+  const Ctor = loadCtor();
+  capture = new Ctor();
   const onChunk = (chunk: Buffer) => {
     if (sink) {
       sink(chunk);

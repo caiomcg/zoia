@@ -48,7 +48,13 @@ export default function SourcePicker({
           // replacing it with an error.
           if (!cancelled) {
             setSources((current) => {
-              if (!current) setLoadError(err instanceof Error ? err.message : String(err));
+              // Electron prefixes errors thrown in main with the IPC channel
+              // name, which means nothing to the person reading it.
+              const message = (err instanceof Error ? err.message : String(err)).replace(
+                /^Error invoking remote method '[^']+': (Error: )?/,
+                '',
+              );
+              if (!current) setLoadError(message);
               return current;
             });
           }
@@ -179,9 +185,12 @@ function SourceTile({ source, onClick }: { source: SourceInfo; onClick: () => vo
       <span>{source.name}</span>
       {isGame && <em className="picker-tile-badge">{t('picker.leagueGameBadge')}</em>}
       {isClient && <em className="picker-tile-badge">{t('picker.leagueClientBadge')}</em>}
-      {source.kind === 'window' && source.processId === null && (
-        <em className="picker-tile-warn">{t('picker.audioUnavailable')}</em>
-      )}
+      {/* On macOS no window has a PID here, yet every share carries system audio. */}
+      {source.kind === 'window' &&
+        source.processId === null &&
+        window.zoia.app.platform === 'win32' && (
+          <em className="picker-tile-warn">{t('picker.audioUnavailable')}</em>
+        )}
     </button>
   );
 }

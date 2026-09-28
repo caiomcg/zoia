@@ -104,6 +104,11 @@ These each cost hours if forgotten, and all of them fail in ways that look like 
   a native hook — Discord's *desktop* client does this, but Discord in a browser has the same
   constraints we do. The escape hatch is a virtual audio cable selected as an input; see the
   runbook.
+- **macOS desktop builds send system audio, not per-app audio.** `loopback-capture` (WASAPI)
+  is an optional dependency loaded only on Windows; macOS uses ScreenCaptureKit loopback with
+  `restrictOwnAudio`, which must stay or viewers hear themselves echoed, and the WGC/NVENC addon and ffmpeg are not packaged for
+  Mac. Anything added to the broadcast path must degrade on `process.platform !== 'win32'`
+  rather than throw at import time. See [ADR 0025](docs/adr/0025-macos-client.md).
 - **LAN hairpin**: if the router won't route a LAN client to the public hostname, the host PC
   can't reach the app. Fix with a local DNS override, not with code.
 - **No browser client**: the web address serves a static page linking to the repository.
@@ -120,3 +125,5 @@ These each cost hours if forgotten, and all of them fail in ways that look like 
   browser code — it is small enough to read.
 - Tests use `node:test` + `supertest`. No test framework dependency.
 - Decisions that a future reader would otherwise re-litigate go in `docs/adr/`.
+- Every release needs `changelog/<version>.md`, written for the people using the app; the
+  release workflow refuses a tag without it. See `changelog/README.md`.

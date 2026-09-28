@@ -69,7 +69,11 @@ export function showWindow(window: BrowserWindow | null): void {
 }
 
 export function installTray(getWindow: () => BrowserWindow | null, iconPath: string): void {
-  tray = new Tray(nativeImage.createFromPath(iconPath));
+  let icon = nativeImage.createFromPath(iconPath);
+  // The macOS menu bar is ~22pt tall and draws the image at its point size, so
+  // the 32px icon sized for the Windows tray would overflow it.
+  if (process.platform === 'darwin') icon = icon.resize({ height: 18 });
+  tray = new Tray(icon);
   tray.setToolTip('Zoia');
   tray.on('click', () => showWindow(getWindow()));
 

@@ -27,9 +27,19 @@ import {
   isLeagueSource,
   resolveLeagueTarget,
 } from '../../shared/league';
-import { createCaptureAudioTrack, type CaptureTrackHandle } from '../audio/capture-track';
+import {
+  createCaptureAudioTrack,
+  wrapAudioTrack,
+  type CaptureTrackHandle,
+} from '../audio/capture-track';
 import { WATCHING_ATTRIBUTE, isWatching, watchingValue } from './watching';
 import { tNow } from '../i18n';
+
+/**
+ * macOS shares differently: audio from ScreenCaptureKit's loopback and a
+ * single, hardware-encoded video layer. See startBroadcast.
+ */
+const isMac = window.zoia.app.platform === 'darwin';
 
 /**
  * The identity suffix a hardware-encoded broadcast publishes under. Must match
@@ -868,6 +878,10 @@ export function useRoom() {
         }
       }
 
+      // The macOS loopback track, from getDisplayMedia until the audio step
+      // takes it. Held out here so a video failure in between stops it rather
+      // than leaving the system audio capture running.
+      let pendingSystemAudio: MediaStreamTrack | null = null;
       try {
         await window.zoia.sources.select({
           id: source.id,
@@ -889,7 +903,24 @@ export function useRoom() {
             height: { ideal: quality.height },
             frameRate: { ideal: quality.maxFramerate },
           },
+          // macOS has no per-application capture to lean on, so audio comes
+          // with the display stream: ScreenCaptureKit's system loopback,
+          // requested by the main-process handler. Measured on macOS 26:
+          // without these it arrives mono, with echo cancellation, noise
+          // suppression and AGC all on — wrong for music or a game — and it
+          // includes Zoia's own playback, so viewers would hear each other
+          // come back. restrictOwnAudio removes that (peak 0.80 -> 0.00).
+          ...(isMac && {
+            audio: {
+              channelCount: 2,
+              echoCancellation: false,
+              noiseSuppression: false,
+              autoGainControl: false,
+              restrictOwnAudio: true,
+            } as MediaTrackConstraints,
+          }),
         });
+        pendingSystemAudio = stream.getAudioTracks()[0] ?? null;
         const [mediaTrack] = stream.getVideoTracks();
         if (!mediaTrack) throw new Error(tNow('room.noVideoTrack'));
 
@@ -917,10 +948,16 @@ export function useRoom() {
           maxBitrate: quality.maxBitrate,
           maxFramerate: quality.maxFramerate,
         };
+        // No simulcast on macOS. Measured there (Electron 44, M1): a single
+        // H.264 layer is encoded by VideoToolbox, but the moment a second
+        // layer is added Chromium moves *both* to OpenH264 in software, which
+        // showed up as skipped frames and 25–50fps against a 58fps target.
+        // Viewers lose the 360p layer and always get the full one.
+        const simulcast = !isMac;
         await room.localParticipant.publishTrack(track, {
           source: Track.Source.ScreenShare,
-          simulcast: true,
-          screenShareSimulcastLayers: LOW_LAYER,
+          simulcast,
+          ...(simulcast && { screenShareSimulcastLayers: LOW_LAYER }),
           degradationPreference: 'maintain-resolution',
           videoEncoding: encoding,
           screenShareEncoding: encoding,
@@ -999,7 +1036,15 @@ export function useRoom() {
         // take down the video that is already live and working.
         // Screens are shared silently here too, for the same reason: the only
         // audio available for a whole screen is the whole system's.
-        if (source.kind !== 'window' || source.processId === null) {
+        // On macOS a window's audio cannot be isolated, so screens and windows
+        // alike carry the system's, minus Zoia's own.
+        const systemAudio = pendingSystemAudio;
+        pendingSystemAudio = null;
+        if (isMac && !systemAudio) {
+          setAudioWarning(tNow('room.macNoAudio'));
+          return true;
+        }
+        if (!isMac && (source.kind !== 'window' || source.processId === null)) {
           setAudioWarning(
             source.kind === 'window' ? tNow('room.windowNoAudio') : tNow('room.screenNoAudio'),
           );
@@ -1007,7 +1052,9 @@ export function useRoom() {
         }
 
         try {
-          const capture = await createCaptureAudioTrack(source.processId);
+          const capture = systemAudio
+            ? await wrapAudioTrack(systemAudio)
+            : await createCaptureAudioTrack(source.processId);
           const audioTrack = new LocalAudioTrack(capture.track, undefined, false);
           audioTrack.source = Track.Source.ScreenShareAudio;
 
@@ -1024,7 +1071,11 @@ export function useRoom() {
             setAudioLevel(stats.peak);
             setAudioLatencyMs(stats.latencyMs);
           });
+          // Said every time, because it is the surprising part: a notification
+          // or another app's sound goes out too.
+          if (systemAudio) setAudioWarning(tNow('room.macSystemAudio'));
         } catch (audioErr) {
+          systemAudio?.stop();
           setAudioWarning(
             tNow('room.audioFailed', {
               error: audioErr instanceof Error ? audioErr.message : String(audioErr),
@@ -1034,6 +1085,7 @@ export function useRoom() {
 
         return true;
       } catch (err) {
+        pendingSystemAudio?.stop();
         if (!keepStage) await window.zoia.stage.release().catch(() => {});
         setBroadcastState('idle');
         setBroadcastError(err instanceof Error ? err.message : String(err));

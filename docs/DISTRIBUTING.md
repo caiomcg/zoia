@@ -117,6 +117,8 @@ Tag a version and CI does the rest:
 ```bash
 npm version 0.2.0 --no-git-tag-version
 npm version 0.2.0 --no-git-tag-version --prefix desktop
+$EDITOR changelog/0.2.0.md    # required: the release notes
+git add changelog/0.2.0.md
 git commit -am "chore: release 0.2.0"
 git tag v0.2.0
 git push --follow-tags
@@ -125,6 +127,19 @@ git push --follow-tags
 `.github/workflows/release.yml` then builds on a Windows runner — the native capture addon
 and the Windows installer — and attaches it to a GitHub Release with a
 `SHA256SUMS.txt`.
+
+Every release needs a changelog entry, `changelog/<version>.md`, committed before tagging;
+the release workflow refuses a tag without one before it builds anything. See
+[changelog/README.md](../changelog/README.md) for how to write it. The entry becomes the
+body of the GitHub release, and the desktop app shows the same text after an update and from
+Settings → About. [`scripts/release-notes.js`](../scripts/release-notes.js) wraps it with the
+parts that must match the updater: whether the release installs in-app (and from which
+version) or needs the installer, and a link to the full comparison. Preview the result before
+pushing the tag:
+
+```bash
+node scripts/release-notes.js v0.2.0   # after tagging locally, before pushing the tag
+```
 
 **The tag must match both `package.json` files.** electron-builder names its artifacts from
 `desktop/package.json`, not from the tag, so a mismatch would publish `Zoia-Setup-0.1.0-x64.exe`
