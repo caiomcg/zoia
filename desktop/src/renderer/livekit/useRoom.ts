@@ -32,11 +32,14 @@ import {
   wrapAudioTrack,
   type CaptureTrackHandle,
 } from '../audio/capture-track';
-
-/** macOS takes its share audio from ScreenCaptureKit's loopback; see startBroadcast. */
-const macLoopback = window.zoia.app.platform === 'darwin';
 import { WATCHING_ATTRIBUTE, isWatching, watchingValue } from './watching';
 import { tNow } from '../i18n';
+
+/**
+ * macOS shares differently: audio from ScreenCaptureKit's loopback and a
+ * single, hardware-encoded video layer. See startBroadcast.
+ */
+const isMac = window.zoia.app.platform === 'darwin';
 
 /**
  * The identity suffix a hardware-encoded broadcast publishes under. Must match
@@ -907,7 +910,7 @@ export function useRoom() {
           // suppression and AGC all on — wrong for music or a game — and it
           // includes Zoia's own playback, so viewers would hear each other
           // come back. restrictOwnAudio removes that (peak 0.80 -> 0.00).
-          ...(macLoopback && {
+          ...(isMac && {
             audio: {
               channelCount: 2,
               echoCancellation: false,
@@ -945,10 +948,16 @@ export function useRoom() {
           maxBitrate: quality.maxBitrate,
           maxFramerate: quality.maxFramerate,
         };
+        // No simulcast on macOS. Measured there (Electron 44, M1): a single
+        // H.264 layer is encoded by VideoToolbox, but the moment a second
+        // layer is added Chromium moves *both* to OpenH264 in software, which
+        // showed up as skipped frames and 25–50fps against a 58fps target.
+        // Viewers lose the 360p layer and always get the full one.
+        const simulcast = !isMac;
         await room.localParticipant.publishTrack(track, {
           source: Track.Source.ScreenShare,
-          simulcast: true,
-          screenShareSimulcastLayers: LOW_LAYER,
+          simulcast,
+          ...(simulcast && { screenShareSimulcastLayers: LOW_LAYER }),
           degradationPreference: 'maintain-resolution',
           videoEncoding: encoding,
           screenShareEncoding: encoding,
@@ -1031,11 +1040,11 @@ export function useRoom() {
         // alike carry the system's, minus Zoia's own.
         const systemAudio = pendingSystemAudio;
         pendingSystemAudio = null;
-        if (macLoopback && !systemAudio) {
+        if (isMac && !systemAudio) {
           setAudioWarning(tNow('room.macNoAudio'));
           return true;
         }
-        if (!macLoopback && (source.kind !== 'window' || source.processId === null)) {
+        if (!isMac && (source.kind !== 'window' || source.processId === null)) {
           setAudioWarning(
             source.kind === 'window' ? tNow('room.windowNoAudio') : tNow('room.screenNoAudio'),
           );

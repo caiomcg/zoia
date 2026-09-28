@@ -30,6 +30,12 @@ Ship a macOS build (arm64 and x64 `.dmg`) that uses only the ordinary Chromium p
 - **Video** goes through `getDisplayMedia` and LiveKit, as on Windows with hardware encoding
   off. `capture.ts` does not try to load the addon off Windows, so `hardwareEncoder` is false
   and the renderer never selects the WHIP path.
+- **One video layer, no simulcast.** Measured on an M1 with Electron 44: a single H.264
+  layer is encoded by VideoToolbox (`powerEfficientEncoder: true`), but as soon as a second
+  simulcast layer is added Chromium encodes *both* with OpenH264 in software. In a real share
+  that showed as skipped frames and 25–50 fps against a 58 fps target. A Mac screen share
+  therefore publishes only the full layer; viewers lose the 360p layer used for unfocused
+  tiles and weak connections. The camera keeps simulcast.
 - **System audio, not application audio.** `loopback-capture` is an optional dependency,
   loaded lazily and only on Windows. On macOS the display-media handler answers with
   `audio: 'loopback'` (ScreenCaptureKit), and the renderer publishes that track as the share's
