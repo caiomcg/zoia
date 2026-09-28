@@ -248,14 +248,35 @@ function encoderFor(vendor: string): string {
  * Nothing is lost by dropping it. Every viewer is this same app, and Chromium
  * decodes whatever these encoders pick by default.
  */
-function encoderTuning(encoder: string): string[] {
+function encoderTuning(encoder: string, bitrate: number, framerate: number): string[] {
   switch (encoder) {
     case 'h264_amf':
       // AMF's ultralowlatency usage preset disables periodic IDR keyframes (-g)
       // in favor of external RTCP feedback, which WHIP does not support.
       // Omitting -usage allows -g to insert periodic IDRs. -aud 0 disables AUD
       // so dump_extra can cleanly prepend SPS/PPS before every IDR keyframe.
-      return ['-quality', 'speed', '-rc', 'cbr', '-bf', '0', '-forced_idr', '1', '-aud', '0'];
+      // -vbaq 1 enables Variance-Based Adaptive Quantization to prevent
+      // macroblocking ("craquelamento") in complex game textures.
+      // -enforce_hrd 1 strictly clamps output to the HRD buffer model.
+      // -max_au_size caps frame burst size to prevent overflowing UDP buffers.
+      return [
+        '-quality',
+        'speed',
+        '-rc',
+        'cbr',
+        '-bf',
+        '0',
+        '-forced_idr',
+        '1',
+        '-vbaq',
+        '1',
+        '-enforce_hrd',
+        '1',
+        '-max_au_size',
+        String(Math.floor((bitrate / framerate) * 3)),
+        '-aud',
+        '0',
+      ];
     case 'h264_qsv':
       return ['-preset', 'veryfast', '-look_ahead', '0', '-bf', '0', '-forced_idr', '1'];
     case 'libx264':
@@ -384,7 +405,7 @@ function buildArgs(options: EncoderOptions): string[] {
       : [
           '-c:v',
           encoder,
-          ...encoderTuning(encoder),
+          ...encoderTuning(encoder, bitrate, framerate),
           '-b:v',
           String(bitrate),
           '-maxrate',
@@ -392,8 +413,9 @@ function buildArgs(options: EncoderOptions): string[] {
           // Constrained VBV buffer to prevent UDP bursts that cause NACK storm
           '-bufsize',
           String(Math.floor(bitrate / 4)),
+          // 1.0-second GOP ensures fast recovery from packet drops
           '-g',
-          String(Math.round(framerate * 1.5)),
+          String(Math.round(framerate)),
           '-bsf:v',
           'dump_extra=freq=keyframe',
         ]),
@@ -429,7 +451,7 @@ function buildArgs(options: EncoderOptions): string[] {
     // Without a generous buffer the muxer fails sends with EAGAIN (-11) as
     // soon as bitrate rises.
     '-ts_buffer_size',
-    '16000000',
+    '32000000',
     // The SFU authenticates a WHIP publisher like any other participant: with
     // a LiveKit token, sent as `Authorization: Bearer`. ffmpeg adds the
     // "Bearer " itself. Verified end to end against the real SFU before this
