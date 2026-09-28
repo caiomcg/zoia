@@ -229,8 +229,8 @@ docker compose exec app node server/bin/keytool.js \
   pair:new --name "friends" --max-activations 5
 ```
 
-Printed once, and not recoverable. `--max-activations` caps how many machines it can ever
-enrol, which bounds the damage if it gets passed around. `--expires-in-days 30` works too.
+Printed once, and not recoverable. `--max-activations` caps how many live machines it can
+have enrolled at once (revoking a device frees its seat), which bounds the damage if it gets passed around. `--expires-in-days 30` works too.
 
 Then build an `.exe` carrying it: [DISTRIBUTING.md](DISTRIBUTING.md).
 

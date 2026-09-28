@@ -45,7 +45,8 @@ This yields two independent kill switches:
 - **Revoke one device.** A single machine loses access and nobody else notices.
 
 `--max-activations` caps how many machines a token can ever enrol, which bounds the blast
-radius before anyone notices a leak.
+radius before anyone notices a leak. ([ADR 0024](0024-activation-cap-counts-seats.md) changes
+this to live machines, so revoking one frees its seat.)
 
 ## Why revocation is re-checked on every request
 

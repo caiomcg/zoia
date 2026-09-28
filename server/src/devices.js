@@ -6,7 +6,7 @@
  * and nobody else — the finer of the two kill switches.
  */
 
-import { createCredentialStore } from './store.js';
+import { createCredentialStore, isActive } from './store.js';
 
 const PREFIX = 'zdev';
 
@@ -40,6 +40,12 @@ export function createDeviceStore({ file, logger = console }) {
       });
       if (renamed) logger.info(`[device] ${id} renamed to "${name}"`);
       return renamed;
+    },
+
+    /** Live devices a pairing token issued: the seats it has in use. */
+    async countActiveByPairing(pairingId) {
+      const records = await store.all();
+      return records.filter((r) => r.pairingId === pairingId && isActive(r)).length;
     },
 
     /** Revokes every device issued by a pairing token. */

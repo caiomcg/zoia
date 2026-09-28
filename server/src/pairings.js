@@ -29,16 +29,24 @@ export function createPairingStore({ file, logger = console }) {
      * Verifies a token and consumes one activation. Returns the record, or a
      * reason: an exhausted token is a different problem from a wrong one, and
      * saying which saves a support round trip.
+     *
+     * The cap is on seats, not on lifetime use: `seatsInUse(pairingId)` counts
+     * the live devices this token issued, so revoking a stale machine frees
+     * its seat. `activations` stays a lifetime tally for `pair:list`. Two
+     * pairs landing in the same instant can both see the last free seat; at
+     * this scale, and behind the pairing rate limit, that is one extra device
+     * rather than a hole.
      */
-    async claimActivation(rawToken) {
+    async claimActivation(rawToken, { seatsInUse } = {}) {
       const record = await store.verify(rawToken);
       if (!record) return { ok: false, reason: 'invalid' };
 
-      const result = await store.mutate((records) => {
+      const result = await store.mutate(async (records) => {
         const live = records.find((r) => r.id === record.id);
         if (!live) return { ok: false, reason: 'invalid' };
-        if (live.maxActivations !== null && live.activations >= live.maxActivations) {
-          return { ok: false, reason: 'exhausted' };
+        if (live.maxActivations !== null) {
+          const used = seatsInUse ? await seatsInUse(live.id) : live.activations;
+          if (used >= live.maxActivations) return { ok: false, reason: 'exhausted' };
         }
         live.activations += 1;
         live.lastSeen = new Date().toISOString();

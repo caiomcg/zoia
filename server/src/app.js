@@ -260,7 +260,9 @@ export function createApp({
       const deviceName = String(req.body?.deviceName ?? '').trim();
       if (!deviceName) return res.status(400).json({ error: 'device_name_required' });
 
-      const claim = await pairingStore.claimActivation(req.body?.pairingToken ?? '');
+      const claim = await pairingStore.claimActivation(req.body?.pairingToken ?? '', {
+        seatsInUse: (pairingId) => deviceStore.countActiveByPairing(pairingId),
+      });
       if (!claim.ok) {
         // Never log the token itself, only where the attempt came from.
         logger.warn(`[pair] rejected (${claim.reason}) from ${req.ip}`);
