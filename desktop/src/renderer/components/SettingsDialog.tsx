@@ -4,13 +4,24 @@ import Avatar from './Avatar';
 import { tNow, useT } from '../i18n';
 import LanguagePicker from './LanguagePicker';
 import type { MessageKey } from '../../shared/i18n';
+import {
+  CUE_EVENTS,
+  CUE_STYLES,
+  DEFAULT_SOUND_SETTINGS,
+  PITCH_RANGE,
+  type CueEvent,
+  type CueSettings,
+} from '../sounds/cues';
+import { setSoundSettings, useSoundSettings } from '../sounds/settings';
+import { playCue } from '../sounds/synth';
 
-type Section = 'profile' | 'broadcast' | 'general' | 'updates' | 'about';
+type Section = 'profile' | 'broadcast' | 'general' | 'sounds' | 'updates' | 'about';
 
 const SECTIONS: { id: Section; label: MessageKey }[] = [
   { id: 'profile', label: 'settings.nav.profile' },
   { id: 'broadcast', label: 'settings.nav.broadcast' },
   { id: 'general', label: 'settings.nav.general' },
+  { id: 'sounds', label: 'settings.nav.sounds' },
   { id: 'updates', label: 'settings.nav.updates' },
   { id: 'about', label: 'settings.nav.about' },
 ];
@@ -88,6 +99,7 @@ export default function SettingsDialog({
               />
             )}
             {section === 'general' && <GeneralSection />}
+            {section === 'sounds' && <SoundsSection />}
             {section === 'updates' && <UpdatesSection />}
             {section === 'about' && <AboutSection />}
           </div>
@@ -281,6 +293,119 @@ function GeneralSection() {
       <div className="settings-field">
         <span>{t('general.language')}</span>
         <LanguagePicker />
+      </div>
+    </>
+  );
+}
+
+const CUE_LABELS: Record<CueEvent, MessageKey> = {
+  join: 'sounds.event.join',
+  leave: 'sounds.event.leave',
+  streamStart: 'sounds.event.streamStart',
+  streamStop: 'sounds.event.streamStop',
+};
+
+/**
+ * Every change is heard straight away — a slider plays the cue it moved when
+ * released — so a sound is chosen by listening rather than by name.
+ */
+function SoundsSection() {
+  const t = useT();
+  const settings = useSoundSettings();
+
+  function updateCue(event: CueEvent, patch: Partial<CueSettings>, preview = true) {
+    const cue = { ...settings.cues[event], ...patch };
+    setSoundSettings({ ...settings, cues: { ...settings.cues, [event]: cue } });
+    if (preview && cue.enabled) playCue(event, cue, settings.volume);
+  }
+
+  return (
+    <>
+      <h3>{t('settings.nav.sounds')}</h3>
+      <p className="muted settings-note">{t('sounds.intro')}</p>
+
+      <label className="settings-field">
+        <span>
+          {t('sounds.volume')} · {Math.round(settings.volume * 100)}%
+        </span>
+        <input
+          className="settings-range"
+          type="range"
+          min={0}
+          max={100}
+          value={Math.round(settings.volume * 100)}
+          onChange={(event) =>
+            setSoundSettings({ ...settings, volume: Number(event.target.value) / 100 })
+          }
+          onPointerUp={() => playCue('join', settings.cues.join, settings.volume)}
+        />
+      </label>
+
+      {CUE_EVENTS.map((event) => {
+        const cue = settings.cues[event];
+        return (
+          <div key={event} className={`sound-cue ${cue.enabled ? '' : 'off'}`}>
+            <div className="sound-cue-head">
+              <label className="settings-check">
+                <input
+                  type="checkbox"
+                  checked={cue.enabled}
+                  onChange={(change) => updateCue(event, { enabled: change.target.checked })}
+                />
+                {t(CUE_LABELS[event])}
+              </label>
+              <button
+                type="button"
+                className="sound-preview"
+                onClick={() => playCue(event, cue, settings.volume)}
+                disabled={settings.volume === 0}
+              >
+                ▶ {t('sounds.preview')}
+              </button>
+            </div>
+            <div className="sound-cue-controls">
+              <div className="sound-styles" role="radiogroup" aria-label={t('sounds.style')}>
+                {CUE_STYLES.map((style) => (
+                  <button
+                    key={style}
+                    type="button"
+                    role="radio"
+                    aria-checked={cue.style === style}
+                    className={cue.style === style ? 'active' : undefined}
+                    disabled={!cue.enabled}
+                    onClick={() => updateCue(event, { style })}
+                  >
+                    {t(`sounds.style.${style}`)}
+                  </button>
+                ))}
+              </div>
+              <label className="sound-pitch">
+                <span>
+                  {t('sounds.pitch')} {cue.pitch > 0 ? `+${cue.pitch}` : cue.pitch}
+                </span>
+                <input
+                  className="settings-range"
+                  type="range"
+                  min={-PITCH_RANGE}
+                  max={PITCH_RANGE}
+                  step={1}
+                  value={cue.pitch}
+                  disabled={!cue.enabled}
+                  onChange={(change) =>
+                    updateCue(event, { pitch: Number(change.target.value) }, false)
+                  }
+                  onPointerUp={() => playCue(event, cue, settings.volume)}
+                />
+              </label>
+            </div>
+          </div>
+        );
+      })}
+
+      <div className="settings-actions">
+        <button type="button" onClick={() => setSoundSettings(DEFAULT_SOUND_SETTINGS)}>
+          {t('updates.restoreDefaults')}
+        </button>
       </div>
     </>
   );
