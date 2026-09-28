@@ -593,6 +593,7 @@ export function setOnExit(handler: (() => void) | null): void {
 export async function start(win: BrowserWindow, options: EncoderOptions): Promise<void> {
   await stop();
   lastError = null;
+  lastFps = 0;
   frameCount = 0;
   captureWidth = options.frames?.width ?? 0;
   captureHeight = options.frames?.height ?? 0;
@@ -829,6 +830,8 @@ export function writeFrame(frame: Buffer): void {
 
 export async function stop(): Promise<void> {
   isPassthrough = false;
+  lastFps = 0;
+  frameCount = 0;
   if (watchdog) clearInterval(watchdog);
   watchdog = null;
   if (keepAlive) clearInterval(keepAlive);
