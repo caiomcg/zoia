@@ -189,6 +189,11 @@ jobs:
     permissions:
       contents: write
     steps:
+      # Only for the history: the notes are written from the commits since the
+      # previous tag. Nothing is installed; the script is plain Node.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - uses: actions/download-artifact@v4
         with:
           name: zoia-windows
@@ -199,6 +204,11 @@ jobs:
         with:
           name: zoia-ota
           path: dist
+      # Grouped from the Conventional Commits rather than GitHub's list of
+      # merged PRs, which is empty for commits pushed straight to main. The app
+      # shows the same notes in Settings -> What's new.
+      - name: Write the release notes
+        run: node scripts/release-notes.js "${{ github.ref_name }}" > release-notes.md
       # --verify-tag refuses to invent a tag that does not exist, so a typo
       # fails instead of publishing under a name nobody tagged. Re-running a
       # tag fails too, which is correct: deleting the old release is a
@@ -211,4 +221,4 @@ jobs:
             --repo "${{ github.repository }}" \
             --title "Zoia ${{ github.ref_name }}" \
             --verify-tag \
-            --generate-notes
+            --notes-file release-notes.md

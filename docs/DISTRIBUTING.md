@@ -126,6 +126,17 @@ git push --follow-tags
 and the Windows installer — and attaches it to a GitHub Release with a
 `SHA256SUMS.txt`.
 
+The release notes are written by [`scripts/release-notes.js`](../scripts/release-notes.js) from
+the Conventional Commits since the previous tag: grouped into New, Fixed, Faster and Under the
+hood, with `chore` commits left out, and opened by whether the release installs in-app (and
+from which version) or needs the installer. Commit subjects are therefore user-facing; write
+them for the people running the app. The desktop app shows the same notes under
+Settings → What's new, read live from the GitHub Releases API. Preview them before tagging:
+
+```bash
+node scripts/release-notes.js v0.2.0   # after tagging locally, before pushing the tag
+```
+
 **The tag must match both `package.json` files.** electron-builder names its artifacts from
 `desktop/package.json`, not from the tag, so a mismatch would publish `Zoia-Setup-0.1.0-x64.exe`
 under a release called v0.2.0. The workflow refuses before building anything. Check it
