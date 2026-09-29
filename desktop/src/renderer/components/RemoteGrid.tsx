@@ -1354,8 +1354,9 @@ export default function RemoteGrid({
     );
 
   // A small movement is a click (watch, tuck the strip away, mute). Past the
-  // threshold the strip follows the pointer and, on release, docks to the
-  // nearest edge. Capture starts only then, so a click still lands on its button.
+  // threshold the strip follows the pointer and turns for whichever edge it is
+  // nearest; releasing parks it there. Capture starts only then, so a click
+  // still lands on its button.
   function onDockPointerDown(event: ReactPointerEvent<HTMLDivElement>) {
     if (event.button !== 0 || dragSession.current) return;
     const target = event.target;
@@ -1433,13 +1434,16 @@ export default function RemoteGrid({
   const stripOpen = fullscreen.isFullscreen
     ? stripShown && stripCount > 0
     : pipShown && pipIds.length > 0;
+  // While the strip is in hand it already wears the edge under the pointer, so
+  // the frames turn as soon as that edge changes. Releasing only parks it there.
+  const dockEdge = drag?.edge ?? edge;
 
   return (
     <section className="broadcast-layout">
       {hoverPreview}
       {snapshotTakers}
       <div
-        className={`stage-area dock-${edge}${drag ? ' is-docking' : ''}${fullscreen.idle ? ' idle' : ''}`}
+        className={`stage-area dock-${dockEdge}${drag ? ' is-docking' : ''}${fullscreen.idle ? ' idle' : ''}`}
         data-dock-target={drag?.edge}
         ref={areaRef}
       >
