@@ -66,13 +66,20 @@ describe('pair:new --invite', () => {
     assert.equal(invite.serverUrl, 'http://localhost:3000');
   });
 
-  test('the file is not world-readable — it is the invitation', async () => {
-    const path = join(dir, 'invite.json');
-    await keytool(['pair:new', '--name', 'friends', '--invite', path]);
+  // Windows has no POSIX modes: stat reports 0666 whatever was asked for.
+  test(
+    'the file is not world-readable — it is the invitation',
+    {
+      skip: process.platform === 'win32' && 'Windows has no POSIX file modes',
+    },
+    async () => {
+      const path = join(dir, 'invite.json');
+      await keytool(['pair:new', '--name', 'friends', '--invite', path]);
 
-    const mode = (await stat(path)).mode & 0o777;
-    assert.equal(mode, 0o600, `expected 0600, got ${mode.toString(8)}`);
-  });
+      const mode = (await stat(path)).mode & 0o777;
+      assert.equal(mode, 0o600, `expected 0600, got ${mode.toString(8)}`);
+    },
+  );
 
   test('the raw token is not also printed to the terminal', async () => {
     const path = join(dir, 'invite.json');

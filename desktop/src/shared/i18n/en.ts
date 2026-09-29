@@ -141,6 +141,7 @@ export const en = {
   'grid.splitTitle': 'Drag to resize · double-click to split evenly',
   'grid.showStrip': 'Show broadcasts',
   'grid.hideStrip': 'Hide broadcasts',
+  'grid.moveStrip': 'Drag to another edge',
   'grid.yourBroadcast': 'Your broadcast',
 
   // ---- room and broadcast messages

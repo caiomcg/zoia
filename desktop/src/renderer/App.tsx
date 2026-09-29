@@ -677,9 +677,10 @@ export default function App() {
               local={
                 isLive
                   ? {
-                      renderStage: (fullscreen) => (
+                      renderStage: ({ active, toggle, onClose }) => (
                         <Player
-                          fullscreen={fullscreen}
+                          fullscreen={{ active, toggle }}
+                          onClose={onClose}
                           name={status.deviceName ?? t('common.you')}
                           identity={myIdentity}
                           showPreview={showPreview}

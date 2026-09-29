@@ -1,8 +1,11 @@
 import {
   useEffect,
   useImperativeHandle,
+  useLayoutEffect,
   useRef,
   useState,
+  type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
   type ReactNode,
   type Ref,
   type RefObject,
@@ -13,15 +16,24 @@ import type { RemoteScreen } from '../livekit/useRoom';
 import Avatar from './Avatar';
 import { IconEye, IconFullscreen, IconVolume } from './Player';
 import { useT, type T } from '../i18n';
+import {
+  DOCK_DRAG_THRESHOLD_PX,
+  STRIP_EDGES,
+  dockDragPosition,
+  stripEdgeAt,
+  type StripEdge,
+} from '../strip-dock';
 import type { MessageKey } from '../../shared/i18n';
+import { clampPairSplit, pairSplitLimits } from '../pair-split';
 
 /**
  * Every broadcast in the room, laid out one of two ways:
  *
- * - spotlight: one large, the rest of what is watched as small windows at the
- *   bottom, which the arrow tucks away; clicking one swaps it with the large;
- * - mosaic: all of them large. Two sit side by side with a draggable split;
- *   more form a grid.
+ * - spotlight: one large, the rest of what is watched as small windows along
+ *   one edge, which the arrow tucks away; clicking one swaps it with the large.
+ *   The strip starts along the bottom and a drag snaps it to another edge;
+ * - mosaic: all of them large. Two sit side by side with a draggable split
+ *   that stops once a tile is too narrow for its controls; more form a grid.
  *
  * Both show the same thing, what the viewer chose to watch; switching layout
  * only changes how. Nothing opens by itself: someone joining sees a dark
@@ -34,8 +46,9 @@ import type { MessageKey } from '../../shared/i18n';
  * mosaic anything there covered the corners and controls of the tiles.
  *
  * Fullscreen hides the channel list, so there the others are in a thumbnail
- * strip over the picture instead; clicking one swaps it in. Leaving fullscreen
- * lands back in whichever layout was chosen. After a few still seconds the
+ * strip over the picture, on that same edge, instead; clicking one swaps it in.
+ * Leaving fullscreen lands back in whichever layout was chosen. After a few
+ * still seconds the
  * overlays and the cursor fade. Large tiles ask for the high simulcast layer,
  * thumbnails for the low one (see setRemoteFocus).
  *
@@ -75,6 +88,7 @@ const PREVIEW_HEIGHT = 180;
 
 const LAYOUT_KEY = 'zoia.layout';
 const STRIP_HIDDEN_KEY = 'zoia.thumbnailsHidden';
+const STRIP_EDGE_KEY = 'zoia.stripEdge';
 /**
  * Thumbnails are snapshots, not video: a blurred live picture still cost a
  * download and a decode per broadcast. The server stops forwarding a
@@ -96,13 +110,13 @@ const MOSAIC_HIGH_LIMIT = 4;
 const FULLSCREEN_IDLE_MS = 5000;
 const SPLIT_KEY = 'zoia.pairSplit';
 const AUDIO_KEY = 'zoia.remoteAudio';
-const SPLIT_MIN = 0.2;
-const SPLIT_MAX = 0.8;
 
 function readSplit(): number {
   try {
     const value = Number(localStorage.getItem(SPLIT_KEY));
-    return value >= SPLIT_MIN && value <= SPLIT_MAX ? value : 0.5;
+    // The real floor depends on the row width (see clampPairSplit), so a
+    // stored fraction is kept and pulled back once the row is measured.
+    return value > 0 && value < 1 ? value : 0.5;
   } catch {
     return 0.5;
   }
@@ -322,8 +336,8 @@ function RemoteTile({
       <div className="remote-tile-footer">
         <span className="remote-tile-who">
           <Avatar name={screen.participantName} identity={screen.participantIdentity} live />
-          <span>
-            {screen.participantName}
+          <span className="remote-tile-label">
+            <span className="remote-tile-name">{screen.participantName}</span>
             <small className="stream-source">
               {sourceText(t, screen.sourceName, screen.sourceKind)}
             </small>
@@ -539,8 +553,8 @@ function Thumbnail({
   /** Your own thumbnail: its eye shows or hides your preview instead. */
   preview?: { on: boolean; onToggle: () => void };
   /**
-   * Someone else's, in the spotlight: the eye watches it as a small window at
-   * the bottom, or closes that window. Clicking the tile puts it large.
+   * Someone else's, in the spotlight: the eye watches it as a small window on
+   * the strip, or closes that window. Clicking the tile puts it large.
    */
   peeking?: boolean;
   onTogglePeek?: () => void;
@@ -673,7 +687,12 @@ export default function RemoteGrid({
   screens: RemoteScreen[];
   /** Present while this device is broadcasting. */
   local?: {
-    renderStage: (fullscreen: { active: boolean; toggle: () => void }) => ReactNode;
+    renderStage: (stage: {
+      active: boolean;
+      toggle: () => void;
+      /** Leave the large view. The player hides it while fullscreen. */
+      onClose: () => void;
+    }) => ReactNode;
     track: LocalVideoTrack | null;
     name: string;
     /** Yours, for your profile picture on your own thumbnail. */
@@ -704,16 +723,73 @@ export default function RemoteGrid({
   );
   // What the viewer chose to watch, the same in both layouts, which only show
   // it differently: the mosaic as tiles, the spotlight with the first large and
-  // the rest as small windows at the bottom. Watched means heard, too.
+  // the rest as small windows along one edge. Watched means heard, too.
   const [pinned, setPinned] = useState<string[]>([]);
   const [audio, setAudio] = useState<Record<string, AudioSetting>>(readAudioSettings);
   const [stripHidden, setStripHidden] = useState(
     () => readStored(STRIP_HIDDEN_KEY, ['true', 'false'], 'false') === 'true',
   );
+  // Which edge the strip is attached to. Remembered, like the layout.
+  const [edge, setEdge] = useState<StripEdge>(() =>
+    readStored(STRIP_EDGE_KEY, STRIP_EDGES, 'bottom'),
+  );
+  // Set for the gesture only. `edge` is where it rests; this is the pointer
+  // and the edge it would dock to if released now.
+  const [drag, setDrag] = useState<{ x: number; y: number; edge: StripEdge } | null>(null);
   const [split, setSplit] = useState(readSplit);
+  // Measured width of the side-by-side row, so the divider's limits (and its
+  // aria values) follow the window rather than a fixed fraction.
+  const [pairWidth, setPairWidth] = useState(0);
   const mainsRef = useRef<HTMLDivElement>(null);
   const draggingRef = useRef(false);
   const areaRef = useRef<HTMLDivElement>(null);
+  const dockRef = useRef<HTMLDivElement>(null);
+  const dragSession = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    moved: boolean;
+  } | null>(null);
+  const dockListeners = useRef<{
+    move: (event: PointerEvent) => void;
+    end: (event: PointerEvent) => void;
+  } | null>(null);
+  // A drag past the threshold still ends over a button. Swallow that click.
+  const suppressClick = useRef(false);
+
+  // The resting place is CSS on the edge. While dragging, the same element is
+  // pulled off that edge and centred on the pointer. Cleared before paint when
+  // the gesture ends, so it never rests between edges.
+  useLayoutEffect(() => {
+    const el = dockRef.current;
+    if (!el) return;
+    if (!drag) {
+      el.style.left = '';
+      el.style.top = '';
+      return;
+    }
+    const area = areaRef.current;
+    if (!area) return;
+    const rect = area.getBoundingClientRect();
+    const next = dockDragPosition(
+      drag.x,
+      drag.y,
+      { left: rect.left, top: rect.top, width: rect.width, height: rect.height },
+      { width: el.offsetWidth, height: el.offsetHeight },
+    );
+    el.style.left = `${next.left}px`;
+    el.style.top = `${next.top}px`;
+  }, [drag]);
+
+  useEffect(() => {
+    return () => {
+      const listeners = dockListeners.current;
+      if (!listeners) return;
+      window.removeEventListener('pointermove', listeners.move);
+      window.removeEventListener('pointerup', listeners.end);
+      window.removeEventListener('pointercancel', listeners.end);
+    };
+  }, []);
   const fullscreen = useFullscreen(areaRef);
   // In fullscreen the strip holds every broadcast, since the channel list is
   // hidden. In the spotlight it holds the small windows: the rest of what is
@@ -744,6 +820,24 @@ export default function RemoteGrid({
   if (fullId) mains = [fullId];
   else if (mode === 'mosaic') mains = livePinned;
   else mains = spotlightId ? [spotlightId] : [];
+  const paired = !fullId && mode === 'mosaic' && mains.length === 2;
+
+  // A stored or dragged fraction can leave a tile narrower than its footer
+  // once the window shrinks. Pull it back whenever the row's width changes.
+  useLayoutEffect(() => {
+    const el = mainsRef.current;
+    if (!paired || !el) return;
+    const apply = () => {
+      const width = el.getBoundingClientRect().width;
+      setPairWidth(width);
+      setSplit((current) => clampPairSplit(current, width));
+    };
+    apply();
+    const observer = new ResizeObserver(apply);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [paired]);
+
   const remoteMains = mains.filter((id) => id !== LOCAL_SPOTLIGHT);
   // The spotlight's small windows: everything watched but the large one.
   const pipIds = pipStrip ? livePinned.slice(1) : [];
@@ -847,7 +941,7 @@ export default function RemoteGrid({
     const rect = mainsRef.current?.getBoundingClientRect();
     if (!rect || rect.width === 0) return;
     const ratio = (clientX - rect.left) / rect.width;
-    setSplit(Math.min(SPLIT_MAX, Math.max(SPLIT_MIN, ratio)));
+    setSplit(clampPairSplit(ratio, rect.width));
   }
 
   function chooseLayout(next: LayoutMode) {
@@ -864,7 +958,7 @@ export default function RemoteGrid({
 
   // Watching the same in both layouts: it joins what is watched, and in the
   // spotlight goes large, so what was large becomes a small window. Clicking a
-  // small window is therefore a swap.
+  // small window, the channel list, or its hover thumbnail is therefore a swap.
   function watch(id: string) {
     keepHover();
     setHovered(null);
@@ -872,23 +966,6 @@ export default function RemoteGrid({
     else if (mode === 'mosaic')
       setPinned((current) => (current.includes(id) ? current : [...current, id]));
     else setPinned((current) => [id, ...current.filter((other) => other !== id)]);
-    ensureAudible(id);
-  }
-
-  // Picked from the channel list or its hover thumbnail. In the spotlight it
-  // replaces what is large, which stops being watched; the eye is the way to
-  // keep both. Elsewhere it is the same as watching.
-  function pick(id: string) {
-    if (fullId || mode === 'mosaic') {
-      watch(id);
-      return;
-    }
-    keepHover();
-    setHovered(null);
-    setPinned((current) => {
-      const large = current.find((other) => candidates.includes(other));
-      return [id, ...current.filter((other) => other !== id && other !== large)];
-    });
     ensureAudible(id);
   }
 
@@ -948,7 +1025,7 @@ export default function RemoteGrid({
   }
 
   useImperativeHandle(controlRef, () => ({
-    watch: (target) => pick(idFor(target)),
+    watch: (target) => watch(idFor(target)),
     hover: (target, anchor) => {
       if (!target || !anchor) return releaseHover();
       keepHover();
@@ -975,8 +1052,9 @@ export default function RemoteGrid({
     return createPortal(card, document.body);
   }
 
-  // The thumbnail, and only what it is for from here: clicking it puts the
-  // broadcast on stage, and in the spotlight its eye opens a small window.
+  // The thumbnail, and only what it is for from here: clicking it watches,
+  // the same as a thumbnail on the strip, and in the spotlight its eye opens
+  // a small window without taking over the large one.
   function renderCard(id: string, anchor: DOMRect): ReactNode {
     const top = Math.min(
       Math.max(8, anchor.top + anchor.height / 2 - PREVIEW_HEIGHT / 2),
@@ -1000,7 +1078,7 @@ export default function RemoteGrid({
           identity={local.identity}
           label={t('grid.yourBroadcast')}
           liveVideo={local.track}
-          onWatch={() => pick(id)}
+          onWatch={() => watch(id)}
           onStop={local.onStop}
           preview={{ on: local.showPreview, onToggle: local.onTogglePreview }}
         />,
@@ -1027,7 +1105,7 @@ export default function RemoteGrid({
         label={sourceText(t, screen.sourceName, screen.sourceKind)}
         liveVideo={screen.videoTrack}
         snapshot={snapshots[id]?.url ?? null}
-        onWatch={() => pick(id)}
+        onWatch={() => watch(id)}
         peeking={pipIds.includes(id)}
         // The mosaic has room for another tile, so clicking is the way to see
         // it alongside; the spotlight has one, so a small window instead.
@@ -1164,19 +1242,11 @@ export default function RemoteGrid({
       // Your own broadcast can leave the large view, but not the strip.
       return (
         <div className="local-slot">
-          {local?.renderStage({ active: fullscreen.isFullscreen, toggle })}
-          {!fullscreen.isFullscreen && (
-            <button
-              className="tile-close"
-              onClick={() => stopWatching(id)}
-              title={t('grid.removeFromView')}
-              aria-label={t('grid.removeFromView')}
-            >
-              <Icon>
-                <path d="M6 6l12 12M18 6L6 18" />
-              </Icon>
-            </button>
-          )}
+          {local?.renderStage({
+            active: fullscreen.isFullscreen,
+            toggle,
+            onClose: () => stopWatching(id),
+          })}
         </div>
       );
     }
@@ -1203,8 +1273,8 @@ export default function RemoteGrid({
     );
   }
 
-  const paired = !fullId && mode === 'mosaic' && mains.length === 2;
   const [left, right] = mains;
+  const splitLimits = pairSplitLimits(pairWidth);
 
   const mainsView =
     mains.length === 0 ? (
@@ -1232,8 +1302,8 @@ export default function RemoteGrid({
           className="splitter"
           role="separator"
           aria-orientation="vertical"
-          aria-valuemin={SPLIT_MIN * 100}
-          aria-valuemax={SPLIT_MAX * 100}
+          aria-valuemin={Math.round(splitLimits.min * 100)}
+          aria-valuemax={Math.round(splitLimits.max * 100)}
           aria-valuenow={Math.round(split * 100)}
           title={t('grid.splitTitle')}
           onPointerDown={(event) => {
@@ -1267,11 +1337,100 @@ export default function RemoteGrid({
       </div>
     );
 
+  // A small movement is a click (watch, tuck the strip away, mute). Past the
+  // threshold the strip follows the pointer and turns for whichever edge it is
+  // nearest; releasing parks it there. Capture starts only then, so a click
+  // still lands on its button.
+  function onDockPointerDown(event: ReactPointerEvent<HTMLDivElement>) {
+    if (event.button !== 0 || dragSession.current) return;
+    const target = event.target;
+    if (target instanceof Element && target.closest('input, .thumb-action')) return;
+    dragSession.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      moved: false,
+    };
+    const move = (e: PointerEvent) => {
+      const session = dragSession.current;
+      if (!session || e.pointerId !== session.pointerId) return;
+      if (!session.moved) {
+        const distance = Math.hypot(e.clientX - session.startX, e.clientY - session.startY);
+        if (distance < DOCK_DRAG_THRESHOLD_PX) return;
+        session.moved = true;
+        try {
+          dockRef.current?.setPointerCapture(e.pointerId);
+        } catch {
+          // The window listeners still follow the pointer inside the window.
+        }
+      }
+      e.preventDefault();
+      const rect = areaRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      setDrag({
+        x: e.clientX,
+        y: e.clientY,
+        edge: stripEdgeAt(e.clientX - rect.left, e.clientY - rect.top, rect.width, rect.height),
+      });
+    };
+    const end = (e: PointerEvent) => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', end);
+      window.removeEventListener('pointercancel', end);
+      if (dockListeners.current?.end === end) dockListeners.current = null;
+      if (dockRef.current?.hasPointerCapture(e.pointerId)) {
+        dockRef.current.releasePointerCapture(e.pointerId);
+      }
+      const session = dragSession.current;
+      dragSession.current = null;
+      if (!session || e.pointerId !== session.pointerId || !session.moved) {
+        setDrag(null);
+        return;
+      }
+      suppressClick.current = true;
+      // The click is dispatched in this same task, before timers run. If the
+      // pointer was released off the button and no click comes, this still
+      // clears the flag so the next click is not swallowed.
+      setTimeout(() => {
+        suppressClick.current = false;
+      }, 0);
+      const rect = areaRef.current?.getBoundingClientRect();
+      const next = rect
+        ? stripEdgeAt(e.clientX - rect.left, e.clientY - rect.top, rect.width, rect.height)
+        : edge;
+      setEdge(next);
+      store(STRIP_EDGE_KEY, next);
+      setDrag(null);
+    };
+    dockListeners.current = { move, end };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', end);
+    window.addEventListener('pointercancel', end);
+  }
+
+  function onDockClickCapture(event: ReactMouseEvent) {
+    if (!suppressClick.current) return;
+    suppressClick.current = false;
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
+  const stripOpen = fullscreen.isFullscreen
+    ? stripShown && stripCount > 0
+    : pipShown && pipIds.length > 0;
+  // While the strip is in hand it already wears the edge under the pointer, so
+  // the frames turn as soon as that edge changes. Releasing only parks it there.
+  const dockEdge = drag?.edge ?? edge;
+
   return (
     <section className="broadcast-layout">
       {hoverPreview}
       {snapshotTakers}
-      <div className={`stage-area${fullscreen.idle ? ' idle' : ''}`} ref={areaRef}>
+      <div
+        className={`stage-area dock-${dockEdge}${drag ? ' is-docking' : ''}${fullscreen.idle ? ' idle' : ''}`}
+        data-dock-target={drag?.edge}
+        ref={areaRef}
+      >
         {mainsView}
 
         {heardAside.map((id) => {
@@ -1296,40 +1455,45 @@ export default function RemoteGrid({
           </div>
         )}
 
-        {/* The arrow has a spot of its own, bottom centre, and never moves:
-            it used to ride along with the strip as it lifted and collapsed. */}
+        {/* Toggle toward the edge, thumbnails inward. A drag moves both. */}
         {toggleCount > 0 && (
-          <button
-            className="thumb-toggle"
-            onClick={toggleStrip}
-            aria-expanded={!stripHidden}
-            title={stripHidden ? t('grid.showStrip') : t('grid.hideStrip')}
+          <div
+            ref={dockRef}
+            className={`thumb-dock${drag ? ' is-dragging' : ''}`}
+            onPointerDown={onDockPointerDown}
+            onClickCapture={onDockClickCapture}
           >
-            <Icon>
-              <path d={stripHidden ? 'M6 15l6-6 6 6' : 'M6 9l6 6 6-6'} />
-            </Icon>
-            {stripHidden ? `${toggleCount}` : null}
-          </button>
-        )}
-        {pipShown && pipIds.length > 0 && (
-          <div className="thumb-overlay">
-            <div className="thumb-strip">{pipIds.map((id) => renderThumb(id))}</div>
-          </div>
-        )}
-        {stripShown && stripCount > 0 && (
-          <div className="thumb-overlay">
-            <div className="thumb-strip">
-              {thumbs.map((id) => renderThumb(id))}
-              {loadingThumbs.map((broadcast) => (
-                <Thumbnail
-                  key={broadcast.identity}
-                  name={broadcast.name}
-                  identity={broadcast.identity}
-                  label={t('common.loading')}
-                  loading
-                />
-              ))}
-            </div>
+            <button
+              className="thumb-toggle"
+              onClick={toggleStrip}
+              aria-expanded={!stripHidden}
+              title={`${stripHidden ? t('grid.showStrip') : t('grid.hideStrip')} · ${t('grid.moveStrip')}`}
+            >
+              <Icon>
+                <path d={stripHidden ? 'M6 15l6-6 6 6' : 'M6 9l6 6 6-6'} />
+              </Icon>
+              {stripHidden ? `${toggleCount}` : null}
+            </button>
+            {stripOpen && (
+              <div className="thumb-strip" title={t('grid.moveStrip')}>
+                {fullscreen.isFullscreen ? (
+                  <>
+                    {thumbs.map((id) => renderThumb(id))}
+                    {loadingThumbs.map((broadcast) => (
+                      <Thumbnail
+                        key={broadcast.identity}
+                        name={broadcast.name}
+                        identity={broadcast.identity}
+                        label={t('common.loading')}
+                        loading
+                      />
+                    ))}
+                  </>
+                ) : (
+                  pipIds.map((id) => renderThumb(id))
+                )}
+              </div>
+            )}
           </div>
         )}
       </div>

@@ -338,7 +338,7 @@ button:disabled {
   object-fit: contain;
 }
 
-/* ---- broadcasts: one in the spotlight, the rest along the bottom -------- */
+/* ---- broadcasts: one in the spotlight, the rest along one edge --------- */
 
 .broadcast-layout {
   flex: 1;
@@ -354,6 +354,9 @@ button:disabled {
   flex: 1;
   min-height: 0;
   display: flex;
+  /* The strip's shadow room hangs past its own edge. Without this the page
+     grows a scrollbar the moment that room crosses the stage. */
+  overflow: hidden;
 }
 
 /* The large tiles: one (spotlight), two side by side (pair), or a mosaic. */
@@ -395,6 +398,17 @@ button:disabled {
 .mains.paired > .tile-slot {
   flex-grow: 0;
   flex-shrink: 1;
+  /* PAIR_TILE_MIN_PX and PAIR_SPLITTER_PX in pair-split.ts. Half the row when
+     the stage cannot give both tiles the full minimum. */
+  min-width: min(400px, calc((100% - 10px) / 2));
+}
+
+/* The footer controls stay on one line. The name beside them truncates
+   instead, so a long source label cannot push volume, fullscreen and close
+   onto a second row. */
+.mains.paired .remote-audio-controls {
+  flex-shrink: 0;
+  flex-wrap: nowrap;
 }
 
 .splitter {
@@ -471,10 +485,11 @@ button:disabled {
   background: var(--accent);
 }
 
-/* The strip and its arrow never move: lifting them on hover to clear the
-   footer read as jank. They sit centred, the strip high enough to clear the
-   footer, the arrow in the footer's empty middle below it. */
-.stage-area .thumb-overlay {
+/* The strip and its arrow rest on one edge. They used to lift on hover to
+   clear the footer, which read as jank, so within an edge they stay put.
+   A drag carries them to another edge; until it is released they follow the
+   pointer, and a bar shows which edge will take them. */
+.stage-area .thumb-dock {
   transition: opacity 0.2s ease;
 }
 
@@ -495,8 +510,7 @@ button:disabled {
   cursor: none !important;
 }
 
-.stage-area.idle .thumb-overlay,
-.stage-area.idle .thumb-toggle,
+.stage-area.idle .thumb-dock,
 .stage-area.idle .layout-switch,
 .stage-area.idle .remote-tile-footer,
 .stage-area.idle:hover .remote-tile-footer,
@@ -506,47 +520,169 @@ button:disabled {
   pointer-events: none;
 }
 
-/* Floats over the bottom of the picture, raised clear of the player's own
-   controls (the local overlay bar, or a remote tile's footer). Only the
-   thumbnails and the toggle take clicks; the gaps fall through to the video. */
-.thumb-overlay {
+/* Floats over one edge of the picture. On the bottom it sits clear of the
+   player's own controls (the local overlay bar, or a remote tile's footer);
+   the other edges mirror that, toggle toward the edge and thumbnails inward.
+   Only the thumbnails and the toggle take clicks; the gaps fall through. */
+.thumb-dock {
   position: absolute;
-  right: 12px;
-  bottom: 60px;
-  left: 12px;
   z-index: 2;
   display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  gap: 8px;
+  align-items: center;
+  gap: 18px;
+  pointer-events: none;
+  user-select: none;
+}
+
+.thumb-dock > * {
+  pointer-events: auto;
+}
+
+/* Toggle first in the document, then the thumbnails. Each edge flips the
+   axis so the toggle stays against the edge, as it does along the bottom. */
+.stage-area.dock-bottom .thumb-dock {
+  right: 0;
+  bottom: 0;
+  left: 0;
+  flex-direction: column-reverse;
+  padding: 0 12px 14px;
+}
+
+.stage-area.dock-top .thumb-dock {
+  top: 0;
+  right: 0;
+  left: 0;
+  flex-direction: column;
+  padding: 14px 12px 0;
+}
+
+.stage-area.dock-left .thumb-dock {
+  top: 0;
+  bottom: 0;
+  left: 0;
+  flex-direction: row;
+  width: max-content;
+  padding: 12px 0 12px 14px;
+}
+
+.stage-area.dock-right .thumb-dock {
+  top: 0;
+  right: 0;
+  bottom: 0;
+  flex-direction: row-reverse;
+  width: max-content;
+  padding: 12px 14px 12px 0;
+}
+
+/* The layout switch occupies the top-right corner, the way the footer
+   occupies the bottom. Clear it while the strip is on the right. */
+.stage-area.dock-right:not(:fullscreen) .thumb-dock {
+  padding-top: 52px;
+}
+
+/* Carried off its edge for the gesture, but already turned for the edge
+   under the pointer: a row along the top or bottom, a column down a side.
+   Releasing only parks that arrangement on the edge. */
+.stage-area.is-docking .thumb-dock.is-dragging {
+  top: auto;
+  right: auto;
+  bottom: auto;
+  left: auto;
+  width: max-content;
+  max-width: calc(100% - 16px);
+  max-height: calc(100% - 16px);
+  padding: 0;
+  overflow: hidden;
+  cursor: grabbing;
+}
+
+.stage-area.is-docking .thumb-dock.is-dragging,
+.stage-area.is-docking .thumb-dock.is-dragging * {
+  cursor: grabbing;
+}
+
+.stage-area.is-docking[data-dock-target='bottom']::after,
+.stage-area.is-docking[data-dock-target='top']::after,
+.stage-area.is-docking[data-dock-target='left']::after,
+.stage-area.is-docking[data-dock-target='right']::after {
+  position: absolute;
+  z-index: 4;
+  content: '';
+  background: var(--accent);
+  border-radius: 999px;
   pointer-events: none;
 }
 
-.thumb-overlay > * {
-  pointer-events: auto;
+.stage-area.is-docking[data-dock-target='bottom']::after,
+.stage-area.is-docking[data-dock-target='top']::after {
+  right: 18%;
+  left: 18%;
+  height: 4px;
+}
+
+.stage-area.is-docking[data-dock-target='bottom']::after {
+  bottom: 6px;
+}
+
+.stage-area.is-docking[data-dock-target='top']::after {
+  top: 6px;
+}
+
+.stage-area.is-docking[data-dock-target='left']::after,
+.stage-area.is-docking[data-dock-target='right']::after {
+  top: 18%;
+  bottom: 18%;
+  width: 4px;
+}
+
+.stage-area.is-docking[data-dock-target='left']::after {
+  left: 6px;
+}
+
+.stage-area.is-docking[data-dock-target='right']::after {
+  right: 6px;
 }
 
 .thumb-strip {
   display: flex;
   gap: 8px;
   min-width: 0;
+  max-width: 100%;
   overflow-x: auto;
   /* Set explicitly: with overflow-x scrolling, the other axis would compute
    * to auto and show a scrollbar whenever a thumbnail pokes out, as one does
-   * for a moment while it animates in. */
+   * for a moment while it animates in. The bar itself stays hidden: a wheel
+   * still reaches the rest. */
   overflow-y: hidden;
+  scrollbar-width: none;
   /* Room for the thumbnails' shadow, which the hidden overflow otherwise cut
      off in a hard line along their bottom; the margin keeps them in place. */
   padding: 4px 4px 18px;
   margin: -4px -4px -18px;
+  cursor: grab;
+}
+
+.thumb-strip::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+/* Along a side the same frames stack, and the strip scrolls the other way,
+   still without a bar. The extra padding is the shadow room the horizontal
+   strip keeps at its bottom; a column clips both axes. */
+.stage-area.dock-left .thumb-strip,
+.stage-area.dock-right .thumb-strip {
+  flex-direction: column;
+  min-height: 0;
+  max-height: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 18px;
+  margin: -18px;
 }
 
 .thumb-toggle {
-  position: absolute;
-  bottom: 14px;
-  left: 50%;
-  z-index: 3;
-  transform: translateX(-50%);
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
@@ -561,7 +697,33 @@ button:disabled {
   background: rgb(0 0 0 / 0.6);
   border: 1px solid rgb(255 255 255 / 0.15);
   border-radius: 14px;
-  cursor: pointer;
+  cursor: grab;
+  touch-action: none;
+}
+
+/* The same pill, turned to sit in the margin of a side edge. The chevron
+   points at the edge while the strip is open, and into the stage when it
+   is tucked away — the bottom's down/up, rotated. */
+.stage-area.dock-left .thumb-toggle,
+.stage-area.dock-right .thumb-toggle {
+  flex-direction: column;
+  width: 28px;
+  min-width: 28px;
+  height: auto;
+  min-height: 64px;
+  padding: 10px 0;
+}
+
+.stage-area.dock-top .thumb-toggle svg {
+  transform: rotate(180deg);
+}
+
+.stage-area.dock-left .thumb-toggle svg {
+  transform: rotate(90deg);
+}
+
+.stage-area.dock-right .thumb-toggle svg {
+  transform: rotate(-90deg);
 }
 
 .thumb-toggle:hover {
@@ -570,7 +732,10 @@ button:disabled {
 
 .thumb {
   position: relative;
-  flex: 0 0 176px;
+  /* Basis auto follows width in a row and height in a column, so the same
+     frame lines up along the bottom or stacks down a side. */
+  flex: 0 0 auto;
+  width: 176px;
   height: 99px;
   overflow: hidden;
   background: #050608;
@@ -599,6 +764,14 @@ button:disabled {
   cursor: default;
 }
 
+.thumb-dock .thumb-watch {
+  cursor: grab;
+}
+
+.thumb-dock .thumb-watch:disabled {
+  cursor: default;
+}
+
 /* A snapshot is blurred: a hint of what is on, not a picture to watch.
    Scaled a touch so the blur does not soften the edges into the frame. Your
    own live preview stays sharp. The picture only, not every image in the
@@ -609,6 +782,9 @@ button:disabled {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  /* The button behind them is what a drag grabs. A picture would otherwise
+     start the browser's own image drag and the strip would stay put. */
+  pointer-events: none;
 }
 
 .thumb-watch > img {
@@ -667,40 +843,14 @@ button:disabled {
   accent-color: var(--accent);
 }
 
-/* Your own broadcast, shown large, with a way out of the large view. */
+/* Your own broadcast, shown large. */
 .local-slot {
-  position: relative;
   display: flex;
 }
 
 .local-slot > .stage {
   flex: 1;
   min-width: 0;
-}
-
-.tile-close {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  z-index: 2;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  color: #fff;
-  background: rgb(0 0 0 / 0.6);
-  border: 1px solid rgb(255 255 255 / 0.2);
-  border-radius: 6px;
-  cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.15s ease;
-}
-
-.stage-area:hover .tile-close,
-.tile-close:focus-visible {
-  opacity: 1;
 }
 
 .thumb-actions {
@@ -787,6 +937,18 @@ button:disabled {
   align-items: center;
   gap: 8px;
   min-width: 0;
+}
+
+.remote-tile-label {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.remote-tile-name {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .remote-tile-who .stream-source {
@@ -3216,7 +3378,7 @@ button.danger {
 }
 
 /* A thumbnail grows from its own centre rather than rising, so it never
- * leaves the strip, which scrolls sideways and clips the rest. */
+ * leaves the strip, which scrolls and clips the rest. */
 .thumb {
   animation: grow-in 200ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }

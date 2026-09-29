@@ -135,6 +135,7 @@ export const es: Messages = {
   'grid.splitTitle': 'Arrastra para redimensionar · doble clic para dividir a la mitad',
   'grid.showStrip': 'Mostrar transmisiones',
   'grid.hideStrip': 'Ocultar transmisiones',
+  'grid.moveStrip': 'Arrastra a otro borde',
   'grid.yourBroadcast': 'Tu transmisión',
 
   'room.stoppedSharing': '{name} dejó de transmitir',
