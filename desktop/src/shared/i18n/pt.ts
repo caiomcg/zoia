@@ -273,8 +273,6 @@ export const pt: Messages = {
   'updates.warning':
     'Use apenas um repositório de confiança. Uma atualização pode executar código neste computador.',
   'updates.repository': 'Repositório Git',
-  'updates.branch': 'Branch',
-  'updates.manifest': 'Caminho do manifesto',
   'updates.checkOnStart': 'Procurar atualizações ao iniciar o Zoia',
   'updates.autoInstall': 'Instalar automaticamente as atualizações disponíveis',
   'updates.isAvailable': 'A versão {version} está disponível.',

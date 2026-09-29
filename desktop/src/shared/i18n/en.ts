@@ -280,8 +280,6 @@ export const en = {
   'updates.body': 'Choose where Zoia looks for lightweight application updates.',
   'updates.warning': 'Only use a repository you trust. An update can run code on this computer.',
   'updates.repository': 'Git repository',
-  'updates.branch': 'Branch',
-  'updates.manifest': 'Manifest path',
   'updates.checkOnStart': 'Check for updates when Zoia starts',
   'updates.autoInstall': 'Install available updates automatically',
   'updates.isAvailable': 'Version {version} is available.',

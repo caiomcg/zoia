@@ -17,7 +17,7 @@ notes to people who have just installed the release. The only thing added around
 the link to the full list of commits, by `scripts/release-notes.js`.
 
 - Start with a front-matter block holding one sentence for the update prompt. It is removed
-  from the notes and copied into the updater manifest when the release is published; the
+  from the notes and copied into the release's `update.json`, which the update prompt reads; the
   release workflow refuses a tag without it.
 
   ```markdown

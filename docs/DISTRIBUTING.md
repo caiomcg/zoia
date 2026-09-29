@@ -20,16 +20,18 @@ The Electron client also supports a lightweight `app.asar` update. It does not r
 React changes and JavaScript dependencies that are already included in the package. Changes
 to Electron, FFmpeg, or `native/*.node` still require a new distribution.
 
+Updates come from GitHub releases ([ADR 0028](adr/0028-updates-from-releases.md)). The
+updater asks the GitHub API for the repository's latest release (drafts and pre-releases are
+never offered), reads the `update.json` attached to it, and compares versions. Nothing is
+read from a branch.
+
 The file [desktop/updater-config.json](../desktop/updater-config.json) is the packaged default
 and can be overridden with another `updater-config.json` next to the executable or at
-`%APPDATA%/Zoia/updater-config.json`. For a fork, change only `repository`, `branch`, and,
-if needed, `manifestPath`/`manifestUrl`:
+`%APPDATA%/Zoia/updater-config.json`. For a fork, change only `repository`:
 
 ```json
 {
   "repository": "https://github.com/OWNER/REPOSITORY",
-  "branch": "main",
-  "manifestPath": "desktop/updater-manifest.json",
   "checkOnStartup": true,
   "autoInstall": false
 }
@@ -37,19 +39,21 @@ if needed, `manifestPath`/`manifestUrl`:
 
 Users do not need to navigate to AppData to make this change: in the desktop app, open the
 settings button (the sliders icon) at the bottom of the member list and edit the **Updates**
-section. The screen saves the configuration in the correct location, validates HTTPS URLs
-and the branch, restores the defaults, and provides **Check now**. Enable automatic installation only when the configured
-repository is trusted.
+section. It has the Git repository, which must be a GitHub repository URL, restores the
+defaults, and provides **Check now**. Enable automatic installation only when the configured
+repository is trusted. `autoInstall` set to `true` installs without confirmation; the default
+`false` shows the update dialog. Settings saved by versions before 0.4.4 also held a branch
+and a manifest path; they are ignored.
 
-For a GitHub repository, the updater queries the branch commit through the API and reads the
-manifest from `raw.githubusercontent.com`. The manifest published on that branch must use
-this format (a complete example is available at
-[desktop/updater-manifest.example.json](../desktop/updater-manifest.example.json)):
+Each release carries its `update.json`, written by the release workflow's publish job with
+[`scripts/write-updater-manifest.js`](../scripts/write-updater-manifest.js): checksums of the
+files being uploaded, `minimumVersion` from the classifier, `notes` from the changelog
+entry's `summary`. A complete example is
+[desktop/updater-manifest.example.json](../desktop/updater-manifest.example.json):
 
 ```json
 {
   "version": "0.2.14",
-  "commit": "<40 hexadecimal characters from the branch commit>",
   "updateType": "asar",
   "minimumVersion": "0.2.10",
   "artifactUrl": "https://github.com/OWNER/REPOSITORY/releases/download/v0.2.14/Zoia-OTA-0.2.14.asar",
@@ -59,23 +63,24 @@ this format (a complete example is available at
 }
 ```
 
+The updater refuses an `update.json` whose `version` is not its release's tag, or that
+names a file outside that same release. A `full` release has no `artifactUrl` or `sha256`
+and `updateType: "full"`.
+
 `minimumVersion` is the last `full` release. An `app.asar` is built against that release's
 Electron, FFmpeg and native addon, so an installation older than it must not receive the
-OTA: it gets the `full-required` prompt with `installerUrl` instead, and the manifest is
-rejected if that URL is missing. Always set both on an `asar` manifest. The classifier prints
-the value to use (`Minimum installed version for OTA`) in the release run's log.
+OTA: it gets the `full-required` prompt with `installerUrl` instead, and the update is
+rejected if that URL is missing. The classifier prints the value (`Minimum installed version
+for OTA`) in the release run's log.
 
 The `app.asar` must be produced by the same release build (`electron-builder --dir`) and
-copied from `win-unpacked/resources/app.asar`. Publish it as a release asset and calculate
-its SHA-256 before updating the manifest. The operational order is: publish the asset, update
-the branch manifest, and only then distribute the new version. The release workflow's
-`manifest` job does exactly that: once the release exists it downloads the attached assets
-back, builds the manifest with
-[`scripts/write-updater-manifest.js`](../scripts/write-updater-manifest.js) (checksums of the
-downloaded files, `minimumVersion` from the classifier, `notes` from the changelog entry's
-`summary`), and commits it to `main`. It never writes a `commit` field, skips `none` releases,
-and never replaces a manifest that already announces a newer version. `autoInstall` set to `true`
-installs without confirmation; the default `false` shows the update dialog.
+copied from `win-unpacked/resources/app.asar`; the release workflow attaches it as
+`Zoia-OTA-X.Y.Z.asar` next to `update.json`.
+
+**Apps from before 0.4.4** read `desktop/updater-manifest.json` on `main` instead, which has
+the same shape. It stays at the first release that reads releases, so those installs update
+to it and find everything after it on their own. It is published by pull request, since
+`main` is protected: run the script without `--out` on the release's `.exe` and `.asar`.
 
 The regular CI workflow classifies every commit on `main` against the previous release tag.
 The release workflow repeats the same classification for each release tag. The result is
@@ -95,19 +100,7 @@ force a full release. The classifier lives in
 [`scripts/classify-desktop-update.js`](../scripts/classify-desktop-update.js) and requires
 the checkout to contain the release tags.
 
-For a `full` release, publish a manifest with `updateType: "full"` and the installer URL:
-
-```json
-{
-  "version": "0.3.0",
-  "commit": "<40 hexadecimal characters from the branch commit>",
-  "updateType": "full",
-  "installerUrl": "https://github.com/OWNER/REPOSITORY/releases/download/v0.3.0/Zoia-Setup-0.3.0-x64.exe",
-  "notes": "Electron or native component update"
-}
-```
-
-The desktop updater never replaces the executable itself. It focuses only on `asar` manifests;
+The desktop updater never replaces the executable itself. It focuses only on `asar` updates;
 when it sees `updateType: "full"`, it tells the user to download the installer instead.
 
 The [desktop/src/main/updater.ts](../desktop/src/main/updater.ts) module starts from

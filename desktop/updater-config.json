@@ -1,7 +1,5 @@
 {
   "repository": "https://github.com/caiomcg/zoia",
-  "branch": "main",
-  "manifestPath": "desktop/updater-manifest.json",
   "checkOnStartup": true,
   "autoInstall": false
 }

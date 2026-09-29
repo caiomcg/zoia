@@ -6,6 +6,7 @@ import { dirname, join } from 'node:path';
 import { spawn } from 'node:child_process';
 import { t } from './language';
 import type { ReleaseInfo } from '../shared/ipc';
+import { checkUpdateFile, updateAssetUrl } from './update-release';
 import { pipeline } from 'node:stream/promises';
 import { Readable } from 'node:stream';
 
@@ -13,19 +14,20 @@ const CONFIG_NAME = 'updater-config.json';
 const STATE_NAME = 'updater-state.json';
 const HELPER_NAME = 'zoia-update-helper.cjs';
 
+/**
+ * Where updates come from: a GitHub repository, whose latest release carries
+ * an `update.json` written by the release workflow beside its installer and
+ * OTA archive. Settings from older versions also held a branch and a manifest
+ * path on it; they are ignored.
+ */
 export interface UpdaterConfig {
   repository: string;
-  branch: string;
-  manifestPath: string;
-  manifestUrl?: string;
-  commitUrl?: string;
   checkOnStartup?: boolean;
   autoInstall?: boolean;
 }
 
 interface UpdateManifest {
   version: string;
-  commit: string;
   updateType?: 'asar' | 'full';
   /**
    * The oldest installed version an `asar` update may be applied to: the last
@@ -40,9 +42,7 @@ interface UpdateManifest {
   notes?: string;
 }
 
-interface RemoteUpdate extends UpdateManifest {
-  commit: string;
-}
+type RemoteUpdate = UpdateManifest;
 
 export type UpdaterCheckResult =
   | { status: 'up-to-date' }
@@ -55,7 +55,7 @@ const HELPER_SOURCE = String.raw`process.noAsar = true;
 const fs = require('node:fs/promises');
 const { spawn } = require('node:child_process');
 
-const [target, staged, backup, parentPid, executable, statePath, commit] = process.argv.slice(2);
+const [target, staged, backup, parentPid, executable, statePath, version] = process.argv.slice(2);
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const exists = async (path) => { try { await fs.access(path); return true; } catch { return false; } };
 
@@ -77,7 +77,7 @@ async function main() {
     if (await exists(backup)) await fs.rename(backup, target).catch(() => {});
     throw error;
   }
-  if (statePath && commit) await fs.writeFile(statePath, JSON.stringify({ commit }, null, 2));
+  if (statePath && version) await fs.writeFile(statePath, JSON.stringify({ version }, null, 2));
   const env = { ...process.env };
   delete env.ELECTRON_RUN_AS_NODE;
   const child = spawn(executable, [], { detached: true, stdio: 'ignore', env });
@@ -141,18 +141,18 @@ async function loadConfig(): Promise<UpdaterConfig | null> {
 
   for (const path of candidates) {
     const config = await readJson<UpdaterConfig>(path);
-    if (!config || typeof config.repository !== 'string' || typeof config.branch !== 'string')
-      continue;
-    if (!config.manifestPath && !config.manifestUrl) continue;
-    return config;
+    if (!config || typeof config.repository !== 'string') continue;
+    return {
+      repository: config.repository,
+      checkOnStartup: config.checkOnStartup !== false,
+      autoInstall: config.autoInstall === true,
+    };
   }
   return null;
 }
 
 const defaultConfig: UpdaterConfig = {
   repository: 'https://github.com/caiomcg/zoia',
-  branch: 'main',
-  manifestPath: 'desktop/updater-manifest.json',
   checkOnStartup: true,
   autoInstall: false,
 };
@@ -164,19 +164,13 @@ function userConfigPath(): string {
 function validateConfig(input: unknown): UpdaterConfig {
   if (!input || typeof input !== 'object') throw new Error('Configuration must be an object');
   const value = input as Partial<UpdaterConfig>;
-  if (!isUrl(value.repository)) throw new Error('Repository must be an HTTPS URL');
-  if (!value.branch?.trim() || value.branch.length > 200) throw new Error('Branch is required');
-  if (!value.manifestPath?.trim() && !isUrl(value.manifestUrl)) {
-    throw new Error('Manifest path or HTTPS manifest URL is required');
+  if (!isUrl(value.repository) || !githubRepository(value.repository)) {
+    throw new Error(
+      'Repository must be a GitHub repository URL, such as https://github.com/owner/zoia',
+    );
   }
-  if (value.manifestUrl && !isUrl(value.manifestUrl)) throw new Error('Manifest URL must be HTTPS');
-  if (value.commitUrl && !isUrl(value.commitUrl)) throw new Error('Commit URL must be HTTPS');
   return {
     repository: value.repository,
-    branch: value.branch.trim(),
-    manifestPath: value.manifestPath?.trim() || defaultConfig.manifestPath,
-    ...(value.manifestUrl ? { manifestUrl: value.manifestUrl } : {}),
-    ...(value.commitUrl ? { commitUrl: value.commitUrl } : {}),
     checkOnStartup: value.checkOnStartup !== false,
     autoInstall: value.autoInstall === true,
   };
@@ -199,10 +193,7 @@ export async function resetUpdaterConfig(): Promise<UpdaterConfig> {
 }
 
 async function fetchJson<T>(url: string): Promise<T> {
-  const urlWithCacheBuster = url.includes('?')
-    ? `${url}&_t=${Date.now()}`
-    : `${url}?_t=${Date.now()}`;
-  const response = await fetch(urlWithCacheBuster, {
+  const response = await fetch(url, {
     headers: {
       accept: 'application/json',
       'user-agent': 'Zoia-Updater',
@@ -214,35 +205,25 @@ async function fetchJson<T>(url: string): Promise<T> {
   return (await response.json()) as T;
 }
 
-function githubUrls(config: UpdaterConfig): { manifestUrl: string; commitUrl: string } | null {
-  const repo = githubRepository(config.repository);
-  if (!repo) return null;
-  const base = `https://raw.githubusercontent.com/${repo.owner}/${repo.name}/${encodeURIComponent(config.branch)}`;
-  return {
-    manifestUrl: `${base}/${config.manifestPath}`,
-    commitUrl: `https://api.github.com/repos/${repo.owner}/${repo.name}/commits/${encodeURIComponent(config.branch)}`,
-  };
-}
-
+/**
+ * The latest release and what its update.json says about it. `latest` skips
+ * drafts and pre-releases, so a release is offered only once it is published.
+ * One API call per check; the asset itself comes from the download host,
+ * which does not count against the API's hourly limit.
+ */
 async function getRemoteUpdate(config: UpdaterConfig): Promise<RemoteUpdate> {
-  const urls = githubUrls(config);
-  const manifestUrl = config.manifestUrl ?? urls?.manifestUrl;
-  const commitUrl = config.commitUrl ?? urls?.commitUrl;
-  if (!manifestUrl || !commitUrl || !isUrl(manifestUrl) || !isUrl(commitUrl)) {
-    throw new Error('Updater requires HTTPS manifestUrl/commitUrl or a GitHub repository URL');
-  }
+  const repo = githubRepository(config.repository);
+  if (!repo) throw new Error('Updates need a GitHub repository in the update settings');
 
-  const [manifest, commitInfo] = await Promise.all([
-    fetchJson<UpdateManifest>(manifestUrl),
-    fetchJson<{ sha?: string }>(commitUrl),
-  ]);
-  const commit = commitInfo.sha ?? manifest.commit;
-  if (!manifest.version || !commit) {
-    throw new Error('Updater manifest is incomplete');
-  }
-  if (manifest.commit && manifest.commit !== commit) {
-    throw new Error('Updater manifest does not match the branch commit');
-  }
+  const release = await fetchJson<GitHubRelease>(
+    `https://api.github.com/repos/${repo.owner}/${repo.name}/releases/latest`,
+  );
+  const manifest = checkUpdateFile(
+    release,
+    repo,
+    await fetchJson<UpdateManifest>(updateAssetUrl(release)),
+  );
+
   const updateType = manifest.updateType ?? 'asar';
   if (updateType === 'asar') {
     if (
@@ -265,7 +246,7 @@ async function getRemoteUpdate(config: UpdaterConfig): Promise<RemoteUpdate> {
     // PowerShell), and replacing app.asar inside a signed .app would break its
     // seal. The manifest's installer is the Windows .exe. So a Mac is always
     // sent to the release page, where the .dmg sits beside it.
-    return { ...manifest, commit, updateType: 'full', installerUrl: releasePage(config, manifest) };
+    return { ...manifest, updateType: 'full', installerUrl: release.html_url };
   }
   if (
     updateType === 'asar' &&
@@ -280,16 +261,9 @@ async function getRemoteUpdate(config: UpdaterConfig): Promise<RemoteUpdate> {
         `This update needs Zoia ${manifest.minimumVersion} or newer, and the manifest has no installer URL`,
       );
     }
-    return { ...manifest, commit, updateType: 'full' };
+    return { ...manifest, updateType: 'full' };
   }
-  return { ...manifest, commit };
-}
-
-function releasePage(config: UpdaterConfig, manifest: UpdateManifest): string {
-  const repo = githubRepository(config.repository);
-  if (!repo) return config.repository;
-  const version = manifest.version.replace(/^v/, '');
-  return `https://github.com/${repo.owner}/${repo.name}/releases/tag/v${version}`;
+  return manifest;
 }
 
 function newerVersion(remote: string, local: string): boolean {
@@ -378,10 +352,10 @@ async function writeRunner(
     backup: string;
     pid: number;
     statePath: string;
-    commit: string;
+    version: string;
   },
 ): Promise<void> {
-  const content = `@echo off\r\nset ELECTRON_RUN_AS_NODE=1\r\n"${args.executable}" "${args.helper}" "${args.target}" "${args.staged}" "${args.backup}" "${args.pid}" "${args.executable}" "${args.statePath}" "${args.commit}"\r\n`;
+  const content = `@echo off\r\nset ELECTRON_RUN_AS_NODE=1\r\n"${args.executable}" "${args.helper}" "${args.target}" "${args.staged}" "${args.backup}" "${args.pid}" "${args.executable}" "${args.statePath}" "${args.version}"\r\n`;
   await writeFile(path, content, { encoding: 'utf8' });
 }
 
@@ -398,7 +372,7 @@ async function install(update: RemoteUpdate): Promise<void> {
   const writable = await isWritableDirectory(process.resourcesPath);
   const elevatePath = join(process.resourcesPath, 'elevate.exe');
 
-  const updateDir = join(app.getPath('userData'), 'updates', update.commit);
+  const updateDir = join(app.getPath('userData'), 'updates', `v${update.version}`);
   const staged = join(updateDir, 'update.bin');
   const partial = `${staged}.partial`;
   const backup = `${target}.previous`;
@@ -433,7 +407,7 @@ async function install(update: RemoteUpdate): Promise<void> {
         String(process.pid),
         process.execPath,
         statePath,
-        update.commit,
+        update.version,
       ],
       {
         detached: true,
@@ -451,7 +425,7 @@ async function install(update: RemoteUpdate): Promise<void> {
       backup,
       pid: process.pid,
       statePath,
-      commit: update.commit,
+      version: update.version,
     });
     if (await fileExists(elevatePath)) {
       spawn(elevatePath, [process.env.ComSpec || 'cmd.exe', '/c', runner], {
@@ -485,6 +459,7 @@ interface GitHubRelease {
   html_url: string;
   published_at: string | null;
   draft: boolean;
+  assets?: { name: string; browser_download_url: string }[];
 }
 
 /**
@@ -531,9 +506,7 @@ export async function checkForUpdate(force = false): Promise<UpdaterCheckResult>
   if (!config || (!force && config.checkOnStartup === false)) return { status: 'disabled' };
   try {
     const update = await getRemoteUpdate(config);
-    // The version alone decides. The branch commit moves on every push, so
-    // comparing it offered the running version again after any unrelated
-    // commit, and after a full install left an older OTA commit behind.
+    // The version alone decides.
     if (!newerVersion(update.version, app.getVersion())) return { status: 'up-to-date' };
     if (update.updateType === 'full') {
       return {

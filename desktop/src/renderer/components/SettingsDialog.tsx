@@ -573,8 +573,6 @@ function SoundsSection() {
 
 const emptyConfig: UpdaterConfig = {
   repository: '',
-  branch: '',
-  manifestPath: '',
   checkOnStartup: true,
   autoInstall: false,
 };
@@ -708,24 +706,6 @@ function UpdatesSection() {
           value={config.repository}
           onChange={(event) => update('repository', event.target.value)}
           placeholder="https://github.com/owner/repository"
-          disabled={busy || updating}
-        />
-      </label>
-      <label className="settings-field">
-        <span>{t('updates.branch')}</span>
-        <input
-          value={config.branch}
-          onChange={(event) => update('branch', event.target.value)}
-          placeholder="main"
-          disabled={busy || updating}
-        />
-      </label>
-      <label className="settings-field">
-        <span>{t('updates.manifest')}</span>
-        <input
-          value={config.manifestPath}
-          onChange={(event) => update('manifestPath', event.target.value)}
-          placeholder="desktop/updater-manifest.json"
           disabled={busy || updating}
         />
       </label>

@@ -1,29 +1,39 @@
 #!/usr/bin/env node
 /**
- * Writes desktop/updater-manifest.json for a published release.
+ * Writes what a release says about itself as an update: its type, the
+ * checksum of its OTA archive, the oldest install it may be applied to, and a
+ * line for the update prompt.
  *
- *   node scripts/write-updater-manifest.js v0.4.1 <assets-dir> <update-type> [minimum-version]
+ *   node scripts/write-updater-manifest.js <tag> <assets-dir> <update-type> [minimum-version] [--out <file>]
  *
- * <assets-dir> holds the files downloaded back from the GitHub release, so the
- * checksums are of what people will actually download. <update-type> and
- * [minimum-version] are what scripts/classify-desktop-update.js printed for
- * the tag. The notes are the `summary` of changelog/<version>.md.
+ * <assets-dir> holds the files the release publishes, so the checksums are of
+ * what people will actually download. <update-type> and [minimum-version] are
+ * what scripts/classify-desktop-update.js printed for the tag. The notes are
+ * the `summary` of changelog/<version>.md.
  *
- * Leaves the manifest alone, and says so, for a `none` release or when it
- * already announces a newer version. Prints the manifest it wrote.
+ * With --out, the release workflow writes the release's own update.json, which
+ * apps from 0.4.4 on read from the latest release. Without it, the file is
+ * desktop/updater-manifest.json on main, which older apps read; that is left
+ * alone if it already announces a newer version.
+ *
+ * A `none` release gets nothing, and says so. Prints what it wrote.
  */
 
 import { createHash } from 'node:crypto';
-import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { parseEntry } from './lib/changelog.js';
 import { git } from './lib/desktop-update.js';
 import { buildManifest, compareVersions } from './lib/updater-manifest.js';
 
-const [tag, dir, updateType, minimumVersion] = process.argv.slice(2);
-if (!tag || !dir || !updateType) {
+const args = process.argv.slice(2);
+const outAt = args.indexOf('--out');
+const out = outAt >= 0 ? args.splice(outAt, 2)[1] : null;
+const [tag, dir, updateType, minimumVersion] = args;
+if (!tag || !dir || !updateType || (outAt >= 0 && !out)) {
   console.error(
-    'usage: node scripts/write-updater-manifest.js <tag> <assets-dir> <update-type> [minimum-version]',
+    'usage: node scripts/write-updater-manifest.js <tag> <assets-dir> <update-type> [minimum-version] [--out <file>]',
   );
   process.exit(2);
 }
@@ -37,26 +47,29 @@ function repository() {
 }
 
 const version = tag.replace(/^v/, '');
-const manifestFile = new URL('../desktop/updater-manifest.json', import.meta.url);
+const target = out
+  ? resolve(out)
+  : fileURLToPath(new URL('../desktop/updater-manifest.json', import.meta.url));
 
 if (updateType === 'none') {
-  console.log(`${tag} changes nothing in the desktop app; the manifest stays as it is.`);
+  console.log(`${tag} changes nothing in the desktop app; no update is written.`);
   process.exit(0);
 }
 
-if (existsSync(manifestFile)) {
-  const current = JSON.parse(readFileSync(manifestFile, 'utf8')).version;
+if (!out && existsSync(target)) {
+  const current = JSON.parse(readFileSync(target, 'utf8')).version;
   if (current && compareVersions(current, version) > 0) {
     console.log(`The manifest already announces ${current}, newer than ${version}; left alone.`);
     process.exit(0);
   }
 }
 
+// Files only: a folder beside them, or the output itself, is not an asset.
 const assets = {};
 for (const name of readdirSync(dir)) {
-  assets[name] = createHash('sha256')
-    .update(readFileSync(join(dir, name)))
-    .digest('hex');
+  const path = join(dir, name);
+  if (!statSync(path).isFile() || resolve(path) === target) continue;
+  assets[name] = createHash('sha256').update(readFileSync(path)).digest('hex');
 }
 
 const entryFile = new URL(`../changelog/${version}.md`, import.meta.url);
@@ -72,5 +85,5 @@ const manifest = buildManifest({
 });
 
 const json = `${JSON.stringify(manifest, null, 2)}\n`;
-writeFileSync(manifestFile, json);
+writeFileSync(target, json);
 process.stdout.write(json);

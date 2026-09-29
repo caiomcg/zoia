@@ -211,12 +211,9 @@ export interface LanguageState {
   system: 'en' | 'es' | 'pt';
 }
 
+/** Updates come from the latest GitHub release of `repository`. */
 export interface UpdaterConfig {
   repository: string;
-  branch: string;
-  manifestPath: string;
-  manifestUrl?: string;
-  commitUrl?: string;
   checkOnStartup?: boolean;
   autoInstall?: boolean;
 }

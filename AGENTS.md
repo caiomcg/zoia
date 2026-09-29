@@ -132,8 +132,9 @@ These each cost hours if forgotten, and all of them fail in ways that look like 
 
 A release is a `vX.Y.Z` tag on `main`. CI builds the Windows installer and the Mac disk images,
 decides whether Windows can take it as an in-app (OTA) update, and publishes the GitHub Release.
-The installed apps only learn about it from `desktop/updater-manifest.json` on `main`, which the
-release workflow commits there once the assets are attached. Details: [docs/DISTRIBUTING.md](docs/DISTRIBUTING.md).
+Installed apps find it themselves: the workflow attaches an `update.json` to the release, and
+the updater reads the latest release's ([ADR 0028](docs/adr/0028-updates-from-releases.md)).
+Details: [docs/DISTRIBUTING.md](docs/DISTRIBUTING.md).
 
 1. **Check what kind of release it is.** `node scripts/classify-desktop-update.js HEAD` prints
    `asar` (in-app on Windows), `full` (installer needed) or `none`, the reasons, and for `asar`
@@ -158,10 +159,11 @@ release workflow commits there once the assets are attached. Details: [docs/DIST
    the notes with a local tag: `git tag vX.Y.Z && node scripts/release-notes.js vX.Y.Z`.
 5. **Push `main`, wait for CI to pass, then push the tag.** The release workflow refuses a tag
    without a changelog entry or with mismatched versions before it builds anything.
-6. **The workflow publishes the manifest.** Its `manifest` job downloads the attached assets
-   back from the release, runs `scripts/write-updater-manifest.js`, and pushes
-   `chore(desktop): publish … manifest for X.Y.Z` to `main`. Pull afterwards. To redo it by
-   hand, download the release's `.exe`/`.asar` into a folder and run
-   `node scripts/write-updater-manifest.js vX.Y.Z <folder> <asar|full> [minimumVersion]`.
+6. **When the release is published,** check it has `update.json` beside the `.exe` (and the
+   `.asar` for an OTA): installed apps from 0.4.4 on read it from there. Apps before 0.4.4
+   read `desktop/updater-manifest.json` on `main` instead, which stays at 0.4.4; to update it,
+   download the release's `.exe` and `.asar` into a folder, run
+   `node scripts/write-updater-manifest.js vX.Y.Z <folder> <asar|full> [minimumVersion]`, and
+   open a pull request, since `main` is protected.
 
 Never retag or delete a published release to fix it; ship the next patch version instead.

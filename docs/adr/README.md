@@ -35,6 +35,7 @@ record that supersedes it, so the history stays legible.
 | [0025](0025-macos-client.md)                             | A macOS desktop client with system audio                      | accepted                                                                           |
 | [0026](0026-nvenc-over-the-room-connection.md)           | NVENC frames over the room's own WebRTC connection            | accepted                                                                           |
 | [0027](0027-profile-pictures.md)                         | Profile pictures kept by the app server                       | proposed                                                                           |
+| [0028](0028-updates-from-releases.md)                    | Updates found from the latest GitHub release                  | accepted                                                                           |
 
 ## The two that explain the most
 

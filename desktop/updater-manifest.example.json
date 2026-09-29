@@ -1,6 +1,5 @@
 {
   "version": "0.2.14",
-  "commit": "0123456789abcdef0123456789abcdef01234567",
   "updateType": "asar",
   "minimumVersion": "0.2.10",
   "artifactUrl": "https://github.com/OWNER/REPOSITORY/releases/download/v0.2.14/Zoia-OTA-0.2.14.asar",
