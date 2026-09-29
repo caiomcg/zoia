@@ -314,6 +314,9 @@ export const en = {
     "Brought Zoia to the Mac: the macOS app, sharing with the system's audio, and hardware-encoded screens.",
   'about.role.flavia':
     'Profile pictures, framed by dragging and zooming, and one display name per server.',
+  'about.role.stefano':
+    'Hardware-encoded sharing on NVIDIA cards, and a stage whose strip and tiles go where you put them.',
+  'about.role.yure': 'Channels you join with a click, and a button to leave them.',
 
   // ---- main process: tray and update dialogs
   'tray.open': 'Open Zoia',

@@ -307,6 +307,9 @@ export const pt: Messages = {
     'Levou o Zoia para o Mac: o app para macOS, o compartilhamento com o áudio do sistema e a tela codificada por hardware.',
   'about.role.flavia':
     'As fotos de perfil, enquadradas arrastando e com zoom, e um nome único por servidor.',
+  'about.role.stefano':
+    'O compartilhamento codificado por hardware em placas NVIDIA, e um palco cuja faixa e janelas ficam onde você as coloca.',
+  'about.role.yure': 'Os canais em que se entra com um clique, e um botão para sair deles.',
 
   'tray.open': 'Abrir o Zoia',
   'tray.keep': 'Manter na bandeja ao fechar',
