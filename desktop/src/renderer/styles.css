@@ -354,6 +354,9 @@ button:disabled {
   flex: 1;
   min-height: 0;
   display: flex;
+  /* The strip's shadow room hangs past its own edge. Without this the page
+     grows a scrollbar the moment that room crosses the stage. */
+  overflow: hidden;
 }
 
 /* The large tiles: one (spotlight), two side by side (pair), or a mosaic. */
@@ -577,8 +580,9 @@ button:disabled {
   padding-top: 52px;
 }
 
-/* Carried off its edge for the gesture. The resting layout comes back on
-   release, on whichever edge the pointer is nearest. */
+/* Carried off its edge for the gesture, but already turned for the edge
+   under the pointer: a row along the top or bottom, a column down a side.
+   Releasing only parks that arrangement on the edge. */
 .stage-area.is-docking .thumb-dock.is-dragging {
   top: auto;
   right: auto;
@@ -588,7 +592,7 @@ button:disabled {
   max-width: calc(100% - 16px);
   max-height: calc(100% - 16px);
   padding: 0;
-  overflow: auto;
+  overflow: hidden;
   cursor: grabbing;
 }
 
@@ -647,8 +651,10 @@ button:disabled {
   overflow-x: auto;
   /* Set explicitly: with overflow-x scrolling, the other axis would compute
    * to auto and show a scrollbar whenever a thumbnail pokes out, as one does
-   * for a moment while it animates in. */
+   * for a moment while it animates in. The bar itself stays hidden: a wheel
+   * still reaches the rest. */
   overflow-y: hidden;
+  scrollbar-width: none;
   /* Room for the thumbnails' shadow, which the hidden overflow otherwise cut
      off in a hard line along their bottom; the margin keeps them in place. */
   padding: 4px 4px 18px;
@@ -656,9 +662,15 @@ button:disabled {
   cursor: grab;
 }
 
-/* Along a side the same frames stack, and the strip scrolls the other way.
-   The extra padding is the shadow room the horizontal strip keeps at its
-   bottom; a column clips both axes. */
+.thumb-strip::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+/* Along a side the same frames stack, and the strip scrolls the other way,
+   still without a bar. The extra padding is the shadow room the horizontal
+   strip keeps at its bottom; a column clips both axes. */
 .stage-area.dock-left .thumb-strip,
 .stage-area.dock-right .thumb-strip {
   flex-direction: column;
