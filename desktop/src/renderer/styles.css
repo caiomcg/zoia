@@ -1594,6 +1594,10 @@ button.danger {
   background: var(--raised);
 }
 
+.sidebar-footer .sidebar-leave:hover {
+  color: var(--danger);
+}
+
 .settings-warning {
   padding: 10px 12px;
   color: var(--warn);

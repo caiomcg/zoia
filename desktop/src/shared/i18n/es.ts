@@ -75,6 +75,7 @@ export const es: Messages = {
   'sidebar.watchingYou': 'Está viendo tu pantalla',
   'sidebar.watchLive': 'Ver a {name}. Pasa el ratón para una vista previa.',
   'sidebar.settings': 'Configuración',
+  'sidebar.leave': 'Salir del canal',
 
   'player.youreLive': 'Estás en vivo',
   'player.previewHidden':
@@ -125,6 +126,8 @@ export const es: Messages = {
   'grid.notNow': 'Ahora no',
   'grid.nobodyTitle': 'Nadie está transmitiendo',
   'grid.nobodyBody': 'Cuando alguien comparta, su transmisión aparecerá aquí.',
+  'grid.noChannelTitle': 'Elige un canal',
+  'grid.noChannelBody': 'Haz clic en un canal de la lista para entrar.',
   'grid.removeFromView': 'Quitar de la vista',
   'grid.pickTitle': 'Elige una transmisión',
   'grid.pickBody':

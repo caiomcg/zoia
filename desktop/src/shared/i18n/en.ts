@@ -81,6 +81,7 @@ export const en = {
   'sidebar.watchingYou': 'Watching your screen',
   'sidebar.watchLive': 'Watch {name}. Hover to preview.',
   'sidebar.settings': 'Settings',
+  'sidebar.leave': 'Leave channel',
 
   // ---- your own share
   'player.youreLive': 'You’re live',
@@ -131,6 +132,8 @@ export const en = {
   'grid.notNow': 'Not now',
   'grid.nobodyTitle': 'Nobody is broadcasting',
   'grid.nobodyBody': 'When someone shares, their broadcast appears here.',
+  'grid.noChannelTitle': 'Pick a channel',
+  'grid.noChannelBody': 'Click a channel in the list to join it.',
   'grid.removeFromView': 'Remove from view',
   'grid.pickTitle': 'Pick a broadcast',
   'grid.pickBody':

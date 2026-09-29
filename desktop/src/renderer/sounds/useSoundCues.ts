@@ -32,9 +32,9 @@ function play(events: readonly CueEvent[]): void {
  * connecting is only a baseline: joining a channel, switching to another, or
  * reconnecting must not announce everyone who was already there.
  *
- * Arriving is announced once, to this device, when it moves to a different
- * channel than the one it was last in — the hop it just asked for. Launching
- * the app and reconnecting to the same channel stay quiet.
+ * Arriving is announced once, to this device, when it joins a channel from
+ * the list or moves to a different one — the click it just made. Reconnecting
+ * to the same channel stays quiet. Leaving for no channel is announced too.
  *
  * This device's own going live and stopping follows `live`, the broadcast
  * state either path (in-app or GPU) reports, so the cue answers the click.
@@ -60,15 +60,23 @@ export function useSoundCues(
     if (before) {
       events = cuesBetween(before, members);
     } else {
-      const hopped = arrivedIn.current !== null && arrivedIn.current !== channel;
+      const arrived = arrivedIn.current !== channel;
       arrivedIn.current = channel;
-      events = hopped ? ['join'] : [];
+      events = arrived ? ['join'] : [];
     }
     play(events);
     // The channel changes before the room does; the members are what say the
     // new room has arrived.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [members, connected]);
+
+  // Left for no channel. Only after having arrived somewhere: a join that
+  // failed before connecting also falls back to none, and has nothing to leave.
+  useEffect(() => {
+    if (channel !== null || arrivedIn.current === null) return;
+    arrivedIn.current = null;
+    play(['leave']);
+  }, [channel]);
 
   const wasLive = useRef(live);
   useEffect(() => {
