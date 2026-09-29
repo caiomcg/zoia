@@ -92,7 +92,29 @@ function applyRemoteMediaSettings(
   // audio keeps flowing; thumbnails resume video only to take a snapshot.
   paused: ReadonlySet<string>,
 ): void {
+  const ownIngress = `${room.localParticipant.identity}${WHIP_SUFFIX}`;
   for (const participant of room.remoteParticipants.values()) {
+    if (participant.identity === ownIngress) {
+      // Audio of own ingress must NEVER be subscribed (would cause audio feedback loop).
+      for (const publication of participant.audioTrackPublications.values()) {
+        try {
+          publication.setSubscribed(false);
+          publication.setEnabled(false);
+        } catch {
+          // The participant may leave while settings are being applied.
+        }
+      }
+      // Video of own ingress is subscribed for local preview when broadcasting via GPU/WHIP (AMD/Intel).
+      for (const publication of participant.videoTrackPublications.values()) {
+        try {
+          publication.setSubscribed(true);
+          publication.setEnabled(true);
+        } catch {
+          // The participant may leave while settings are being applied.
+        }
+      }
+      continue;
+    }
     const identity = ownerIdentity(participant.identity);
     const subscribed = selected.has(identity);
     const quality = focused && !focused.has(identity) ? VideoQuality.LOW : VideoQuality.HIGH;
@@ -296,6 +318,8 @@ export function useRoom() {
   const localTrackRef = useRef<LocalVideoTrack | null>(null);
   // Set while NVENC frames are being sent in place of the track's own.
   const nativeVideoRef = useRef<NativeVideo | null>(null);
+  // Track subscribed from own WHIP ingress (AMD/Intel GPU broadcast) for local preview.
+  const ingressPreviewRef = useRef<LocalVideoTrack | null>(null);
   // `capture` is null for a camera's microphone: a plain MediaStream, with no
   // WASAPI bridge to meter, set the level of, or stop.
   const localAudioRef = useRef<{
@@ -489,6 +513,33 @@ export function useRoom() {
         setParticipantCount(room.remoteParticipants.size);
         announceWatching(room);
 
+        const ownIngress = `${room.localParticipant.identity}${WHIP_SUFFIX}`;
+        const ingressParticipant = room.remoteParticipants.get(ownIngress);
+        if (ingressParticipant) {
+          const videoPub =
+            ingressParticipant.getTrackPublication(Track.Source.ScreenShare) ??
+            ingressParticipant.getTrackPublication(Track.Source.Camera) ??
+            [...ingressParticipant.videoTrackPublications.values()].find((pub) => pub.track);
+          if (videoPub?.track) {
+            const mediaStreamTrack = videoPub.track.mediaStreamTrack;
+            if (
+              !nativeVideoRef.current &&
+              localTrackRef.current?.mediaStreamTrack !== mediaStreamTrack
+            ) {
+              const preview = new LocalVideoTrack(mediaStreamTrack, undefined, false);
+              ingressPreviewRef.current = preview;
+              localTrackRef.current = preview;
+              setLocalTrack(preview);
+            }
+          }
+        } else if (ingressPreviewRef.current) {
+          ingressPreviewRef.current = null;
+          if (!nativeVideoRef.current) {
+            localTrackRef.current = null;
+            setLocalTrack(null);
+          }
+        }
+
         const me = room.localParticipant.identity;
         setViewers(
           [...room.remoteParticipants.values()]
@@ -565,6 +616,14 @@ export function useRoom() {
         .on(RoomEvent.TrackUnsubscribed, () => refresh())
         .on(RoomEvent.ParticipantConnected, () => refresh())
         .on(RoomEvent.ParticipantDisconnected, (participant) => {
+          const ownIngress = `${room.localParticipant.identity}${WHIP_SUFFIX}`;
+          if (participant.identity === ownIngress && ingressPreviewRef.current) {
+            ingressPreviewRef.current = null;
+            if (!nativeVideoRef.current) {
+              localTrackRef.current = null;
+              setLocalTrack(null);
+            }
+          }
           const ownerId = ownerIdentity(participant.identity);
           const name = broadcastingNamesRef.current.get(ownerId);
           refresh();
@@ -605,6 +664,7 @@ export function useRoom() {
           setState('disconnected');
           setError(reason ? tNow('room.closedReason', { reason }) : tNow('room.closed'));
           setBroadcastState('idle');
+          ingressPreviewRef.current = null;
           localTrackRef.current = null;
           setLocalTrack(null);
         });
@@ -667,6 +727,9 @@ export function useRoom() {
     if (announceTimerRef.current) clearTimeout(announceTimerRef.current);
     announceTimerRef.current = null;
     setViewers([]);
+    ingressPreviewRef.current = null;
+    localTrackRef.current = null;
+    setLocalTrack(null);
   }, []);
 
   /** The broadcasts shown large with HQ on get the high layer; the rest, the low. */
@@ -714,9 +777,10 @@ export function useRoom() {
   const stopPublishing = useCallback(async () => {
     const room = roomRef.current;
     const track = localTrackRef.current;
-    if (room && track) {
+    if (room && track && !ingressPreviewRef.current) {
       await room.localParticipant.unpublishTrack(track, true).catch(() => {});
     }
+    ingressPreviewRef.current = null;
     if (room) await room.localParticipant.setMetadata('').catch(() => {});
     // Clear the identity before stopping the MediaStreamTrack. `stop()` can
     // synchronously emit `ended`; clearing first prevents an explicit Stop or
@@ -813,6 +877,7 @@ export function useRoom() {
           stream: 'screen',
         });
 
+        ingressPreviewRef.current = null;
         localTrackRef.current = local;
         setLocalTrack(local);
         setBroadcastState('live');
@@ -1028,6 +1093,7 @@ export function useRoom() {
           nativeSize = await native.start();
         }
 
+        ingressPreviewRef.current = null;
         localTrackRef.current = track;
         // The native path's published track is a placeholder with no picture;
         // what the sharer sees of themselves is NVENC's output, decoded.

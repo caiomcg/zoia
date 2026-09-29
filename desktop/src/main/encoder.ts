@@ -136,6 +136,11 @@ let captureHeight = 0;
 let audioServer: Server | null = null;
 let audioSocket: Socket | null = null;
 let lastAudioAt = 0;
+let latestVideoFrame: Buffer | null = null;
+let videoPacer: ReturnType<typeof setInterval> | null = null;
+let lastVideoWriteAt = 0;
+let nextFrameTime = 0;
+let targetFrameInterval = 1000 / 60;
 
 /**
  * ffmpeg reads its inputs together, so audio and video each need their own
@@ -190,6 +195,70 @@ function startKeepAlive(): void {
       lastAudioAt = Date.now();
     }
   }, KEEPALIVE_MS);
+}
+
+function sendVideoFrame(frame: Buffer): boolean {
+  const stdin = child?.stdin;
+  if (!stdin || stdin.destroyed || !stdin.writable) return false;
+  // If the pipe is experiencing backpressure, drop the frame rather than
+  // queuing multiple frames in Node's V8 heap.
+  // For passthrough H.264, frames are small NAL units (<256KB threshold).
+  // For raw BGRA, each frame is ~14MB. When written, Node buffers bytes in stdin
+  // while the OS pipe drains. Dropping at threshold=0 causes nearly every frame
+  // to be dropped because writableLength stays >0 while the single in-flight frame
+  // is being transferred. Only drop if more than a full frame is already buffered.
+  const threshold = isPassthrough ? 256 * 1024 : Math.max(256 * 1024, frame.length);
+  if (stdin.writableLength > threshold) return false;
+  try {
+    stdin.write(frame, () => {});
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Windows Graphics Capture only produces frames when a window or screen
+ * redraws. For static content, WGC emits 0 new frames. Without continuous video
+ * input on pipe:0, ffmpeg ceases packet production and LiveKit's WebRTC STUN
+ * Consent Freshness expires after 30 seconds, terminating the session with
+ * error -138 (ETIMEDOUT).
+ *
+ * This pacer keeps pipe:0 fed at the target framerate by repeating the most
+ * recent frame when the capture source is static, ensuring smooth WebRTC
+ * transmission and zero-bitrate skip frames on hardware encoders (AMF/QSV).
+ */
+function startVideoPacer(framerate: number): void {
+  stopVideoPacer();
+  targetFrameInterval = 1000 / Math.max(1, framerate);
+  lastVideoWriteAt = 0;
+  nextFrameTime = 0;
+  const checkInterval = Math.max(4, Math.floor(targetFrameInterval / 4));
+  videoPacer = setInterval(() => {
+    if (!latestVideoFrame || !child) return;
+    const now = performance.now();
+    if (nextFrameTime === 0) {
+      nextFrameTime = now + targetFrameInterval;
+      return;
+    }
+    if (now >= nextFrameTime - 2) {
+      if (sendVideoFrame(latestVideoFrame)) {
+        lastVideoWriteAt = now;
+        nextFrameTime += targetFrameInterval;
+        if (now - nextFrameTime > targetFrameInterval * 2) {
+          nextFrameTime = now + targetFrameInterval;
+        }
+      }
+    }
+  }, checkInterval);
+}
+
+function stopVideoPacer(): void {
+  if (videoPacer) clearInterval(videoPacer);
+  videoPacer = null;
+  latestVideoFrame = null;
+  lastVideoWriteAt = 0;
+  nextFrameTime = 0;
 }
 
 /**
@@ -687,6 +756,7 @@ export async function start(win: BrowserWindow, options: EncoderOptions): Promis
     child = null;
     if (watchdog) clearInterval(watchdog);
     watchdog = null;
+    stopVideoPacer();
     // Before anything else: stop whatever is still producing frames for a
     // process that no longer exists.
     try {
@@ -725,6 +795,7 @@ export async function start(win: BrowserWindow, options: EncoderOptions): Promis
 
   startWatchdog(win);
   if (options.withAudio) startKeepAlive();
+  if (!isPassthrough && options.frames) startVideoPacer(options.framerate);
 
   return new Promise<void>((resolve, reject) => {
     let settled = false;
@@ -819,23 +890,17 @@ export function writeAudio(chunk: Buffer): void {
  * with a dialog. A dead pipe simply means the broadcast is over.
  */
 export function writeFrame(frame: Buffer): void {
-  const stdin = child?.stdin;
-  if (!stdin || stdin.destroyed || !stdin.writable) return;
-  // If the pipe is experiencing backpressure, drop the frame rather than
-  // queuing multiple frames in Node's V8 heap.
-  // For passthrough H.264, frames are small NAL units (<256KB threshold).
-  // For raw BGRA, each frame is ~14MB. When written, Node buffers bytes in stdin
-  // while the OS pipe drains. Dropping at threshold=0 causes nearly every frame
-  // to be dropped because writableLength stays >0 while the single in-flight frame
-  // is being transferred. Only drop if more than a full frame is already buffered.
-  const threshold = isPassthrough ? 256 * 1024 : Math.max(256 * 1024, frame.length);
-  if (stdin.writableLength > threshold) return;
-  try {
-    // Back-pressure is handled by dropping: a frame that cannot be written
-    // now is better skipped than queued, which would only add latency.
-    stdin.write(frame, () => {});
-  } catch {
-    // The pipe went away mid-write; stop() will tidy up.
+  if (isPassthrough) {
+    sendVideoFrame(frame);
+    return;
+  }
+  latestVideoFrame = frame;
+  const now = performance.now();
+  if (lastVideoWriteAt === 0 || nextFrameTime === 0 || now >= nextFrameTime - 2) {
+    if (sendVideoFrame(frame)) {
+      lastVideoWriteAt = now;
+      nextFrameTime = now + targetFrameInterval;
+    }
   }
 }
 
@@ -847,6 +912,7 @@ export async function stop(): Promise<void> {
   watchdog = null;
   if (keepAlive) clearInterval(keepAlive);
   keepAlive = null;
+  stopVideoPacer();
   stopAudioPipe();
   if (!child) return;
   const dying = child;

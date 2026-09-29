@@ -11,8 +11,8 @@
  * Chromium's WebRTC encoder is never involved, which is the entire point: it
  * has no hardware encoder on Windows.
  *
- * There is no local preview, because the encoded stream goes straight out
- * rather than back through this process.
+ * Local preview is subscribed from the room's WHIP stream by useRoom,
+ * so the sharer sees what viewers receive.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -125,6 +125,7 @@ export function useGpuBroadcast() {
           // going out too.
           processId: isWindow && source ? source.processId : null,
           hwnd: isWindow && source ? source.hwnd : null,
+          displayId: !isWindow && source ? (source.displayId ?? null) : null,
           withAudio: isWindow,
           sourceName: source?.name ?? 'Screen',
           sourceKind: source?.kind ?? 'screen',
