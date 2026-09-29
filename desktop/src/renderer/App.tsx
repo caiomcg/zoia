@@ -15,6 +15,7 @@ import { useGpuBroadcast } from './livekit/useGpuBroadcast';
 import { useSoundCues } from './sounds/useSoundCues';
 import { LAST_VERSION_STORAGE_KEY, shouldShowReleaseNotes } from './whats-new';
 import { useExit } from './presence';
+import { primeAvatar, publishAvatarVersions, type EncodedAvatar } from './avatars';
 import {
   DEFAULT_PRESET_ID,
   QUALITY_PRESETS,
@@ -81,6 +82,7 @@ function hopMembers(
       isBroadcasting: broadcasting.has(p.identity),
       isIngress: false,
       broadcastSource: null,
+      avatar: p.avatar,
     }));
   return me ? [{ ...me, isBroadcasting: false, broadcastSource: null }, ...others] : others;
 }
@@ -315,12 +317,52 @@ export default function App() {
       // Stored server-side so it survives a restart, and pushed into the
       // room so everyone sees it now rather than after a reconnect.
       const result = await window.zoia.device.rename(name);
+      if (!result.ok) {
+        // Names are unique on a server; say so rather than "request failed".
+        throw new Error(
+          t(result.error === 'name_taken' ? 'profile.nameTaken' : 'profile.renameFailed'),
+        );
+      }
       setStatus((prev) => (prev ? { ...prev, deviceName: result.name } : prev));
       await room.setDisplayName(result.name).catch(() => {
         // The name is saved either way; it is picked up on the next join.
       });
     },
-    [room],
+    [room, t],
+  );
+
+  // Who has which picture, for every avatar on screen. The channel poll
+  // covers the other channels; this room's own participants are more current,
+  // and this device's own record is the most current of all, so they go last.
+  const myIdentity =
+    room.members.find((member) => member.isLocal)?.identity ?? status?.deviceId ?? undefined;
+  useEffect(() => {
+    const entries: Array<[string, string | null | undefined]> = [];
+    for (const c of channels) {
+      for (const p of c.participants) entries.push([p.identity, p.avatar]);
+    }
+    for (const m of room.members) if (!m.isIngress) entries.push([m.identity, m.avatar]);
+    if (status?.deviceId) entries.push([status.deviceId, status.avatar]);
+    publishAvatarVersions(entries);
+  }, [channels, room.members, status?.deviceId, status?.avatar]);
+
+  /** Publishes a framed picture, or removes this device's picture (null). */
+  const handleAvatarChange = useCallback(
+    async (encoded: EncodedAvatar | null) => {
+      let version: string | null = null;
+      if (encoded) {
+        version = (await window.zoia.device.setAvatar(encoded.bytes)).avatar;
+        if (myIdentity) primeAvatar(myIdentity, version, encoded.url);
+      } else {
+        await window.zoia.device.removeAvatar();
+        if (myIdentity) primeAvatar(myIdentity, null);
+      }
+      setStatus((prev) => (prev ? { ...prev, avatar: version } : prev));
+      await room.setAvatar(version).catch(() => {
+        // Saved either way; the next join's token carries it.
+      });
+    },
+    [room, myIdentity],
   );
 
   if (!status) return <Splash />;
@@ -624,6 +666,7 @@ export default function App() {
                       <Player
                         fullscreen={fullscreen}
                         name={status.deviceName ?? t('common.you')}
+                        identity={myIdentity}
                         showPreview={showPreview}
                         onTogglePreview={togglePreview}
                         localTrack={room.localTrack}
@@ -647,6 +690,7 @@ export default function App() {
                     onTogglePreview: togglePreview,
                     onStop: () => void stopSharing(),
                     name: status.deviceName ?? t('common.you'),
+                    identity: myIdentity,
                   }
                 : undefined
             }
@@ -664,6 +708,7 @@ export default function App() {
         <Sidebar
           members={hopping ? hopMembers(room.members, channels, channel) : room.members}
           myName={status.deviceName ?? t('common.you')}
+          myIdentity={myIdentity}
           viewerIds={viewerIds}
           onOpenSettings={() => setSettingsOpen(true)}
           loadingRemoteIds={loadingRemoteIds}
@@ -713,6 +758,9 @@ export default function App() {
           onClose={() => setSettingsOpen(false)}
           myName={status.deviceName ?? t('common.you')}
           onRename={handleRename}
+          myIdentity={myIdentity}
+          hasAvatar={Boolean(status.avatar)}
+          onAvatarChange={handleAvatarChange}
           hardwareDetail={
             gpu?.hardwareEncoder
               ? t('broadcast.encoderOn', {

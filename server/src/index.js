@@ -12,6 +12,7 @@ import { createStage } from './stage.js';
 import { createWhipPublisher } from './whip.js';
 import { createReportStore } from './reports.js';
 import { createChannelStore } from './channels.js';
+import { createAvatarStore } from './avatars.js';
 import { createApp } from './app.js';
 
 try {
@@ -25,6 +26,9 @@ const config = loadConfig();
 const keyStore = createKeyStore({ file: config.keyStoreFile });
 const pairingStore = createPairingStore({ file: config.pairingStoreFile });
 const deviceStore = createDeviceStore({ file: config.deviceStoreFile });
+const avatarStore = createAvatarStore({ dir: config.avatarDir });
+// Names are unique per server; settle any shared from before they were.
+await deviceStore.dedupeNames();
 const tokenIssuer = createTokenIssuer({
   apiKey: config.livekit.apiKey,
   apiSecret: config.livekit.apiSecret,
@@ -70,6 +74,7 @@ const app = createApp({
   reports,
   pairingStore,
   deviceStore,
+  avatarStore,
 });
 
 app.listen(config.port, () => {

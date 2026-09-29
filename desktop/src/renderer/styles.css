@@ -1071,6 +1071,86 @@ button.danger {
   font-size: 22px;
 }
 
+/* The profile's circle is the picture chooser: a camera badge on its corner
+   says so, and hovering dims the face a little. */
+.avatar-edit {
+  position: relative;
+  flex: 0 0 auto;
+  padding: 0;
+  color: inherit;
+  cursor: pointer;
+  background: none;
+  border: none;
+  border-radius: 50%;
+}
+
+.avatar-edit .avatar {
+  transition: filter 0.15s ease;
+}
+
+.avatar-edit:hover:not(:disabled) .avatar {
+  filter: brightness(0.75);
+}
+
+.avatar-edit:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.avatar-edit:disabled {
+  cursor: progress;
+  opacity: 0.6;
+}
+
+.avatar-edit-badge {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  color: #fff;
+  background: var(--accent);
+  border: 2px solid var(--surface);
+  border-radius: 50%;
+}
+
+.avatar-edit-badge svg {
+  width: 12px;
+  height: 12px;
+}
+
+/* The spacing the lone paragraph's own margins used to give the row. */
+.settings-profile-text {
+  margin: 13px 0;
+}
+
+.settings-profile-text p {
+  margin: 0;
+}
+
+.settings-profile-text .settings-profile-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin-top: 6px;
+  font-size: 12px;
+}
+
+.settings-profile-actions .link-button {
+  padding: 0;
+  font: inherit;
+  color: var(--accent);
+  cursor: pointer;
+  background: none;
+  border: none;
+}
+
+.settings-profile-actions .link-button:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
 .settings-inline {
   display: flex;
   gap: 8px;
@@ -3168,4 +3248,120 @@ button.danger:active:not(:disabled),
   .channel:active {
     transform: none;
   }
+}
+
+/* ---- profile picture framing ---------------------------------------------- */
+
+.crop-dialog {
+  width: min(520px, 94vw);
+  max-height: 92vh;
+}
+
+.crop-dialog header .muted {
+  margin: 0;
+}
+
+.crop-body {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  align-items: center;
+  justify-content: center;
+  padding: 20px 20px 8px;
+}
+
+/* The picture moves under a fixed circle; what falls outside it is dimmed,
+   not hidden, so it is clear what dragging would bring in. */
+.crop-stage {
+  position: relative;
+  flex: 0 0 auto;
+  overflow: hidden;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  background: #111214;
+  border-radius: 10px;
+}
+
+.crop-stage.dragging {
+  cursor: grabbing;
+}
+
+.crop-stage:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.crop-stage img {
+  position: absolute;
+  max-width: none;
+  pointer-events: none;
+}
+
+.crop-mask {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  pointer-events: none;
+  border: 2px solid rgb(255 255 255 / 0.85);
+  border-radius: 50%;
+  box-shadow: 0 0 0 999px rgb(0 0 0 / 0.6);
+  transform: translate(-50%, -50%);
+}
+
+.crop-side {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: center;
+}
+
+.crop-side-label {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.crop-previews {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: center;
+}
+
+.crop-preview {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  background: #111214;
+  border-radius: 50%;
+}
+
+.crop-preview img {
+  position: absolute;
+  max-width: none;
+}
+
+.crop-zoom {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 24px 16px;
+}
+
+.crop-zoom input {
+  flex: 1;
+  accent-color: var(--accent);
+}
+
+.crop-zoom .icon-button {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.crop-error {
+  margin: 0 24px 12px;
+}
+
+.crop-dialog footer {
+  gap: 8px;
 }

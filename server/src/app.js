@@ -13,6 +13,7 @@ import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
 import { NotStageHolderError, WHIP_SUFFIX } from './whip.js';
 import { fixedChannels } from './channels.js';
+import { AVATAR_MAX_BYTES, imageType, isAvatarId } from './avatars.js';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -30,6 +31,7 @@ export function createApp({
   reports = null,
   pairingStore = null,
   deviceStore = null,
+  avatarStore = null,
   logger = console,
 }) {
   const app = express();
@@ -293,7 +295,7 @@ export function createApp({
       setSession(res, 'device', record.id);
       deviceStore.touch(record.id);
       logger.info(`[device] ${record.name} (${record.id}) signed in`);
-      res.json({ name: record.name, id: record.id });
+      res.json({ name: record.name, id: record.id, avatar: record.avatar ?? null });
     } catch (err) {
       next(err);
     }
@@ -319,7 +321,12 @@ export function createApp({
             // A WHIP publisher is its owner's broadcast, not another person.
             participants: participants
               .filter((p) => !p.identity.endsWith(WHIP_SUFFIX))
-              .map(({ identity, name: who }) => ({ identity, name: who })),
+              .map(({ identity, name: who, avatar }) => ({
+                identity,
+                name: who,
+                // Only a version to fetch the picture by; see src/avatars.js.
+                ...(avatar ? { avatar } : {}),
+              })),
             broadcasters: broadcasters.map(({ identity, name: who }) => ({ identity, name: who })),
           };
         }),
@@ -471,15 +478,91 @@ export function createApp({
       if (!name) return res.status(400).json({ error: 'name_required' });
       if (name.length > 32) return res.status(400).json({ error: 'name_too_long' });
 
-      const updated = deviceStore
+      const result = deviceStore
         ? await deviceStore.rename(req.user.id, name).catch(() => null)
         : null;
-      if (!updated) return res.status(404).json({ error: 'unknown_device' });
+      // One name per server, so nobody is mistaken for someone else.
+      if (result?.reason === 'name_taken') return res.status(409).json({ error: 'name_taken' });
+      if (!result?.ok) return res.status(404).json({ error: 'unknown_device' });
 
       // No separate session state to update: the name is read back out of
       // the device store on every request, so the record *is* the source of
       // truth and the next token issued carries the new name.
       res.json({ ok: true, name });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // ---- profile picture ---------------------------------------------------
+  // The bytes arrive raw rather than as JSON, under their own limit: the
+  // global JSON parser's 32kb is sized for crash reports, not pictures.
+
+  const requireAvatars = (_req, res, next) =>
+    avatarStore && deviceStore ? next() : res.status(501).json({ error: 'avatars_not_configured' });
+
+  const rawAvatar = express.raw({ type: () => true, limit: AVATAR_MAX_BYTES });
+  // Answered here rather than by the error handler below, which would call an
+  // oversized picture an internal error.
+  const readAvatarBody = (req, res, next) =>
+    rawAvatar(req, res, (err) => {
+      if (!err) return next();
+      const tooLarge = err.type === 'entity.too.large';
+      res
+        .status(tooLarge ? 413 : 400)
+        .json({ error: tooLarge ? 'avatar_too_large' : 'invalid_image' });
+    });
+
+  app.put('/api/avatar', requireSession, requireAvatars, readAvatarBody, async (req, res, next) => {
+    try {
+      // Like a rename, a picture belongs to a device record.
+      if (req.user.kind !== 'device') return res.status(404).json({ error: 'unknown_device' });
+      if (!imageType(req.body)) return res.status(400).json({ error: 'invalid_image' });
+
+      const avatar = await avatarStore.save(req.user.id, req.body);
+      const updated = await deviceStore.setAvatar(req.user.id, avatar);
+      if (!updated) {
+        await avatarStore.remove(req.user.id);
+        return res.status(404).json({ error: 'unknown_device' });
+      }
+      res.json({ ok: true, avatar });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  app.delete('/api/avatar', requireSession, requireAvatars, async (req, res, next) => {
+    try {
+      if (req.user.kind !== 'device') return res.status(404).json({ error: 'unknown_device' });
+      const updated = await deviceStore.setAvatar(req.user.id, null);
+      if (!updated) return res.status(404).json({ error: 'unknown_device' });
+      await avatarStore.remove(req.user.id);
+      res.json({ ok: true });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // Anyone signed in may see anyone's picture, as they see their name. The
+  // id is checked against the device store before it goes near a path, and a
+  // revoked device's picture goes with it.
+  app.get('/api/avatar/:id', requireSession, requireAvatars, async (req, res, next) => {
+    try {
+      const { id } = req.params;
+      if (!isAvatarId(id)) return res.status(404).json({ error: 'no_avatar' });
+      const record = await deviceStore.getActive(id);
+      if (!record?.avatar) return res.status(404).json({ error: 'no_avatar' });
+      const picture = await avatarStore.read(id);
+      if (!picture) return res.status(404).json({ error: 'no_avatar' });
+
+      // The type is the one sniffed from the stored bytes, never one a client
+      // supplied, and nosniff keeps anything from reading it as something else.
+      res.set('Content-Type', picture.type);
+      res.set('X-Content-Type-Options', 'nosniff');
+      res.set('Content-Security-Policy', "default-src 'none'");
+      // Clients ask with ?v=<version>, so a new picture is a new URL.
+      res.set('Cache-Control', 'private, max-age=86400');
+      res.send(picture.bytes);
     } catch (err) {
       next(err);
     }

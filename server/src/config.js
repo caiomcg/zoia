@@ -42,6 +42,9 @@ export function loadConfig(env = process.env) {
     keyStoreFile: env.KEY_STORE_FILE ?? 'server/data/keys.json',
     pairingStoreFile: env.PAIRING_STORE_FILE ?? 'server/data/pairings.json',
     deviceStoreFile: env.DEVICE_STORE_FILE ?? 'server/data/devices.json',
+    // Profile pictures, one file per device. Under server/data so it shares the
+    // store's volume and deploy.sh's exclude.
+    avatarDir: env.AVATAR_DIR ?? 'server/data/avatars',
     // Broadcast quality. Tunable without a code change because the right
     // values depend entirely on the uplink: the server sends one copy of the
     // stream per remote viewer, so upload = bitrate x viewers.

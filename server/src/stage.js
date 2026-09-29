@@ -40,6 +40,7 @@ const VIEW_PERMISSION = {
 const STALE_CLAIM_MS = 20_000;
 
 import { isWhipIdentity, ownerOf, WHIP_SUFFIX } from './whip.js';
+import { AVATAR_ATTRIBUTE } from './avatars.js';
 
 export function createStage({ rooms, roomName, logger = console, now = () => Date.now() }) {
   // Claim times are a hint for the staleness check only. Losing them (a
@@ -133,13 +134,19 @@ export function createStage({ rooms, roomName, logger = console, now = () => Dat
 
     async participants() {
       const list = await listParticipants();
-      return list.map((p) => ({
-        identity: p.identity,
-        name: p.name || p.identity,
-        canPublish: Boolean(p.permission?.canPublish),
-        publishing: (p.tracks ?? []).length > 0,
-        joinedAt: Number(p.joinedAt ?? 0),
-      }));
+      return list.map((p) => {
+        // The picture's version, for the channel list. Informational only:
+        // nothing here reads it to decide anything.
+        const avatar = p.attributes?.[AVATAR_ATTRIBUTE];
+        return {
+          identity: p.identity,
+          name: p.name || p.identity,
+          canPublish: Boolean(p.permission?.canPublish),
+          publishing: (p.tracks ?? []).length > 0,
+          joinedAt: Number(p.joinedAt ?? 0),
+          ...(avatar ? { avatar } : {}),
+        };
+      });
     },
 
     /**

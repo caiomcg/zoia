@@ -332,6 +332,16 @@ function registerIpc(): void {
   );
 
   ipcMain.handle(IPC.renameDevice, (_event, name: string) => api.renameDevice(name));
+  ipcMain.handle(IPC.setAvatar, (_event, bytes: unknown) => {
+    if (!(bytes instanceof Uint8Array)) throw new Error('expected image bytes');
+    return api.setAvatar(bytes);
+  });
+  ipcMain.handle(IPC.removeAvatar, () => api.removeAvatar());
+  ipcMain.handle(IPC.avatarGet, (_event, identity: unknown, version: unknown) =>
+    typeof identity === 'string' && typeof version === 'string'
+      ? api.fetchAvatar(identity, version)
+      : null,
+  );
 
   ipcMain.handle(
     IPC.encoderStart,

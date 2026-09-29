@@ -99,6 +99,18 @@ describe('token shape', () => {
     assert.equal(result.room, 'zoia');
   });
 
+  test("carries the picture's version, so a join shows it at once", async () => {
+    const { issuer } = makeIssuer();
+    const { token } = await issuer.issue({ id: 'k_1', name: 'A', avatar: '0123456789abcdef' });
+    assert.equal(decodeTokenPayload(token).attributes?.['zoia.avatar'], '0123456789abcdef');
+  });
+
+  test('carries no picture attribute for someone without one', async () => {
+    const { issuer } = makeIssuer();
+    const { token } = await issuer.issue({ id: 'k_1', name: 'A' });
+    assert.equal(decodeTokenPayload(token).attributes?.['zoia.avatar'], undefined);
+  });
+
   test('the raw api secret never appears in the token', async () => {
     const { issuer } = makeIssuer();
     const { token } = await issuer.issue({ id: 'k_1', name: 'A' });

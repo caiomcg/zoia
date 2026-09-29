@@ -92,7 +92,15 @@ export interface ZoiaBridge {
     onError(cb: (message: string) => void): () => void;
   };
   device: {
-    rename(name: string): Promise<{ ok: boolean; name: string }>;
+    /** `error` is the server's code when refused, such as `name_taken`. */
+    rename(name: string): Promise<{ ok: true; name: string } | { ok: false; error: string }>;
+    /** Stores a picture for this device; resolves to its new version. */
+    setAvatar(bytes: Uint8Array): Promise<{ ok: boolean; avatar: string }>;
+    removeAvatar(): Promise<{ ok: boolean }>;
+  };
+  avatars: {
+    /** Someone's picture as a data: URL, or null when they have none. */
+    get(identity: string, version: string): Promise<string | null>;
   };
   /** Sends a renderer-side failure to the server. */
   report(entry: { kind: string; message: string; stack?: string; context?: string }): void;
