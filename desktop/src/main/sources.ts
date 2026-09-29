@@ -24,7 +24,7 @@
  * the same trick every screen-share picker that feels instant is doing.
  */
 
-import { desktopCapturer, systemPreferences, type NativeImage } from 'electron';
+import { desktopCapturer, screen, systemPreferences, type NativeImage } from 'electron';
 import { t } from './language';
 import { windowManager } from 'node-window-manager';
 import { isShareableWindow, type Bounds } from './window-filter';
@@ -117,6 +117,19 @@ async function captureSources(): Promise<SourceInfo[]> {
     // the window silently rather than attempting a capture that cannot work.
     const processId = perAppAudioSupported ? (nativeWindow?.processId ?? null) : null;
 
+    let displayId: string | null = null;
+    if (!isWindow) {
+      if (source.display_id) {
+        displayId = source.display_id;
+      } else {
+        const match = /^screen:(\d+):/.exec(source.id);
+        const idx = match ? Number(match[1]) : 0;
+        const displays = screen.getAllDisplays();
+        const display = displays[idx] ?? displays[0];
+        displayId = display ? String(display.id) : null;
+      }
+    }
+
     return [
       {
         id: source.id,
@@ -126,7 +139,7 @@ async function captureSources(): Promise<SourceInfo[]> {
         processId,
         processPath: nativeWindow?.path ?? null,
         hwnd,
-        displayId: isWindow ? null : source.display_id || null,
+        displayId,
       },
     ];
   });
