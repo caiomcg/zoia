@@ -3,7 +3,7 @@
 - **Status:** accepted
 - **Date:** 2026-09-28
 - **Amends:** [ADR 0011](0011-hardware-encoding-over-the-internet.md),
-  [ADR 0024](0024-resilient-gpu-broadcasting-pipeline.md) — for NVIDIA window shares only
+  [ADR 0024](0024-resilient-gpu-broadcasting-pipeline.md) — for NVIDIA only
 
 ## Context
 
@@ -67,6 +67,9 @@ and audio/video sync — is Chromium's WebRTC stack. Viewers receive an ordinary
   published, and restored immediately after.
 - Windows Graphics Capture itself delivers at most 48fps from a 144Hz game on the test
   machine; the stream follows it. That limit is upstream of this change.
-- **Unchanged:** AMD and Intel (AMF / Quick Sync through ffmpeg), NVIDIA screen shares
-  (ddagrab through ffmpeg), and macOS (Chromium with VideoToolbox). Those paths keep the
-  ffmpeg failure modes above.
+- Whole screens go the same way since 0.4.1, captured by monitor with WGC, so NVIDIA no
+  longer uses ffmpeg at all. The addon fits every capture into a size fixed at the start and
+  refits it when the window changes size, and the sharer's preview is NVENC's output decoded
+  locally.
+- **Unchanged:** AMD and Intel (AMF / Quick Sync through ffmpeg) and macOS (Chromium with
+  VideoToolbox). The AMD and Intel paths keep the ffmpeg failure modes above.
