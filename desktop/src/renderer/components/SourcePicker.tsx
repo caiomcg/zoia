@@ -27,6 +27,28 @@ export default function SourcePicker({
   const [sources, setSources] = useState<SourceInfo[] | null>(null);
   const [query, setQuery] = useState('');
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const handleRefresh = async () => {
+    if (isRefreshing) return;
+    setIsRefreshing(true);
+    try {
+      const list = await window.zoia.sources.list(true);
+      setSources(list);
+      setLoadError(null);
+    } catch (err) {
+      const message = (err instanceof Error ? err.message : String(err)).replace(
+        /^Error invoking remote method '[^']+': (Error: )?/,
+        '',
+      );
+      setSources((current) => {
+        if (!current) setLoadError(message);
+        return current;
+      });
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
 
   // Thumbnails came from a single call when the picker opened, so they were
   // a photograph of the moment it appeared — a window that changed, or was
@@ -88,12 +110,24 @@ export default function SourcePicker({
       <div className="picker" onClick={(e) => e.stopPropagation()}>
         <header>
           <h2>{t('picker.title')}</h2>
-          <input
-            autoFocus
-            placeholder={t('picker.search')}
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
+          <div className="picker-header-actions">
+            <input
+              autoFocus
+              placeholder={t('picker.search')}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+            <button
+              type="button"
+              className={`picker-refresh-btn${isRefreshing ? ' refreshing' : ''}`}
+              onClick={() => void handleRefresh()}
+              title={t('picker.refresh')}
+              aria-label={t('picker.refresh')}
+              disabled={isRefreshing}
+            >
+              <IconRefresh />
+            </button>
+          </div>
         </header>
 
         {loadError && <p className="error">{loadError}</p>}
@@ -149,6 +183,23 @@ export default function SourcePicker({
               </section>
             )}
             {filtered.length === 0 && <p className="muted">{t('picker.none')}</p>}
+
+            <div className="picker-game-tip">
+              <span className="picker-game-tip-icon">💡</span>
+              <p className="picker-game-tip-text">
+                {t('picker.gameTip')
+                  .split(/({borderless}|{screen})/)
+                  .map((part, i) => {
+                    if (part === '{borderless}') {
+                      return <strong key={i}>{t('picker.borderlessMode')}</strong>;
+                    }
+                    if (part === '{screen}') {
+                      return <strong key={i}>{t('picker.screenMode')}</strong>;
+                    }
+                    return part;
+                  })}
+              </p>
+            </div>
           </div>
         )}
 
@@ -183,7 +234,19 @@ function SourceTile({ source, onClick }: { source: SourceInfo; onClick: () => vo
       {source.thumbnailDataUrl ? (
         <img src={source.thumbnailDataUrl} alt="" />
       ) : (
-        <div className="picker-tile-blank" />
+        <div className="picker-tile-blank">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            aria-hidden="true"
+          >
+            <rect x="2" y="3" width="20" height="14" rx="2" />
+            <line x1="8" y1="21" x2="16" y2="21" />
+            <line x1="12" y1="17" x2="12" y2="21" />
+          </svg>
+        </div>
       )}
       <span>{source.name}</span>
       {isGame && <em className="picker-tile-badge">{t('picker.leagueGameBadge')}</em>}
@@ -195,5 +258,26 @@ function SourceTile({ source, onClick }: { source: SourceInfo; onClick: () => vo
           <em className="picker-tile-warn">{t('picker.audioUnavailable')}</em>
         )}
     </button>
+  );
+}
+
+function IconRefresh() {
+  return (
+    <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none">
+      <path
+        d="M20 12a8 8 0 1 1-2.34-5.66L20 8.5"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M20 3.5v5h-5"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
   );
 }
