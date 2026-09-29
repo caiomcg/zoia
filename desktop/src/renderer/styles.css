@@ -601,16 +601,17 @@ button:disabled {
 
 /* A snapshot is blurred: a hint of what is on, not a picture to watch.
    Scaled a touch so the blur does not soften the edges into the frame. Your
-   own live preview stays sharp. */
-.thumb img,
-.thumb video {
+   own live preview stays sharp. The picture only, not every image in the
+   thumbnail: its avatar's profile picture came out a blurred smudge. */
+.thumb-watch > img,
+.thumb-watch > video {
   display: block;
   width: 100%;
   height: 100%;
   object-fit: cover;
 }
 
-.thumb img {
+.thumb-watch > img {
   filter: blur(6px) brightness(0.8);
   transform: scale(1.08);
 }
