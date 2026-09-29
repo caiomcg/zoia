@@ -132,6 +132,7 @@ export const pt: Messages = {
   'grid.splitTitle': 'Arraste para redimensionar · clique duplo para dividir ao meio',
   'grid.showStrip': 'Mostrar transmissões',
   'grid.hideStrip': 'Ocultar transmissões',
+  'grid.moveStrip': 'Arraste para outra lateral',
   'grid.yourBroadcast': 'Sua transmissão',
 
   'room.stoppedSharing': '{name} parou de transmitir',
