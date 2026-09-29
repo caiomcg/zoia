@@ -397,7 +397,7 @@ button:disabled {
   flex-shrink: 1;
   /* PAIR_TILE_MIN_PX and PAIR_SPLITTER_PX in pair-split.ts. Half the row when
      the stage cannot give both tiles the full minimum. */
-  min-width: min(360px, calc((100% - 10px) / 2));
+  min-width: min(400px, calc((100% - 10px) / 2));
 }
 
 /* The footer controls stay on one line. The name beside them truncates
@@ -678,40 +678,14 @@ button:disabled {
   accent-color: var(--accent);
 }
 
-/* Your own broadcast, shown large, with a way out of the large view. */
+/* Your own broadcast, shown large. */
 .local-slot {
-  position: relative;
   display: flex;
 }
 
 .local-slot > .stage {
   flex: 1;
   min-width: 0;
-}
-
-.tile-close {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  z-index: 2;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  color: #fff;
-  background: rgb(0 0 0 / 0.6);
-  border: 1px solid rgb(255 255 255 / 0.2);
-  border-radius: 6px;
-  cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.15s ease;
-}
-
-.stage-area:hover .tile-close,
-.tile-close:focus-visible {
-  opacity: 1;
 }
 
 .thumb-actions {

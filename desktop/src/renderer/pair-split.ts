@@ -6,7 +6,7 @@ export const PAIR_SPLITTER_PX = 10;
  * fullscreen and close on one line; any narrower and those controls wrap.
  * Matches the `min()` on `.mains.paired > .tile-slot` in styles.css.
  */
-export const PAIR_TILE_MIN_PX = 360;
+export const PAIR_TILE_MIN_PX = 400;
 
 /**
  * How far the divider may travel, as a fraction of the row. Each tile is

@@ -76,6 +76,7 @@ export default function Player({
   sendAudio,
   onStop,
   onSwitch,
+  onClose,
   fullscreen,
 }: {
   name: string;
@@ -102,6 +103,8 @@ export default function Player({
   };
   onStop: () => void;
   onSwitch: () => void;
+  /** Leave the large view. Sits to the right of fullscreen, as on a watched tile. */
+  onClose?: () => void;
   /**
    * The layout owns fullscreen, so the other broadcasts' thumbnails can come
    * along. Without it, the player goes fullscreen on its own.
@@ -248,6 +251,16 @@ export default function Player({
           >
             <IconFullscreen active={fullscreenActive} />
           </button>
+          {onClose && !fullscreenActive && (
+            <button
+              className="icon-button"
+              onClick={onClose}
+              title={t('grid.removeFromView')}
+              aria-label={t('grid.removeFromView')}
+            >
+              <IconClose />
+            </button>
+          )}
         </div>
       </div>
     </section>
@@ -288,6 +301,24 @@ function IconSwitch() {
       strokeLinejoin="round"
     >
       <path d="M4 8h14l-3-3M20 16H6l3 3" />
+    </svg>
+  );
+}
+
+function IconClose() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="18"
+      height="18"
+      aria-hidden="true"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M6 6l12 12M18 6L6 18" />
     </svg>
   );
 }
