@@ -1,31 +1,43 @@
-import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
+import {
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+  type ReactNode,
+  type Ref,
+  type RefObject,
+} from 'react';
+import { createPortal } from 'react-dom';
 import type { LocalVideoTrack, RemoteTrack } from 'livekit-client';
 import type { RemoteScreen } from '../livekit/useRoom';
 import Avatar from './Avatar';
-import { IconEye, IconFullscreen, IconHeadphones, IconVolume } from './Player';
+import { IconEye, IconFullscreen, IconVolume } from './Player';
 import { useT, type T } from '../i18n';
 import type { MessageKey } from '../../shared/i18n';
 
 /**
  * Every broadcast in the room, laid out one of two ways:
  *
- * - spotlight: one large, the rest as thumbnails;
+ * - spotlight: one large, the rest of what is watched as small windows at the
+ *   bottom, which the arrow tucks away; clicking one swaps it with the large;
  * - mosaic: all of them large. Two sit side by side with a draggable split;
  *   more form a grid.
  *
- * Nothing opens by itself. Someone joining sees a dark stage and every
- * broadcast as a blurred, silent thumbnail; they choose to watch one (it goes
- * large, with sound) or only to listen to it (it stays a blurred thumbnail,
- * moves to the front of the strip, and its audio plays). A broadcast that starts later joins the thumbnails too. In the
- * spotlight, watching replaces what is large; in the mosaic, it adds to it.
+ * Both show the same thing, what the viewer chose to watch; switching layout
+ * only changes how. Nothing opens by itself: someone joining sees a dark
+ * stage, and chooses what to watch. Watching includes the sound; there is no
+ * listening without watching.
  *
- * Fullscreen shows one broadcast, with the others still in the thumbnail strip
- * over it; clicking one swaps it in. Leaving fullscreen lands back in whichever
- * layout was chosen. After a few still seconds the overlays and the cursor fade.
+ * The broadcasts not on stage are found in the channel list: hovering someone
+ * live there shows their thumbnail beside it (see GridControls), and clicking
+ * them puts them on stage. Nothing lies over the stage for them, since in the
+ * mosaic anything there covered the corners and controls of the tiles.
  *
- * The strip floats over the bottom of the picture, clear of the player's
- * controls, and can be tucked away. Large tiles ask for the high simulcast
- * layer, thumbnails for the low one (see setRemoteFocus).
+ * Fullscreen hides the channel list, so there the others are in a thumbnail
+ * strip over the picture instead; clicking one swaps it in. Leaving fullscreen
+ * lands back in whichever layout was chosen. After a few still seconds the
+ * overlays and the cursor fade. Large tiles ask for the high simulcast layer,
+ * thumbnails for the low one (see setRemoteFocus).
  *
  * Volume and mute are kept per person, here rather than in the tile, so they
  * survive a tile moving between the strip and a large slot.
@@ -35,6 +47,31 @@ import type { MessageKey } from '../../shared/i18n';
 export const LOCAL_SPOTLIGHT = '__local__';
 
 export type LayoutMode = 'spotlight' | 'mosaic';
+
+/** Someone in the channel list, by what the list knows of them. */
+export interface GridTarget {
+  identity: string;
+  isLocal: boolean;
+}
+
+/** How the channel list reaches the broadcasts, through App. */
+export interface GridControls {
+  /** Puts their broadcast on stage, as clicking a thumbnail does. */
+  watch(target: GridTarget): void;
+  /** Shows their thumbnail beside `anchor`, their row; null starts to hide it. */
+  hover(target: GridTarget | null, anchor?: DOMRect): void;
+}
+
+/** What the channel list marks on each person: whose broadcast is on stage. */
+export interface StageState {
+  watching: string[];
+  localWatched: boolean;
+}
+
+/** Long enough to move from a row in the list onto its thumbnail. */
+const HOVER_CLOSE_MS = 250;
+const PREVIEW_WIDTH = 320;
+const PREVIEW_HEIGHT = 180;
 
 const LAYOUT_KEY = 'zoia.layout';
 const STRIP_HIDDEN_KEY = 'zoia.thumbnailsHidden';
@@ -457,21 +494,27 @@ function ListenAudio({ track, audio }: { track: RemoteTrack; audio: AudioSetting
   return <audio ref={ref} autoPlay />;
 }
 
+/** Takes one broadcast's snapshot, with no picture of its own on screen. */
+function SnapshotTaker({
+  track,
+  onCaptured,
+}: {
+  track: RemoteTrack | null;
+  onCaptured: (url: string | null) => void;
+}) {
+  useSnapshot(track, true, onCaptured);
+  return null;
+}
+
 function Thumbnail({
   name,
   identity,
   label,
   liveVideo = null,
   snapshot = null,
-  captureTrack = null,
-  capture = false,
-  onCaptured,
-  audioTrack = null,
   audio,
   onAudioChange,
-  listening = false,
   onWatch,
-  onToggleListen,
   onStop,
   preview,
   peeking = false,
@@ -488,22 +531,16 @@ function Thumbnail({
   liveVideo?: LocalVideoTrack | RemoteTrack | null;
   /** A remote broadcast shows its latest snapshot instead of live video. */
   snapshot?: string | null;
-  captureTrack?: RemoteTrack | null;
-  capture?: boolean;
-  onCaptured?: (url: string | null) => void;
-  audioTrack?: RemoteTrack | null;
   audio?: AudioSetting;
   onAudioChange?: (next: AudioSetting) => void;
-  listening?: boolean;
   onWatch?: () => void;
-  onToggleListen?: () => void;
   /** Your own preview: stop sharing, right from the strip. */
   onStop?: () => void;
   /** Your own thumbnail: its eye shows or hides your preview instead. */
   preview?: { on: boolean; onToggle: () => void };
   /**
-   * Someone else's: the eye plays it live right here, sharp and with sound,
-   * without putting it on the stage. Clicking the tile is what does that.
+   * Someone else's, in the spotlight: the eye watches it as a small window at
+   * the bottom, or closes that window. Clicking the tile puts it large.
    */
   peeking?: boolean;
   onTogglePeek?: () => void;
@@ -511,16 +548,12 @@ function Thumbnail({
   const t = useT();
   const videoRef = useRef<HTMLVideoElement>(null);
   useMediaStream(videoRef, liveVideo, null);
-  useSnapshot(captureTrack, capture, (url) => onCaptured?.(url));
 
   const volume = audio?.volume ?? DEFAULT_VOLUME;
   const muted = Boolean(audio?.muted);
 
   return (
-    <div
-      className={`thumb${listening || peeking ? ' listening' : ''}${peeking ? ' peeking' : ''}`}
-      title={`${name} — ${label}`}
-    >
+    <div className="thumb" title={`${name} — ${label}`}>
       <button
         className="thumb-watch"
         onClick={onWatch}
@@ -528,7 +561,14 @@ function Thumbnail({
         aria-label={t('grid.watch', { name })}
       >
         {liveVideo ? (
-          <video className="thumb-live" ref={videoRef} playsInline autoPlay muted />
+          <video
+            className="thumb-live"
+            ref={videoRef}
+            playsInline
+            autoPlay
+            muted
+            poster={snapshot ?? undefined}
+          />
         ) : snapshot ? (
           <img src={snapshot} alt="" />
         ) : (
@@ -548,7 +588,7 @@ function Thumbnail({
         )}
       </button>
       {/* Hover only: at this size the tile is for the picture. */}
-      {(listening || peeking) && onAudioChange && (
+      {peeking && onAudioChange && (
         <div className="thumb-audio">
           {/* Same as a watched tile: muting keeps the level, and unmuting
               restores it, or full volume if it was at zero. */}
@@ -600,17 +640,6 @@ function Thumbnail({
               <IconEye off={!peeking} />
             </button>
           ) : null}
-          {audioTrack && onToggleListen && (
-            <button
-              className={`thumb-action${listening ? ' active' : ''}`}
-              onClick={onToggleListen}
-              aria-pressed={listening}
-              title={listening ? t('grid.listenStop') : t('grid.listenStart')}
-              aria-label={listening ? t('grid.listenStop') : t('grid.listenStart')}
-            >
-              <IconHeadphones />
-            </button>
-          )}
           {onStop && (
             <button
               className="thumb-action danger"
@@ -638,6 +667,8 @@ export default function RemoteGrid({
   onStartSharing,
   onDismissOnboarding,
   onPausedChange,
+  controlRef,
+  onStageChange,
 }: {
   screens: RemoteScreen[];
   /** Present while this device is broadcasting. */
@@ -660,6 +691,9 @@ export default function RemoteGrid({
   onDismissOnboarding?: () => void;
   /** Called with the remote broadcasts whose video should not be forwarded. */
   onPausedChange: (identities: string[]) => void;
+  controlRef?: Ref<GridControls>;
+  /** Called with who is on stage or only heard, for the channel list. */
+  onStageChange?: (state: StageState) => void;
 }) {
   const t = useT();
   const [mode, setMode] = useState<LayoutMode>(() =>
@@ -668,7 +702,9 @@ export default function RemoteGrid({
       ? 'spotlight'
       : 'mosaic',
   );
-  // Spotlight picks, most recently chosen first.
+  // What the viewer chose to watch, the same in both layouts, which only show
+  // it differently: the mosaic as tiles, the spotlight with the first large and
+  // the rest as small windows at the bottom. Watched means heard, too.
   const [pinned, setPinned] = useState<string[]>([]);
   const [audio, setAudio] = useState<Record<string, AudioSetting>>(readAudioSettings);
   const [stripHidden, setStripHidden] = useState(
@@ -679,6 +715,12 @@ export default function RemoteGrid({
   const draggingRef = useRef(false);
   const areaRef = useRef<HTMLDivElement>(null);
   const fullscreen = useFullscreen(areaRef);
+  // In fullscreen the strip holds every broadcast, since the channel list is
+  // hidden. In the spotlight it holds the small windows: the rest of what is
+  // watched. The mosaic has none. Both tuck away with the same arrow.
+  const stripShown = fullscreen.isFullscreen && !stripHidden;
+  const pipStrip = !fullscreen.isFullscreen && mode === 'spotlight';
+  const pipShown = pipStrip && !stripHidden;
   // Which broadcast fills the screen while fullscreen; null otherwise.
   const [fullscreenId, setFullscreenId] = useState<string | null>(null);
 
@@ -703,10 +745,10 @@ export default function RemoteGrid({
   else if (mode === 'mosaic') mains = livePinned;
   else mains = spotlightId ? [spotlightId] : [];
   const remoteMains = mains.filter((id) => id !== LOCAL_SPOTLIGHT);
-  // Broadcasts the viewer only listens to: they stay thumbnails, with sound.
-  const [listening, setListening] = useState<Set<string>>(new Set());
-  // Broadcasts previewed live in their thumbnail, with sound, off the stage.
-  const [peeking, setPeeking] = useState<Set<string>>(new Set());
+  // The spotlight's small windows: everything watched but the large one.
+  const pipIds = pipStrip ? livePinned.slice(1) : [];
+  // Watched, but not large: heard from outside its tile.
+  const heardAside = livePinned.filter((id) => !mains.includes(id) && id !== LOCAL_SPOTLIGHT);
   // Broadcasts this viewer turned HQ off for. Per broadcast, not room-wide.
   const [lowQuality, setLowQuality] = useState<Set<string>>(new Set());
   // Latest thumbnail picture per broadcast, and which are being taken now.
@@ -714,6 +756,19 @@ export default function RemoteGrid({
     {},
   );
   const [capturing, setCapturing] = useState<Set<string>>(new Set());
+  // The broadcast whose thumbnail is showing beside the channel list.
+  const [hovered, setHovered] = useState<{ id: string; anchor: DOMRect } | null>(null);
+  const hoverCloseRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const idFor = (target: GridTarget) => (target.isLocal ? LOCAL_SPOTLIGHT : target.identity);
+  const keepHover = () => {
+    if (hoverCloseRef.current) clearTimeout(hoverCloseRef.current);
+    hoverCloseRef.current = null;
+  };
+  const releaseHover = () => {
+    keepHover();
+    hoverCloseRef.current = setTimeout(() => setHovered(null), HOVER_CLOSE_MS);
+  };
+  useEffect(() => keepHover, []);
 
   useEffect(() => {
     if (!fullscreen.isFullscreen) setFullscreenId(null);
@@ -733,16 +788,18 @@ export default function RemoteGrid({
   }, [focusKey, onFocusChange]);
 
   // Every remote broadcast not shown large is a thumbnail: its video is paused
-  // on the server, except for the moment a snapshot is being taken. With the
-  // strip tucked away no snapshot can be taken, so all of them stay paused.
-  // Listening only brings the sound; the thumbnail stays a blurred snapshot.
+  // on the server, except for the moment a snapshot is being taken, and while
+  // its thumbnail is hovered in the channel list, where it plays live.
+  // Snapshots are taken whether or not any thumbnail is on screen, so the one
+  // shown on hover is current. Listening only brings the sound.
   const remoteThumbKey = screens
     .map((screen) => screen.participantIdentity)
     .filter((id) => !mains.includes(id))
     .join('|');
-  // A previewed thumbnail keeps its video coming, on the low layer.
+  // A small window on screen keeps its video coming, on the low layer.
   const pausedKey = (remoteThumbKey ? remoteThumbKey.split('|') : [])
-    .filter((id) => stripHidden || (!capturing.has(id) && !peeking.has(id)))
+    .filter((id) => id !== hovered?.id)
+    .filter((id) => !capturing.has(id) && !(pipShown && pipIds.includes(id)))
     .join('|');
   useEffect(() => {
     onPausedChange(pausedKey ? pausedKey.split('|') : []);
@@ -755,10 +812,6 @@ export default function RemoteGrid({
 
   useEffect(() => {
     const due = remoteThumbKey ? remoteThumbKey.split('|') : [];
-    if (stripHidden) {
-      setCapturing((current) => (current.size === 0 ? current : new Set()));
-      return;
-    }
     const tick = () => {
       const now = Date.now();
       setCapturing((current) => {
@@ -774,7 +827,7 @@ export default function RemoteGrid({
     tick();
     const timer = setInterval(tick, SNAPSHOT_CHECK_MS);
     return () => clearInterval(timer);
-  }, [remoteThumbKey, stripHidden]);
+  }, [remoteThumbKey]);
 
   function captured(id: string, url: string | null) {
     setSnapshots((current) => ({
@@ -809,31 +862,45 @@ export default function RemoteGrid({
     });
   }
 
+  // Watching the same in both layouts: it joins what is watched, and in the
+  // spotlight goes large, so what was large becomes a small window. Clicking a
+  // small window is therefore a swap.
   function watch(id: string) {
+    keepHover();
+    setHovered(null);
     if (fullId) setFullscreenId(id);
     else if (mode === 'mosaic')
-      setPinned((current) => [...current.filter((other) => other !== id), id]);
-    else setPinned([id]);
-    // Watching includes the sound; listening-only and the preview no longer apply.
-    const without = (current: Set<string>) => {
-      if (!current.has(id)) return current;
-      const next = new Set(current);
-      next.delete(id);
-      return next;
-    };
-    setListening(without);
-    setPeeking(without);
+      setPinned((current) => (current.includes(id) ? current : [...current, id]));
+    else setPinned((current) => [id, ...current.filter((other) => other !== id)]);
+    ensureAudible(id);
   }
 
-  function togglePeek(id: string) {
-    const starting = !peeking.has(id);
-    setPeeking((current) => {
-      const next = new Set(current);
-      if (starting) next.add(id);
-      else next.delete(id);
-      return next;
+  // Picked from the channel list or its hover thumbnail. In the spotlight it
+  // replaces what is large, which stops being watched; the eye is the way to
+  // keep both. Elsewhere it is the same as watching.
+  function pick(id: string) {
+    if (fullId || mode === 'mosaic') {
+      watch(id);
+      return;
+    }
+    keepHover();
+    setHovered(null);
+    setPinned((current) => {
+      const large = current.find((other) => candidates.includes(other));
+      return [id, ...current.filter((other) => other !== id && other !== large)];
     });
-    if (starting) ensureAudible(id);
+    ensureAudible(id);
+  }
+
+  // The eye, in the spotlight: watch as a small window without taking over
+  // the large one, or stop watching it.
+  function toggleSmallWindow(id: string) {
+    if (livePinned.includes(id)) {
+      stopWatching(id);
+      return;
+    }
+    setPinned((current) => [...current, id]);
+    ensureAudible(id);
   }
 
   /** Choosing to hear something means hearing it, whatever it was left at. */
@@ -854,17 +921,6 @@ export default function RemoteGrid({
     setPinned((current) => current.filter((other) => other !== id));
   }
 
-  function toggleListen(id: string) {
-    const starting = !listening.has(id);
-    setListening((current) => {
-      const next = new Set(current);
-      if (starting) next.add(id);
-      else next.delete(id);
-      return next;
-    });
-    if (starting) ensureAudible(id);
-  }
-
   function updateAudio(id: string, nextSetting: AudioSetting) {
     setAudio((current) => {
       const next = { ...current, [id]: nextSetting };
@@ -883,7 +939,7 @@ export default function RemoteGrid({
   }
 
   function rank(id: string): number {
-    if (listening.has(id) || peeking.has(id)) return 0;
+    if (livePinned.includes(id)) return 0;
     return id === LOCAL_SPOTLIGHT ? 1 : 2;
   }
 
@@ -891,9 +947,160 @@ export default function RemoteGrid({
     return audio[id] ?? { volume: DEFAULT_VOLUME, muted: false };
   }
 
+  useImperativeHandle(controlRef, () => ({
+    watch: (target) => pick(idFor(target)),
+    hover: (target, anchor) => {
+      if (!target || !anchor) return releaseHover();
+      keepHover();
+      setHovered({ id: idFor(target), anchor });
+    },
+  }));
+
+  const stageKey = JSON.stringify([
+    livePinned.filter((id) => id !== LOCAL_SPOTLIGHT),
+    livePinned.includes(LOCAL_SPOTLIGHT),
+  ]);
+  useEffect(() => {
+    const [watching, localWatched] = JSON.parse(stageKey) as [string[], boolean];
+    onStageChange?.({ watching, localWatched });
+  }, [stageKey, onStageChange]);
+
+  const hoverPreview = hovered ? renderPreview(hovered.id, hovered.anchor) : null;
+
+  // Beside the channel list, on the left of the hovered row, and kept on
+  // screen. In a portal: the stage clips what overflows it.
+  function renderPreview(id: string, anchor: DOMRect): ReactNode {
+    const card = renderCard(id, anchor);
+    if (!card) return null;
+    return createPortal(card, document.body);
+  }
+
+  // The thumbnail, and only what it is for from here: clicking it puts the
+  // broadcast on stage, and in the spotlight its eye opens a small window.
+  function renderCard(id: string, anchor: DOMRect): ReactNode {
+    const top = Math.min(
+      Math.max(8, anchor.top + anchor.height / 2 - PREVIEW_HEIGHT / 2),
+      window.innerHeight - PREVIEW_HEIGHT - 8,
+    );
+    const frame = (children: ReactNode) => (
+      <div
+        className="member-preview"
+        style={{ top, right: window.innerWidth - anchor.left + 8, width: PREVIEW_WIDTH }}
+        onMouseEnter={keepHover}
+        onMouseLeave={releaseHover}
+      >
+        {children}
+      </div>
+    );
+    if (id === LOCAL_SPOTLIGHT) {
+      if (!local) return null;
+      return frame(
+        <Thumbnail
+          name={local.name}
+          identity={local.identity}
+          label={t('grid.yourBroadcast')}
+          liveVideo={local.track}
+          onWatch={() => pick(id)}
+          onStop={local.onStop}
+          preview={{ on: local.showPreview, onToggle: local.onTogglePreview }}
+        />,
+      );
+    }
+    const screen = screens.find((candidate) => candidate.participantIdentity === id);
+    if (!screen) {
+      const pending = loadingBroadcasts.find((broadcast) => broadcast.identity === id);
+      return pending
+        ? frame(
+            <Thumbnail
+              name={pending.name}
+              identity={pending.identity}
+              label={t('common.loading')}
+              loading
+            />,
+          )
+        : null;
+    }
+    return frame(
+      <Thumbnail
+        name={screen.participantName}
+        identity={screen.participantIdentity}
+        label={sourceText(t, screen.sourceName, screen.sourceKind)}
+        liveVideo={screen.videoTrack}
+        snapshot={snapshots[id]?.url ?? null}
+        onWatch={() => pick(id)}
+        peeking={pipIds.includes(id)}
+        // The mosaic has room for another tile, so clicking is the way to see
+        // it alongside; the spotlight has one, so a small window instead.
+        onTogglePeek={pipStrip ? () => toggleSmallWindow(id) : undefined}
+      />,
+    );
+  }
+
+  // A thumbnail, for the fullscreen strip or the channel list's hover. Only a
+  // hovered remote broadcast plays live; the rest show their snapshot.
+  function renderThumb(id: string): ReactNode {
+    if (id === LOCAL_SPOTLIGHT) {
+      if (!local) return null;
+      return (
+        <Thumbnail
+          key={id}
+          name={local.name}
+          identity={local.identity}
+          label={t('grid.yourBroadcast')}
+          liveVideo={local.track}
+          onWatch={() => watch(id)}
+          onStop={local.onStop}
+          preview={{ on: local.showPreview, onToggle: local.onTogglePreview }}
+        />
+      );
+    }
+    const screen = screens.find((candidate) => candidate.participantIdentity === id);
+    if (!screen) {
+      const pending = loadingBroadcasts.find((broadcast) => broadcast.identity === id);
+      return pending ? (
+        <Thumbnail
+          key={id}
+          name={pending.name}
+          identity={pending.identity}
+          label={t('common.loading')}
+          loading
+        />
+      ) : null;
+    }
+    // A small window plays live, with a volume and its eye to close it; the
+    // fullscreen strip's thumbnails are snapshots, clicked to swap in.
+    const small = pipIds.includes(id);
+    return (
+      <Thumbnail
+        key={id}
+        name={screen.participantName}
+        identity={screen.participantIdentity}
+        label={sourceText(t, screen.sourceName, screen.sourceKind)}
+        snapshot={snapshots[id]?.url ?? null}
+        audio={audioFor(id)}
+        onAudioChange={small ? (next) => updateAudio(id, next) : undefined}
+        peeking={small}
+        onTogglePeek={small ? () => toggleSmallWindow(id) : undefined}
+        liveVideo={small && pipShown ? screen.videoTrack : null}
+        onWatch={() => watch(id)}
+      />
+    );
+  }
+
+  // Snapshots, taken off screen: nothing else would take them now that no
+  // thumbnail is on screen outside fullscreen.
+  const snapshotTakers = [...capturing].map((id) => (
+    <SnapshotTaker
+      key={id}
+      track={screens.find((screen) => screen.participantIdentity === id)?.videoTrack ?? null}
+      onCaptured={(url) => captured(id, url)}
+    />
+  ));
+
   if (candidates.length === 0) {
     return (
       <section className="stage remote-empty">
+        {hoverPreview}
         <div className="overlay">
           {loadingBroadcasts.length > 0 ? (
             <>
@@ -946,6 +1153,9 @@ export default function RemoteGrid({
     .sort((a, b) => rank(a) - rank(b));
   const loadingThumbs = loadingBroadcasts;
   const stripCount = thumbs.length + loadingThumbs.length;
+  // The spotlight's small windows: live ones, and ones only listened to, which
+  // keep their window, showing the snapshot, so they can be switched back.
+  const toggleCount = fullscreen.isFullscreen ? stripCount : pipIds.length;
   const columns = mains.length <= 1 ? 1 : mains.length <= 4 ? 2 : 3;
 
   function renderTile(id: string) {
@@ -1059,15 +1269,15 @@ export default function RemoteGrid({
 
   return (
     <section className="broadcast-layout">
+      {hoverPreview}
+      {snapshotTakers}
       <div className={`stage-area${fullscreen.idle ? ' idle' : ''}`} ref={areaRef}>
         {mainsView}
 
-        {[...new Set([...listening, ...peeking])]
-          .filter((id) => !mains.includes(id))
-          .map((id) => {
-            const track = screenById.get(id)?.audioTrack;
-            return track ? <ListenAudio key={id} track={track} audio={audioFor(id)} /> : null;
-          })}
+        {heardAside.map((id) => {
+          const track = screenById.get(id)?.audioTrack;
+          return track ? <ListenAudio key={id} track={track} audio={audioFor(id)} /> : null;
+        })}
 
         {candidates.length > 1 && !fullId && (
           <div className="layout-switch" role="group" aria-label={t('grid.layout')}>
@@ -1088,7 +1298,7 @@ export default function RemoteGrid({
 
         {/* The arrow has a spot of its own, bottom centre, and never moves:
             it used to ride along with the strip as it lifted and collapsed. */}
-        {stripCount > 0 && (
+        {toggleCount > 0 && (
           <button
             className="thumb-toggle"
             onClick={toggleStrip}
@@ -1098,55 +1308,18 @@ export default function RemoteGrid({
             <Icon>
               <path d={stripHidden ? 'M6 15l6-6 6 6' : 'M6 9l6 6 6-6'} />
             </Icon>
-            {stripHidden ? `${stripCount}` : null}
+            {stripHidden ? `${toggleCount}` : null}
           </button>
         )}
-        {stripCount > 0 && !stripHidden && (
+        {pipShown && pipIds.length > 0 && (
+          <div className="thumb-overlay">
+            <div className="thumb-strip">{pipIds.map((id) => renderThumb(id))}</div>
+          </div>
+        )}
+        {stripShown && stripCount > 0 && (
           <div className="thumb-overlay">
             <div className="thumb-strip">
-              {thumbs.map((id) => {
-                if (id === LOCAL_SPOTLIGHT) {
-                  return (
-                    <Thumbnail
-                      key={id}
-                      name={local?.name ?? ''}
-                      identity={local?.identity}
-                      label={t('grid.yourBroadcast')}
-                      liveVideo={local?.track ?? null}
-                      onWatch={() => watch(id)}
-                      onStop={local?.onStop}
-                      preview={
-                        local
-                          ? { on: local.showPreview, onToggle: local.onTogglePreview }
-                          : undefined
-                      }
-                    />
-                  );
-                }
-                const screen = screenById.get(id);
-                if (!screen) return null;
-                return (
-                  <Thumbnail
-                    key={id}
-                    name={screen.participantName}
-                    identity={screen.participantIdentity}
-                    label={sourceText(t, screen.sourceName, screen.sourceKind)}
-                    snapshot={snapshots[id]?.url ?? null}
-                    captureTrack={screen.videoTrack}
-                    capture={capturing.has(id)}
-                    onCaptured={(url) => captured(id, url)}
-                    audioTrack={screen.audioTrack}
-                    audio={audioFor(id)}
-                    onAudioChange={(next) => updateAudio(id, next)}
-                    listening={listening.has(id)}
-                    peeking={peeking.has(id)}
-                    onTogglePeek={() => togglePeek(id)}
-                    liveVideo={peeking.has(id) && !stripHidden ? screen.videoTrack : null}
-                    onWatch={() => watch(id)}
-                    onToggleListen={() => toggleListen(id)}
-                  />
-                );
-              })}
+              {thumbs.map((id) => renderThumb(id))}
               {loadingThumbs.map((broadcast) => (
                 <Thumbnail
                   key={broadcast.identity}

@@ -44,21 +44,6 @@ export function IconVolume({ muted }: { muted: boolean }) {
   );
 }
 
-export function IconHeadphones() {
-  return (
-    <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none">
-      <path
-        d="M4 14v-2a8 8 0 0116 0v2"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-      />
-      <rect x="2.5" y="13.5" width="4.5" height="7" rx="2" fill="currentColor" />
-      <rect x="17" y="13.5" width="4.5" height="7" rx="2" fill="currentColor" />
-    </svg>
-  );
-}
-
 export function IconFullscreen({ active }: { active: boolean }) {
   return (
     <svg
