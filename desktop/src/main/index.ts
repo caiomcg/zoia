@@ -349,6 +349,7 @@ function registerIpc(): void {
       _event,
       options: Omit<encoder.EncoderOptions, 'frames' | 'whipUrl' | 'whipToken' | 'gpuVendor'> & {
         hwnd: number | null;
+        displayId?: string | null;
         sourceName: string;
         sourceKind: string;
       },
@@ -392,6 +393,7 @@ function registerIpc(): void {
 
   function attemptContext(options: {
     hwnd: number | null;
+    displayId?: string | null;
     framerate: number;
     bitrate: number;
     withAudio: boolean;
@@ -401,22 +403,27 @@ function registerIpc(): void {
     return [
       `vendor=${gpuStatus.gpuVendor} encoder=${gpuStatus.gpuEncoder}`,
       `adapter=${gpuStatus.adapter}`,
-      `windowCapture=${gpuStatus.windowCapture} hwnd=${options.hwnd ?? 'screen'}`,
+      `windowCapture=${gpuStatus.windowCapture} hwnd=${options.hwnd ?? 'screen'} displayId=${options.displayId ?? 'none'}`,
       `framerate=${options.framerate} bitrate=${options.bitrate} audio=${options.withAudio}`,
     ].join('\n');
   }
 
   async function startEncoding(
     mainWindow: BrowserWindow,
-    options: Omit<encoder.EncoderOptions, 'frames' | 'gpuVendor'> & { hwnd: number | null },
+    options: Omit<encoder.EncoderOptions, 'frames' | 'gpuVendor'> & {
+      hwnd: number | null;
+      displayId?: string | null;
+    },
   ): Promise<void> {
     // Nobody picks a new source mid-broadcast, so refreshing the picker's
     // thumbnail cache from here on buys nothing and repeatedly logs WGC
     // "Source is not capturable" for windows it cannot grab.
     sources.stopWarming();
 
-    if (options.hwnd !== null) {
-      // Native path: WGC captures the window. On an NVIDIA adapter the addon
+    const target = options.hwnd ?? screenPoint(options.displayId ?? null);
+
+    if (target !== null) {
+      // Native path: WGC captures the window or screen. On an NVIDIA adapter the addon
       // also encodes it, without the pixels ever leaving the GPU, and ffmpeg
       // only muxes. On a Radeon or an Intel GPU it hands back raw frames and
       // ffmpeg encodes them with AMF or Quick Sync — `info.output` says
@@ -426,7 +433,7 @@ function registerIpc(): void {
       let info: ReturnType<typeof capture.start>;
       try {
         info = capture.start(
-          options.hwnd,
+          target,
           options.framerate,
           options.bitrate,
           options.maxWidth && options.maxHeight
