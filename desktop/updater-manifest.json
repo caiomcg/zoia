@@ -1,9 +1,9 @@
 {
-  "version": "0.4.3",
+  "version": "0.4.4",
   "updateType": "asar",
   "minimumVersion": "0.4.2",
-  "artifactUrl": "https://github.com/caiomcg/zoia/releases/download/v0.4.3/Zoia-OTA-0.4.3.asar",
-  "sha256": "b62e38527e05052827e7f2d071cdbeb73b82cc104d3721651d609d469268a556",
-  "installerUrl": "https://github.com/caiomcg/zoia/releases/download/v0.4.3/Zoia-Setup-0.4.3-x64.exe",
-  "notes": "Profile pictures, and broadcasts found in the channel list instead of over the stage."
+  "artifactUrl": "https://github.com/caiomcg/zoia/releases/download/v0.4.4/Zoia-OTA-0.4.4.asar",
+  "sha256": "bc1e26cf1f77de922f1e7ad5093f341626c0a78cd5c53d515f20d922911a54cb",
+  "installerUrl": "https://github.com/caiomcg/zoia/releases/download/v0.4.4/Zoia-Setup-0.4.4-x64.exe",
+  "notes": "Updates are found straight from Zoia's releases, and Settings › Updates only asks for the repository."
 }
