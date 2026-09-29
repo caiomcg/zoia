@@ -535,6 +535,10 @@ button:disabled {
    * to auto and show a scrollbar whenever a thumbnail pokes out, as one does
    * for a moment while it animates in. */
   overflow-y: hidden;
+  /* Room for the thumbnails' shadow, which the hidden overflow otherwise cut
+     off in a hard line along their bottom; the margin keeps them in place. */
+  padding: 4px 4px 18px;
+  margin: -4px -4px -18px;
 }
 
 .thumb-toggle {
@@ -575,8 +579,7 @@ button:disabled {
   box-shadow: 0 4px 14px rgb(0 0 0 / 0.5);
 }
 
-.thumb:hover,
-.thumb.listening {
+.thumb:hover {
   border-color: var(--accent);
 }
 
@@ -2471,6 +2474,43 @@ button.danger {
 
 .member.live .member-name {
   color: #fff;
+}
+
+/* Someone sharing is the way to their broadcast: hover previews, click watches. */
+.member.live {
+  cursor: pointer;
+}
+
+.member.live:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* On your stage: the live ring turns from green to the accent. */
+.member.watching .avatar.live {
+  box-shadow:
+    0 0 0 2px var(--surface),
+    0 0 0 4px var(--accent);
+}
+
+/* A hovered member's thumbnail, beside the channel list (RemoteGrid). */
+.member-preview {
+  position: fixed;
+  z-index: 50;
+  animation: member-preview-in 0.12s ease-out;
+}
+
+.member-preview .thumb {
+  width: 100%;
+  height: 180px;
+  box-shadow: 0 8px 28px rgb(0 0 0 / 0.6);
+}
+
+@keyframes member-preview-in {
+  from {
+    opacity: 0;
+    transform: translateX(6px);
+  }
 }
 
 .stream-source {

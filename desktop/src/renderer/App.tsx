@@ -3,7 +3,11 @@ import Banner from './components/Banner';
 import CameraDialog from './components/CameraDialog';
 import PairingScreen from './components/PairingScreen';
 import Player from './components/Player';
-import RemoteGrid, { type LoadingBroadcast } from './components/RemoteGrid';
+import RemoteGrid, {
+  type GridControls,
+  type LoadingBroadcast,
+  type StageState,
+} from './components/RemoteGrid';
 import Sidebar from './components/Sidebar';
 import SourcePicker from './components/SourcePicker';
 import SettingsDialog from './components/SettingsDialog';
@@ -107,6 +111,9 @@ export default function App() {
   // Bumped to refetch the channel list right after a change, not at the next poll.
   const [channelsVersion, setChannelsVersion] = useState(0);
   const connectingRef = useRef(false);
+  // The channel list finds broadcasts; the grid owns what the stage shows.
+  const gridRef = useRef<GridControls>(null);
+  const [stage, setStage] = useState<StageState>({ watching: [], localWatched: false });
   const [presetId, setPresetId] = useState(
     () => localStorage.getItem(PRESET_STORAGE_KEY) ?? DEFAULT_PRESET_ID,
   );
@@ -702,6 +709,8 @@ export default function App() {
             }}
             onDismissOnboarding={dismissOnboarding}
             onPausedChange={setRemotePaused}
+            controlRef={gridRef}
+            onStageChange={setStage}
           />
         </main>
 
@@ -719,6 +728,12 @@ export default function App() {
           onCreateChannel={(name) => void changeChannels(window.zoia.rooms.create(name))}
           onRenameChannel={(id, name) => void changeChannels(window.zoia.rooms.rename(id, name))}
           onRemoveChannel={(id) => void changeChannels(window.zoia.rooms.remove(id))}
+          stage={{
+            watching: new Set(stage.watching),
+            localWatched: stage.localWatched,
+          }}
+          onHoverBroadcast={(target, anchor) => gridRef.current?.hover(target, anchor)}
+          onWatchBroadcast={(target) => gridRef.current?.watch(target)}
         />
       </div>
 

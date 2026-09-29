@@ -79,6 +79,7 @@ export const en = {
   'sidebar.newChannelTitle': 'New channel ({count} of {max})',
   'sidebar.inRoom': 'In room — {count}',
   'sidebar.watchingYou': 'Watching your screen',
+  'sidebar.watchLive': 'Watch {name}. Hover to preview.',
   'sidebar.settings': 'Settings',
 
   // ---- your own share
@@ -117,10 +118,8 @@ export const en = {
   'grid.watchOnStage': 'Watch on stage',
   'grid.muteName': 'Mute {name}',
   'grid.unmuteName': 'Unmute {name}',
-  'grid.previewStart': 'Preview here, with sound',
-  'grid.previewStop': 'Stop the preview',
-  'grid.listenStart': 'Listen only',
-  'grid.listenStop': 'Stop listening',
+  'grid.previewStart': 'Show in a small window',
+  'grid.previewStop': 'Close the small window',
   'grid.loadingTitle': 'Loading broadcast…',
   'grid.loadingOne': '{names} is live, but still loading.',
   'grid.loadingMany': '{names} are live, but still loading.',
@@ -134,7 +133,8 @@ export const en = {
   'grid.nobodyBody': 'When someone shares, their broadcast appears here.',
   'grid.removeFromView': 'Remove from view',
   'grid.pickTitle': 'Pick a broadcast',
-  'grid.pickBody': 'Watch or just listen to one of the broadcasts below, or share your own.',
+  'grid.pickBody':
+    'Hover someone marked Live in the channel list to preview them, and click to watch. Or share your own.',
   'grid.splitTitle': 'Drag to resize · double-click to split evenly',
   'grid.showStrip': 'Show broadcasts',
   'grid.hideStrip': 'Hide broadcasts',

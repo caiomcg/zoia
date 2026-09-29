@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { RoomMember } from '../livekit/useRoom';
 import type { RoomInfo } from '../../shared/ipc';
+import type { GridTarget } from './RemoteGrid';
 import Avatar from './Avatar';
 import { IconEye } from './Player';
 import { useT } from '../i18n';
@@ -9,7 +10,17 @@ import { useLeaving } from '../presence';
 /**
  * Who is in the room, and who is sharing. Your own name sits in the footer,
  * next to the way into Settings, which is where it is changed.
+ *
+ * It is also where broadcasts are found: hovering someone sharing shows their
+ * thumbnail beside the list, and clicking them puts them on stage, where their
+ * avatar's ring turns from green to the accent. See GridControls in RemoteGrid.
  */
+
+/** Whose broadcast is on your stage. */
+export interface StageMarks {
+  watching: ReadonlySet<string>;
+  localWatched: boolean;
+}
 
 const COLLAPSED_KEY = 'zoia.sidebarCollapsed';
 
@@ -139,6 +150,9 @@ export default function Sidebar({
   onCreateChannel,
   onRenameChannel,
   onRemoveChannel,
+  stage,
+  onHoverBroadcast,
+  onWatchBroadcast,
 }: {
   members: RoomMember[];
   myName: string;
@@ -157,6 +171,9 @@ export default function Sidebar({
   onCreateChannel: (name: string) => void;
   onRenameChannel: (id: string, name: string) => void;
   onRemoveChannel: (id: string) => void;
+  stage: StageMarks;
+  onHoverBroadcast: (target: GridTarget | null, anchor?: DOMRect) => void;
+  onWatchBroadcast: (target: GridTarget) => void;
 }) {
   const t = useT();
   // Your own channel is listed from the live room, which is current to the
@@ -183,7 +200,13 @@ export default function Sidebar({
     });
   }
 
-  const label = (m: RoomMember) => (m.isLocal ? `${m.name} (${t('common.youTag')})` : m.name);
+  const rowProps = {
+    viewerIds,
+    loadingRemoteIds,
+    stage,
+    onHover: onHoverBroadcast,
+    onWatch: onWatchBroadcast,
+  };
   // Which channel is being renamed, or 'new' while one is being named.
   const [editing, setEditing] = useState<string | null>(null);
 
@@ -350,21 +373,7 @@ export default function Sidebar({
                   {current ? (
                     <div className="channel-members">
                       {shownMembers.map(({ item: m, key, leaving }) => (
-                        <div
-                          className={`member${m.isBroadcasting ? ' live' : ''}${leaving ? ' leaving' : ''}`}
-                          key={key}
-                          title={label(m)}
-                        >
-                          <span className="avatar-wrap">
-                            <Avatar name={m.name} identity={m.identity} live={m.isBroadcasting} />
-                            {viewerIds.has(m.identity) && <WatchingYou />}
-                          </span>
-                          <span className="member-name">{m.name}</span>
-                          {m.isLocal && <span className="you-tag">{t('common.youTag')}</span>}
-                          {!m.isLocal && loadingRemoteIds.has(m.identity) && (
-                            <span className="stream-state">{t('common.loading')}</span>
-                          )}
-                        </div>
+                        <MemberRow key={key} member={m} leaving={leaving} {...rowProps} />
                       ))}
                     </div>
                   ) : (
@@ -417,18 +426,7 @@ export default function Sidebar({
           <section className="member-group">
             <h2 className="member-heading">{t('sidebar.inRoom', { count: liveMembers.length })}</h2>
             {shownMembers.map(({ item: m, key, leaving }) => (
-              <div
-                className={`member${m.isBroadcasting ? ' live' : ''}${leaving ? ' leaving' : ''}`}
-                key={key}
-                title={label(m)}
-              >
-                <span className="avatar-wrap">
-                  <Avatar name={m.name} identity={m.identity} live={m.isBroadcasting} />
-                  {viewerIds.has(m.identity) && <WatchingYou />}
-                </span>
-                <span className="member-name">{m.name}</span>
-                {m.isLocal && <span className="you-tag">{t('common.youTag')}</span>}
-              </div>
+              <MemberRow key={key} member={m} leaving={leaving} {...rowProps} />
             ))}
           </section>
         )}
@@ -451,6 +449,69 @@ export default function Sidebar({
         </button>
       </div>
     </aside>
+  );
+}
+
+/**
+ * One person in your channel. Someone sharing is the way to their broadcast:
+ * hovering shows its thumbnail beside the list, clicking puts it on stage.
+ */
+function MemberRow({
+  member: m,
+  leaving,
+  viewerIds,
+  loadingRemoteIds,
+  stage,
+  onHover,
+  onWatch,
+}: {
+  member: RoomMember;
+  leaving: boolean;
+  viewerIds: ReadonlySet<string>;
+  loadingRemoteIds: Set<string>;
+  stage: StageMarks;
+  onHover: (target: GridTarget | null, anchor?: DOMRect) => void;
+  onWatch: (target: GridTarget) => void;
+}) {
+  const t = useT();
+  const live = m.isBroadcasting;
+  const target = { identity: m.identity, isLocal: m.isLocal };
+  const loading = !m.isLocal && loadingRemoteIds.has(m.identity);
+  const watching = live && (m.isLocal ? stage.localWatched : stage.watching.has(m.identity));
+  const show = (element: HTMLElement) => onHover(target, element.getBoundingClientRect());
+
+  return (
+    <div
+      className={`member${live ? ' live' : ''}${watching ? ' watching' : ''}${leaving ? ' leaving' : ''}`}
+      // A live row's name and state are in its thumbnail; a tooltip would
+      // only pop up over it.
+      title={live ? undefined : m.isLocal ? `${m.name} (${t('common.youTag')})` : m.name}
+      role={live ? 'button' : undefined}
+      tabIndex={live ? 0 : undefined}
+      aria-label={live ? t('sidebar.watchLive', { name: m.name }) : undefined}
+      onClick={live ? () => onWatch(target) : undefined}
+      onKeyDown={
+        live
+          ? (event) => {
+              if (event.key !== 'Enter' && event.key !== ' ') return;
+              event.preventDefault();
+              onWatch(target);
+            }
+          : undefined
+      }
+      onMouseEnter={live ? (event) => show(event.currentTarget) : undefined}
+      onMouseLeave={live ? () => onHover(null) : undefined}
+      onFocus={live ? (event) => show(event.currentTarget) : undefined}
+      onBlur={live ? () => onHover(null) : undefined}
+    >
+      <span className="avatar-wrap">
+        <Avatar name={m.name} identity={m.identity} live={live} />
+        {viewerIds.has(m.identity) && <WatchingYou />}
+      </span>
+      <span className="member-name">{m.name}</span>
+      {m.isLocal && <span className="you-tag">{t('common.youTag')}</span>}
+      {loading && <span className="stream-state">{t('common.loading')}</span>}
+    </div>
   );
 }
 
