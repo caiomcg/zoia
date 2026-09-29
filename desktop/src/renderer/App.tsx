@@ -40,28 +40,11 @@ const PRESET_STORAGE_KEY = 'zoia.qualityPreset';
 const HARDWARE_STORAGE_KEY = 'zoia.hardwareAcceleration';
 const PREVIEW_STORAGE_KEY = 'zoia.showOwnPreview';
 const ONBOARDING_STORAGE_KEY = 'zoia.onboardingDismissed';
-const CHANNEL_STORAGE_KEY = 'zoia.channel';
 /** How often the channel list (who is where, who is live) is refreshed. */
 // The server answers this in ~10ms (measured), so polling often is cheap. At
 // 5s a move between channels showed up late: the mover needs about a second
 // to reach their new channel, after the immediate re-read had already run.
 const ROOMS_POLL_MS = 2_000;
-
-function storeChannel(id: string) {
-  try {
-    localStorage.setItem(CHANNEL_STORAGE_KEY, id);
-  } catch {
-    // Remembering is a convenience; the channel still applies this session.
-  }
-}
-
-function readChannel(): string | null {
-  try {
-    return localStorage.getItem(CHANNEL_STORAGE_KEY);
-  } catch {
-    return null;
-  }
-}
 
 /**
  * Who to list in a channel being hopped to, before its room has connected:
@@ -103,8 +86,9 @@ export default function App() {
   const [gpu, setGpu] = useState<GpuStatus | null>(null);
   const [stageError, setStageError] = useState<string | null>(null);
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
-  // The channel this device is in, or wants to be in; the last one it used.
-  const [channel, setChannel] = useState<string | null>(readChannel);
+  // The channel this device is in, or wants to be in. None at launch: the app
+  // lists the channels and joins one only when it is clicked.
+  const [channel, setChannel] = useState<string | null>(null);
   const [channels, setChannels] = useState<RoomInfo[]>([]);
   const [maxChannels, setMaxChannels] = useState(0);
   const [channelError, setChannelError] = useState<string | null>(null);
@@ -159,23 +143,25 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!status?.paired || room.state !== 'idle' || connectingRef.current) return;
+    if (!status?.paired || channel === null || room.state !== 'idle' || connectingRef.current) {
+      return;
+    }
     connectingRef.current = true;
     window.zoia.token
-      .get(channel ?? undefined)
-      // A remembered channel the server no longer has: fall back to the first.
-      .catch(() => window.zoia.token.get())
-      .then(async ({ wsUrl, token, quality, room: joined }) => {
-        if (joined !== channel) {
-          setChannel(joined);
-          storeChannel(joined);
-        }
-        await room.connect(wsUrl, token, quality);
+      .get(channel)
+      .then(({ wsUrl, token, quality }) => room.connect(wsUrl, token, quality))
+      .catch(() => {
+        // Removed since the list was read, or the server is unreachable:
+        // back to no channel, rather than into one that was not clicked.
+        setChannel(null);
+        setHopping(false);
+        setChannelError(t('channel.error.unreachable'));
+        setChannelsVersion((v) => v + 1);
       })
       .finally(() => {
         connectingRef.current = false;
       });
-  }, [status?.paired, room, channel]);
+  }, [status?.paired, room, channel, t]);
 
   // Who is in which channel, and who is live there, for the channel list.
   useEffect(() => {
@@ -188,6 +174,7 @@ export default function App() {
           if (cancelled) return;
           setChannels(rooms);
           setMaxChannels(max);
+          setBooted(true);
         })
         .catch(() => {});
     load();
@@ -230,23 +217,27 @@ export default function App() {
   }
 
   /**
-   * Moves this device to another channel. A broadcast does not follow you:
-   * sharing stops first, then the room is left, and the effect above joins
-   * the new one. The channel is set before leaving so that it never sees an
-   * idle room paired with the old channel and rejoins it.
+   * Joins a channel, or moves this device to another one. A broadcast does
+   * not follow you: sharing stops first, then the room is left, and the
+   * effect above joins the new one. The channel is set before leaving so that
+   * it never sees an idle room paired with the old channel and rejoins it.
    */
   async function switchChannel(id: string) {
     if (id === channel) return;
+    if (channel === null) {
+      // The first join from the list: a plain connect, shown as one.
+      setChannel(id);
+      return;
+    }
     if (isLive || isStarting) await stopSharing();
     setHopping(true);
     setChannel(id);
-    storeChannel(id);
     await room.disconnect();
   }
 
-  // Held on the splash until the first connection settles, so a launch goes
-  // straight from the logo to a populated room rather than through an empty
-  // one. Capped, so a slow or failing server still gets its say on screen.
+  // Held on the splash until the channel list first arrives, so a launch goes
+  // straight from the logo to a populated list rather than an empty one.
+  // Capped, so a slow or failing server still gets its say on screen.
   const [booted, setBooted] = useState(false);
   // From a click on another channel until its room is connected. The app is
   // still connected in every sense that matters to the person, so the hop
@@ -662,56 +653,65 @@ export default function App() {
         <main className="main">
           {/* Keyed by channel: what you watched or listened to in one channel
               means nothing in the next. */}
-          <RemoteGrid
-            key={channel ?? 'none'}
-            screens={room.remoteScreens}
-            onFocusChange={setRemoteFocus}
-            local={
-              isLive
-                ? {
-                    renderStage: (fullscreen) => (
-                      <Player
-                        fullscreen={fullscreen}
-                        name={status.deviceName ?? t('common.you')}
-                        identity={myIdentity}
-                        showPreview={showPreview}
-                        onTogglePreview={togglePreview}
-                        localTrack={room.localTrack}
-                        gpuBroadcasting={gpuLive}
-                        sendAudio={
-                          room.sendingAudio
-                            ? {
-                                value: room.sendAudio,
-                                canSetVolume: room.canSetSendVolume,
-                                onChange: (next) => void room.setSendAudio(next),
-                              }
-                            : undefined
-                        }
-                        onStop={() => void stopSharing()}
-                        onSwitch={() => setPickerOpen(true)}
-                      />
-                    ),
-                    // The strip's thumbnail follows the same choice.
-                    track: showPreview ? room.localTrack : null,
-                    showPreview,
-                    onTogglePreview: togglePreview,
-                    onStop: () => void stopSharing(),
-                    name: status.deviceName ?? t('common.you'),
-                    identity: myIdentity,
-                  }
-                : undefined
-            }
-            loadingBroadcasts={loadingBroadcasts}
-            showOnboarding={showOnboarding && (room.state === 'connected' || hopping)}
-            onStartSharing={() => {
-              dismissOnboarding();
-              setPickerOpen(true);
-            }}
-            onDismissOnboarding={dismissOnboarding}
-            onPausedChange={setRemotePaused}
-            controlRef={gridRef}
-            onStageChange={setStage}
-          />
+          {channel === null ? (
+            <section className="stage remote-empty">
+              <div className="overlay">
+                <h2>{t('grid.noChannelTitle')}</h2>
+                <p className="muted">{t('grid.noChannelBody')}</p>
+              </div>
+            </section>
+          ) : (
+            <RemoteGrid
+              key={channel ?? 'none'}
+              screens={room.remoteScreens}
+              onFocusChange={setRemoteFocus}
+              local={
+                isLive
+                  ? {
+                      renderStage: (fullscreen) => (
+                        <Player
+                          fullscreen={fullscreen}
+                          name={status.deviceName ?? t('common.you')}
+                          identity={myIdentity}
+                          showPreview={showPreview}
+                          onTogglePreview={togglePreview}
+                          localTrack={room.localTrack}
+                          gpuBroadcasting={gpuLive}
+                          sendAudio={
+                            room.sendingAudio
+                              ? {
+                                  value: room.sendAudio,
+                                  canSetVolume: room.canSetSendVolume,
+                                  onChange: (next) => void room.setSendAudio(next),
+                                }
+                              : undefined
+                          }
+                          onStop={() => void stopSharing()}
+                          onSwitch={() => setPickerOpen(true)}
+                        />
+                      ),
+                      // The strip's thumbnail follows the same choice.
+                      track: showPreview ? room.localTrack : null,
+                      showPreview,
+                      onTogglePreview: togglePreview,
+                      onStop: () => void stopSharing(),
+                      name: status.deviceName ?? t('common.you'),
+                      identity: myIdentity,
+                    }
+                  : undefined
+              }
+              loadingBroadcasts={loadingBroadcasts}
+              showOnboarding={showOnboarding && (room.state === 'connected' || hopping)}
+              onStartSharing={() => {
+                dismissOnboarding();
+                setPickerOpen(true);
+              }}
+              onDismissOnboarding={dismissOnboarding}
+              onPausedChange={setRemotePaused}
+              controlRef={gridRef}
+              onStageChange={setStage}
+            />
+          )}
         </main>
 
         <Sidebar
