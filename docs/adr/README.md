@@ -33,6 +33,7 @@ record that supersedes it, so the history stays legible.
 | [0023](0023-interface-languages.md)                      | Interface languages                                           | accepted                                                                           |
 | [0024](0024-resilient-gpu-broadcasting-pipeline.md)      | Resilient GPU broadcasting pipeline with opt-in fallback      | accepted                                                                           |
 | [0025](0025-macos-client.md)                             | A macOS desktop client with system audio                      | accepted                                                                           |
+| [0026](0026-nvenc-over-the-room-connection.md)           | NVENC frames over the room's own WebRTC connection            | accepted                                                                           |
 
 ## The two that explain the most
 
