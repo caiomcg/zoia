@@ -165,6 +165,7 @@ export const en = {
   // ---- share picker
   'picker.title': 'Choose what to share',
   'picker.search': 'Search windows…',
+  'picker.refresh': 'Refresh windows',
   'picker.loading': 'Loading sources…',
   'picker.macScreenPermission':
     'Zoia needs permission to record the screen. Turn it on in System Settings › Privacy & Security › Screen & System Audio Recording, then reopen Zoia.',
@@ -173,6 +174,10 @@ export const en = {
   'picker.none': 'No matching sources.',
   'picker.quality': 'Quality',
   'picker.audioUnavailable': 'audio unavailable',
+  'picker.gameTip':
+    'Game not showing up? Games in exclusive fullscreen minimize on Alt+Tab. Play in {borderless} mode, or share your entire {screen} above.',
+  'picker.borderlessMode': 'Borderless Windowed',
+  'picker.screenMode': 'Screen',
   'picker.leagueInGame':
     'Match in progress • Sharing the game (switches to the client after the match)',
   'picker.leagueInClient': 'Champion select / client • Switches to the game when the match starts',
