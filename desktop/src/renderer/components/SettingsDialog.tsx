@@ -809,6 +809,11 @@ const PEOPLE = [
     handle: 'Rotciv18',
     role: 'about.role.victor' as MessageKey,
   },
+  {
+    name: 'Flavia',
+    handle: 'flaviaspassos',
+    role: 'about.role.flavia' as MessageKey,
+  },
 ];
 
 /**

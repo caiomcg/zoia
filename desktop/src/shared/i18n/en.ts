@@ -310,6 +310,8 @@ export const en = {
     'AMD hardware encoding and a GPU broadcast that recovers on its own, updates, League hand-off and multi-stream viewing.',
   'about.role.victor':
     "Brought Zoia to the Mac: the macOS app, sharing with the system's audio, and hardware-encoded screens.",
+  'about.role.flavia':
+    'Profile pictures, framed by dragging and zooming, and one display name per server.',
 
   // ---- main process: tray and update dialogs
   'tray.open': 'Open Zoia',
