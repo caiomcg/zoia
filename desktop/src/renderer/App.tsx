@@ -357,6 +357,22 @@ export default function App() {
       return;
     }
 
+    // NVIDIA sharing a window: NVENC's frames go out on the room's own WebRTC
+    // connection, alongside the audio (livekit/native-video.ts). AMD and
+    // Intel, and screen shares, keep the ffmpeg route below.
+    if (gpu?.gpuEncoder === 'nvenc' && target.kind === 'window') {
+      if (switching && gpuCast.state !== 'idle') await gpuCast.stop();
+      const ok = await room.startBroadcast(target, preset, {
+        keepStage: switching,
+        nativeVideo: true,
+      });
+      if (!ok) {
+        console.warn('[native-video] failed, falling back to window broadcast');
+        await room.startBroadcast(target, preset, { keepStage: switching });
+      }
+      return;
+    }
+
     if (!switching) {
       const claim = await window.zoia.stage.claim();
       if (!claim.ok) {

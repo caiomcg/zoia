@@ -34,7 +34,13 @@ interface CaptureAddon {
     encoder: HardwareEncoder;
   };
   start(
-    options: { hwnd: string; framerate: number; bitrate: number },
+    options: {
+      hwnd: string;
+      framerate: number;
+      bitrate: number;
+      maxWidth: number;
+      maxHeight: number;
+    },
     callback: (error: string | null, packet?: Buffer, keyframe?: boolean) => void,
   ): {
     width: number;
@@ -45,6 +51,7 @@ interface CaptureAddon {
     fallbackReason: string;
   };
   stop(): { framesArrived: number; averageEncodeMs: number };
+  requestKeyframe(): void;
 }
 
 const require = createRequire(import.meta.url);
@@ -139,7 +146,8 @@ export function start(
   hwnd: number,
   framerate: number,
   bitrate: number,
-  onPacket: (packet: Buffer) => void,
+  maxSize: { width: number; height: number } | null,
+  onPacket: (packet: Buffer, keyframe: boolean) => void,
   onError: (message: string) => void,
 ): {
   width: number;
@@ -156,17 +164,30 @@ export function start(
   const info = native.start(
     // As a string: an HWND is a 64-bit handle and a double cannot carry one
     // faithfully.
-    { hwnd: String(hwnd), framerate, bitrate },
-    (error, packet) => {
+    {
+      hwnd: String(hwnd),
+      framerate,
+      bitrate,
+      // 0 means "no limit": the window's own size.
+      maxWidth: maxSize?.width ?? 0,
+      maxHeight: maxSize?.height ?? 0,
+    },
+    (error, packet, keyframe) => {
       if (error) {
         onError(error);
         return;
       }
-      if (packet) onPacket(packet);
+      if (packet) onPacket(packet, keyframe === true);
     },
   );
   running = true;
   return info;
+}
+
+/** Makes NVENC's next frame a keyframe. A no-op when frames go out raw. */
+export function requestKeyframe(): void {
+  if (!running) return;
+  load()?.requestKeyframe();
 }
 
 export function stop(): { framesArrived: number; averageEncodeMs: number } | null {

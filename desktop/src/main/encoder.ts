@@ -51,6 +51,13 @@ export interface EncoderOptions {
   whipToken: string;
   framerate: number;
   bitrate: number;
+  /**
+   * The preset's resolution. A window larger than this is scaled down on the
+   * GPU before NVENC; smaller windows go out at their own size. Only the
+   * native NVENC capture uses it.
+   */
+  maxWidth?: number;
+  maxHeight?: number;
   /** The application whose audio to send; null means send no audio at all. */
   processId: number | null;
   /**

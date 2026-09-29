@@ -27,6 +27,7 @@ import {
   type CaptureTrackHandle,
 } from '../audio/capture-track';
 import { WATCHING_ATTRIBUTE, isWatching, watchingValue } from './watching';
+import { createNativeVideo, type NativeVideo } from './native-video';
 import { tNow } from '../i18n';
 
 /**
@@ -290,6 +291,8 @@ const WATCHING_SETTLE_MS = 1500;
 export function useRoom() {
   const roomRef = useRef<Room | null>(null);
   const localTrackRef = useRef<LocalVideoTrack | null>(null);
+  // Set while NVENC frames are being sent in place of the track's own.
+  const nativeVideoRef = useRef<NativeVideo | null>(null);
   // `capture` is null for a camera's microphone: a plain MediaStream, with no
   // WASAPI bridge to meter, set the level of, or stop.
   const localAudioRef = useRef<{
@@ -698,6 +701,9 @@ export function useRoom() {
     localTrackRef.current = null;
     track?.mediaStreamTrack.stop();
     setLocalTrack(null);
+    const native = nativeVideoRef.current;
+    nativeVideoRef.current = null;
+    if (native) await native.stop();
 
     const audio = localAudioRef.current;
     if (audio) {
@@ -828,7 +834,11 @@ export function useRoom() {
    * the stage, the user never sees a capture prompt at all.
    */
   const startBroadcast = useCallback(
-    async (source: SourceInfo, preset?: QualityPreset, { keepStage = false } = {}) => {
+    async (
+      source: SourceInfo,
+      preset?: QualityPreset,
+      { keepStage = false, nativeVideo = false } = {},
+    ) => {
       setBroadcastError(null);
       setAudioWarning(null);
       setBroadcastState('starting');
@@ -887,44 +897,62 @@ export function useRoom() {
         const serverQuality = qualityRef.current;
         const quality = preset ? { ...serverQuality, ...preset } : serverQuality;
 
-        // Resolved by the main-process display-media handler, which uses
-        // exactly the source just selected above — no native picker appears.
-        // Without explicit constraints Chromium picks its own (often lower)
-        // resolution and frame rate for screen capture.
-        setSharingKind('screen');
-        const stream = await navigator.mediaDevices.getDisplayMedia({
-          video: {
-            width: { ideal: quality.width },
-            height: { ideal: quality.height },
-            frameRate: { ideal: quality.maxFramerate },
-          },
-          // macOS has no per-application capture to lean on, so audio comes
-          // with the display stream: ScreenCaptureKit's system loopback,
-          // requested by the main-process handler. Measured on macOS 26:
-          // without these it arrives mono, with echo cancellation, noise
-          // suppression and AGC all on — wrong for music or a game — and it
-          // includes Zoia's own playback, so viewers would hear each other
-          // come back. restrictOwnAudio removes that (peak 0.80 -> 0.00).
-          ...(isMac && {
-            audio: {
-              channelCount: 2,
-              echoCancellation: false,
-              noiseSuppression: false,
-              autoGainControl: false,
-              restrictOwnAudio: true,
-            } as MediaTrackConstraints,
-          }),
-        });
-        pendingSystemAudio = stream.getAudioTracks()[0] ?? null;
-        const [mediaTrack] = stream.getVideoTracks();
-        if (!mediaTrack) throw new Error(tNow('room.noVideoTrack'));
+        // NVIDIA on Windows can send NVENC's frames on this same connection
+        // instead of Chromium's own encode (see native-video.ts). Everything
+        // else about the broadcast — stage, audio, teardown — is shared.
+        const hwndForNative = source.kind === 'window' ? source.hwnd : null;
+        const useNative = nativeVideo && !isMac && hwndForNative !== null;
+        let mediaTrack: MediaStreamTrack;
+        if (useNative) {
+          setSharingKind('screen');
+          const native = createNativeVideo(hwndForNative, quality, (message) => {
+            console.warn('[native-video] capture failed:', message);
+            if (nativeVideoRef.current === native) void stopBroadcast();
+          });
+          nativeVideoRef.current = native;
+          mediaTrack = native.track;
+        } else {
+          // Resolved by the main-process display-media handler, which uses
+          // exactly the source just selected above — no native picker appears.
+          // Without explicit constraints Chromium picks its own (often lower)
+          // resolution and frame rate for screen capture.
+          setSharingKind('screen');
+          const stream = await navigator.mediaDevices.getDisplayMedia({
+            video: {
+              width: { ideal: quality.width },
+              height: { ideal: quality.height },
+              frameRate: { ideal: quality.maxFramerate },
+            },
+            // macOS has no per-application capture to lean on, so audio comes
+            // with the display stream: ScreenCaptureKit's system loopback,
+            // requested by the main-process handler. Measured on macOS 26:
+            // without these it arrives mono, with echo cancellation, noise
+            // suppression and AGC all on — wrong for music or a game — and it
+            // includes Zoia's own playback, so viewers would hear each other
+            // come back. restrictOwnAudio removes that (peak 0.80 -> 0.00).
+            ...(isMac && {
+              audio: {
+                channelCount: 2,
+                echoCancellation: false,
+                noiseSuppression: false,
+                autoGainControl: false,
+                restrictOwnAudio: true,
+              } as MediaTrackConstraints,
+            }),
+          });
+          pendingSystemAudio = stream.getAudioTracks()[0] ?? null;
+          const [displayTrack] = stream.getVideoTracks();
+          if (!displayTrack) throw new Error(tNow('room.noVideoTrack'));
+          mediaTrack = displayTrack;
 
-        // 'detail'/'text' tell Chromium to favour per-frame quality, which
-        // in practice steers it to a *software* encoder (OpenH264) — measured
-        // here via encoderImplementation on a machine with an idle RTX 4070.
-        // 'motion' keeps the hardware encoder in play, which matters far more
-        // at 1080p60 and is the only way 4K is viable at all.
-        mediaTrack.contentHint = 'motion';
+          // 'detail'/'text' tell Chromium to favour per-frame quality, which
+          // in practice steers it to a *software* encoder (OpenH264) — measured
+          // here via encoderImplementation on a machine with an idle RTX 4070.
+          // 'motion' keeps the hardware encoder in play, which matters far more
+          // at 1080p60 and is the only way 4K is viable at all.
+          mediaTrack.contentHint = 'motion';
+        }
+
         const track = new LocalVideoTrack(mediaTrack, undefined, false);
         track.source = Track.Source.ScreenShare;
 
@@ -948,7 +976,9 @@ export function useRoom() {
         // layer is added Chromium moves *both* to OpenH264 in software, which
         // showed up as skipped frames and 25–50fps against a 58fps target.
         // Viewers lose the 360p layer and always get the full one.
-        const simulcast = !isMac;
+        // One layer for native video: its frames are NVENC's, and a second
+        // layer would be the placeholder's.
+        const simulcast = !isMac && !useNative;
         await room.localParticipant.publishTrack(track, {
           source: Track.Source.ScreenShare,
           simulcast,
@@ -956,16 +986,46 @@ export function useRoom() {
           degradationPreference: 'maintain-resolution',
           videoEncoding: encoding,
           screenShareEncoding: encoding,
-          videoCodec: quality.codec as 'h264' | 'vp8' | 'vp9' | 'av1',
+          videoCodec: useNative ? 'h264' : (quality.codec as 'h264' | 'vp8' | 'vp9' | 'av1'),
           stream: 'screen',
         });
+
+        const native = nativeVideoRef.current;
+        let nativeSize: { width: number; height: number } | null = null;
+        if (useNative && native) {
+          // Before any frame exists, so none goes out as the placeholder.
+          const sender = track.sender;
+          if (!sender) throw new Error('The published track has no sender.');
+          native.attach(sender);
+          nativeSize = await native.start();
+        }
 
         localTrackRef.current = track;
         setLocalTrack(track);
         setBroadcastState('live');
 
         statsTimerRef.current = setInterval(() => {
-          void samplePublishStats(track, lastSampleRef, setVideoStats);
+          // On the native path the sender's own numbers describe the
+          // placeholder it encodes; frame rate and bitrate are the real
+          // stream's, but the encoder and size are NVENC's.
+          const size = nativeSize;
+          void samplePublishStats(
+            track,
+            lastSampleRef,
+            size
+              ? (stats) =>
+                  setVideoStats({
+                    ...stats,
+                    encoder: 'NVENC',
+                    codec: 'H264',
+                    width: size.width,
+                    height: size.height,
+                    captureWidth: size.width,
+                    captureHeight: size.height,
+                    captureFps: stats.fps,
+                  })
+              : setVideoStats,
+          );
         }, 2000);
 
         // A window's title moves on (a browser tab, a document), and the
@@ -1082,6 +1142,9 @@ export function useRoom() {
         return true;
       } catch (err) {
         pendingSystemAudio?.stop();
+        const native = nativeVideoRef.current;
+        nativeVideoRef.current = null;
+        if (native) await native.stop();
         if (!keepStage) await window.zoia.stage.release().catch(() => {});
         setBroadcastState('idle');
         setBroadcastError(err instanceof Error ? err.message : String(err));

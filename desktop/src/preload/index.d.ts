@@ -56,6 +56,9 @@ export interface ZoiaBridge {
     start(options: {
       framerate: number;
       bitrate: number;
+      /** The preset's resolution, which a larger window is scaled down to. */
+      maxWidth?: number;
+      maxHeight?: number;
       processId: number | null;
       /** The window to capture natively; null captures the whole screen. */
       hwnd: number | null;
@@ -66,6 +69,22 @@ export interface ZoiaBridge {
     }): Promise<void>;
     stop(): Promise<void>;
     onStatus(cb: (status: EncoderStatus) => void): () => void;
+  };
+  /**
+   * NVIDIA only: NVENC frames from the native capture, sent on the room's own
+   * WebRTC connection by the renderer (livekit/native-video.ts).
+   */
+  nativeVideo: {
+    start(options: {
+      hwnd: number;
+      framerate: number;
+      bitrate: number;
+      maxWidth: number;
+      maxHeight: number;
+    }): Promise<{ width: number; height: number }>;
+    stop(): Promise<void>;
+    requestKeyframe(): Promise<void>;
+    onError(cb: (message: string) => void): () => void;
   };
   device: {
     rename(name: string): Promise<{ ok: boolean; name: string }>;

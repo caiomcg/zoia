@@ -15,6 +15,18 @@ import type {
 } from '../shared/ipc';
 import type { ZoiaBridge } from './index.d';
 
+// The native video frame channel. contextBridge cannot carry a MessagePort,
+// so it is handed to the page with window.postMessage, which can; the page
+// passes it straight on to its transform worker (livekit/native-video.ts).
+ipcRenderer.on(IPC.nativeVideoPort, (event) => {
+  // The preload is typed without the DOM, but runs with the page's window.
+  (
+    globalThis as unknown as {
+      postMessage(message: unknown, targetOrigin: string, transfer: unknown[]): void;
+    }
+  ).postMessage({ type: 'zoia:native-video-port' }, '*', event.ports);
+});
+
 const bridge: ZoiaBridge = {
   pairing: {
     status: () => ipcRenderer.invoke(IPC.pairingStatus),
@@ -58,6 +70,16 @@ const bridge: ZoiaBridge = {
       const listener = (_e: Electron.IpcRendererEvent, status: EncoderStatus) => cb(status);
       ipcRenderer.on(IPC.encoderStatus, listener);
       return () => ipcRenderer.removeListener(IPC.encoderStatus, listener);
+    },
+  },
+  nativeVideo: {
+    start: (options) => ipcRenderer.invoke(IPC.nativeVideoStart, options),
+    stop: () => ipcRenderer.invoke(IPC.nativeVideoStop),
+    requestKeyframe: () => ipcRenderer.invoke(IPC.nativeVideoKeyframe),
+    onError: (cb) => {
+      const listener = (_e: Electron.IpcRendererEvent, message: string) => cb(message);
+      ipcRenderer.on(IPC.nativeVideoError, listener);
+      return () => ipcRenderer.removeListener(IPC.nativeVideoError, listener);
     },
   },
   device: {

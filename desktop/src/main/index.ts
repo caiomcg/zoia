@@ -4,6 +4,8 @@ import {
   dialog,
   ipcMain,
   Menu,
+  MessageChannelMain,
+  type MessagePortMain,
   session,
   shell,
   systemPreferences,
@@ -198,6 +200,15 @@ function createWindow(): void {
       backgroundThrottling: false,
     },
   });
+
+  // In development the renderer's console goes to this terminal as well:
+  // log-level 3 above silences Chromium's own copy of it, and the renderer is
+  // where the WebRTC side of a broadcast runs.
+  if (!app.isPackaged) {
+    mainWindow.webContents.on('console-message', (event) => {
+      console.log(`[renderer] ${event.message}`);
+    });
+  }
 
   // Anything the app doesn't render itself opens in the real browser instead
   // of a second Electron window.
@@ -407,6 +418,9 @@ function registerIpc(): void {
           options.hwnd,
           options.framerate,
           options.bitrate,
+          options.maxWidth && options.maxHeight
+            ? { width: options.maxWidth, height: options.maxHeight }
+            : null,
           (packet) => {
             if (info.output === 'bgra') {
               if (sampleFrames < 5 || sampleFrames % 120 === 0) {
@@ -474,6 +488,81 @@ function registerIpc(): void {
     sources.startWarming();
     void api.whipRelease().catch(() => {});
   });
+
+  // Frames go to the renderer's transform worker over this port, not over
+  // ordinary IPC: IPC lands on the page's main thread, which also relays the
+  // app's audio to its worklet, and 4K frames arriving there delayed audio
+  // chunks enough to be heard as crackling.
+  let nativePort: MessagePortMain | null = null;
+  // NVIDIA only: the window is captured and encoded by NVENC in the addon, and
+  // each encoded frame goes to the renderer, which sends it on the room's own
+  // WebRTC connection in place of a placeholder frame (see native-video.ts).
+  // Audio and video then share one connection and one clock, which is what
+  // the ffmpeg + WHIP route could not do. AMD and Intel keep that route.
+  ipcMain.handle(
+    IPC.nativeVideoStart,
+    (
+      _event,
+      options: {
+        hwnd: number;
+        framerate: number;
+        bitrate: number;
+        maxWidth: number;
+        maxHeight: number;
+      },
+    ) => {
+      const win = mainWindow;
+      if (!win) throw new Error('The window is not ready.');
+      sources.stopWarming();
+      nativePort?.close();
+      const { port1, port2 } = new MessageChannelMain();
+      nativePort = port1;
+      port1.start();
+      win.webContents.postMessage(IPC.nativeVideoPort, null, [port2]);
+      let info: ReturnType<typeof capture.start>;
+      try {
+        info = capture.start(
+          options.hwnd,
+          options.framerate,
+          options.bitrate,
+          { width: options.maxWidth, height: options.maxHeight },
+          (packet, keyframe) => {
+            port1.postMessage({ data: packet, keyframe });
+          },
+          (message) => {
+            if (!win.isDestroyed()) win.webContents.send(IPC.nativeVideoError, message);
+          },
+        );
+      } catch (err) {
+        sources.startWarming();
+        throw err;
+      }
+      if (info.output !== 'h264') {
+        // NVENC declined, and the addon fell back to raw frames, which only
+        // the ffmpeg route can encode.
+        capture.stop();
+        sources.startWarming();
+        throw new Error(`NVENC is unavailable: ${info.fallbackReason || 'not an NVIDIA adapter'}`);
+      }
+      console.log(`[native-video] ${info.adapter} -> ${info.width}x${info.height}`);
+      return { width: info.width, height: info.height };
+    },
+  );
+
+  ipcMain.handle(IPC.nativeVideoStop, () => {
+    nativePort?.close();
+    nativePort = null;
+    const stats = capture.stop();
+    if (stats) {
+      console.log(
+        `[native-video] stopped: ${stats.framesArrived} frames, ` +
+          `${stats.averageEncodeMs.toFixed(1)}ms average encode`,
+      );
+    }
+    sources.startWarming();
+  });
+
+  ipcMain.handle(IPC.nativeVideoKeyframe, () => capture.requestKeyframe());
 
   ipcMain.handle(IPC.encoderStop, async () => {
     capture.stop();

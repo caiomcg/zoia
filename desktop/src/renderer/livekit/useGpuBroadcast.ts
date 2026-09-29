@@ -115,6 +115,8 @@ export function useGpuBroadcast() {
         await window.zoia.encoder.start({
           framerate: preset.maxFramerate,
           bitrate: preset.maxBitrate,
+          maxWidth: preset.width,
+          maxHeight: preset.height,
           // Audio and video both follow the chosen application. Sharing a
           // whole screen sends no audio: the alternative is capturing the
           // whole system, which means every notification and every other app
