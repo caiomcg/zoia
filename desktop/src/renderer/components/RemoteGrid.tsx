@@ -675,7 +675,12 @@ export default function RemoteGrid({
   screens: RemoteScreen[];
   /** Present while this device is broadcasting. */
   local?: {
-    renderStage: (fullscreen: { active: boolean; toggle: () => void }) => ReactNode;
+    renderStage: (stage: {
+      active: boolean;
+      toggle: () => void;
+      /** Leave the large view. The player hides it while fullscreen. */
+      onClose: () => void;
+    }) => ReactNode;
     track: LocalVideoTrack | null;
     name: string;
     /** Yours, for your profile picture on your own thumbnail. */
@@ -1187,19 +1192,11 @@ export default function RemoteGrid({
       // Your own broadcast can leave the large view, but not the strip.
       return (
         <div className="local-slot">
-          {local?.renderStage({ active: fullscreen.isFullscreen, toggle })}
-          {!fullscreen.isFullscreen && (
-            <button
-              className="tile-close"
-              onClick={() => stopWatching(id)}
-              title={t('grid.removeFromView')}
-              aria-label={t('grid.removeFromView')}
-            >
-              <Icon>
-                <path d="M6 6l12 12M18 6L6 18" />
-              </Icon>
-            </button>
-          )}
+          {local?.renderStage({
+            active: fullscreen.isFullscreen,
+            toggle,
+            onClose: () => stopWatching(id),
+          })}
         </div>
       );
     }
