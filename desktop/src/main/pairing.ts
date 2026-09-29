@@ -89,13 +89,15 @@ async function restore(): Promise<PairingStatus> {
   }
 
   try {
-    const { name } = await api.deviceSession(stored.deviceCredential);
+    const { name, id, avatar } = await api.deviceSession(stored.deviceCredential);
     status = {
       paired: true,
       deviceName: name,
       error: null,
       serverUrl: config.getServerUrl(),
       needsInvite: false,
+      deviceId: id,
+      avatar: avatar ?? null,
     };
   } catch (err) {
     // Only a 401 means "this device is gone". Anything else — the server being
@@ -156,6 +158,9 @@ export async function pair(deviceName?: string): Promise<PairingStatus> {
       error: null,
       serverUrl,
       needsInvite: false,
+      // A newly paired device has no picture yet.
+      deviceId: result.deviceId,
+      avatar: null,
     };
   } catch (err) {
     status = unpaired(

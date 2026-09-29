@@ -84,6 +84,11 @@ const bridge: ZoiaBridge = {
   },
   device: {
     rename: (name) => ipcRenderer.invoke(IPC.renameDevice, name),
+    setAvatar: (bytes) => ipcRenderer.invoke(IPC.setAvatar, bytes),
+    removeAvatar: () => ipcRenderer.invoke(IPC.removeAvatar),
+  },
+  avatars: {
+    get: (identity, version) => ipcRenderer.invoke(IPC.avatarGet, identity, version),
   },
   report: (entry) => ipcRenderer.send(IPC.report, entry),
   gpu: {

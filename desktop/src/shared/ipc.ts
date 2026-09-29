@@ -20,6 +20,10 @@ export interface PairingStatus {
    * something an invite fixes, and saying so sends people hunting for a file.
    */
   needsInvite: boolean;
+  /** This device's id, which is also its identity in the room. */
+  deviceId?: string | null;
+  /** The version of this device's picture, or null without one. */
+  avatar?: string | null;
 }
 
 /** A channel, who is in it, and who is live there. */
@@ -28,7 +32,8 @@ export interface RoomInfo {
   name: string;
   /** Where clients that name no channel land. Renamable, never removable. */
   isDefault: boolean;
-  participants: Array<{ identity: string; name: string }>;
+  /** `avatar` is the version of their picture, when they have one. */
+  participants: Array<{ identity: string; name: string; avatar?: string }>;
   broadcasters: Array<{ identity: string; name: string }>;
 }
 
@@ -281,6 +286,9 @@ export const IPC = {
   nativeVideoPort: 'zoia:native-video:port',
   nativeVideoError: 'zoia:native-video:error',
   renameDevice: 'zoia:device:rename',
+  setAvatar: 'zoia:device:avatar:set',
+  removeAvatar: 'zoia:device:avatar:remove',
+  avatarGet: 'zoia:avatar:get',
   updaterConfigGet: 'zoia:updater:config:get',
   updaterConfigSave: 'zoia:updater:config:save',
   updaterConfigReset: 'zoia:updater:config:reset',

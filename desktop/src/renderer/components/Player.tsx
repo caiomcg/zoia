@@ -83,6 +83,7 @@ export function IconFullscreen({ active }: { active: boolean }) {
 
 export default function Player({
   name,
+  identity,
   showPreview,
   onTogglePreview,
   localTrack,
@@ -93,6 +94,8 @@ export default function Player({
   fullscreen,
 }: {
   name: string;
+  /** Yours, for your profile picture on the tile. */
+  identity?: string;
   /**
    * Whether you see your own picture. Off by default: you know what you are
    * sharing, and decoding it back costs your machine for nothing.
@@ -178,7 +181,7 @@ export default function Player({
 
       <div className="remote-tile-footer">
         <span className="remote-tile-who">
-          <Avatar name={name} live />
+          <Avatar name={name} identity={identity} live />
           <span>
             {name}
             <small className="stream-source">

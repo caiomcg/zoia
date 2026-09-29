@@ -284,7 +284,7 @@ function RemoteTile({
       <video ref={videoRef} playsInline autoPlay onDoubleClick={onToggleFullscreen} />
       <div className="remote-tile-footer">
         <span className="remote-tile-who">
-          <Avatar name={screen.participantName} live />
+          <Avatar name={screen.participantName} identity={screen.participantIdentity} live />
           <span>
             {screen.participantName}
             <small className="stream-source">
@@ -459,6 +459,7 @@ function ListenAudio({ track, audio }: { track: RemoteTrack; audio: AudioSetting
 
 function Thumbnail({
   name,
+  identity,
   label,
   liveVideo = null,
   snapshot = null,
@@ -478,6 +479,8 @@ function Thumbnail({
   loading = false,
 }: {
   name: string;
+  /** Whose broadcast it is, for their profile picture. */
+  identity?: string;
   label: string;
   /** A broadcast that has started but not arrived yet: its blank shimmers. */
   loading?: boolean;
@@ -532,7 +535,7 @@ function Thumbnail({
           <span className={`thumb-blank${loading ? ' loading' : ''}`} />
         )}
         <span className="thumb-label">
-          <Avatar name={name} live />
+          <Avatar name={name} identity={identity} live />
           <span>{label}</span>
         </span>
         {onWatch && (
@@ -642,6 +645,8 @@ export default function RemoteGrid({
     renderStage: (fullscreen: { active: boolean; toggle: () => void }) => ReactNode;
     track: LocalVideoTrack | null;
     name: string;
+    /** Yours, for your profile picture on your own thumbnail. */
+    identity?: string;
     onStop: () => void;
     /** Whether you see your own picture, here and on the stage. */
     showPreview: boolean;
@@ -1105,6 +1110,7 @@ export default function RemoteGrid({
                     <Thumbnail
                       key={id}
                       name={local?.name ?? ''}
+                      identity={local?.identity}
                       label={t('grid.yourBroadcast')}
                       liveVideo={local?.track ?? null}
                       onWatch={() => watch(id)}
@@ -1123,6 +1129,7 @@ export default function RemoteGrid({
                   <Thumbnail
                     key={id}
                     name={screen.participantName}
+                    identity={screen.participantIdentity}
                     label={sourceText(t, screen.sourceName, screen.sourceKind)}
                     snapshot={snapshots[id]?.url ?? null}
                     captureTrack={screen.videoTrack}
@@ -1144,6 +1151,7 @@ export default function RemoteGrid({
                 <Thumbnail
                   key={broadcast.identity}
                   name={broadcast.name}
+                  identity={broadcast.identity}
                   label={t('common.loading')}
                   loading
                 />

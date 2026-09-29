@@ -72,7 +72,7 @@ export function pair(pairingToken: string, deviceName: string) {
 }
 
 export function deviceSession(deviceCredential: string) {
-  return call<{ name: string; id: string }>('/api/device/session', {
+  return call<{ name: string; id: string; avatar?: string | null }>('/api/device/session', {
     method: 'POST',
     body: JSON.stringify({ deviceCredential }),
   });
@@ -167,12 +167,68 @@ export function report(entry: { kind: string; message: string; stack?: string; c
   }).catch(() => undefined);
 }
 
-export function renameDevice(name: string) {
-  return call<{ ok: boolean; name: string }>('/api/name', {
-    method: 'POST',
-    body: JSON.stringify({ name }),
-    headers: { 'content-type': 'application/json' },
+/**
+ * A refusal (the name is taken, or too long) comes back as its code, like a
+ * channel change does: an error crossing IPC keeps only its message.
+ */
+export async function renameDevice(
+  name: string,
+): Promise<{ ok: true; name: string } | { ok: false; error: string }> {
+  try {
+    const result = await call<{ ok: boolean; name: string }>('/api/name', {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+      headers: { 'content-type': 'application/json' },
+    });
+    return { ok: true, name: result.name };
+  } catch (err) {
+    if (err instanceof ApiError && err.status < 500) {
+      const code = (err.body as { error?: string } | null)?.error;
+      return { ok: false, error: code ?? `http_${err.status}` };
+    }
+    throw err;
+  }
+}
+
+/** Stores this device's picture; the server answers with its new version. */
+export function setAvatar(bytes: Uint8Array) {
+  return call<{ ok: boolean; avatar: string }>('/api/avatar', {
+    method: 'PUT',
+    body: Buffer.from(bytes),
+    // The server judges the type by the bytes; this only gets them past the
+    // JSON parser, which would otherwise claim the body.
+    headers: { 'content-type': 'application/octet-stream' },
   });
+}
+
+export function removeAvatar() {
+  return call<{ ok: boolean }>('/api/avatar', { method: 'DELETE' });
+}
+
+/** Device ids and picture versions are hex; anything else is not asked for. */
+const AVATAR_ID = /^[0-9a-f]{8}$/;
+const AVATAR_VERSION = /^[0-9a-f]{1,64}$/;
+
+/**
+ * Someone's picture as a data: URL, or null when they have none. Fetched here
+ * because the session cookie lives in this process, and handed over as data
+ * because the page's CSP already allows data: images and nothing more is needed.
+ */
+export async function fetchAvatar(identity: string, version: string): Promise<string | null> {
+  if (!AVATAR_ID.test(identity) || !AVATAR_VERSION.test(version)) return null;
+  const base = getServerUrl();
+  if (!base) throw new NoServerError();
+
+  const res = await net.fetch(`${base}/api/avatar/${identity}?v=${version}`, {
+    credentials: 'include',
+  });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new ApiError(res.status, null);
+
+  const type = res.headers.get('content-type') ?? '';
+  if (!/^image\/(webp|png|jpeg)$/.test(type)) return null;
+  const bytes = Buffer.from(await res.arrayBuffer());
+  return `data:${type};base64,${bytes.toString('base64')}`;
 }
 
 export function stageGet() {

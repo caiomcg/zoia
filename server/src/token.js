@@ -13,6 +13,7 @@
  */
 
 import { AccessToken, RoomServiceClient } from 'livekit-server-sdk';
+import { AVATAR_ATTRIBUTE } from './avatars.js';
 
 const TOKEN_TTL = '10m';
 
@@ -58,6 +59,10 @@ export function createTokenIssuer({
         name: user.name,
         ttl: TOKEN_TTL,
       });
+
+      // The picture's version, so people already in the room see it the
+      // moment this participant joins. Only a hash: see src/avatars.js.
+      if (user.avatar) at.attributes = { [AVATAR_ATTRIBUTE]: String(user.avatar) };
 
       at.addGrant({
         roomJoin: true,

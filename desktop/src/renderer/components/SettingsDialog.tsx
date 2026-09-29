@@ -1,7 +1,9 @@
 import { captureBorderEnabled, setCaptureBorderEnabled } from '../capture-border';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { UpdaterConfig } from '../../shared/ipc';
 import Avatar from './Avatar';
+import AvatarCropDialog from './AvatarCropDialog';
+import { encodeAvatar, type AvatarCrop, type EncodedAvatar } from '../avatars';
 import { tNow, useT } from '../i18n';
 import LanguagePicker from './LanguagePicker';
 import type { MessageKey } from '../../shared/i18n';
@@ -33,6 +35,11 @@ interface SettingsDialogProps {
   onClose: () => void;
   myName: string;
   onRename: (name: string) => Promise<void>;
+  /** Yours, so the profile shows your own picture. */
+  myIdentity?: string;
+  hasAvatar?: boolean;
+  /** Publishes a new picture, or removes it with null. */
+  onAvatarChange?: (avatar: EncodedAvatar | null) => Promise<void>;
   /** Which encoder and card, or why there isn't one. */
   hardwareDetail: string;
   hardware?: boolean;
@@ -51,6 +58,9 @@ export default function SettingsDialog({
   onClose,
   myName,
   onRename,
+  myIdentity,
+  hasAvatar = false,
+  onAvatarChange,
   hardwareDetail,
   hardware,
   onHardwareChange,
@@ -96,7 +106,15 @@ export default function SettingsDialog({
 
           {/* Keyed by section, so each one fades in rather than swapping. */}
           <div className="settings-pane" key={section}>
-            {section === 'profile' && <ProfileSection myName={myName} onRename={onRename} />}
+            {section === 'profile' && (
+              <ProfileSection
+                myName={myName}
+                onRename={onRename}
+                myIdentity={myIdentity}
+                hasAvatar={hasAvatar}
+                onAvatarChange={onAvatarChange}
+              />
+            )}
             {section === 'broadcast' && (
               <BroadcastSection
                 hardwareDetail={hardwareDetail}
@@ -116,18 +134,67 @@ export default function SettingsDialog({
   );
 }
 
+/** What the picture chooser offers; the server accepts the same three. */
+const PICTURE_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
+/**
+ * The largest file offered for framing. What is uploaded is always a small
+ * 256px WebP, so this is not the server's limit: it keeps a huge photo from
+ * making the framing dialog slow to open.
+ */
+const MAX_PICTURE_MB = 10;
+
 function ProfileSection({
   myName,
   onRename,
+  myIdentity,
+  hasAvatar,
+  onAvatarChange,
 }: {
   myName: string;
   onRename: (name: string) => Promise<void>;
+  myIdentity?: string;
+  hasAvatar: boolean;
+  onAvatarChange?: (avatar: EncodedAvatar | null) => Promise<void>;
 }) {
   const t = useT();
   const [value, setValue] = useState(myName);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [pictureBusy, setPictureBusy] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+  // A picture being framed before it is published. Kept while the framing
+  // dialog fades out, since the state that opened it is already cleared.
+  const [picked, setPicked] = useState<File | null>(null);
+  const [shownPicked, setShownPicked] = useState<File | null>(null);
+  if (picked && picked !== shownPicked) setShownPicked(picked);
+  const cropDialog = useExit(picked !== null);
+
+  async function removePicture() {
+    if (!onAvatarChange) return;
+    setPictureBusy(true);
+    setError(null);
+    setMessage(null);
+    try {
+      await onAvatarChange(null);
+      setMessage(t('profile.pictureRemoved'));
+    } catch {
+      // An error crossing IPC is only a message string; this one is kinder.
+      setError(t('profile.pictureFailed'));
+    } finally {
+      setPictureBusy(false);
+    }
+  }
+
+  /** Publishes the framed picture. A failure stays in the dialog to retry. */
+  async function publishPicture(file: File, crop: AvatarCrop) {
+    if (!onAvatarChange) return;
+    setError(null);
+    setMessage(null);
+    await onAvatarChange(await encodeAvatar(file, crop));
+    setPicked(null);
+    setMessage(t('profile.pictureSaved'));
+  }
 
   useEffect(() => setValue(myName), [myName]);
 
@@ -153,9 +220,79 @@ function ProfileSection({
     <>
       <h3>{t('settings.nav.profile')}</h3>
       <div className="settings-profile">
-        <Avatar name={next || myName} live={false} />
-        <p className="muted">{t('profile.body')}</p>
+        {onAvatarChange ? (
+          <button
+            type="button"
+            className="avatar-edit"
+            onClick={() => fileRef.current?.click()}
+            disabled={pictureBusy}
+            aria-label={t('profile.changePicture')}
+            title={t('profile.changePicture')}
+          >
+            <Avatar name={next || myName} identity={myIdentity} live={false} />
+            <span className="avatar-edit-badge" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M4 8h3l2-3h6l2 3h3v11H4z" strokeLinejoin="round" strokeLinecap="round" />
+                <circle cx="12" cy="13" r="3.5" />
+              </svg>
+            </span>
+          </button>
+        ) : (
+          <Avatar name={next || myName} identity={myIdentity} live={false} />
+        )}
+        <div className="settings-profile-text">
+          <p className="muted">{t('profile.body')}</p>
+          {onAvatarChange && (
+            <p className="settings-profile-actions">
+              <span className="muted">
+                {t('profile.pictureHint')} {t('profile.pictureRules', { max: MAX_PICTURE_MB })}
+              </span>
+              {hasAvatar && (
+                <button
+                  type="button"
+                  className="link-button"
+                  onClick={() => void removePicture()}
+                  disabled={pictureBusy}
+                >
+                  {t('profile.removePicture')}
+                </button>
+              )}
+            </p>
+          )}
+        </div>
+        <input
+          ref={fileRef}
+          type="file"
+          accept={PICTURE_TYPES.join(',')}
+          hidden
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            // Cleared, so choosing the same file again still counts as a change.
+            event.target.value = '';
+            if (!file) return;
+            setMessage(null);
+            // The chooser filters by type, but "All files" gets past it.
+            if (!PICTURE_TYPES.includes(file.type)) {
+              setError(t('profile.pictureWrongType'));
+              return;
+            }
+            if (file.size > MAX_PICTURE_MB * 1024 * 1024) {
+              setError(t('profile.pictureTooLarge', { max: MAX_PICTURE_MB }));
+              return;
+            }
+            setError(null);
+            setPicked(file);
+          }}
+        />
       </div>
+      {cropDialog.mounted && shownPicked && (
+        <AvatarCropDialog
+          file={shownPicked}
+          closing={cropDialog.closing}
+          onCancel={() => setPicked(null)}
+          onSave={(crop) => publishPicture(shownPicked, crop)}
+        />
+      )}
       <label className="settings-field">
         <span>{t('profile.displayName')}</span>
         <div className="settings-inline">

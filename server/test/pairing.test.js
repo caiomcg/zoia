@@ -16,10 +16,12 @@ import { createPairingStore } from '../src/pairings.js';
 import { createDeviceStore } from '../src/devices.js';
 import { createTokenIssuer } from '../src/token.js';
 import { createStage } from '../src/stage.js';
+import { AVATAR_ATTRIBUTE, AVATAR_MAX_BYTES, createAvatarStore } from '../src/avatars.js';
 
 let dir;
 let pairings;
 let devices;
+let avatars;
 let keyStore;
 let app;
 let logLines;
@@ -49,6 +51,7 @@ function buildApp(config = {}) {
     keyStore,
     pairingStore: pairings,
     deviceStore: devices,
+    avatarStore: avatars,
     tokenIssuer: createTokenIssuer({
       apiKey: 'devkey',
       apiSecret: 'a-secret-long-enough-for-hmac-signing',
@@ -67,6 +70,7 @@ beforeEach(async () => {
   keyStore = createKeyStore({ file: join(dir, 'keys.json') });
   pairings = createPairingStore({ file: join(dir, 'pairings.json'), logger: quiet() });
   devices = createDeviceStore({ file: join(dir, 'devices.json'), logger: quiet() });
+  avatars = createAvatarStore({ dir: join(dir, 'avatars') });
   app = buildApp();
 });
 
@@ -332,5 +336,185 @@ describe('renaming a device', () => {
   test('renaming requires a session', async () => {
     const res = await request(app).post('/api/name').send({ name: 'nobody' });
     assert.equal(res.status, 401);
+  });
+
+  test('a name someone else has is refused, however it is written', async () => {
+    const alice = await pairedAgent('Alice');
+    await alice.post('/api/name').send({ name: 'Flávia' });
+    const bob = await pairedAgent('Bob');
+
+    for (const name of ['Flávia', 'flavia', '  FLAVIA ', 'Fla\u200Bvia']) {
+      const res = await bob.post('/api/name').send({ name });
+      assert.equal(res.status, 409, JSON.stringify(name));
+      assert.equal(res.body.error, 'name_taken');
+    }
+    assert.equal(
+      (await bob.get('/api/session')).body.name,
+      'Bob',
+      'the refused name must not stick',
+    );
+  });
+
+  test('your own name, recased, is still yours', async () => {
+    const agent = await pairedAgent('flavi');
+    const res = await agent.post('/api/name').send({ name: 'Flavi' });
+    assert.equal(res.status, 200);
+    assert.equal(res.body.name, 'Flavi');
+  });
+
+  test("a revoked device's name is free again", async () => {
+    const { raw } = await pairings.add({ name: 'build', maxActivations: 5 });
+    const old = await request(app)
+      .post('/api/pair')
+      .send({ pairingToken: raw, deviceName: 'Caio' });
+    await devices.revoke(old.body.deviceId);
+    const agent = await pairedAgent('Someone');
+    assert.equal((await agent.post('/api/name').send({ name: 'Caio' })).status, 200);
+  });
+
+  test('pairing under a name in use gets a number instead of being refused', async () => {
+    const { raw } = await pairings.add({ name: 'build', maxActivations: 5 });
+    const names = [];
+    for (let i = 0; i < 3; i += 1) {
+      const res = await request(app)
+        .post('/api/pair')
+        .send({ pairingToken: raw, deviceName: 'PC' });
+      assert.equal(res.status, 200);
+      names.push(res.body.name);
+    }
+    assert.deepEqual(names, ['PC', 'PC 2', 'PC 3']);
+  });
+});
+
+describe('names shared from before they were unique', () => {
+  test('whoever held the name longest keeps it, the others get a number', async () => {
+    const { raw } = await pairings.add({ name: 'build', maxActivations: 5 });
+    const ids = [];
+    for (const deviceName of ['A', 'B', 'C']) {
+      const res = await request(app).post('/api/pair').send({ pairingToken: raw, deviceName });
+      ids.push(res.body.deviceId);
+    }
+    // As the store looked before: three people on one nick, set in this order.
+    await devices.mutate((records) => {
+      const at = ['2026-01-02', '2026-01-01', '2026-01-03'];
+      records.forEach((r, i) => {
+        r.name = i === 2 ? 'FLAVI' : 'Flavi';
+        r.renamedAt = `${at[i]}T00:00:00.000Z`;
+      });
+    });
+
+    const changed = await devices.dedupeNames();
+    assert.equal(changed.length, 2);
+    const byId = new Map((await devices.all()).map((r) => [r.id, r.name]));
+    assert.equal(byId.get(ids[1]), 'Flavi', 'the earliest holder keeps the name');
+    assert.equal(byId.get(ids[0]), 'Flavi 2');
+    assert.equal(byId.get(ids[2]), 'FLAVI 3');
+
+    assert.deepEqual(await devices.dedupeNames(), [], 'a second run changes nothing');
+  });
+});
+
+describe('profile pictures', () => {
+  // The smallest bytes each accepted type is recognised by.
+  const WEBP = Buffer.concat([
+    Buffer.from('RIFF'),
+    Buffer.alloc(4),
+    Buffer.from('WEBPVP8 '),
+    Buffer.alloc(16),
+  ]);
+  const PNG = Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    Buffer.alloc(16),
+  ]);
+
+  /** Pairs a device and returns its id and an agent holding its session. */
+  async function pairedDevice(name = 'Laptop') {
+    const { raw } = await pairings.add({ name: 'build', maxActivations: 5 });
+    const paired = await request(app)
+      .post('/api/pair')
+      .send({ pairingToken: raw, deviceName: name });
+    const agent = request.agent(app);
+    await agent
+      .post('/api/device/session')
+      .send({ deviceCredential: paired.body.deviceCredential });
+    return { agent, id: paired.body.deviceId, credential: paired.body.deviceCredential };
+  }
+
+  const upload = (agent, bytes, type = 'image/webp') =>
+    agent.put('/api/avatar').set('content-type', type).send(bytes);
+
+  test('a device can set a picture, and others can fetch it by its id', async () => {
+    const alice = await pairedDevice('Alice');
+    const bob = await pairedDevice('Bob');
+
+    const res = await upload(alice.agent, WEBP);
+    assert.equal(res.status, 200);
+    assert.match(res.body.avatar, /^[0-9a-f]{16}$/);
+
+    const fetched = await bob.agent.get(`/api/avatar/${alice.id}?v=${res.body.avatar}`);
+    assert.equal(fetched.status, 200);
+    assert.equal(fetched.headers['content-type'], 'image/webp');
+    assert.equal(fetched.headers['x-content-type-options'], 'nosniff');
+    assert.deepEqual(Buffer.from(fetched.body), WEBP);
+  });
+
+  test('the version survives a restart and reaches the room through the token', async () => {
+    const alice = await pairedDevice();
+    const { body } = await upload(alice.agent, WEBP);
+
+    const session = await request(app)
+      .post('/api/device/session')
+      .send({ deviceCredential: alice.credential });
+    assert.equal(session.body.avatar, body.avatar);
+
+    const token = await alice.agent.post('/api/token').send({});
+    const payload = JSON.parse(
+      Buffer.from(token.body.token.split('.')[1], 'base64url').toString('utf8'),
+    );
+    assert.equal(payload.attributes?.[AVATAR_ATTRIBUTE], body.avatar);
+  });
+
+  test('the type is judged by the bytes, not by what the client says', async () => {
+    const alice = await pairedDevice();
+    const html = Buffer.from('<html><script>alert(1)</script></html>');
+    assert.equal((await upload(alice.agent, html, 'image/png')).status, 400);
+
+    const png = await upload(alice.agent, PNG, 'image/webp');
+    assert.equal(png.status, 200);
+    const fetched = await alice.agent.get(`/api/avatar/${alice.id}`);
+    assert.equal(fetched.headers['content-type'], 'image/png');
+  });
+
+  test('an oversized picture is refused as too large, not as a server error', async () => {
+    const alice = await pairedDevice();
+    const huge = Buffer.concat([WEBP, Buffer.alloc(AVATAR_MAX_BYTES)]);
+    const res = await upload(alice.agent, huge);
+    assert.equal(res.status, 413);
+    assert.equal(res.body.error, 'avatar_too_large');
+  });
+
+  test('removing the picture takes it away for everyone', async () => {
+    const alice = await pairedDevice();
+    await upload(alice.agent, WEBP);
+
+    assert.equal((await alice.agent.delete('/api/avatar')).status, 200);
+    assert.equal((await alice.agent.get(`/api/avatar/${alice.id}`)).status, 404);
+    const session = await request(app)
+      .post('/api/device/session')
+      .send({ deviceCredential: alice.credential });
+    assert.equal(session.body.avatar, null);
+  });
+
+  test('an id that is not a device id never reaches the filesystem', async () => {
+    const alice = await pairedDevice();
+    for (const id of ['..%2Fdevices.json', '..', 'ABCDEF12', '1234567', 'deadbeef']) {
+      assert.equal((await alice.agent.get(`/api/avatar/${id}`)).status, 404, id);
+    }
+  });
+
+  test('setting, removing and fetching all require a session', async () => {
+    assert.equal((await upload(request(app), WEBP)).status, 401);
+    assert.equal((await request(app).delete('/api/avatar')).status, 401);
+    assert.equal((await request(app).get('/api/avatar/deadbeef')).status, 401);
   });
 });

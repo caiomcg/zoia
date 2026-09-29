@@ -27,6 +27,7 @@ import {
   type CaptureTrackHandle,
 } from '../audio/capture-track';
 import { WATCHING_ATTRIBUTE, isWatching, watchingValue } from './watching';
+import { AVATAR_ATTRIBUTE, avatarVersion } from '../avatars';
 import { createNativeVideo, type NativeVideo } from './native-video';
 import { tNow } from '../i18n';
 
@@ -173,6 +174,8 @@ export interface RoomMember {
    */
   isIngress: boolean;
   broadcastSource: string | null;
+  /** The version of their profile picture, when they have one. */
+  avatar?: string;
 }
 
 function broadcastMetadata(participant: Participant): {
@@ -342,6 +345,8 @@ export function useRoom() {
   // Who is watching this device's broadcast, from their own announcements.
   const [viewers, setViewers] = useState<Viewer[]>([]);
   const announcedWatchingRef = useRef<string | null>(null);
+  // The picture version set in this session, if any; undefined until one is.
+  const avatarRef = useRef<string | null | undefined>(undefined);
   const announceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   /**
@@ -507,6 +512,7 @@ export function useRoom() {
             broadcastMetadata(p).sourceName,
             broadcastMetadata(p).sourceKind,
           ),
+          avatar: avatarVersion(p.attributes?.[AVATAR_ATTRIBUTE]),
         });
 
         const all = [
@@ -580,6 +586,13 @@ export function useRoom() {
           setState('connected');
           // A full reconnect is a new session, which starts without attributes.
           announcedWatchingRef.current = null;
+          // Its token carries the picture as it was when the token was issued,
+          // so one changed since is put back.
+          if (avatarRef.current !== undefined) {
+            room.localParticipant
+              .setAttributes({ [AVATAR_ATTRIBUTE]: avatarRef.current ?? '' })
+              .catch(() => {});
+          }
           refresh();
         })
         .on(RoomEvent.Disconnected, (reason) => {
@@ -623,6 +636,16 @@ export function useRoom() {
    */
   const setDisplayName = useCallback(async (name: string) => {
     await roomRef.current?.localParticipant.setName(name);
+  }, []);
+
+  /**
+   * Publishes a new picture version (null: no picture) to the room, for the
+   * same reason as setDisplayName: the token only carries the one it was
+   * issued with. An empty value removes the attribute.
+   */
+  const setAvatar = useCallback(async (version: string | null) => {
+    avatarRef.current = version;
+    await roomRef.current?.localParticipant.setAttributes({ [AVATAR_ATTRIBUTE]: version ?? '' });
   }, []);
 
   const disconnect = useCallback(async () => {
@@ -1240,6 +1263,7 @@ export function useRoom() {
     connect,
     disconnect,
     setDisplayName,
+    setAvatar,
     broadcastState,
     broadcastError,
     audioWarning,

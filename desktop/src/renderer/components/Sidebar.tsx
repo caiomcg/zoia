@@ -128,6 +128,7 @@ function ChannelNameField({
 export default function Sidebar({
   members,
   myName,
+  myIdentity,
   viewerIds,
   onOpenSettings,
   loadingRemoteIds,
@@ -141,6 +142,8 @@ export default function Sidebar({
 }: {
   members: RoomMember[];
   myName: string;
+  /** Yours, for your own profile picture in the footer. */
+  myIdentity?: string;
   /** Who is watching your broadcast right now; empty while you are not live. */
   viewerIds: ReadonlySet<string>;
   onOpenSettings: () => void;
@@ -353,7 +356,7 @@ export default function Sidebar({
                           title={label(m)}
                         >
                           <span className="avatar-wrap">
-                            <Avatar name={m.name} live={m.isBroadcasting} />
+                            <Avatar name={m.name} identity={m.identity} live={m.isBroadcasting} />
                             {viewerIds.has(m.identity) && <WatchingYou />}
                           </span>
                           <span className="member-name">{m.name}</span>
@@ -372,6 +375,7 @@ export default function Sidebar({
                           <span key={p.identity} title={p.name}>
                             <Avatar
                               name={p.name}
+                              identity={p.identity}
                               live={c.broadcasters.some((b) => b.identity === p.identity)}
                             />
                           </span>
@@ -419,7 +423,7 @@ export default function Sidebar({
                 title={label(m)}
               >
                 <span className="avatar-wrap">
-                  <Avatar name={m.name} live={m.isBroadcasting} />
+                  <Avatar name={m.name} identity={m.identity} live={m.isBroadcasting} />
                   {viewerIds.has(m.identity) && <WatchingYou />}
                 </span>
                 <span className="member-name">{m.name}</span>
@@ -431,7 +435,7 @@ export default function Sidebar({
       </div>
 
       <div className="sidebar-footer" title={collapsed ? myName : undefined}>
-        <Avatar name={myName} live={false} />
+        <Avatar name={myName} identity={myIdentity} live={false} />
         {!collapsed && (
           <span className="sidebar-name" title={myName}>
             {myName}
