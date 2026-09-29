@@ -39,6 +39,8 @@ export interface NativeVideo {
   attach(sender: RTCRtpSender): void;
   /** Starts capture and encoding. Call after `attach`, so no frame goes out untransformed. */
   start(): Promise<{ width: number; height: number }>;
+  /** The size being sent now: it follows the shared window when that is resized. */
+  size(): { width: number; height: number };
   stop(): Promise<void>;
 }
 
@@ -57,6 +59,7 @@ export function createNativeVideo(
   });
   let stopped = false;
   let started = false;
+  let size = { width: 0, height: 0 };
 
   worker.onmessage = (event: MessageEvent) => {
     const message = event.data as { type: string };
@@ -64,6 +67,8 @@ export function createNativeVideo(
       writePlaceholder();
     } else if (message.type === 'preview') {
       const { frame } = event.data as { frame: VideoFrame };
+      // Decoded from exactly what is sent, so its size is the stream's.
+      size = { width: frame.displayWidth, height: frame.displayHeight };
       // A preview that cannot keep up skips frames rather than queue them.
       if (stopped || (previewWriter.desiredSize ?? 1) <= 0) frame.close();
       else previewWriter.write(frame).catch(() => frame.close());
@@ -142,9 +147,10 @@ export function createNativeVideo(
       restoreAddTransceiver();
       attachTo(sender);
     },
+    size: () => size,
     async start() {
       started = true;
-      return window.zoia.nativeVideo.start({
+      size = await window.zoia.nativeVideo.start({
         hwnd: 'hwnd' in target ? target.hwnd : null,
         displayId: 'displayId' in target ? target.displayId : null,
         framerate: quality.maxFramerate,
@@ -153,6 +159,7 @@ export function createNativeVideo(
         maxHeight: quality.height,
         showBorder: captureBorderEnabled(),
       });
+      return size;
     },
     async stop() {
       if (stopped) return;

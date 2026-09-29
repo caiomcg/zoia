@@ -1017,7 +1017,8 @@ export function useRoom() {
           // On the native path the sender's own numbers describe the
           // placeholder it encodes; frame rate and bitrate are the real
           // stream's, but the encoder and size are NVENC's.
-          const size = nativeSize;
+          // Asked each time: the stream changes size with the shared window.
+          const size = nativeSize && native ? native.size() : null;
           void samplePublishStats(
             track,
             lastSampleRef,

@@ -188,8 +188,11 @@ class Encoder {
     return buffer;
   }
 
-  std::string Start(ID3D11Device* device, uint32_t width, uint32_t height, uint32_t fps,
-                    uint32_t bitrate) {
+  // `maxWidth` x `maxHeight` is the largest size Resize may later ask for.
+  // NVENC only changes resolution in place up to the maximum it was opened
+  // with, and that maximum cannot itself be reconfigured.
+  std::string Start(ID3D11Device* device, uint32_t width, uint32_t height, uint32_t maxWidth,
+                    uint32_t maxHeight, uint32_t fps, uint32_t bitrate) {
     library_ = LoadLibraryW(L"nvEncodeAPI64.dll");
     if (!library_) return "NVENC is unavailable: nvEncodeAPI64.dll could not be loaded.";
 
@@ -238,7 +241,8 @@ class Encoder {
     config_.encodeCodecConfig.h264Config.sliceMode = 0;
     config_.encodeCodecConfig.h264Config.sliceModeData = 0;
 
-    NV_ENC_INITIALIZE_PARAMS init = {};
+    init_ = {};
+    NV_ENC_INITIALIZE_PARAMS& init = init_;
     init.version = NV_ENC_INITIALIZE_PARAMS_VER;
     init.encodeGUID = NV_ENC_CODEC_H264_GUID;
     init.presetGUID = NV_ENC_PRESET_P4_GUID;
@@ -247,6 +251,8 @@ class Encoder {
     init.encodeHeight = height;
     init.darWidth = width;
     init.darHeight = height;
+    init.maxEncodeWidth = std::max(maxWidth, width);
+    init.maxEncodeHeight = std::max(maxHeight, height);
     init.frameRateNum = fps;
     init.frameRateDen = 1;
     init.enablePTD = 1;
@@ -290,6 +296,40 @@ class Encoder {
     }
     registered_ = registration.registeredResource;
     return {};
+  }
+
+  /**
+   * Changes the stream's resolution in place, the way a WebRTC sender does
+   * when the shared window changes size, and swaps in `texture`, a surface of
+   * the new size, as the input. The next frame is an IDR carrying the new
+   * SPS, which is all a viewer's decoder needs to follow the change.
+   *
+   * On failure nothing has changed: the old size and input stay registered.
+   */
+  std::string Resize(ID3D11Texture2D* texture, uint32_t width, uint32_t height) {
+    NV_ENC_RECONFIGURE_PARAMS reconfigure = {};
+    reconfigure.version = NV_ENC_RECONFIGURE_PARAMS_VER;
+    reconfigure.reInitEncodeParams = init_;
+    reconfigure.reInitEncodeParams.encodeWidth = width;
+    reconfigure.reInitEncodeParams.encodeHeight = height;
+    reconfigure.reInitEncodeParams.darWidth = width;
+    reconfigure.reInitEncodeParams.darHeight = height;
+    reconfigure.resetEncoder = 1;
+    reconfigure.forceIDR = 1;
+    if (const NVENCSTATUS status = functions_.nvEncReconfigureEncoder(encoder_, &reconfigure);
+        status != NV_ENC_SUCCESS) {
+      return NvencError("nvEncReconfigureEncoder", status);
+    }
+    init_ = reconfigure.reInitEncodeParams;
+
+    if (registered_) {
+      functions_.nvEncUnregisterResource(encoder_, registered_);
+      registered_ = nullptr;
+    }
+    width_ = width;
+    height_ = height;
+    forceIdr_ = true;
+    return RegisterInput(texture);
   }
 
   // Makes the next frame an IDR, with SPS/PPS in front of it. Called when a
@@ -374,6 +414,8 @@ class Encoder {
   // Held for the encoder's lifetime: nvEncInitializeEncoder keeps the pointer
   // it is given rather than copying the configuration.
   NV_ENC_CONFIG config_ = {};
+  // Kept for Resize, which re-sends the whole set with a new size.
+  NV_ENC_INITIALIZE_PARAMS init_ = {};
   void* encoder_ = nullptr;
   NV_ENC_OUTPUT_PTR bitstream_ = nullptr;
   NV_ENC_REGISTERED_PTR registered_ = nullptr;
@@ -491,17 +533,20 @@ class Session {
     sourceWidth_ = width_;
     sourceHeight_ = height_;
     scale_ = false;
-    if (encode_ && maxWidth > 0 && maxHeight > 0) {
+    maxWidth_ = maxWidth & ~1u;
+    maxHeight_ = maxHeight & ~1u;
+    sourceChangedAt_ = {};
+    resizeFailed_ = false;
+    if (encode_ && maxWidth_ > 0 && maxHeight_ > 0) {
       // The stream is the window fitted into the preset, on the GPU, keeping
       // its aspect ratio — down or up. Down, because a 4K window went out at
       // 4K on the 1080p preset's bitrate, and encoding 4K while a game held
-      // the GPU cost enough to lose frames. Up too, because the stream's size
-      // is fixed once it starts: a window shared small and then made
-      // fullscreen would otherwise stay small for the whole broadcast.
-      const double factor = std::min(static_cast<double>(maxWidth) / width_,
-                                     static_cast<double>(maxHeight) / height_);
-      const uint32_t fittedWidth = static_cast<uint32_t>(width_ * factor) & ~1u;
-      const uint32_t fittedHeight = static_cast<uint32_t>(height_ * factor) & ~1u;
+      // the GPU cost enough to lose frames. Up, so a small window still fills
+      // the preset. When the window changes size the stream follows it (see
+      // ResizeStream), so a browser made fullscreen becomes the full preset.
+      uint32_t fittedWidth = 0;
+      uint32_t fittedHeight = 0;
+      Fit(width_, height_, &fittedWidth, &fittedHeight);
       if (fittedWidth > 0 && fittedHeight > 0) {
         width_ = fittedWidth;
         height_ = fittedHeight;
@@ -512,7 +557,8 @@ class Session {
     }
 
     if (encode_) {
-      const std::string encoderError = encoder_.Start(device_.Get(), width_, height_, fps, bitrate);
+      const std::string encoderError = encoder_.Start(device_.Get(), width_, height_, maxWidth_, maxHeight_,
+                                                        fps, bitrate);
       if (!encoderError.empty()) {
         // Degrade rather than refuse. NVENC can be present and still decline —
         // most often on a driver older than the headers this was built
@@ -673,8 +719,24 @@ class Session {
         pool.Recreate(winrtDevice_, wgdx::DirectXPixelFormat::B8G8R8A8UIntNormalized, 3, content);
         const std::string error = ConfigureScaler(contentWidth, contentHeight);
         if (!error.empty()) Emit({}, false, error);
+        sourceChangedAt_ = std::chrono::steady_clock::now();
         // This frame's texture is still the old size; the next one is not.
         return;
+      }
+
+      // Until then the new size is letterboxed into the stream's current one.
+      // Only once the window has held its size: dragging an edge produces a
+      // new size every frame, and each change costs viewers a keyframe.
+      if (encode_ && !resizeFailed_ && sourceChangedAt_.time_since_epoch().count() != 0 &&
+          std::chrono::steady_clock::now() - sourceChangedAt_ >= kResizeSettle) {
+        sourceChangedAt_ = {};
+        uint32_t fittedWidth = 0;
+        uint32_t fittedHeight = 0;
+        Fit(sourceWidth_, sourceHeight_, &fittedWidth, &fittedHeight);
+        if (fittedWidth > 0 && fittedHeight > 0 &&
+            (fittedWidth != width_ || fittedHeight != height_)) {
+          ResizeStream(fittedWidth, fittedHeight);
+        }
       }
     }
 
@@ -886,6 +948,56 @@ class Session {
    * start and again whenever the window changes size; everything tied to the
    * source size is rebuilt, and the output is repainted whole on every frame.
    */
+  // `width` x `height` fitted into the preset, keeping its shape, rounded
+  // down to the even sizes encoders require.
+  void Fit(uint32_t width, uint32_t height, uint32_t* fittedWidth, uint32_t* fittedHeight) const {
+    const double factor = std::min(static_cast<double>(maxWidth_) / width,
+                                   static_cast<double>(maxHeight_) / height);
+    *fittedWidth = std::min(static_cast<uint32_t>(width * factor) & ~1u, maxWidth_);
+    *fittedHeight = std::min(static_cast<uint32_t>(height * factor) & ~1u, maxHeight_);
+  }
+
+  // Moves the stream to a new size: a fresh encoder input of that size, NVENC
+  // reconfigured in place, and the scaler pointed at the new input. Called
+  // with encodeMutex_ held, before the frame being handled is copied, so the
+  // frame that triggered it is the first one at the new size.
+  void ResizeStream(uint32_t width, uint32_t height) {
+    D3D11_TEXTURE2D_DESC desc = {};
+    desc.Width = width;
+    desc.Height = height;
+    desc.MipLevels = 1;
+    desc.ArraySize = 1;
+    desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+    desc.SampleDesc.Count = 1;
+    desc.Usage = D3D11_USAGE_DEFAULT;
+    desc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
+    ComPtr<ID3D11Texture2D> texture;
+    HRESULT hr = device_->CreateTexture2D(&desc, nullptr, texture.GetAddressOf());
+    if (FAILED(hr)) {
+      resizeFailed_ = true;
+      return;
+    }
+
+    const std::string error = encoder_.Resize(texture.Get(), width, height);
+    if (!error.empty()) {
+      // A driver that will not change size in place keeps the stream at its
+      // starting size, letterboxed, as before: worse, not broken. Not tried
+      // again, since it would fail the same way on every resize.
+      resizeFailed_ = true;
+      fprintf(stderr, "[zoia-capture] %s; keeping %ux%u\n", error.c_str(), width_, height_);
+      return;
+    }
+
+    input_ = texture;
+    width_ = width;
+    height_ = height;
+    // Rebuilt around the new input; this also discards a held frame, which
+    // was scaled for the old size.
+    frameHeld_ = false;
+    const std::string scalerError = ConfigureScaler(sourceWidth_, sourceHeight_);
+    if (!scalerError.empty()) Emit({}, false, scalerError);
+  }
+
   std::string ConfigureScaler(uint32_t sourceWidth, uint32_t sourceHeight) {
     if (!videoDevice_ && FAILED(device_.As(&videoDevice_))) return "No video processor on this GPU.";
     if (!videoContext_ && FAILED(context_.As(&videoContext_))) {
@@ -1027,6 +1139,13 @@ class Session {
   uint32_t width_ = 0;
   uint32_t height_ = 0;
   uint32_t targetFps_ = 0;
+  // The preset: the largest the stream may be, and what a resize fits into.
+  uint32_t maxWidth_ = 0;
+  uint32_t maxHeight_ = 0;
+  // When the window last changed size; zero once the stream has followed it.
+  std::chrono::steady_clock::time_point sourceChangedAt_{};
+  bool resizeFailed_ = false;
+  static constexpr std::chrono::milliseconds kResizeSettle{300};
   std::chrono::steady_clock::time_point lastFrameTime_{};
   std::chrono::steady_clock::time_point nextFrameDue_{};
   // A frame copied but not yet encoded because it was early for its slot.
