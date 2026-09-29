@@ -395,6 +395,17 @@ button:disabled {
 .mains.paired > .tile-slot {
   flex-grow: 0;
   flex-shrink: 1;
+  /* PAIR_TILE_MIN_PX and PAIR_SPLITTER_PX in pair-split.ts. Half the row when
+     the stage cannot give both tiles the full minimum. */
+  min-width: min(360px, calc((100% - 10px) / 2));
+}
+
+/* The footer controls stay on one line. The name beside them truncates
+   instead, so a long source label cannot push volume, fullscreen and close
+   onto a second row. */
+.mains.paired .remote-audio-controls {
+  flex-shrink: 0;
+  flex-wrap: nowrap;
 }
 
 .splitter {
@@ -787,6 +798,18 @@ button:disabled {
   align-items: center;
   gap: 8px;
   min-width: 0;
+}
+
+.remote-tile-label {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.remote-tile-name {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .remote-tile-who .stream-source {

@@ -167,8 +167,8 @@ export default function Player({
       <div className="remote-tile-footer">
         <span className="remote-tile-who">
           <Avatar name={name} identity={identity} live />
-          <span>
-            {name}
+          <span className="remote-tile-label">
+            <span className="remote-tile-name">{name}</span>
             <small className="stream-source">
               {!sendAudio
                 ? t('player.withoutAudio')

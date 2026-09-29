@@ -1,6 +1,7 @@
 import {
   useEffect,
   useImperativeHandle,
+  useLayoutEffect,
   useRef,
   useState,
   type ReactNode,
@@ -14,14 +15,15 @@ import Avatar from './Avatar';
 import { IconEye, IconFullscreen, IconVolume } from './Player';
 import { useT, type T } from '../i18n';
 import type { MessageKey } from '../../shared/i18n';
+import { clampPairSplit, pairSplitLimits } from '../pair-split';
 
 /**
  * Every broadcast in the room, laid out one of two ways:
  *
  * - spotlight: one large, the rest of what is watched as small windows at the
  *   bottom, which the arrow tucks away; clicking one swaps it with the large;
- * - mosaic: all of them large. Two sit side by side with a draggable split;
- *   more form a grid.
+ * - mosaic: all of them large. Two sit side by side with a draggable split
+ *   that stops once a tile is too narrow for its controls; more form a grid.
  *
  * Both show the same thing, what the viewer chose to watch; switching layout
  * only changes how. Nothing opens by itself: someone joining sees a dark
@@ -96,13 +98,13 @@ const MOSAIC_HIGH_LIMIT = 4;
 const FULLSCREEN_IDLE_MS = 5000;
 const SPLIT_KEY = 'zoia.pairSplit';
 const AUDIO_KEY = 'zoia.remoteAudio';
-const SPLIT_MIN = 0.2;
-const SPLIT_MAX = 0.8;
 
 function readSplit(): number {
   try {
     const value = Number(localStorage.getItem(SPLIT_KEY));
-    return value >= SPLIT_MIN && value <= SPLIT_MAX ? value : 0.5;
+    // The real floor depends on the row width (see clampPairSplit), so a
+    // stored fraction is kept and pulled back once the row is measured.
+    return value > 0 && value < 1 ? value : 0.5;
   } catch {
     return 0.5;
   }
@@ -322,8 +324,8 @@ function RemoteTile({
       <div className="remote-tile-footer">
         <span className="remote-tile-who">
           <Avatar name={screen.participantName} identity={screen.participantIdentity} live />
-          <span>
-            {screen.participantName}
+          <span className="remote-tile-label">
+            <span className="remote-tile-name">{screen.participantName}</span>
             <small className="stream-source">
               {sourceText(t, screen.sourceName, screen.sourceKind)}
             </small>
@@ -711,6 +713,9 @@ export default function RemoteGrid({
     () => readStored(STRIP_HIDDEN_KEY, ['true', 'false'], 'false') === 'true',
   );
   const [split, setSplit] = useState(readSplit);
+  // Measured width of the side-by-side row, so the divider's limits (and its
+  // aria values) follow the window rather than a fixed fraction.
+  const [pairWidth, setPairWidth] = useState(0);
   const mainsRef = useRef<HTMLDivElement>(null);
   const draggingRef = useRef(false);
   const areaRef = useRef<HTMLDivElement>(null);
@@ -744,6 +749,24 @@ export default function RemoteGrid({
   if (fullId) mains = [fullId];
   else if (mode === 'mosaic') mains = livePinned;
   else mains = spotlightId ? [spotlightId] : [];
+  const paired = !fullId && mode === 'mosaic' && mains.length === 2;
+
+  // A stored or dragged fraction can leave a tile narrower than its footer
+  // once the window shrinks. Pull it back whenever the row's width changes.
+  useLayoutEffect(() => {
+    const el = mainsRef.current;
+    if (!paired || !el) return;
+    const apply = () => {
+      const width = el.getBoundingClientRect().width;
+      setPairWidth(width);
+      setSplit((current) => clampPairSplit(current, width));
+    };
+    apply();
+    const observer = new ResizeObserver(apply);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [paired]);
+
   const remoteMains = mains.filter((id) => id !== LOCAL_SPOTLIGHT);
   // The spotlight's small windows: everything watched but the large one.
   const pipIds = pipStrip ? livePinned.slice(1) : [];
@@ -847,7 +870,7 @@ export default function RemoteGrid({
     const rect = mainsRef.current?.getBoundingClientRect();
     if (!rect || rect.width === 0) return;
     const ratio = (clientX - rect.left) / rect.width;
-    setSplit(Math.min(SPLIT_MAX, Math.max(SPLIT_MIN, ratio)));
+    setSplit(clampPairSplit(ratio, rect.width));
   }
 
   function chooseLayout(next: LayoutMode) {
@@ -1203,8 +1226,8 @@ export default function RemoteGrid({
     );
   }
 
-  const paired = !fullId && mode === 'mosaic' && mains.length === 2;
   const [left, right] = mains;
+  const splitLimits = pairSplitLimits(pairWidth);
 
   const mainsView =
     mains.length === 0 ? (
@@ -1232,8 +1255,8 @@ export default function RemoteGrid({
           className="splitter"
           role="separator"
           aria-orientation="vertical"
-          aria-valuemin={SPLIT_MIN * 100}
-          aria-valuemax={SPLIT_MAX * 100}
+          aria-valuemin={Math.round(splitLimits.min * 100)}
+          aria-valuemax={Math.round(splitLimits.max * 100)}
           aria-valuenow={Math.round(split * 100)}
           title={t('grid.splitTitle')}
           onPointerDown={(event) => {
