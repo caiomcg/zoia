@@ -646,6 +646,15 @@ class Session {
     // screen, and a distraction over a game. Windows 10 has no way to turn it
     // off, and there the border simply stays.
     hideBorder_ = !showBorder;
+    if (hideBorder_) {
+      try {
+        if (winrt::Windows::Foundation::Metadata::ApiInformation::IsPropertyPresent(
+                L"Windows.Graphics.Capture.GraphicsCaptureSession", L"IsBorderRequired")) {
+          session_.IsBorderRequired(false);
+        }
+      } catch (...) {
+      }
+    }
 
     frameToken_ = framePool_.FrameArrived({this, &Session::OnFrame});
     session_.StartCapture();
@@ -913,13 +922,12 @@ class Session {
             L"Windows.Graphics.Capture.GraphicsCaptureSession", L"IsBorderRequired");
     if (!supported) return;
 
-    if (borderAccess_ == BorderAccess::Allowed) {
-      try {
-        session_.IsBorderRequired(false);
-      } catch (...) {
-      }
-      return;
+    try {
+      session_.IsBorderRequired(false);
+    } catch (...) {
     }
+
+    if (borderAccess_ == BorderAccess::Allowed) return;
     if (borderAccess_ != BorderAccess::Unknown) return;
 
     borderAccess_ = BorderAccess::Asking;
@@ -938,7 +946,6 @@ class Session {
         } catch (...) {
         }
         borderAccess_ = allowed ? BorderAccess::Allowed : BorderAccess::Denied;
-        if (!allowed) return;
         try {
           session.IsBorderRequired(false);
         } catch (...) {

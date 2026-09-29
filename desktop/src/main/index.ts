@@ -520,7 +520,11 @@ function registerIpc(): void {
    * mixed-DPI desktop the two differ per display, so it is converted here.
    */
   function screenPoint(displayId: string | null): { x: number; y: number } | null {
-    const display = screen.getAllDisplays().find((d) => String(d.id) === displayId);
+    const displays = screen.getAllDisplays();
+    const display =
+      (displayId ? displays.find((d) => String(d.id) === displayId) : null) ??
+      screen.getPrimaryDisplay() ??
+      displays[0];
     if (!display) return null;
     const { x, y, width, height } = display.bounds;
     const point = screen.dipToScreenPoint({
