@@ -958,7 +958,7 @@ export default function RemoteGrid({
 
   // Watching the same in both layouts: it joins what is watched, and in the
   // spotlight goes large, so what was large becomes a small window. Clicking a
-  // small window is therefore a swap.
+  // small window, the channel list, or its hover thumbnail is therefore a swap.
   function watch(id: string) {
     keepHover();
     setHovered(null);
@@ -966,23 +966,6 @@ export default function RemoteGrid({
     else if (mode === 'mosaic')
       setPinned((current) => (current.includes(id) ? current : [...current, id]));
     else setPinned((current) => [id, ...current.filter((other) => other !== id)]);
-    ensureAudible(id);
-  }
-
-  // Picked from the channel list or its hover thumbnail. In the spotlight it
-  // replaces what is large, which stops being watched; the eye is the way to
-  // keep both. Elsewhere it is the same as watching.
-  function pick(id: string) {
-    if (fullId || mode === 'mosaic') {
-      watch(id);
-      return;
-    }
-    keepHover();
-    setHovered(null);
-    setPinned((current) => {
-      const large = current.find((other) => candidates.includes(other));
-      return [id, ...current.filter((other) => other !== id && other !== large)];
-    });
     ensureAudible(id);
   }
 
@@ -1042,7 +1025,7 @@ export default function RemoteGrid({
   }
 
   useImperativeHandle(controlRef, () => ({
-    watch: (target) => pick(idFor(target)),
+    watch: (target) => watch(idFor(target)),
     hover: (target, anchor) => {
       if (!target || !anchor) return releaseHover();
       keepHover();
@@ -1069,8 +1052,9 @@ export default function RemoteGrid({
     return createPortal(card, document.body);
   }
 
-  // The thumbnail, and only what it is for from here: clicking it puts the
-  // broadcast on stage, and in the spotlight its eye opens a small window.
+  // The thumbnail, and only what it is for from here: clicking it watches,
+  // the same as a thumbnail on the strip, and in the spotlight its eye opens
+  // a small window without taking over the large one.
   function renderCard(id: string, anchor: DOMRect): ReactNode {
     const top = Math.min(
       Math.max(8, anchor.top + anchor.height / 2 - PREVIEW_HEIGHT / 2),
@@ -1094,7 +1078,7 @@ export default function RemoteGrid({
           identity={local.identity}
           label={t('grid.yourBroadcast')}
           liveVideo={local.track}
-          onWatch={() => pick(id)}
+          onWatch={() => watch(id)}
           onStop={local.onStop}
           preview={{ on: local.showPreview, onToggle: local.onTogglePreview }}
         />,
@@ -1121,7 +1105,7 @@ export default function RemoteGrid({
         label={sourceText(t, screen.sourceName, screen.sourceKind)}
         liveVideo={screen.videoTrack}
         snapshot={snapshots[id]?.url ?? null}
-        onWatch={() => pick(id)}
+        onWatch={() => watch(id)}
         peeking={pipIds.includes(id)}
         // The mosaic has room for another tile, so clicking is the way to see
         // it alongside; the spotlight has one, so a small window instead.
