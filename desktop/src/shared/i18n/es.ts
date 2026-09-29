@@ -75,6 +75,7 @@ export const es: Messages = {
   'sidebar.watchingYou': 'Está viendo tu pantalla',
   'sidebar.watchLive': 'Ver a {name}. Pasa el ratón para una vista previa.',
   'sidebar.settings': 'Configuración',
+  'sidebar.leave': 'Salir del canal',
 
   'player.youreLive': 'Estás en vivo',
   'player.previewHidden':

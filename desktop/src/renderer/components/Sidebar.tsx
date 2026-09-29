@@ -146,6 +146,7 @@ export default function Sidebar({
   channels,
   currentChannel,
   onJoinChannel,
+  onLeaveChannel,
   maxChannels,
   onCreateChannel,
   onRenameChannel,
@@ -166,6 +167,7 @@ export default function Sidebar({
   channels: RoomInfo[];
   currentChannel: string | null;
   onJoinChannel: (id: string) => void;
+  onLeaveChannel: () => void;
   /** The most channels the server holds, the default included. */
   maxChannels: number;
   onCreateChannel: (name: string) => void;
@@ -439,6 +441,17 @@ export default function Sidebar({
             {myName}
           </span>
         )}
+        {/* Only while in a channel: outside one there is nothing to leave. */}
+        {currentChannel !== null && (
+          <button
+            className="icon-button sidebar-settings sidebar-leave"
+            onClick={onLeaveChannel}
+            title={t('sidebar.leave')}
+            aria-label={t('sidebar.leave')}
+          >
+            <IconLeave />
+          </button>
+        )}
         <button
           className="icon-button sidebar-settings"
           onClick={onOpenSettings}
@@ -539,6 +552,25 @@ function WatchingYou() {
     >
       <IconEye />
     </span>
+  );
+}
+
+/** A door with an arrow leaving through it. */
+function IconLeave() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="18"
+      height="18"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M10 4H5v16h5M14 8l4 4-4 4M18 12H9" />
+    </svg>
   );
 }
 

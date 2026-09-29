@@ -235,6 +235,15 @@ export default function App() {
     await room.disconnect();
   }
 
+  /** Leaves the channel for none, the way the app starts. Sharing stops first. */
+  async function leaveChannel() {
+    if (channel === null) return;
+    if (isLive || isStarting) await stopSharing();
+    setHopping(false);
+    setChannel(null);
+    await room.disconnect();
+  }
+
   // Held on the splash until the channel list first arrives, so a launch goes
   // straight from the logo to a populated list rather than an empty one.
   // Capped, so a slow or failing server still gets its say on screen.
@@ -715,7 +724,15 @@ export default function App() {
         </main>
 
         <Sidebar
-          members={hopping ? hopMembers(room.members, channels, channel) : room.members}
+          members={
+            // Out of every channel, the last room's list would hide its people
+            // from the poll's, since the sidebar takes them for your own.
+            channel === null
+              ? []
+              : hopping
+                ? hopMembers(room.members, channels, channel)
+                : room.members
+          }
           myName={status.deviceName ?? t('common.you')}
           myIdentity={myIdentity}
           viewerIds={viewerIds}
@@ -724,6 +741,7 @@ export default function App() {
           channels={channels}
           currentChannel={channel}
           onJoinChannel={(id) => void switchChannel(id)}
+          onLeaveChannel={() => void leaveChannel()}
           maxChannels={maxChannels}
           onCreateChannel={(name) => void changeChannels(window.zoia.rooms.create(name))}
           onRenameChannel={(id, name) => void changeChannels(window.zoia.rooms.rename(id, name))}

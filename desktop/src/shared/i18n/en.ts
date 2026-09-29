@@ -81,6 +81,7 @@ export const en = {
   'sidebar.watchingYou': 'Watching your screen',
   'sidebar.watchLive': 'Watch {name}. Hover to preview.',
   'sidebar.settings': 'Settings',
+  'sidebar.leave': 'Leave channel',
 
   // ---- your own share
   'player.youreLive': 'You’re live',

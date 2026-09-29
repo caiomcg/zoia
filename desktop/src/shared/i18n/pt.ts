@@ -75,6 +75,7 @@ export const pt: Messages = {
   'sidebar.watchingYou': 'Está assistindo sua tela',
   'sidebar.watchLive': 'Assistir {name}. Passe o mouse para uma prévia.',
   'sidebar.settings': 'Configurações',
+  'sidebar.leave': 'Sair do canal',
 
   'player.youreLive': 'Você está ao vivo',
   'player.previewHidden':
