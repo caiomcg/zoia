@@ -1,6 +1,6 @@
 {
-  "version": "0.4.1",
+  "version": "0.4.2",
   "updateType": "full",
-  "installerUrl": "https://github.com/caiomcg/zoia/releases/download/v0.4.1/Zoia-Setup-0.4.1-x64.exe",
-  "notes": "Hardware acceleration on by default, a preview of your own broadcast, and resized windows followed properly on NVIDIA graphics cards."
+  "installerUrl": "https://github.com/caiomcg/zoia/releases/download/v0.4.2/Zoia-Setup-0.4.2-x64.exe",
+  "notes": "A shared window that is resized or made fullscreen now fills the stream with an NVIDIA graphics card."
 }
