@@ -68,7 +68,13 @@ the value to use (`Minimum installed version for OTA`) in the release run's log.
 The `app.asar` must be produced by the same release build (`electron-builder --dir`) and
 copied from `win-unpacked/resources/app.asar`. Publish it as a release asset and calculate
 its SHA-256 before updating the manifest. The operational order is: publish the asset, update
-the branch manifest, and only then distribute the new version. `autoInstall` set to `true`
+the branch manifest, and only then distribute the new version. The release workflow's
+`manifest` job does exactly that: once the release exists it downloads the attached assets
+back, builds the manifest with
+[`scripts/write-updater-manifest.js`](../scripts/write-updater-manifest.js) (checksums of the
+downloaded files, `minimumVersion` from the classifier, `notes` from the changelog entry's
+`summary`), and commits it to `main`. It never writes a `commit` field, skips `none` releases,
+and never replaces a manifest that already announces a newer version. `autoInstall` set to `true`
 installs without confirmation; the default `false` shows the update dialog.
 
 The regular CI workflow classifies every commit on `main` against the previous release tag.

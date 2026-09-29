@@ -16,6 +16,18 @@ required" or download instructions. The updater already handles that, and the ap
 notes to people who have just installed the release. The only thing added around the entry is
 the link to the full list of commits, by `scripts/release-notes.js`.
 
+- Start with a front-matter block holding one sentence for the update prompt. It is removed
+  from the notes and copied into the updater manifest when the release is published; the
+  release workflow refuses a tag without it.
+
+  ```markdown
+  ---
+  summary: Smooth, hardware-encoded game sharing on NVIDIA graphics cards.
+  ---
+
+  ### New
+  ```
+
 - Group under `### New`, `### Fixed`, `### Improved` — only the headings that apply.
 - Say what changed for someone using the app, and where to find it: "Settings → Sounds",
   not "added `SoundsSection`".

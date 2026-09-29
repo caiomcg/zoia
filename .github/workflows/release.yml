@@ -34,6 +34,7 @@ jobs:
     outputs:
       update_type: ${{ steps.classify.outputs.update_type }}
       base_tag: ${{ steps.classify.outputs.base_tag }}
+      minimum_version: ${{ steps.classify.outputs.minimum_version }}
     # Pinned rather than windows-latest. This is the only job in the repo that
     # compiles C++, and the image's Visual Studio and Windows SDK are inputs to
     # the artifact. A silent image migration should not first be noticed as a
@@ -287,3 +288,57 @@ jobs:
             --title "Zoia ${{ github.ref_name }}" \
             --verify-tag \
             --notes-file release-notes.md
+
+  # The installed apps only hear about a release from
+  # desktop/updater-manifest.json on main, so this is what actually ships it.
+  # It runs after the release exists and reads the assets back from it: the
+  # manifest cannot name a file the release lacks, and its checksum is of the
+  # file people download, not of a local copy.
+  #
+  # Tag pushes only. A workflow_dispatch run is named for a branch, not a tag.
+  manifest:
+    needs: [build, publish]
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    # Pushes to main. Like publish, it installs and runs nothing but the repo's
+    # own plain-Node scripts while it holds this.
+    permissions:
+      contents: write
+    steps:
+      # main, not the tag: the commit goes on top of whatever main is now.
+      # Full history for the rebase below.
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Download the release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release download "${{ github.ref_name }}" \
+            --repo "${{ github.repository }}" \
+            --pattern '*.exe' --pattern '*.asar' \
+            --dir release-assets
+      - name: Write the manifest
+        run: |
+          node scripts/write-updater-manifest.js "${{ github.ref_name }}" release-assets \
+            "${{ needs.build.outputs.update_type }}" "${{ needs.build.outputs.minimum_version }}"
+      # Rebased and retried, because a push to main during the build is
+      # ordinary. A commit made with GITHUB_TOKEN starts no other workflow, so
+      # this does not trigger CI.
+      - name: Commit it to main
+        run: |
+          if git diff --quiet -- desktop/updater-manifest.json; then
+            echo "Nothing to publish."
+            exit 0
+          fi
+          version="${GITHUB_REF_NAME#v}"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m "chore(desktop): publish ${{ needs.build.outputs.update_type == 'asar' && 'OTA' || 'full-update' }} manifest for $version" \
+            -- desktop/updater-manifest.json
+          for attempt in 1 2 3; do
+            git push origin HEAD:main && exit 0
+            git pull --rebase origin main
+          done
+          exit 1

@@ -132,8 +132,8 @@ These each cost hours if forgotten, and all of them fail in ways that look like 
 
 A release is a `vX.Y.Z` tag on `main`. CI builds the Windows installer and the Mac disk images,
 decides whether Windows can take it as an in-app (OTA) update, and publishes the GitHub Release.
-The installed apps only learn about it from `desktop/updater-manifest.json` on `main`, which is
-updated by hand as the last step. Details: [docs/DISTRIBUTING.md](docs/DISTRIBUTING.md).
+The installed apps only learn about it from `desktop/updater-manifest.json` on `main`, which the
+release workflow commits there once the assets are attached. Details: [docs/DISTRIBUTING.md](docs/DISTRIBUTING.md).
 
 1. **Check what kind of release it is.** `node scripts/classify-desktop-update.js HEAD` prints
    `asar` (in-app on Windows), `full` (installer needed) or `none`, the reasons, and for `asar`
@@ -141,6 +141,7 @@ updated by hand as the last step. Details: [docs/DISTRIBUTING.md](docs/DISTRIBUT
 2. **Bump both versions**, kept equal:
    `npm version patch --no-git-tag-version` and the same with `--prefix desktop`.
 3. **Write `changelog/<version>.md`** (format in [changelog/README.md](changelog/README.md)):
+   - Start it with a `summary:` front-matter line: one sentence, shown in the update prompt.
    - Read the commits *and the diffs* since the previous tag
      (`git log v<prev>..HEAD`, `git diff v<prev>..HEAD`), plus any new ADR and new UI strings
      in `desktop/src/shared/i18n/en.ts`. Commit subjects alone undersell and mislabel changes.
@@ -157,11 +158,10 @@ updated by hand as the last step. Details: [docs/DISTRIBUTING.md](docs/DISTRIBUT
    the notes with a local tag: `git tag vX.Y.Z && node scripts/release-notes.js vX.Y.Z`.
 5. **Push `main`, wait for CI to pass, then push the tag.** The release workflow refuses a tag
    without a changelog entry or with mismatched versions before it builds anything.
-6. **When the release is published,** download its `SHA256SUMS.txt` and check the assets.
-7. **Publish the manifest** as `chore(desktop): publish OTA manifest for X.Y.Z` on `main`:
-   - `asar`: `updateType: "asar"`, `artifactUrl` and `sha256` of `Zoia-OTA-X.Y.Z.asar`,
-     `minimumVersion` from step 1, and `installerUrl` of the Windows `.exe` as the fallback.
-   - `full`: `updateType: "full"` and `installerUrl` of the Windows `.exe`.
-   - `notes`: one sentence for the update prompt.
+6. **The workflow publishes the manifest.** Its `manifest` job downloads the attached assets
+   back from the release, runs `scripts/write-updater-manifest.js`, and pushes
+   `chore(desktop): publish … manifest for X.Y.Z` to `main`. Pull afterwards. To redo it by
+   hand, download the release's `.exe`/`.asar` into a folder and run
+   `node scripts/write-updater-manifest.js vX.Y.Z <folder> <asar|full> [minimumVersion]`.
 
 Never retag or delete a published release to fix it; ship the next patch version instead.

@@ -17,9 +17,12 @@
  * The changelog entry, `changelog/<version>.md`, is what the release page and
  * the app's post-update notes say about the release. Written and reviewed
  * before tagging, so a release cannot go out with nothing to say about it.
+ * Its `summary` line is the sentence the update prompt shows, which the
+ * release workflow copies into desktop/updater-manifest.json.
  */
 
 import { existsSync, readFileSync } from 'node:fs';
+import { parseEntry } from './lib/changelog.js';
 
 const tag = process.argv[2] ?? '';
 const expected = tag.replace(/^v/, '');
@@ -52,6 +55,16 @@ if (!existsSync(changelog) || !readFileSync(changelog, 'utf8').trim()) {
   console.error(
     `changelog/${expected}.md is missing or empty.\n\n` +
       `Write the entry for this release (see changelog/README.md), commit it, then re-tag.`,
+  );
+  process.exit(1);
+}
+
+const { summary, body } = parseEntry(readFileSync(changelog, 'utf8'));
+if (!summary || !body.trim()) {
+  console.error(
+    `changelog/${expected}.md needs a summary and a body:\n\n` +
+      `  ---\n  summary: One sentence for the update prompt.\n  ---\n\n  ### New\n  ...\n\n` +
+      `See changelog/README.md.`,
   );
   process.exit(1);
 }

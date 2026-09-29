@@ -12,6 +12,7 @@
 
 import { existsSync, readFileSync } from 'node:fs';
 import { git, previousTag } from './lib/desktop-update.js';
+import { parseEntry } from './lib/changelog.js';
 import { formatReleaseNotes } from './lib/release-notes.js';
 
 const tag = process.argv[2];
@@ -30,7 +31,8 @@ function repository() {
 
 const base = previousTag(tag);
 const entryFile = new URL(`../changelog/${tag.replace(/^v/, '')}.md`, import.meta.url);
-const entry = existsSync(entryFile) ? readFileSync(entryFile, 'utf8') : null;
+// The summary is the update prompt's; the release page shows the rest.
+const entry = existsSync(entryFile) ? parseEntry(readFileSync(entryFile, 'utf8')).body : null;
 const range = base ? `${base}..${tag}` : tag;
 const log = git(['log', '--no-merges', '--format=%H%x1f%s', range]);
 const commits = log
