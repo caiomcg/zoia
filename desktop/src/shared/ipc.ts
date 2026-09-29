@@ -244,6 +244,8 @@ export interface SourceInfo {
   processPath: string | null;
   /** Win32 window handle; the GPU path uses it to locate the window on screen. */
   hwnd: number | null;
+  /** For a screen: Electron's display id, which the GPU path turns into a monitor. */
+  displayId?: string | null;
 }
 
 export const IPC = {

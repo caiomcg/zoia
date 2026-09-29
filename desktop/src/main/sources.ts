@@ -126,6 +126,7 @@ async function captureSources(): Promise<SourceInfo[]> {
         processId,
         processPath: nativeWindow?.path ?? null,
         hwnd,
+        displayId: isWindow ? null : source.display_id || null,
       },
     ];
   });

@@ -235,6 +235,9 @@ export const es: Messages = {
   'broadcast.hardware': 'Aceleración por hardware',
   'broadcast.comingSoon': 'Próximamente',
   'broadcast.noEncoder': 'No se encontró un codificador por hardware en este equipo.',
+  'broadcast.border': 'Resaltar en amarillo la ventana compartida',
+  'broadcast.borderDetail':
+    'Windows 11 marca con un borde amarillo la ventana que está capturando. Solo con aceleración por hardware.',
   'broadcast.encoderOn': '{encoder} en {adapter}',
   'general.tray': 'Mantener Zoia en la bandeja del sistema al cerrar la ventana',
   'general.trayFailed': 'No se pudo cambiar la opción de la bandeja del sistema.',

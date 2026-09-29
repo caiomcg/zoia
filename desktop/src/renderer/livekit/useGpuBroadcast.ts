@@ -18,6 +18,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { EncoderStatus, QualityPreset, SourceInfo } from '../../shared/ipc';
 import { isLeagueClient, isLeagueSource } from '../../shared/league';
+import { captureBorderEnabled } from '../capture-border';
 
 export type GpuBroadcastState = 'idle' | 'starting' | 'live';
 
@@ -117,6 +118,7 @@ export function useGpuBroadcast() {
           bitrate: preset.maxBitrate,
           maxWidth: preset.width,
           maxHeight: preset.height,
+          showBorder: captureBorderEnabled(),
           // Audio and video both follow the chosen application. Sharing a
           // whole screen sends no audio: the alternative is capturing the
           // whole system, which means every notification and every other app

@@ -900,12 +900,17 @@ export function useRoom() {
         // NVIDIA on Windows can send NVENC's frames on this same connection
         // instead of Chromium's own encode (see native-video.ts). Everything
         // else about the broadcast — stage, audio, teardown — is shared.
-        const hwndForNative = source.kind === 'window' ? source.hwnd : null;
-        const useNative = nativeVideo && !isMac && hwndForNative !== null;
+        const nativeTarget =
+          source.kind === 'window' && source.hwnd !== null
+            ? { hwnd: source.hwnd }
+            : source.kind === 'screen' && source.displayId
+              ? { displayId: source.displayId }
+              : null;
+        const useNative = nativeVideo && !isMac && nativeTarget !== null;
         let mediaTrack: MediaStreamTrack;
-        if (useNative) {
+        if (useNative && nativeTarget) {
           setSharingKind('screen');
-          const native = createNativeVideo(hwndForNative, quality, (message) => {
+          const native = createNativeVideo(nativeTarget, quality, (message) => {
             console.warn('[native-video] capture failed:', message);
             if (nativeVideoRef.current === native) void stopBroadcast();
           });
@@ -1001,7 +1006,11 @@ export function useRoom() {
         }
 
         localTrackRef.current = track;
-        setLocalTrack(track);
+        // The native path's published track is a placeholder with no picture;
+        // what the sharer sees of themselves is NVENC's output, decoded.
+        setLocalTrack(
+          useNative && native ? new LocalVideoTrack(native.preview, undefined, false) : track,
+        );
         setBroadcastState('live');
 
         statsTimerRef.current = setInterval(() => {

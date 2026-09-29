@@ -16,6 +16,8 @@
  * native addon is Windows-only.
  */
 
+import { captureBorderEnabled } from '../capture-border';
+
 interface TrackGenerator extends MediaStreamTrack {
   writable: WritableStream<VideoFrame>;
 }
@@ -31,6 +33,8 @@ const PLACEHOLDER_PIXELS = new Uint8Array(PLACEHOLDER_SIZE * PLACEHOLDER_SIZE * 
 export interface NativeVideo {
   /** The placeholder track, to publish like any other video track. */
   track: MediaStreamTrack;
+  /** What is actually being sent, decoded, for the sharer's own preview. Never published. */
+  preview: MediaStreamTrack;
   /** Puts NVENC's frames in place of the placeholder's on this sender. */
   attach(sender: RTCRtpSender): void;
   /** Starts capture and encoding. Call after `attach`, so no frame goes out untransformed. */
@@ -39,12 +43,15 @@ export interface NativeVideo {
 }
 
 export function createNativeVideo(
-  hwnd: number,
+  /** A window by its handle, or a whole screen by its display id. */
+  target: { hwnd: number } | { displayId: string },
   quality: { maxFramerate: number; maxBitrate: number; width: number; height: number },
   onError: (message: string) => void,
 ): NativeVideo {
   const generator = new MediaStreamTrackGenerator({ kind: 'video' });
   const writer = generator.writable.getWriter();
+  const previewGenerator = new MediaStreamTrackGenerator({ kind: 'video' });
+  const previewWriter = previewGenerator.writable.getWriter();
   const worker = new Worker(new URL('./native-transform.worker.ts', import.meta.url), {
     type: 'module',
   });
@@ -55,6 +62,11 @@ export function createNativeVideo(
     const message = event.data as { type: string };
     if (message.type === 'tick') {
       writePlaceholder();
+    } else if (message.type === 'preview') {
+      const { frame } = event.data as { frame: VideoFrame };
+      // A preview that cannot keep up skips frames rather than queue them.
+      if (stopped || (previewWriter.desiredSize ?? 1) <= 0) frame.close();
+      else previewWriter.write(frame).catch(() => frame.close());
     } else if (message.type === 'keyframe') {
       void window.zoia.nativeVideo.requestKeyframe();
     }
@@ -124,6 +136,7 @@ export function createNativeVideo(
 
   return {
     track: generator,
+    preview: previewGenerator,
     attach(sender) {
       // Only if the sender was not created through addTransceiver above.
       restoreAddTransceiver();
@@ -132,11 +145,13 @@ export function createNativeVideo(
     async start() {
       started = true;
       return window.zoia.nativeVideo.start({
-        hwnd,
+        hwnd: 'hwnd' in target ? target.hwnd : null,
+        displayId: 'displayId' in target ? target.displayId : null,
         framerate: quality.maxFramerate,
         bitrate: quality.maxBitrate,
         maxWidth: quality.width,
         maxHeight: quality.height,
+        showBorder: captureBorderEnabled(),
       });
     },
     async stop() {
@@ -147,7 +162,9 @@ export function createNativeVideo(
       offError();
       if (started) await window.zoia.nativeVideo.stop().catch(() => {});
       await writer.close().catch(() => {});
+      await previewWriter.close().catch(() => {});
       generator.stop();
+      previewGenerator.stop();
       worker.terminate();
     },
   };

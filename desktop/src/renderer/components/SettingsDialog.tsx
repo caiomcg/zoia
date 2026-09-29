@@ -1,3 +1,4 @@
+import { captureBorderEnabled, setCaptureBorderEnabled } from '../capture-border';
 import { useCallback, useEffect, useState } from 'react';
 import type { UpdaterConfig } from '../../shared/ipc';
 import Avatar from './Avatar';
@@ -194,6 +195,7 @@ function BroadcastSection({
   hardwareAvailable: boolean;
 }) {
   const t = useT();
+  const [border, setBorder] = useState(captureBorderEnabled);
   return (
     <>
       <h3>{t('settings.nav.broadcast')}</h3>
@@ -211,6 +213,21 @@ function BroadcastSection({
           {t('broadcast.hardware')}
           <span className="settings-badge">{hardwareAvailable ? 'Beta' : 'Unavailable'}</span>
           <small>{hardwareDetail}</small>
+        </span>
+      </label>
+      <label className={`settings-check ${!hardwareAvailable ? 'unavailable' : ''}`}>
+        <input
+          type="checkbox"
+          checked={border}
+          disabled={!hardwareAvailable}
+          onChange={(event) => {
+            setBorder(event.target.checked);
+            setCaptureBorderEnabled(event.target.checked);
+          }}
+        />
+        <span>
+          {t('broadcast.border')}
+          <small>{t('broadcast.borderDetail')}</small>
         </span>
       </label>
       <p className="muted" style={{ marginTop: '8px', fontSize: '12px' }}>

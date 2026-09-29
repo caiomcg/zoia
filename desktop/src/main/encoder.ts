@@ -58,6 +58,8 @@ export interface EncoderOptions {
    */
   maxWidth?: number;
   maxHeight?: number;
+  /** Windows 11's yellow outline around the captured window; off unless asked for. */
+  showBorder?: boolean;
   /** The application whose audio to send; null means send no audio at all. */
   processId: number | null;
   /**

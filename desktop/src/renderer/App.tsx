@@ -108,11 +108,11 @@ export default function App() {
   const [presetId, setPresetId] = useState(
     () => localStorage.getItem(PRESET_STORAGE_KEY) ?? DEFAULT_PRESET_ID,
   );
-  // Off unless explicitly turned on: absent reads as false.
-  // This allows opting into hardware acceleration without breaking standard
-  // CPU broadcasting for machines where GPU encoding is unstable or unsupported.
+  // On unless someone turned it off: absent reads as on, and only a choice
+  // made in Settings is ever stored, so an explicit "off" is always kept.
+  // Machines without a hardware encoder fall back on their own (see `mode`).
   const [hardware, setHardware] = useState(
-    () => localStorage.getItem(HARDWARE_STORAGE_KEY) === 'true',
+    () => localStorage.getItem(HARDWARE_STORAGE_KEY) !== 'false',
   );
 
   const handleHardwareChange = (enabled: boolean) => {
@@ -143,13 +143,10 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    window.zoia.gpu.status().then((next) => {
-      setGpu(next);
-      if (!next.hardwareEncoder) {
-        setHardware(false);
-        localStorage.setItem(HARDWARE_STORAGE_KEY, 'false');
-      }
-    });
+    // Not written back to storage when there is no encoder: that would read
+    // as the person having turned it off, and keep it off on a machine that
+    // gains one. `mode` already requires an encoder.
+    void window.zoia.gpu.status().then(setGpu);
   }, []);
 
   useEffect(() => {
@@ -357,10 +354,13 @@ export default function App() {
       return;
     }
 
-    // NVIDIA sharing a window: NVENC's frames go out on the room's own WebRTC
-    // connection, alongside the audio (livekit/native-video.ts). AMD and
-    // Intel, and screen shares, keep the ffmpeg route below.
-    if (gpu?.gpuEncoder === 'nvenc' && target.kind === 'window') {
+    // NVIDIA sharing a window or a screen: NVENC's frames go out on the
+    // room's own WebRTC connection, alongside the audio
+    // (livekit/native-video.ts). AMD and Intel keep the ffmpeg route below.
+    if (
+      gpu?.gpuEncoder === 'nvenc' &&
+      (target.kind === 'window' || (target.kind === 'screen' && target.displayId))
+    ) {
       if (switching && gpuCast.state !== 'idle') await gpuCast.stop();
       const ok = await room.startBroadcast(target, preset, {
         keepStage: switching,

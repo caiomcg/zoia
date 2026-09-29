@@ -6,6 +6,7 @@ import {
   Menu,
   MessageChannelMain,
   type MessagePortMain,
+  screen,
   session,
   shell,
   systemPreferences,
@@ -421,6 +422,7 @@ function registerIpc(): void {
           options.maxWidth && options.maxHeight
             ? { width: options.maxWidth, height: options.maxHeight }
             : null,
+          options.showBorder ?? false,
           (packet) => {
             if (info.output === 'bgra') {
               if (sampleFrames < 5 || sampleFrames % 120 === 0) {
@@ -494,6 +496,22 @@ function registerIpc(): void {
   // app's audio to its worklet, and 4K frames arriving there delayed audio
   // chunks enough to be heard as crackling.
   let nativePort: MessagePortMain | null = null;
+
+  /**
+   * The middle of a display, in physical pixels, for the addon to find its
+   * monitor with. Electron speaks in DIPs and Windows in pixels, and on a
+   * mixed-DPI desktop the two differ per display, so it is converted here.
+   */
+  function screenPoint(displayId: string | null): { x: number; y: number } | null {
+    const display = screen.getAllDisplays().find((d) => String(d.id) === displayId);
+    if (!display) return null;
+    const { x, y, width, height } = display.bounds;
+    const point = screen.dipToScreenPoint({
+      x: Math.round(x + width / 2),
+      y: Math.round(y + height / 2),
+    });
+    return { x: Math.round(point.x), y: Math.round(point.y) };
+  }
   // NVIDIA only: the window is captured and encoded by NVENC in the addon, and
   // each encoded frame goes to the renderer, which sends it on the room's own
   // WebRTC connection in place of a placeholder frame (see native-video.ts).
@@ -504,15 +522,19 @@ function registerIpc(): void {
     (
       _event,
       options: {
-        hwnd: number;
+        hwnd: number | null;
+        displayId: string | null;
         framerate: number;
         bitrate: number;
         maxWidth: number;
         maxHeight: number;
+        showBorder: boolean;
       },
     ) => {
       const win = mainWindow;
       if (!win) throw new Error('The window is not ready.');
+      const target = options.hwnd ?? screenPoint(options.displayId);
+      if (target === null) throw new Error('That screen is no longer connected.');
       sources.stopWarming();
       nativePort?.close();
       const { port1, port2 } = new MessageChannelMain();
@@ -522,10 +544,11 @@ function registerIpc(): void {
       let info: ReturnType<typeof capture.start>;
       try {
         info = capture.start(
-          options.hwnd,
+          target,
           options.framerate,
           options.bitrate,
           { width: options.maxWidth, height: options.maxHeight },
+          options.showBorder,
           (packet, keyframe) => {
             port1.postMessage({ data: packet, keyframe });
           },

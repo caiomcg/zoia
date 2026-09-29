@@ -244,6 +244,9 @@ export const en = {
   'broadcast.hardware': 'Hardware acceleration',
   'broadcast.comingSoon': 'Coming soon',
   'broadcast.noEncoder': 'No hardware encoder was found on this machine.',
+  'broadcast.border': 'Outline the shared window in yellow',
+  'broadcast.borderDetail':
+    'Windows 11 marks a window it is capturing with a yellow border. Only with hardware acceleration.',
   'broadcast.encoderOn': '{encoder} on {adapter}',
   'general.tray': 'Keep Zoia in the system tray when the window is closed',
   'general.trayFailed': 'Could not change the system tray setting.',

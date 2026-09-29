@@ -59,6 +59,8 @@ export interface ZoiaBridge {
       /** The preset's resolution, which a larger window is scaled down to. */
       maxWidth?: number;
       maxHeight?: number;
+      /** Windows 11's yellow outline around the captured window. */
+      showBorder?: boolean;
       processId: number | null;
       /** The window to capture natively; null captures the whole screen. */
       hwnd: number | null;
@@ -76,11 +78,14 @@ export interface ZoiaBridge {
    */
   nativeVideo: {
     start(options: {
-      hwnd: number;
+      /** A window to capture, or null to capture the screen named by displayId. */
+      hwnd: number | null;
+      displayId: string | null;
       framerate: number;
       bitrate: number;
       maxWidth: number;
       maxHeight: number;
+      showBorder: boolean;
     }): Promise<{ width: number; height: number }>;
     stop(): Promise<void>;
     requestKeyframe(): Promise<void>;

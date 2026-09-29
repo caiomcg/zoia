@@ -23,6 +23,8 @@
 #include <wrl/client.h>
 
 #include <winrt/Windows.Foundation.h>
+#include <winrt/Windows.Foundation.Metadata.h>
+#include <winrt/Windows.Security.Authorization.AppCapabilityAccess.h>
 #include <winrt/Windows.Graphics.Capture.h>
 #include <winrt/Windows.Graphics.DirectX.h>
 #include <winrt/Windows.Graphics.DirectX.Direct3D11.h>
@@ -35,7 +37,9 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <mutex>
+#include <thread>
 #include <string>
 #include <vector>
 
@@ -379,10 +383,11 @@ class Encoder {
 
 class Session {
  public:
-  std::string Start(HWND hwnd, uint32_t fps, uint32_t bitrate, uint32_t maxWidth,
-                    uint32_t maxHeight, Napi::ThreadSafeFunction tsfn) {
+  std::string Start(HWND hwnd, HMONITOR monitor, uint32_t fps, uint32_t bitrate, uint32_t maxWidth,
+                    uint32_t maxHeight, bool showBorder, Napi::ThreadSafeFunction tsfn) {
     try {
-      return StartInternal(hwnd, fps, bitrate, maxWidth, maxHeight, std::move(tsfn));
+      return StartInternal(hwnd, monitor, fps, bitrate, maxWidth, maxHeight, showBorder,
+                           std::move(tsfn));
     } catch (const winrt::hresult_error& err) {
       return HresultMessage("Windows Graphics Capture", err.code());
     } catch (const std::exception& err) {
@@ -393,12 +398,26 @@ class Session {
   }
 
  private:
-  std::string StartInternal(HWND hwnd, uint32_t fps, uint32_t bitrate, uint32_t maxWidth,
-                            uint32_t maxHeight, Napi::ThreadSafeFunction tsfn) {
+  std::string StartInternal(HWND hwnd, HMONITOR monitor, uint32_t fps, uint32_t bitrate,
+                            uint32_t maxWidth,
+                            uint32_t maxHeight, bool showBorder, Napi::ThreadSafeFunction tsfn) {
     tsfn_ = std::move(tsfn);
     targetFps_ = fps;
     lastFrameTime_ = std::chrono::steady_clock::time_point{};
     nextFrameDue_ = std::chrono::steady_clock::time_point{};
+
+    // Everything below belongs to one D3D device, and each capture creates its
+    // own. Interfaces kept from the previous capture pointed at its device,
+    // and handing them this one's textures failed with E_INVALIDARG, so the
+    // second share of a session always fell back.
+    scalerInput_.Reset();
+    scalerOutput_.Reset();
+    scaler_.Reset();
+    scalerEnum_.Reset();
+    source_.Reset();
+    videoContext_.Reset();
+    videoDevice_.Reset();
+    input_.Reset();
 
     adapter_ = ChooseAdapter();
     if (!adapter_.adapter) return "No hardware graphics adapter was found.";
@@ -424,13 +443,21 @@ class Session {
     if (FAILED(hr)) return HresultMessage("CreateDirect3D11DeviceFromDXGIDevice", hr);
     winrtDevice_ = inspectable.as<wgdx::Direct3D11::IDirect3DDevice>();
 
-    // The documented way to capture a specific window: WGC itself has no
-    // HWND-shaped entry point, only this interop factory.
+    // The documented way to capture a specific window or screen: WGC itself
+    // has no handle-shaped entry point, only this interop factory. A whole
+    // screen used to go through ffmpeg's ddagrab and WHIP instead; capturing
+    // the monitor here puts it on the same path as a window.
     auto interop = winrt::get_activation_factory<wgc::GraphicsCaptureItem,
                                                  ::IGraphicsCaptureItemInterop>();
-    hr = interop->CreateForWindow(
-        hwnd, winrt::guid_of<wgc::GraphicsCaptureItem>(), winrt::put_abi(item_));
-    if (FAILED(hr)) return HresultMessage("GraphicsCaptureItem::CreateForWindow", hr);
+    if (monitor) {
+      hr = interop->CreateForMonitor(
+          monitor, winrt::guid_of<wgc::GraphicsCaptureItem>(), winrt::put_abi(item_));
+      if (FAILED(hr)) return HresultMessage("GraphicsCaptureItem::CreateForMonitor", hr);
+    } else {
+      hr = interop->CreateForWindow(
+          hwnd, winrt::guid_of<wgc::GraphicsCaptureItem>(), winrt::put_abi(item_));
+      if (FAILED(hr)) return HresultMessage("GraphicsCaptureItem::CreateForWindow", hr);
+    }
 
     const auto size = item_.Size();
     // Encoders reject odd dimensions.
@@ -441,7 +468,7 @@ class Session {
     // briefly for one that has been created but not yet composed. Asking the
     // window itself is both a fallback and a better answer, since a minimised
     // window still has a client rect.
-    if (width_ == 0 || height_ == 0) {
+    if ((width_ == 0 || height_ == 0) && hwnd) {
       RECT rect = {};
       if (GetClientRect(hwnd, &rect)) {
         width_ = static_cast<uint32_t>(rect.right - rect.left) & ~1u;
@@ -464,19 +491,22 @@ class Session {
     sourceWidth_ = width_;
     sourceHeight_ = height_;
     scale_ = false;
-    if (encode_ && maxWidth > 0 && maxHeight > 0 && (width_ > maxWidth || height_ > maxHeight)) {
-      // Scaled down to the preset on the GPU, keeping the aspect ratio. A 4K
-      // window went out at 4K on the 1080p preset's bitrate — a quarter of
-      // the bits per pixel it needed — and encoding 4K frames while a game
-      // held the GPU took long enough that a 144Hz source only yielded every
-      // third frame: 48fps.
+    if (encode_ && maxWidth > 0 && maxHeight > 0) {
+      // The stream is the window fitted into the preset, on the GPU, keeping
+      // its aspect ratio — down or up. Down, because a 4K window went out at
+      // 4K on the 1080p preset's bitrate, and encoding 4K while a game held
+      // the GPU cost enough to lose frames. Up too, because the stream's size
+      // is fixed once it starts: a window shared small and then made
+      // fullscreen would otherwise stay small for the whole broadcast.
       const double factor = std::min(static_cast<double>(maxWidth) / width_,
                                      static_cast<double>(maxHeight) / height_);
-      const uint32_t scaledWidth = static_cast<uint32_t>(width_ * factor) & ~1u;
-      const uint32_t scaledHeight = static_cast<uint32_t>(height_ * factor) & ~1u;
-      if (scaledWidth > 0 && scaledHeight > 0 && CreateScaler(scaledWidth, scaledHeight)) {
-        width_ = scaledWidth;
-        height_ = scaledHeight;
+      const uint32_t fittedWidth = static_cast<uint32_t>(width_ * factor) & ~1u;
+      const uint32_t fittedHeight = static_cast<uint32_t>(height_ * factor) & ~1u;
+      if (fittedWidth > 0 && fittedHeight > 0) {
+        width_ = fittedWidth;
+        height_ = fittedHeight;
+        // Always through the scaler on this path, even at 1:1: it is what
+        // lets the window change size mid-broadcast (see OnFrameInternal).
         scale_ = true;
       }
     }
@@ -529,11 +559,8 @@ class Session {
     }
 
     if (scale_) {
-      D3D11_VIDEO_PROCESSOR_OUTPUT_VIEW_DESC outDesc = {};
-      outDesc.ViewDimension = D3D11_VPOV_DIMENSION_TEXTURE2D;
-      hr = videoDevice_->CreateVideoProcessorOutputView(input_.Get(), scalerEnum_.Get(), &outDesc,
-                                                        scalerOutput_.GetAddressOf());
-      if (FAILED(hr)) return HresultMessage("CreateVideoProcessorOutputView", hr);
+      const std::string scalerError = ConfigureScaler(sourceWidth_, sourceHeight_);
+      if (!scalerError.empty()) return scalerError;
     }
 
     framePool_ = wgc::Direct3D11CaptureFramePool::CreateFreeThreaded(
@@ -543,9 +570,20 @@ class Session {
     // The capture is of the application, not of the cursor floating over it.
     session_.IsCursorCaptureEnabled(false);
 
+    // Windows 11 outlines a captured window in yellow. It is off unless the
+    // person asked for it in Settings: it is a reminder on the sharer's own
+    // screen, and a distraction over a game. Windows 10 has no way to turn it
+    // off, and there the border simply stays.
+    hideBorder_ = !showBorder;
+
+    frameHeld_ = false;
+    stopHeld_ = false;
     frameToken_ = framePool_.FrameArrived({this, &Session::OnFrame});
     session_.StartCapture();
     running_ = true;
+    if (encode_) heldEncoder_ = std::thread(&Session::EncodeHeldFrames, this);
+
+    if (hideBorder_) HideBorder();
     return {};
   }
 
@@ -564,6 +602,13 @@ class Session {
     session_ = nullptr;
     framePool_ = nullptr;
     item_ = nullptr;
+
+    {
+      std::lock_guard<std::mutex> guard(encodeMutex_);
+      stopHeld_ = true;
+    }
+    heldFrame_.notify_all();
+    if (heldEncoder_.joinable()) heldEncoder_.join();
 
     // Under the lock so a frame already inside OnFrame finishes first.
     std::lock_guard<std::mutex> guard(encodeMutex_);
@@ -599,25 +644,8 @@ class Session {
     auto frame = pool.TryGetNextFrame();
     if (!frame || !running_) return;
 
-    if (encode_ && targetFps_ > 0) {
-      // Paced against a schedule, not against the gap since the last frame.
-      // The gap check below, truncated to whole milliseconds, accepted every
-      // third frame on a 144Hz display (6.9ms apart): exactly 48fps against a
-      // 60fps target. A frame is taken when it is at most a quarter interval
-      // early for its slot, which averages out to the target at any refresh
-      // rate. Only on the NVENC path; the raw path keeps its own pacing.
-      const auto now = std::chrono::steady_clock::now();
-      const auto interval = std::chrono::nanoseconds(1'000'000'000LL / targetFps_);
-      if (nextFrameDue_.time_since_epoch().count() == 0) {
-        nextFrameDue_ = now + interval;
-      } else {
-        if (now + interval / 4 < nextFrameDue_) return;
-        nextFrameDue_ += interval;
-        // After a stall (a window that stopped redrawing), start a fresh
-        // schedule rather than accepting a burst to catch up.
-        if (nextFrameDue_ < now) nextFrameDue_ = now + interval;
-      }
-    } else if (targetFps_ > 0 && lastFrameTime_.time_since_epoch().count() > 0) {
+    // The NVENC path paces after the copy, below; this is the raw path's.
+    if (!encode_ && targetFps_ > 0 && lastFrameTime_.time_since_epoch().count() > 0) {
       const auto now = std::chrono::steady_clock::now();
       const auto elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastFrameTime_).count();
       const int64_t minIntervalMs = (1000 / targetFps_) - 2;
@@ -629,6 +657,26 @@ class Session {
     std::lock_guard<std::mutex> guard(encodeMutex_);
     if (!running_) return;
     lastFrameTime_ = std::chrono::steady_clock::now();
+
+    if (scale_) {
+      // The window changed size: a game going fullscreen, or back to a window.
+      // The pool kept handing over textures of the old size, so growing
+      // showed only a corner of the new picture, and shrinking left the rest
+      // of the old one frozen around it. The pool is rebuilt at the new size
+      // and the scaler refitted into the stream's fixed size.
+      const auto content = frame.ContentSize();
+      const uint32_t contentWidth = static_cast<uint32_t>(std::max(content.Width, 0)) & ~1u;
+      const uint32_t contentHeight = static_cast<uint32_t>(std::max(content.Height, 0)) & ~1u;
+      // Minimised: nothing to show, and nothing to resize to.
+      if (contentWidth == 0 || contentHeight == 0) return;
+      if (contentWidth != sourceWidth_ || contentHeight != sourceHeight_) {
+        pool.Recreate(winrtDevice_, wgdx::DirectXPixelFormat::B8G8R8A8UIntNormalized, 3, content);
+        const std::string error = ConfigureScaler(contentWidth, contentHeight);
+        if (!error.empty()) Emit({}, false, error);
+        // This frame's texture is still the old size; the next one is not.
+        return;
+      }
+    }
 
     auto access = frame.Surface().as<::Windows::Graphics::DirectX::Direct3D11::IDirect3DDxgiInterfaceAccess>();
     ComPtr<ID3D11Texture2D> captured;
@@ -646,39 +694,33 @@ class Session {
     // Clamping against captured dimensions prevents D3D11 dropping the call if
     // window geometry or borders differ from the capture item size.
     const D3D11_BOX box{0, 0, 0, copyW, copyH, 1};
-    if (scale_) {
-      // Into a surface of our own first: the pool's textures rotate, and a
-      // video processor input view is tied to one texture.
-      context_->CopySubresourceRegion(source_.Get(), 0, 0, 0, 0, captured.Get(), 0, &box);
-      D3D11_VIDEO_PROCESSOR_STREAM stream = {};
-      stream.Enable = TRUE;
-      stream.pInputSurface = scalerInput_.Get();
-      const HRESULT blt =
-          videoContext_->VideoProcessorBlt(scaler_.Get(), scalerOutput_.Get(), 0, 1, &stream);
-      if (FAILED(blt)) {
-        Emit({}, false, HresultMessage("VideoProcessorBlt", blt));
+    // Into a surface of our own when scaling: the pool's textures rotate, and
+    // a video processor input view is tied to one texture.
+    context_->CopySubresourceRegion(scale_ ? source_.Get() : input_.Get(), 0, 0, 0, 0,
+                                    captured.Get(), 0, &box);
+
+    if (encode_) {
+      // Paced against a schedule of slots at the target rate. A frame early
+      // for its slot used to be dropped, and when nothing followed it — a
+      // window that redraws once when clicked, typed in, or switched — that
+      // picture never went out: the preview and the viewers sat on the old
+      // one for seconds. It is now held, already copied above, and encoded
+      // when its slot comes (EncodeHeldFrames), unless a newer frame gets
+      // there first. The schedule also stops a 144Hz source from flooding
+      // the encoder, and averages out to the target at any refresh rate.
+      const auto now = std::chrono::steady_clock::now();
+      if (targetFps_ > 0 && nextFrameDue_.time_since_epoch().count() != 0 &&
+          now + FrameInterval() / 4 < nextFrameDue_) {
+        frameHeld_ = true;
+        heldFrame_.notify_one();
         return;
       }
-    } else {
-      context_->CopySubresourceRegion(input_.Get(), 0, 0, 0, 0, captured.Get(), 0, &box);
+      EncodeLatest(now);
+      return;
     }
 
     ++arrivedCount_;
     const auto encodeStart = std::chrono::steady_clock::now();
-
-    if (encode_) {
-      Packet packet;
-      std::string error;
-      if (!encoder_.Encode(frameIndex_++, &packet, &error)) {
-        Emit({}, false, error);
-        return;
-      }
-      encodeNanos_ += std::chrono::duration_cast<std::chrono::nanoseconds>(
-                          std::chrono::steady_clock::now() - encodeStart)
-                          .count();
-      if (!packet.data.empty()) Emit(std::move(packet.data), packet.keyframe, {});
-      return;
-    }
 
     // Raw path, for a GPU whose encoder this process cannot drive directly.
     // The frame is read back and handed to ffmpeg, which encodes it with AMF
@@ -709,6 +751,63 @@ class Session {
     Emit(std::move(pixels), false, {});
   }
 
+  std::chrono::nanoseconds FrameInterval() const {
+    return std::chrono::nanoseconds(1'000'000'000LL / std::max<uint32_t>(targetFps_, 1));
+  }
+
+  // Scales (if needed) and encodes what the last copy left in the encoder's
+  // input, and moves the schedule on. Called with encodeMutex_ held.
+  void EncodeLatest(std::chrono::steady_clock::time_point now) {
+    frameHeld_ = false;
+    const auto interval = FrameInterval();
+    if (nextFrameDue_.time_since_epoch().count() == 0) {
+      nextFrameDue_ = now + interval;
+    } else {
+      nextFrameDue_ += interval;
+      // After a stall (a window that stopped redrawing), start a fresh
+      // schedule rather than accepting a burst to catch up.
+      if (nextFrameDue_ < now) nextFrameDue_ = now + interval;
+    }
+
+    if (scale_) {
+      D3D11_VIDEO_PROCESSOR_STREAM stream = {};
+      stream.Enable = TRUE;
+      stream.pInputSurface = scalerInput_.Get();
+      const HRESULT blt =
+          videoContext_->VideoProcessorBlt(scaler_.Get(), scalerOutput_.Get(), 0, 1, &stream);
+      if (FAILED(blt)) {
+        Emit({}, false, HresultMessage("VideoProcessorBlt", blt));
+        return;
+      }
+    }
+
+    ++arrivedCount_;
+    const auto encodeStart = std::chrono::steady_clock::now();
+    Packet packet;
+    std::string error;
+    if (!encoder_.Encode(frameIndex_++, &packet, &error)) {
+      Emit({}, false, error);
+      return;
+    }
+    encodeNanos_ += std::chrono::duration_cast<std::chrono::nanoseconds>(
+                        std::chrono::steady_clock::now() - encodeStart)
+                        .count();
+    if (!packet.data.empty()) Emit(std::move(packet.data), packet.keyframe, {});
+  }
+
+  // Encodes a held frame when its slot comes, if no newer frame beat it to
+  // it. Nothing arriving after it is exactly the case this exists for.
+  void EncodeHeldFrames() {
+    std::unique_lock<std::mutex> lock(encodeMutex_);
+    while (!stopHeld_) {
+      heldFrame_.wait(lock, [this] { return stopHeld_ || frameHeld_; });
+      if (stopHeld_) break;
+      heldFrame_.wait_until(lock, nextFrameDue_, [this] { return stopHeld_ || !frameHeld_; });
+      if (stopHeld_) break;
+      if (frameHeld_ && running_) EncodeLatest(std::chrono::steady_clock::now());
+    }
+  }
+
  public:
   // Distinguishes "the window is not redrawing" from "the encoder is slow",
   // which look identical from the outside.
@@ -725,60 +824,146 @@ class Session {
 
  private:
   /**
+   * Turns off the yellow outline Windows 11 draws around a captured window —
+   * a reminder on the sharer's own screen, and a distraction over a game.
+   * Only when the person has not asked for it in Settings. Windows 10 cannot
+   * turn it off, and there it simply stays.
+   *
+   * Windows wants the app to ask first, and that answer arrives
+   * asynchronously. It must never be waited for here: this runs on the main
+   * process's thread, and blocking on it froze the whole app at "starting".
+   * So the first capture asks and applies the answer when it comes; every one
+   * after that applies it straight away.
+   */
+  void HideBorder() {
+    static const bool supported =
+        winrt::Windows::Foundation::Metadata::ApiInformation::IsPropertyPresent(
+            L"Windows.Graphics.Capture.GraphicsCaptureSession", L"IsBorderRequired");
+    if (!supported) return;
+
+    if (borderAccess_ == BorderAccess::Allowed) {
+      try {
+        session_.IsBorderRequired(false);
+      } catch (...) {
+      }
+      return;
+    }
+    if (borderAccess_ != BorderAccess::Unknown) return;
+
+    borderAccess_ = BorderAccess::Asking;
+    try {
+      auto request =
+          wgc::GraphicsCaptureAccess::RequestAccessAsync(wgc::GraphicsCaptureAccessKind::Borderless);
+      // Its own reference, so the answer never races Stop() clearing session_;
+      // a session closed by then just refuses, inside the try below.
+      request.Completed([this, session = session_](
+                            const auto& operation, winrt::Windows::Foundation::AsyncStatus status) {
+        bool allowed = false;
+        try {
+          allowed = status == winrt::Windows::Foundation::AsyncStatus::Completed &&
+                    operation.GetResults() == winrt::Windows::Security::Authorization::
+                                                  AppCapabilityAccess::AppCapabilityAccessStatus::Allowed;
+        } catch (...) {
+        }
+        borderAccess_ = allowed ? BorderAccess::Allowed : BorderAccess::Denied;
+        if (!allowed) return;
+        try {
+          session.IsBorderRequired(false);
+        } catch (...) {
+        }
+      });
+    } catch (...) {
+      borderAccess_ = BorderAccess::Denied;
+    }
+  }
+
+  /**
    * D3D11's video processor: the GPU's fixed-function scaler, the same one
    * video playback uses, so it costs next to nothing next to the encode.
-   * False when any part of it is unavailable, and the caller then sends the
-   * window unscaled exactly as before.
+   *
+   * Fits a window of the given size into input_, the stream's fixed size,
+   * keeping its aspect ratio and filling the rest with black. Called at the
+   * start and again whenever the window changes size; everything tied to the
+   * source size is rebuilt, and the output is repainted whole on every frame.
    */
-  bool CreateScaler(uint32_t outWidth, uint32_t outHeight) {
-    if (FAILED(device_.As(&videoDevice_)) || FAILED(context_.As(&videoContext_))) return false;
+  std::string ConfigureScaler(uint32_t sourceWidth, uint32_t sourceHeight) {
+    if (!videoDevice_ && FAILED(device_.As(&videoDevice_))) return "No video processor on this GPU.";
+    if (!videoContext_ && FAILED(context_.As(&videoContext_))) {
+      return "No video processor on this GPU.";
+    }
+    sourceWidth_ = sourceWidth;
+    sourceHeight_ = sourceHeight;
+    scalerInput_.Reset();
+    scalerOutput_.Reset();
+    scaler_.Reset();
+    scalerEnum_.Reset();
+    source_.Reset();
 
     D3D11_VIDEO_PROCESSOR_CONTENT_DESC content = {};
     content.InputFrameFormat = D3D11_VIDEO_FRAME_FORMAT_PROGRESSIVE;
-    content.InputWidth = sourceWidth_;
-    content.InputHeight = sourceHeight_;
-    content.OutputWidth = outWidth;
-    content.OutputHeight = outHeight;
+    content.InputWidth = sourceWidth;
+    content.InputHeight = sourceHeight;
+    content.OutputWidth = width_;
+    content.OutputHeight = height_;
     content.Usage = D3D11_VIDEO_USAGE_PLAYBACK_NORMAL;
-    if (FAILED(videoDevice_->CreateVideoProcessorEnumerator(&content, scalerEnum_.GetAddressOf()))) {
-      return false;
-    }
+    HRESULT hr = videoDevice_->CreateVideoProcessorEnumerator(&content, scalerEnum_.GetAddressOf());
+    if (FAILED(hr)) return HresultMessage("CreateVideoProcessorEnumerator", hr);
     UINT support = 0;
     if (FAILED(scalerEnum_->CheckVideoProcessorFormat(DXGI_FORMAT_B8G8R8A8_UNORM, &support)) ||
         !(support & D3D11_VIDEO_PROCESSOR_FORMAT_SUPPORT_INPUT) ||
         !(support & D3D11_VIDEO_PROCESSOR_FORMAT_SUPPORT_OUTPUT)) {
-      return false;
+      return "The GPU's video processor cannot scale BGRA frames.";
     }
-    if (FAILED(videoDevice_->CreateVideoProcessor(scalerEnum_.Get(), 0, scaler_.GetAddressOf()))) {
-      return false;
-    }
+    hr = videoDevice_->CreateVideoProcessor(scalerEnum_.Get(), 0, scaler_.GetAddressOf());
+    if (FAILED(hr)) return HresultMessage("CreateVideoProcessor", hr);
 
     D3D11_TEXTURE2D_DESC desc = {};
-    desc.Width = sourceWidth_;
-    desc.Height = sourceHeight_;
+    desc.Width = sourceWidth;
+    desc.Height = sourceHeight;
     desc.MipLevels = 1;
     desc.ArraySize = 1;
     desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
     desc.SampleDesc.Count = 1;
     desc.Usage = D3D11_USAGE_DEFAULT;
     desc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
-    if (FAILED(device_->CreateTexture2D(&desc, nullptr, source_.GetAddressOf()))) return false;
+    hr = device_->CreateTexture2D(&desc, nullptr, source_.GetAddressOf());
+    if (FAILED(hr)) return HresultMessage("CreateTexture2D(scaler source)", hr);
 
     D3D11_VIDEO_PROCESSOR_INPUT_VIEW_DESC inDesc = {};
     inDesc.ViewDimension = D3D11_VPIV_DIMENSION_TEXTURE2D;
-    if (FAILED(videoDevice_->CreateVideoProcessorInputView(source_.Get(), scalerEnum_.Get(), &inDesc,
-                                                           scalerInput_.GetAddressOf()))) {
-      return false;
-    }
+    hr = videoDevice_->CreateVideoProcessorInputView(source_.Get(), scalerEnum_.Get(), &inDesc,
+                                                     scalerInput_.GetAddressOf());
+    if (FAILED(hr)) return HresultMessage("CreateVideoProcessorInputView", hr);
+
+    D3D11_VIDEO_PROCESSOR_OUTPUT_VIEW_DESC outDesc = {};
+    outDesc.ViewDimension = D3D11_VPOV_DIMENSION_TEXTURE2D;
+    hr = videoDevice_->CreateVideoProcessorOutputView(input_.Get(), scalerEnum_.Get(), &outDesc,
+                                                      scalerOutput_.GetAddressOf());
+    if (FAILED(hr)) return HresultMessage("CreateVideoProcessorOutputView", hr);
 
     // Plain scaling: no driver "enhancements" such as denoise or edge
     // sharpening deciding on their own what a game should look like.
     videoContext_->VideoProcessorSetStreamAutoProcessingMode(scaler_.Get(), 0, FALSE);
-    const RECT whole{0, 0, static_cast<LONG>(sourceWidth_), static_cast<LONG>(sourceHeight_)};
-    videoContext_->VideoProcessorSetStreamSourceRect(scaler_.Get(), 0, TRUE, &whole);
     videoContext_->VideoProcessorSetStreamFrameFormat(scaler_.Get(), 0,
                                                       D3D11_VIDEO_FRAME_FORMAT_PROGRESSIVE);
-    return true;
+    const RECT whole{0, 0, static_cast<LONG>(sourceWidth), static_cast<LONG>(sourceHeight)};
+    videoContext_->VideoProcessorSetStreamSourceRect(scaler_.Get(), 0, TRUE, &whole);
+
+    // Letterboxed into the stream's size; the background fills the bars.
+    const double factor = std::min(static_cast<double>(width_) / sourceWidth,
+                                   static_cast<double>(height_) / sourceHeight);
+    const LONG fittedWidth = static_cast<LONG>(sourceWidth * factor);
+    const LONG fittedHeight = static_cast<LONG>(sourceHeight * factor);
+    const LONG left = (static_cast<LONG>(width_) - fittedWidth) / 2;
+    const LONG top = (static_cast<LONG>(height_) - fittedHeight) / 2;
+    const RECT fitted{left, top, left + fittedWidth, top + fittedHeight};
+    videoContext_->VideoProcessorSetStreamDestRect(scaler_.Get(), 0, TRUE, &fitted);
+    const RECT target{0, 0, static_cast<LONG>(width_), static_cast<LONG>(height_)};
+    videoContext_->VideoProcessorSetOutputTargetRect(scaler_.Get(), TRUE, &target);
+    D3D11_VIDEO_COLOR black = {};
+    black.RGBA.A = 1.0f;
+    videoContext_->VideoProcessorSetOutputBackgroundColor(scaler_.Get(), FALSE, &black);
+    return {};
   }
 
   void Emit(std::vector<uint8_t> data, bool keyframe, std::string error) {
@@ -817,6 +1002,10 @@ class Session {
   ComPtr<ID3D11VideoProcessorInputView> scalerInput_;
   ComPtr<ID3D11VideoProcessorOutputView> scalerOutput_;
   bool scale_ = false;
+  bool hideBorder_ = false;
+  enum class BorderAccess { Unknown, Asking, Allowed, Denied };
+  // Windows remembers the answer for the life of the process, and so do we.
+  std::atomic<BorderAccess> borderAccess_{BorderAccess::Unknown};
   uint32_t sourceWidth_ = 0;
   uint32_t sourceHeight_ = 0;
   wgdx::Direct3D11::IDirect3DDevice winrtDevice_{nullptr};
@@ -840,6 +1029,11 @@ class Session {
   uint32_t targetFps_ = 0;
   std::chrono::steady_clock::time_point lastFrameTime_{};
   std::chrono::steady_clock::time_point nextFrameDue_{};
+  // A frame copied but not yet encoded because it was early for its slot.
+  bool frameHeld_ = false;
+  bool stopHeld_ = false;
+  std::condition_variable heldFrame_;
+  std::thread heldEncoder_;
   Napi::ThreadSafeFunction tsfn_;
 };
 
@@ -854,22 +1048,37 @@ Napi::Value Start(const Napi::CallbackInfo& info) {
   }
 
   const Napi::Object options = info[0].As<Napi::Object>();
-  // Passed as a string: an HWND does not survive a double precisely enough to
-  // be worth trusting on a 64-bit process.
-  const std::string handle = options.Get("hwnd").ToString().Utf8Value();
-  const auto hwnd = reinterpret_cast<HWND>(static_cast<uintptr_t>(std::stoull(handle)));
+  // A screen is named by a point on it, in physical pixels, and Windows says
+  // which monitor that is. A window by its handle — passed as a string: an
+  // HWND does not survive a double precisely enough to be worth trusting.
+  HWND hwnd = nullptr;
+  HMONITOR monitor = nullptr;
+  if (options.Has("monitor") && options.Get("monitor").IsObject()) {
+    const Napi::Object at = options.Get("monitor").As<Napi::Object>();
+    const POINT point{at.Get("x").ToNumber().Int32Value(), at.Get("y").ToNumber().Int32Value()};
+    monitor = MonitorFromPoint(point, MONITOR_DEFAULTTONULL);
+    if (!monitor) {
+      Napi::Error::New(env, "That screen is no longer connected.").ThrowAsJavaScriptException();
+      return env.Undefined();
+    }
+  } else {
+    const std::string handle = options.Get("hwnd").ToString().Utf8Value();
+    hwnd = reinterpret_cast<HWND>(static_cast<uintptr_t>(std::stoull(handle)));
+  }
   const uint32_t fps = options.Get("framerate").ToNumber().Uint32Value();
   const uint32_t bitrate = options.Get("bitrate").ToNumber().Uint32Value();
   const uint32_t maxWidth = options.Has("maxWidth") ? options.Get("maxWidth").ToNumber().Uint32Value() : 0;
   const uint32_t maxHeight = options.Has("maxHeight") ? options.Get("maxHeight").ToNumber().Uint32Value() : 0;
+  const bool showBorder = options.Has("showBorder") && options.Get("showBorder").ToBoolean().Value();
 
-  if (!IsWindow(hwnd)) {
+  if (!monitor && !IsWindow(hwnd)) {
     Napi::Error::New(env, "That window no longer exists.").ThrowAsJavaScriptException();
     return env.Undefined();
   }
 
   auto tsfn = Napi::ThreadSafeFunction::New(env, info[1].As<Napi::Function>(), "zoia-capture", 0, 1);
-  const std::string error = g_session.Start(hwnd, fps, bitrate, maxWidth, maxHeight, tsfn);
+  const std::string error =
+      g_session.Start(hwnd, monitor, fps, bitrate, maxWidth, maxHeight, showBorder, tsfn);
   if (!error.empty()) {
     g_session.Stop();
     Napi::Error::New(env, error).ThrowAsJavaScriptException();

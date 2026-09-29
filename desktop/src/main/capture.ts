@@ -35,11 +35,14 @@ interface CaptureAddon {
   };
   start(
     options: {
-      hwnd: string;
+      hwnd?: string;
+      /** A point on the screen to capture, in physical pixels. */
+      monitor?: { x: number; y: number };
       framerate: number;
       bitrate: number;
       maxWidth: number;
       maxHeight: number;
+      showBorder: boolean;
     },
     callback: (error: string | null, packet?: Buffer, keyframe?: boolean) => void,
   ): {
@@ -143,10 +146,13 @@ export function capabilities(): Capabilities {
 let running = false;
 
 export function start(
-  hwnd: number,
+  /** A window's handle, or a point (physical pixels) on the screen to capture. */
+  target: number | { x: number; y: number },
   framerate: number,
   bitrate: number,
   maxSize: { width: number; height: number } | null,
+  /** Windows 11's yellow outline around the captured window. */
+  showBorder: boolean,
   onPacket: (packet: Buffer, keyframe: boolean) => void,
   onError: (message: string) => void,
 ): {
@@ -165,12 +171,13 @@ export function start(
     // As a string: an HWND is a 64-bit handle and a double cannot carry one
     // faithfully.
     {
-      hwnd: String(hwnd),
+      ...(typeof target === 'number' ? { hwnd: String(target) } : { monitor: target }),
       framerate,
       bitrate,
       // 0 means "no limit": the window's own size.
       maxWidth: maxSize?.width ?? 0,
       maxHeight: maxSize?.height ?? 0,
+      showBorder,
     },
     (error, packet, keyframe) => {
       if (error) {
