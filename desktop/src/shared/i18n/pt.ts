@@ -159,6 +159,7 @@ export const pt: Messages = {
 
   'picker.title': 'Escolha o que compartilhar',
   'picker.search': 'Buscar janelas…',
+  'picker.refresh': 'Atualizar janelas',
   'picker.loading': 'Carregando fontes…',
   'picker.macScreenPermission':
     'O Zoia precisa de permissão para gravar a tela. Ative em Ajustes do Sistema › Privacidade e Segurança › Gravação de Tela e Áudio do Sistema, e abra o Zoia de novo.',
@@ -167,6 +168,10 @@ export const pt: Messages = {
   'picker.none': 'Nenhuma fonte encontrada.',
   'picker.quality': 'Qualidade',
   'picker.audioUnavailable': 'áudio indisponível',
+  'picker.gameTip':
+    'Seu jogo não aparece? Jogos em tela cheia exclusiva minimizam no Alt+Tab. Jogue em modo {borderless} ou compartilhe a {screen} inteira acima.',
+  'picker.borderlessMode': 'Sem Bordas (Borderless)',
+  'picker.screenMode': 'Tela',
   'picker.leagueInGame':
     'Partida em andamento • Optando pelo jogo (alterna para o cliente após a partida)',
   'picker.leagueInClient':

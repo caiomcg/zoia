@@ -1595,14 +1595,61 @@ button.danger {
   font-size: 16px;
 }
 
-.picker header input {
-  width: 100%;
+.picker-header-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.picker-header-actions input {
+  flex: 1;
   padding: 8px 10px;
   color: var(--text);
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 8px;
   font: inherit;
+}
+
+.picker-refresh-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  color: var(--muted);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  transition:
+    color 0.15s ease,
+    border-color 0.15s ease;
+  flex-shrink: 0;
+}
+
+.picker-refresh-btn:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+.picker-refresh-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.picker-refresh-btn.refreshing svg {
+  animation: picker-spin 0.8s linear infinite;
+}
+
+@keyframes picker-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .picker-body {
@@ -1646,8 +1693,21 @@ button.danger {
   width: 100%;
   aspect-ratio: 16 / 9;
   object-fit: cover;
-  background: #000;
+  background: var(--surface-2);
   border-radius: 4px;
+}
+
+.picker-tile-blank {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+}
+
+.picker-tile-blank svg {
+  width: 28px;
+  height: 28px;
+  opacity: 0.4;
 }
 
 .picker-tile span {
@@ -1734,6 +1794,35 @@ button.danger {
 
 .picker-league-button:hover {
   background: var(--accent-hover);
+}
+
+.picker-game-tip {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  margin-top: 16px;
+  padding: 10px 14px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--muted);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.picker-game-tip-icon {
+  font-size: 14px;
+  flex-shrink: 0;
+  line-height: 1.4;
+}
+
+.picker-game-tip-text {
+  margin: 0;
+}
+
+.picker-game-tip-text strong {
+  color: var(--text);
+  font-weight: 600;
 }
 
 .picker footer {

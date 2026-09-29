@@ -169,6 +169,98 @@ export function stopWarming(): void {
 }
 
 /**
+ * Fast synchronization of shareable windows against node-window-manager (~15ms)
+ * to instantly detect newly launched apps/games, update window titles, and prune
+ * closed windows from the cache without waiting 3+ seconds for desktopCapturer
+ * thumbnail generation.
+ */
+export function syncNativeWindows(currentCache: SourceInfo[]): SourceInfo[] {
+  if (process.platform !== 'win32') {
+    return currentCache;
+  }
+
+  let windows: ReturnType<typeof windowManager.getWindows>;
+  try {
+    windows = windowManager.getWindows();
+  } catch {
+    return currentCache;
+  }
+
+  const screens = currentCache.filter((s) => s.kind === 'screen');
+  const existingWindowsByHwnd = new Map<number, SourceInfo>();
+  for (const s of currentCache) {
+    if (s.kind === 'window' && s.hwnd !== null && s.hwnd !== undefined) {
+      existingWindowsByHwnd.set(s.hwnd, s);
+    }
+  }
+
+  const updatedWindows: SourceInfo[] = [];
+  const seenHwnds = new Set<number>();
+
+  for (const win of windows) {
+    const hwnd = win.id;
+    if (seenHwnds.has(hwnd)) continue;
+    seenHwnds.add(hwnd);
+
+    let path = '';
+    let title = '';
+    try {
+      path = win.path || '';
+      title = win.getTitle() || '';
+    } catch {
+      continue;
+    }
+
+    try {
+      if (!win.isVisible()) {
+        continue;
+      }
+      if (!isShareableWindow(safeBounds(win)) && /leagueclient(ux)?\.exe$/i.test(path)) {
+        try {
+          win.restore();
+        } catch {
+          // Ignore failure to restore if the window closed or is inaccessible.
+        }
+      }
+      if (!isShareableWindow(safeBounds(win))) {
+        continue;
+      }
+    } catch {
+      continue;
+    }
+
+    const existing = existingWindowsByHwnd.get(hwnd);
+    if (existing) {
+      if (title && title !== existing.name) {
+        existing.name = title;
+      }
+      if (path && !existing.processPath) {
+        existing.processPath = path;
+      }
+      updatedWindows.push(existing);
+    } else {
+      let thumbnail = '';
+      if (/league of legends\.exe$/i.test(path) || /league of legends/i.test(title)) {
+        const clientThumb = currentCache.find(isLeagueClient)?.thumbnailDataUrl;
+        if (clientThumb) thumbnail = clientThumb;
+      }
+
+      updatedWindows.push({
+        id: `window:${hwnd}:0`,
+        name: title || path || `Window (${hwnd})`,
+        kind: 'window',
+        thumbnailDataUrl: thumbnail,
+        processId: perAppAudioSupported ? (win.processId ?? null) : null,
+        processPath: path || null,
+        hwnd,
+      });
+    }
+  }
+
+  return [...screens, ...updatedWindows];
+}
+
+/**
  * Returns the source list. If a warm cache exists, returns it immediately.
  * If warming is active and the cache is older than 2.5s, triggers a background refresh.
  */
@@ -178,13 +270,12 @@ export async function listSources(fresh = false): Promise<SourceInfo[]> {
     return refresh();
   }
   if (cache) {
+    cache = syncNativeWindows(cache);
     // Only refresh in the background if warming is active and cache is stale.
     // When warming is stopped (e.g. during a live broadcast or idle), avoid
     // invoking desktopCapturer which burns CPU/GPU.
     if (warmingActive && Date.now() - cacheTime > 2500) {
       refresh().catch(() => {});
-    } else {
-      findLeagueWindows();
     }
     return cache;
   }
