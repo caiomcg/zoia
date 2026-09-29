@@ -303,6 +303,8 @@ export const es: Messages = {
     'La codificación por hardware en AMD y una transmisión por GPU que se recupera sola, actualizaciones, el cambio automático de League y la vista de varias transmisiones.',
   'about.role.victor':
     'Llevó Zoia al Mac: la app para macOS, compartir con el audio del sistema y la pantalla codificada por hardware.',
+  'about.role.flavia':
+    'Las fotos de perfil, encuadradas arrastrando y con zoom, y un nombre único por servidor.',
 
   'tray.open': 'Abrir Zoia',
   'tray.keep': 'Mantener en la bandeja al cerrar',
