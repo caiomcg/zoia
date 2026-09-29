@@ -1,6 +1,9 @@
 {
-  "version": "0.4.2",
-  "updateType": "full",
-  "installerUrl": "https://github.com/caiomcg/zoia/releases/download/v0.4.2/Zoia-Setup-0.4.2-x64.exe",
-  "notes": "A shared window that is resized or made fullscreen now fills the stream with an NVIDIA graphics card."
+  "version": "0.4.3",
+  "updateType": "asar",
+  "minimumVersion": "0.4.2",
+  "artifactUrl": "https://github.com/caiomcg/zoia/releases/download/v0.4.3/Zoia-OTA-0.4.3.asar",
+  "sha256": "b62e38527e05052827e7f2d071cdbeb73b82cc104d3721651d609d469268a556",
+  "installerUrl": "https://github.com/caiomcg/zoia/releases/download/v0.4.3/Zoia-Setup-0.4.3-x64.exe",
+  "notes": "Profile pictures, and broadcasts found in the channel list instead of over the stage."
 }
