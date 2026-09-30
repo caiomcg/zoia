@@ -26,7 +26,7 @@
 
 import { desktopCapturer, systemPreferences, type NativeImage } from 'electron';
 import { t } from './language';
-import { windowManager } from 'node-window-manager';
+import { Window, windowManager } from 'node-window-manager';
 import { isShareableWindow, type Bounds } from './window-filter';
 import { perAppAudioSupported } from './audio';
 import type { SourceInfo } from '../shared/ipc';
@@ -221,8 +221,57 @@ export function windowTitle(hwnd: number): string | null {
   }
 }
 
+/**
+ * Whether a window still exists. Windows Graphics Capture says nothing when
+ * the window it is capturing closes — frames simply stop — so a broadcast
+ * of a closed browser or game would stay "live" on its last frame forever.
+ */
+export function windowExists(hwnd: number): boolean {
+  if (process.platform !== 'win32') return true;
+  try {
+    return new Window(hwnd).isWindow();
+  } catch {
+    return false;
+  }
+}
+
 export function getSelectedSource() {
   return selected;
+}
+
+/**
+ * The shareable windows open right now, straight from the native window
+ * manager (~15ms) rather than desktopCapturer (seconds, for the thumbnails).
+ * Nothing to show in a picker, but enough to tell which windows exist — and
+ * the cached list is not refreshed while live, so it cannot answer that.
+ */
+export function listWindows(): SourceInfo[] {
+  if (process.platform !== 'win32') return cache?.filter((s) => s.kind === 'window') ?? [];
+
+  let windows: ReturnType<typeof windowManager.getWindows>;
+  try {
+    windows = windowManager.getWindows();
+  } catch {
+    return [];
+  }
+  return windows.flatMap((win) => {
+    try {
+      if (!win.isVisible() || !isShareableWindow(safeBounds(win))) return [];
+      return [
+        {
+          id: `window:${win.id}:0`,
+          name: win.getTitle() || '',
+          kind: 'window' as const,
+          thumbnailDataUrl: '',
+          processId: perAppAudioSupported ? (win.processId ?? null) : null,
+          processPath: win.path || null,
+          hwnd: win.id,
+        },
+      ];
+    } catch {
+      return [];
+    }
+  });
 }
 
 /**

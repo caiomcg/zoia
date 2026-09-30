@@ -320,6 +320,7 @@ function registerIpc(): void {
 
   ipcMain.handle(IPC.sourcesList, (_event, fresh?: boolean) => sources.listSources(fresh === true));
   ipcMain.handle(IPC.sourcesLeague, () => sources.findLeagueWindows());
+  ipcMain.handle(IPC.sourcesWindows, () => sources.listWindows());
   ipcMain.handle(
     IPC.sourcesSelect,
     (_event, source: { id: string; name: string; processId: number | null }) => {
@@ -414,6 +415,7 @@ function registerIpc(): void {
     // thumbnail cache from here on buys nothing and repeatedly logs WGC
     // "Source is not capturable" for windows it cannot grab.
     sources.stopWarming();
+    unwatchWindow();
 
     if (options.hwnd !== null) {
       // Native path: WGC captures the window. On an NVIDIA adapter the addon
@@ -481,6 +483,24 @@ function registerIpc(): void {
         });
       }
       await encoder.start(mainWindow, { ...options, frames: info });
+      watchWindow(options.hwnd, () => {
+        capture.stop();
+        audioCapture.stopCapture();
+        void encoder.shutdown().finally(() => {
+          sources.startWarming();
+          void api.whipRelease().catch(() => {});
+          if (!mainWindow.isDestroyed()) {
+            mainWindow.webContents.send(IPC.encoderStatus, {
+              running: false,
+              fps: 0,
+              encoder: encoder.encoderInUse(),
+              width: 0,
+              height: 0,
+              error: null,
+            });
+          }
+        });
+      });
     } else {
       await encoder.start(mainWindow, { ...options, frames: null, gpuVendor: gpuStatus.gpuVendor });
     }
@@ -495,11 +515,30 @@ function registerIpc(): void {
   // and the capture has to come down with it or it keeps feeding a pipe that
   // is gone.
   encoder.setOnExit(() => {
+    unwatchWindow();
     capture.stop();
     audioCapture.stopCapture();
     sources.startWarming();
     void api.whipRelease().catch(() => {});
   });
+
+  // WGC never reports the captured window closing; its frames just stop and
+  // the broadcast would sit on the last one. Polled here instead, for both
+  // native paths, and reported as the capture ending.
+  let windowWatch: NodeJS.Timeout | null = null;
+  function watchWindow(hwnd: number | null, onGone: () => void): void {
+    unwatchWindow();
+    if (hwnd === null) return;
+    windowWatch = setInterval(() => {
+      if (sources.windowExists(hwnd)) return;
+      unwatchWindow();
+      onGone();
+    }, 1000);
+  }
+  function unwatchWindow(): void {
+    if (windowWatch) clearInterval(windowWatch);
+    windowWatch = null;
+  }
 
   // Frames go to the renderer's transform worker over this port, not over
   // ordinary IPC: IPC lands on the page's main thread, which also relays the
@@ -546,6 +585,7 @@ function registerIpc(): void {
       const target = options.hwnd ?? screenPoint(options.displayId);
       if (target === null) throw new Error('That screen is no longer connected.');
       sources.stopWarming();
+      unwatchWindow();
       nativePort?.close();
       const { port1, port2 } = new MessageChannelMain();
       nativePort = port1;
@@ -578,11 +618,17 @@ function registerIpc(): void {
         throw new Error(`NVENC is unavailable: ${info.fallbackReason || 'not an NVIDIA adapter'}`);
       }
       console.log(`[native-video] ${info.adapter} -> ${info.width}x${info.height}`);
+      watchWindow(options.hwnd, () => {
+        if (!win.isDestroyed()) {
+          win.webContents.send(IPC.nativeVideoError, 'The shared window was closed.');
+        }
+      });
       return { width: info.width, height: info.height };
     },
   );
 
   ipcMain.handle(IPC.nativeVideoStop, () => {
+    unwatchWindow();
     nativePort?.close();
     nativePort = null;
     const stats = capture.stop();
@@ -598,6 +644,7 @@ function registerIpc(): void {
   ipcMain.handle(IPC.nativeVideoKeyframe, () => capture.requestKeyframe());
 
   ipcMain.handle(IPC.encoderStop, async () => {
+    unwatchWindow();
     capture.stop();
     await encoder.shutdown();
     audioCapture.stopCapture();
