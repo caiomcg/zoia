@@ -13,8 +13,9 @@
  */
 
 import { createHash, randomBytes } from 'node:crypto';
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { replaceFile } from './store.js';
 
 /** Must match AVATAR_ATTRIBUTE in desktop/src/renderer/avatars.ts. */
 export const AVATAR_ATTRIBUTE = 'zoia.avatar';
@@ -69,7 +70,7 @@ export function createAvatarStore({ dir }) {
       // a picture.
       const tmp = `${file}.${randomBytes(4).toString('hex')}.tmp`;
       await writeFile(tmp, bytes, { mode: 0o600 });
-      await rename(tmp, file);
+      await replaceFile(tmp, file);
       return createHash('sha256').update(bytes).digest('hex').slice(0, 16);
     },
 
