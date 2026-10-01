@@ -29,10 +29,11 @@
 
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { createServer, type Server, type Socket } from 'node:net';
-import { existsSync, appendFileSync, writeFileSync, statSync } from 'node:fs';
+import { existsSync, appendFileSync, writeFileSync, statSync, renameSync } from 'node:fs';
 import { join } from 'node:path';
 import { app, type BrowserWindow } from 'electron';
 import * as api from './api';
+import * as capture from './capture';
 
 export interface EncoderOptions {
   /**
@@ -86,7 +87,12 @@ export interface EncoderOptions {
    *    reads the frame back and ffmpeg encodes it with AMF on a Radeon or
    *    Quick Sync on an Intel GPU — still on the GPU, one copy later.
    */
-  frames: { width: number; height: number; output: 'h264' | 'bgra'; vendor: string } | null;
+  frames: {
+    width: number;
+    height: number;
+    output: 'h264' | 'nv12' | 'bgra';
+    vendor: string;
+  } | null;
 }
 
 export interface EncoderStatus {
@@ -136,6 +142,9 @@ let captureHeight = 0;
 let audioServer: Server | null = null;
 let audioSocket: Socket | null = null;
 let lastAudioAt = 0;
+let latestVideoFrame: Buffer | null = null;
+let videoPacer: ReturnType<typeof setInterval> | null = null;
+let targetFrameInterval = 1000 / 60;
 
 /**
  * ffmpeg reads its inputs together, so audio and video each need their own
@@ -163,10 +172,43 @@ function stopAudioPipe(): void {
 }
 let keepAlive: ReturnType<typeof setInterval> | null = null;
 
-// 50ms of stereo silence, which is what gets written when the capture has
-// nothing to give.
 const KEEPALIVE_MS = 50;
-const SILENCE = Buffer.alloc((SAMPLE_RATE * CHANNELS * 2 * KEEPALIVE_MS) / 1000);
+const BYTES_PER_MS = (SAMPLE_RATE * CHANNELS * 2) / 1000;
+// How far the audio written may run ahead of real time before incoming
+// chunks are dropped to pull it back.
+const MAX_AUDIO_AHEAD_MS = 100;
+// How far behind real time the audio may fall before silence fills the gap.
+// Kept short: ffmpeg stops reading an input that gets ~100ms ahead of the
+// others, so audio lagging any further holds back the video pipe, and frames
+// were dropped as "pipe busy" — measured at 40% of them with 250ms here.
+const FILL_AFTER_MS = 50;
+
+/**
+ * ffmpeg timestamps raw PCM by counting samples, so the audio timeline is
+ * exactly as long as what was written. Keeping that count in step with real
+ * time is what keeps it in sync with the video, which is stamped on arrival.
+ *
+ * The keepalive used to write 50ms of silence whenever 50ms passed without
+ * audio. A main-thread stall (copying a 14MB raw frame is enough) let silence
+ * in *and* the delayed real audio after it, so every stall added samples and
+ * the sound drifted further behind the picture over a broadcast. Each of
+ * those stalls was also heard: a 50ms hole of silence in the middle of the
+ * sound, every time the app did anything heavy.
+ */
+let audioClockStart = 0;
+let audioBytesWritten = 0;
+
+/** Positive when more audio has been written than time has passed. */
+function audioAheadMs(): number {
+  if (audioClockStart === 0) return 0;
+  return audioBytesWritten / BYTES_PER_MS - (performance.now() - audioClockStart);
+}
+
+function writeAudioBytes(socket: Socket, chunk: Buffer): void {
+  if (audioClockStart === 0) audioClockStart = performance.now();
+  socket.write(chunk);
+  audioBytesWritten += chunk.length;
+}
 
 /**
  * ffmpeg reads video and audio together, so a starved audio pipe stalls the
@@ -174,22 +216,190 @@ const SILENCE = Buffer.alloc((SAMPLE_RATE * CHANNELS * 2 * KEEPALIVE_MS) / 1000)
  *
  * WASAPI loopback can legitimately deliver nothing at all while the captured
  * application is silent, which is exactly when this happens. Writing silence
- * in that gap keeps the pipe fed and the encoder running.
+ * in that gap keeps the pipe fed and the encoder running — only as much as
+ * the audio has actually fallen behind real time, never more.
  */
 function startKeepAlive(): void {
   lastAudioAt = Date.now();
+  audioClockStart = 0;
+  audioBytesWritten = 0;
   keepAlive = setInterval(() => {
     const socket = audioSocket;
     if (!socket || socket.destroyed || !socket.writable) return;
-    if (Date.now() - lastAudioAt >= KEEPALIVE_MS) {
+    if (audioClockStart === 0) {
+      // Nothing written yet: start the clock with one block of silence.
+      if (Date.now() - lastAudioAt < KEEPALIVE_MS) return;
       try {
-        socket.write(SILENCE);
+        writeAudioBytes(socket, Buffer.alloc(KEEPALIVE_MS * BYTES_PER_MS));
       } catch {
         return;
       }
       lastAudioAt = Date.now();
+      return;
     }
+    if (-audioAheadMs() < FILL_AFTER_MS) return;
+    // Not yet: timers run before I/O in Node's loop, so after a main-thread
+    // stall (a UI action) this fires while the WASAPI chunks delayed by that
+    // stall are still queued. Filling now put silence where they belonged —
+    // heard as the sound catching — and then dropped them as too far ahead.
+    // setImmediate runs after that I/O, so they are written first and only a
+    // real gap, the application being silent, is filled.
+    setImmediate(() => {
+      if (socket.destroyed || !socket.writable) return;
+      const behindMs = -audioAheadMs();
+      if (behindMs < FILL_AFTER_MS) return;
+      // Whole sample frames only (4 bytes: two 16-bit channels).
+      const bytes = Math.floor((behindMs * BYTES_PER_MS) / 4) * 4;
+      try {
+        writeAudioBytes(socket, Buffer.alloc(bytes));
+      } catch {
+        return;
+      }
+      lastAudioAt = Date.now();
+    });
   }, KEEPALIVE_MS);
+}
+
+function sendVideoFrame(frame: Buffer): boolean {
+  const stdin = child?.stdin;
+  if (!stdin || stdin.destroyed || !stdin.writable) return false;
+  // If the pipe is experiencing backpressure, drop the frame rather than
+  // queuing multiple frames in Node's V8 heap.
+  // For passthrough H.264, frames are small NAL units (<256KB threshold).
+  // For raw BGRA, each frame is ~14MB. When written, Node buffers bytes in stdin
+  // while the OS pipe drains. Dropping at threshold=0 causes nearly every frame
+  // to be dropped because writableLength stays >0 while the single in-flight frame
+  // is being transferred. Only drop if more than a full frame is already buffered.
+  const threshold = isPassthrough ? 256 * 1024 : Math.max(256 * 1024, frame.length);
+  if (stdin.writableLength > threshold) return false;
+  try {
+    stdin.write(frame, () => {});
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Windows Graphics Capture only produces frames when a window or screen
+ * redraws. For static content, WGC emits 0 new frames. Without continuous video
+ * input on pipe:0, ffmpeg ceases packet production and LiveKit's WebRTC STUN
+ * Consent Freshness expires after 30 seconds, terminating the session with
+ * error -138 (ETIMEDOUT).
+ *
+ * Raw frames are timestamped by count (frame N is at N / framerate), so the
+ * number written has to track real time: that keeps them evenly spaced and in
+ * step with the audio. writeFrame sends real frames as they come, refusing
+ * any more than one ahead of the clock; this pacer repeats the latest frame
+ * whenever the stream falls more than two behind — a window gone static, or a
+ * frame lost to a busy pipe. Two, not one: the main thread routinely stalls
+ * 25-35ms, and a repeat put in for a real frame that was merely late is a
+ * duplicate now and a skipped frame once it arrives.
+ *
+ * Frames used to be stamped with the time ffmpeg read them instead. They pass
+ * through this busy main thread, so they reached ffmpeg unevenly — two close
+ * together, then a gap — and fitting those times to a 60fps grid duplicated
+ * one frame and dropped the next, about 4 a second: a steady micro-stutter on
+ * an otherwise perfect 60fps capture.
+ */
+function startVideoPacer(framerate: number): void {
+  stopVideoPacer();
+  targetFrameInterval = 1000 / Math.max(1, framerate);
+  videoClockStart = 0;
+  framesWritten = 0;
+  const checkInterval = Math.max(4, Math.floor(targetFrameInterval / 4));
+  rawStats = freshRawStats(performance.now());
+  lastCaptureStats = capture.stats();
+  let lastTick = 0;
+  videoPacer = setInterval(() => {
+    const now = performance.now();
+    // How late this tick ran is how long the main thread was busy elsewhere.
+    if (lastTick !== 0) rawStats.maxLoopGap = Math.max(rawStats.maxLoopGap, now - lastTick);
+    lastTick = now;
+    const ahead = audioAheadMs();
+    rawStats.audioMin = Math.min(rawStats.audioMin, ahead);
+    rawStats.audioMax = Math.max(rawStats.audioMax, ahead);
+    reportRawStats(now);
+    if (!latestVideoFrame || !child || videoClockStart === 0) return;
+    const due = framesDue(now);
+    // A loop, not one frame: catching up after a stall. A busy pipe ends it,
+    // and the next tick carries on.
+    while (framesWritten < due - 2) {
+      if (!sendVideoFrame(latestVideoFrame)) break;
+      framesWritten++;
+      rawStats.repeats++;
+    }
+  }, checkInterval);
+}
+
+let videoClockStart = 0;
+let framesWritten = 0;
+
+/** How many frames should have been written by `now`, counting the first. */
+function framesDue(now: number): number {
+  return Math.floor((now - videoClockStart) / targetFrameInterval) + 1;
+}
+
+/**
+ * Where raw frames go, every few seconds, into the log. ffmpeg's own `dup=`
+ * cannot tell a window that redrew at 30fps from frames lost on the way to
+ * it; these numbers can.
+ */
+function freshRawStats(since: number) {
+  return {
+    fromCapture: 0,
+    written: 0,
+    dropped: 0,
+    ahead: 0,
+    repeats: 0,
+    audioMin: Infinity,
+    audioMax: -Infinity,
+    maxLoopGap: 0,
+    since,
+  };
+}
+let rawStats = freshRawStats(0);
+let lastCaptureStats: capture.CaptureStats | null = null;
+const RAW_STATS_MS = 5000;
+
+/** What the addon saw since the last report: frames Windows delivered and
+ *  how long reading them back off the GPU took. */
+function captureSummary(elapsed: number): string {
+  const current = capture.stats();
+  const previous = lastCaptureStats;
+  lastCaptureStats = current;
+  if (!current || !previous) return '';
+  const offered = current.framesOffered - previous.framesOffered;
+  const kept = current.framesArrived - previous.framesArrived;
+  const readbackMs = kept > 0 ? (current.encodeMs - previous.encodeMs) / kept : 0;
+  return (
+    `windows delivered ${((offered * 1000) / elapsed).toFixed(1)} fps, ` +
+    `readback avg ${readbackMs.toFixed(1)}ms max ${current.maxReadbackMs.toFixed(1)}ms; `
+  );
+}
+
+function reportRawStats(now: number): void {
+  const elapsed = now - rawStats.since;
+  if (elapsed < RAW_STATS_MS) return;
+  const fps = (n: number) => ((n * 1000) / elapsed).toFixed(1);
+  logLine(
+    `[raw-video] ${captureSummary(elapsed)}` +
+      `${fps(rawStats.fromCapture)} fps from capture, ` +
+      `${fps(rawStats.written)} written, ${fps(rawStats.dropped)} dropped (pipe busy), ` +
+      `${fps(rawStats.ahead)} skipped (ahead of clock), ` +
+      `${fps(rawStats.repeats)} repeats (stream behind), ` +
+      `audio ${rawStats.audioMin.toFixed(0)}..${rawStats.audioMax.toFixed(0)}ms vs real time, ` +
+      `main thread stalled up to ${rawStats.maxLoopGap.toFixed(0)}ms`,
+  );
+  rawStats = freshRawStats(now);
+}
+
+function stopVideoPacer(): void {
+  if (videoPacer) clearInterval(videoPacer);
+  videoPacer = null;
+  latestVideoFrame = null;
+  videoClockStart = 0;
+  framesWritten = 0;
 }
 
 /**
@@ -358,11 +568,15 @@ function buildArgs(options: EncoderOptions): string[] {
             '-f',
             'rawvideo',
             '-pix_fmt',
-            'bgra',
+            frames.output,
             '-s',
             `${frames.width}x${frames.height}`,
             '-framerate',
             String(framerate),
+            // Timestamped by count at this rate. The number written is kept
+            // in step with real time (see startVideoPacer), which is what
+            // stops it drifting from the audio. Stamping on arrival instead
+            // made the spacing as uneven as the main thread is.
             '-thread_queue_size',
             '16',
             '-i',
@@ -386,9 +600,9 @@ function buildArgs(options: EncoderOptions): string[] {
         ]
       : []),
 
-    // Raw frames arrive as BGRA in system memory; every hardware encoder
-    // wants NV12, and the conversion is cheap next to the encode.
-    ...(frames && !passthrough ? ['-vf', 'format=nv12'] : []),
+    // Every hardware encoder wants NV12. The addon normally converts on the
+    // GPU already; BGRA only arrives when its video processor could not.
+    ...(frames?.output === 'bgra' ? ['-vf', 'format=nv12'] : []),
     ...(screenNeedsDownload ? ['-vf', 'hwdownload,format=bgra,format=nv12'] : []),
 
     ...scaleArgs(),
@@ -405,6 +619,20 @@ function buildArgs(options: EncoderOptions): string[] {
           '-c:v',
           encoder,
           ...encoderTuning(encoder),
+          // What the addon's video processor converts to (see addon.cpp).
+          // Untagged, each viewer's decoder would have to guess the matrix.
+          ...(frames?.output === 'nv12'
+            ? [
+                '-color_range',
+                'tv',
+                '-colorspace',
+                'bt709',
+                '-color_primaries',
+                'bt709',
+                '-color_trc',
+                'bt709',
+              ]
+            : []),
           '-b:v',
           String(bitrate),
           '-maxrate',
@@ -524,6 +752,10 @@ function logPath(): string {
   return join(app.getPath('userData'), 'ffmpeg.log');
 }
 
+function previousLogPath(): string {
+  return join(app.getPath('userData'), 'ffmpeg.previous.log');
+}
+
 /** The tail attached to a report. Generous: the server allows 12k characters
  *  and a truncated log is what made three failures indistinguishable. */
 const RECENT_LINES = 200;
@@ -570,14 +802,14 @@ function startLog(command: string): void {
     const path = logPath();
     // Truncated per run rather than grown forever: the interesting run is the
     // one that just failed, and a tester asked for "the log" should not have
-    // to find the right part of a 50MB file.
-    let previous = '';
+    // to find the right part of a 50MB file. The run before it is kept beside
+    // it, since a failed retry used to wipe out the broadcast being asked about.
     try {
-      if (statSync(path).size > 0) previous = '';
+      if (statSync(path).size > 0) renameSync(path, previousLogPath());
     } catch {
-      previous = '';
+      // No previous run, or it could not be moved: start fresh either way.
     }
-    writeFileSync(path, `${previous}=== ${new Date().toISOString()}\n${command}\n\n`);
+    writeFileSync(path, `=== ${new Date().toISOString()}\n${command}\n\n`);
   } catch {
     // Same: best effort.
   }
@@ -590,6 +822,18 @@ export function logLocation(): string {
 
 export function setOnExit(handler: (() => void) | null): void {
   onExit = handler;
+}
+
+/**
+ * A start that a newer start, or a stop, replaced before it was up. Not a
+ * failure: whoever replaced it now owns the broadcast, and cleaning up after
+ * this one would tear down theirs.
+ */
+export class SupersededError extends Error {
+  constructor() {
+    super('ffmpeg stopped');
+    this.name = 'SupersededError';
+  }
 }
 
 export async function start(win: BrowserWindow, options: EncoderOptions): Promise<void> {
@@ -687,6 +931,7 @@ export async function start(win: BrowserWindow, options: EncoderOptions): Promis
     child = null;
     if (watchdog) clearInterval(watchdog);
     watchdog = null;
+    stopVideoPacer();
     // Before anything else: stop whatever is still producing frames for a
     // process that no longer exists.
     try {
@@ -725,6 +970,7 @@ export async function start(win: BrowserWindow, options: EncoderOptions): Promis
 
   startWatchdog(win);
   if (options.withAudio) startKeepAlive();
+  if (!isPassthrough && options.frames) startVideoPacer(options.framerate);
 
   return new Promise<void>((resolve, reject) => {
     let settled = false;
@@ -765,7 +1011,7 @@ export async function start(win: BrowserWindow, options: EncoderOptions): Promis
 
     const onEarlyExit = (code: number | null) => {
       if (!isCurrent()) {
-        settleReject(new Error('ffmpeg stopped'));
+        settleReject(new SupersededError());
         return;
       }
       const msg = bestError() ?? lastError ?? `ffmpeg exited with code ${code} during startup`;
@@ -799,10 +1045,13 @@ export function writeAudio(chunk: Buffer): void {
   const socket = audioSocket;
   if (!socket || socket.destroyed || !socket.writable) return;
   lastAudioAt = Date.now();
+  // Silence already stood in for this stretch (see audioAheadMs): writing it
+  // too would push everything after it late.
+  if (audioAheadMs() > MAX_AUDIO_AHEAD_MS) return;
   try {
     // Dropped rather than buffered: audio that cannot be written now is audio
     // that is already late, and queueing it would only grow the A/V offset.
-    socket.write(chunk);
+    writeAudioBytes(socket, chunk);
   } catch {
     // Same as writeFrame: a closed pipe is the end of a broadcast, not a
     // reason to bring the process down.
@@ -819,23 +1068,25 @@ export function writeAudio(chunk: Buffer): void {
  * with a dialog. A dead pipe simply means the broadcast is over.
  */
 export function writeFrame(frame: Buffer): void {
-  const stdin = child?.stdin;
-  if (!stdin || stdin.destroyed || !stdin.writable) return;
-  // If the pipe is experiencing backpressure, drop the frame rather than
-  // queuing multiple frames in Node's V8 heap.
-  // For passthrough H.264, frames are small NAL units (<256KB threshold).
-  // For raw BGRA, each frame is ~14MB. When written, Node buffers bytes in stdin
-  // while the OS pipe drains. Dropping at threshold=0 causes nearly every frame
-  // to be dropped because writableLength stays >0 while the single in-flight frame
-  // is being transferred. Only drop if more than a full frame is already buffered.
-  const threshold = isPassthrough ? 256 * 1024 : Math.max(256 * 1024, frame.length);
-  if (stdin.writableLength > threshold) return;
-  try {
-    // Back-pressure is handled by dropping: a frame that cannot be written
-    // now is better skipped than queued, which would only add latency.
-    stdin.write(frame, () => {});
-  } catch {
-    // The pipe went away mid-write; stop() will tidy up.
+  if (isPassthrough) {
+    sendVideoFrame(frame);
+    return;
+  }
+  latestVideoFrame = frame;
+  rawStats.fromCapture++;
+  const now = performance.now();
+  if (videoClockStart === 0) videoClockStart = now;
+  // Already a frame ahead of the clock: this one would push every frame
+  // after it early. The pacer would only have to wait for it anyway.
+  if (framesWritten > framesDue(now)) {
+    rawStats.ahead++;
+    return;
+  }
+  if (sendVideoFrame(frame)) {
+    framesWritten++;
+    rawStats.written++;
+  } else {
+    rawStats.dropped++;
   }
 }
 
@@ -847,6 +1098,7 @@ export async function stop(): Promise<void> {
   watchdog = null;
   if (keepAlive) clearInterval(keepAlive);
   keepAlive = null;
+  stopVideoPacer();
   stopAudioPipe();
   if (!child) return;
   const dying = child;

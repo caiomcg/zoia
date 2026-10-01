@@ -455,6 +455,8 @@ class Session {
     scaler_.Reset();
     scalerEnum_.Reset();
     source_.Reset();
+    rendered_.Reset();
+    nv12_ = false;
     videoContext_.Reset();
     videoDevice_.Reset();
     input_.Reset();
@@ -535,13 +537,19 @@ class Session {
     maxHeight_ = maxHeight & ~1u;
     sourceChangedAt_ = {};
     resizeFailed_ = false;
-    if (encode_ && maxWidth_ > 0 && maxHeight_ > 0) {
+    if (maxWidth_ > 0 && maxHeight_ > 0) {
       // The stream is the window fitted into the preset, on the GPU, keeping
       // its aspect ratio — down or up. Down, because a 4K window went out at
       // 4K on the 1080p preset's bitrate, and encoding 4K while a game held
       // the GPU cost enough to lose frames. Up, so a small window still fills
       // the preset. When the window changes size the stream follows it (see
       // ResizeStream), so a browser made fullscreen becomes the full preset.
+      //
+      // The raw path scales too. It used to send the window at its starting
+      // size, unscaled, and copy that much of every frame: a window made
+      // bigger mid-broadcast went out as its top-left corner. ffmpeg is told
+      // the frame size once, so there the stream keeps its size and a resized
+      // window is letterboxed into it instead.
       uint32_t fittedWidth = 0;
       uint32_t fittedHeight = 0;
       Fit(width_, height_, &fittedWidth, &fittedHeight);
@@ -567,7 +575,9 @@ class Session {
         fallbackReason_ = encoderError;
         encode_ = false;
         encoder_.Stop();
-        // The raw path sends the window at its own size, unscaled.
+        // An NVIDIA card whose NVENC declined keeps exactly what it had: the
+        // window at its own size, unscaled BGRA. The scaled NV12 readback
+        // below is for the GPUs that never had NVENC (AMD, Intel).
         width_ = sourceWidth_;
         height_ = sourceHeight_;
         scale_ = false;
@@ -584,7 +594,14 @@ class Session {
     desc.Height = height_;
     desc.MipLevels = 1;
     desc.ArraySize = 1;
-    desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+    // The raw path reads back NV12 when it scales: the video processor
+    // converts on the way, so a frame is 1.5 bytes a pixel instead of 4.
+    // BGRA at 1080p60 is ~500MB/s to copy out, hand to JavaScript and push
+    // through a pipe, and only about half the frames made it — ffmpeg then
+    // duplicated the rest, which looked like slow motion. It also spares
+    // ffmpeg converting every frame to NV12 on the CPU.
+    nv12_ = !encode_ && scale_;
+    desc.Format = nv12_ ? DXGI_FORMAT_NV12 : DXGI_FORMAT_B8G8R8A8_UNORM;
     desc.SampleDesc.Count = 1;
     if (encode_) {
       desc.Usage = D3D11_USAGE_DEFAULT;
@@ -602,9 +619,36 @@ class Session {
       if (!registerError.empty()) return registerError;
     }
 
+    if (scale_ && !encode_) {
+      // The video processor cannot write into a staging texture, so the raw
+      // path scales into a surface of its own and copies that for readback.
+      D3D11_TEXTURE2D_DESC renderedDesc = desc;
+      renderedDesc.Usage = D3D11_USAGE_DEFAULT;
+      renderedDesc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
+      renderedDesc.CPUAccessFlags = 0;
+      hr = device_->CreateTexture2D(&renderedDesc, nullptr, rendered_.GetAddressOf());
+      if (FAILED(hr)) return HresultMessage("CreateTexture2D(scaled frame)", hr);
+    }
+
     if (scale_) {
       const std::string scalerError = ConfigureScaler(sourceWidth_, sourceHeight_);
-      if (!scalerError.empty()) return scalerError;
+      if (!scalerError.empty()) {
+        if (encode_) return scalerError;
+        // Readback works without a scaler, so the raw path loses only resizing:
+        // back to the window at its own size, as it was before it scaled.
+        fprintf(stderr, "[zoia-capture] %s; sending unscaled\n", scalerError.c_str());
+        scale_ = false;
+        nv12_ = false;
+        rendered_.Reset();
+        width_ = sourceWidth_;
+        height_ = sourceHeight_;
+        desc.Width = width_;
+        desc.Height = height_;
+        desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+        input_.Reset();
+        hr = device_->CreateTexture2D(&desc, nullptr, input_.GetAddressOf());
+        if (FAILED(hr)) return HresultMessage("CreateTexture2D", hr);
+      }
     }
 
     // Sized for the largest the window can become, not for its size now.
@@ -646,6 +690,32 @@ class Session {
     // screen, and a distraction over a game. Windows 10 has no way to turn it
     // off, and there the border simply stays.
     hideBorder_ = !showBorder;
+    if (hideBorder_) {
+      try {
+        if (winrt::Windows::Foundation::Metadata::ApiInformation::IsPropertyPresent(
+                L"Windows.Graphics.Capture.GraphicsCaptureSession", L"IsBorderRequired")) {
+          session_.IsBorderRequired(false);
+        }
+      } catch (...) {
+      }
+    }
+
+    // Windows Graphics Capture spaces frames at least ~16.7ms apart unless
+    // told otherwise, and only delivers on a display refresh. On a 165Hz
+    // monitor the first refresh past 16.7ms is the third (18.2ms), so a game
+    // running at 90fps+ was delivered at 55fps — measured 52–55 — and every
+    // missing frame was a hitch. Asking for every refresh instead lets the
+    // raw path's own schedule pick 60 evenly spaced frames out of them.
+    // Raw path only: NVENC's pacing was left exactly as it was.
+    if (!encode_) {
+      try {
+        if (winrt::Windows::Foundation::Metadata::ApiInformation::IsPropertyPresent(
+                L"Windows.Graphics.Capture.GraphicsCaptureSession", L"MinUpdateInterval")) {
+          session_.MinUpdateInterval(std::chrono::milliseconds(1));
+        }
+      } catch (...) {
+      }
+    }
 
     frameToken_ = framePool_.FrameArrived({this, &Session::OnFrame});
     session_.StartCapture();
@@ -704,19 +774,30 @@ class Session {
                        const winrt::Windows::Foundation::IInspectable&) {
     auto frame = pool.TryGetNextFrame();
     if (!frame || !running_) return;
-
-    // The NVENC path paces after the copy, below; this is the raw path's.
-    if (!encode_ && targetFps_ > 0 && lastFrameTime_.time_since_epoch().count() > 0) {
-      const auto now = std::chrono::steady_clock::now();
-      const auto elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastFrameTime_).count();
-      const int64_t minIntervalMs = (1000 / targetFps_) - 2;
-      if (elapsedMs < minIntervalMs) {
-        return;
-      }
-    }
+    // Every frame Windows delivers, before any pacing: compared with what is
+    // kept, it says whether frames are lost here or never arrive at all.
+    ++offeredCount_;
 
     std::lock_guard<std::mutex> guard(encodeMutex_);
     if (!running_) return;
+
+    // The NVENC path paces after the copy, below; this is the raw path's.
+    // Against a schedule of slots at the target rate, as NVENC's is. It used
+    // to drop any frame within 14ms of the last one kept, and on a 144Hz
+    // monitor (a frame every 6.9ms) that kept one in three: 48fps, unevenly
+    // spaced, which ffmpeg padded out with duplicates and read as stutter.
+    if (!encode_ && targetFps_ > 0) {
+      const auto now = std::chrono::steady_clock::now();
+      const auto interval = FrameInterval();
+      if (nextFrameDue_.time_since_epoch().count() != 0 && now + interval / 4 < nextFrameDue_) {
+        return;
+      }
+      // After a stall (a window that stopped redrawing), a fresh schedule
+      // rather than a burst to catch up.
+      nextFrameDue_ = nextFrameDue_.time_since_epoch().count() == 0 || nextFrameDue_ + interval < now
+                          ? now + interval
+                          : nextFrameDue_ + interval;
+    }
     const auto previousArrival = lastFrameTime_;
     lastFrameTime_ = std::chrono::steady_clock::now();
 
@@ -808,6 +889,11 @@ class Session {
     ++arrivedCount_;
     const auto encodeStart = std::chrono::steady_clock::now();
 
+    if (scale_) {
+      if (!Scale()) return;
+      context_->CopyResource(input_.Get(), rendered_.Get());
+    }
+
     // Raw path, for a GPU whose encoder this process cannot drive directly.
     // The frame is read back and handed to ffmpeg, which encodes it with AMF
     // or Quick Sync. One readback per frame is the whole cost of supporting
@@ -819,22 +905,42 @@ class Session {
       return;
     }
 
-    const size_t rowBytes = static_cast<size_t>(width_) * 4;
+    // NV12 is a full-height luma plane of one byte a pixel, then a half-height
+    // plane of interleaved chroma, at the same pitch, right after it.
+    const size_t rowBytes = static_cast<size_t>(width_) * (nv12_ ? 1 : 4);
+    const uint32_t rows = nv12_ ? height_ + height_ / 2 : height_;
     // Not `frame`: that name already belongs to the captured surface above.
-    std::vector<uint8_t> pixels(rowBytes * height_);
+    std::vector<uint8_t> pixels(rowBytes * rows);
     const auto* src = static_cast<const uint8_t*>(mapped.pData);
     // Row by row: the mapped pitch is the driver's, and is usually padded out
-    // beyond width * 4.
-    for (uint32_t y = 0; y < height_; ++y) {
+    // beyond the row itself.
+    for (uint32_t y = 0; y < rows; ++y) {
       memcpy(pixels.data() + y * rowBytes, src + static_cast<size_t>(y) * mapped.RowPitch, rowBytes);
     }
     context_->Unmap(input_.Get(), 0);
 
-    encodeNanos_ += std::chrono::duration_cast<std::chrono::nanoseconds>(
-                        std::chrono::steady_clock::now() - encodeStart)
-                        .count();
+    const uint64_t readbackNanos = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                       std::chrono::steady_clock::now() - encodeStart)
+                                       .count();
+    encodeNanos_ += readbackNanos;
+    if (readbackNanos > maxReadbackNanos_) maxReadbackNanos_ = readbackNanos;
     ++frameIndex_;
     Emit(std::move(pixels), false, {});
+  }
+
+  // Scales the last copied frame into the scaler's output. Called with
+  // encodeMutex_ held.
+  bool Scale() {
+    D3D11_VIDEO_PROCESSOR_STREAM stream = {};
+    stream.Enable = TRUE;
+    stream.pInputSurface = scalerInput_.Get();
+    const HRESULT blt =
+        videoContext_->VideoProcessorBlt(scaler_.Get(), scalerOutput_.Get(), 0, 1, &stream);
+    if (FAILED(blt)) {
+      Emit({}, false, HresultMessage("VideoProcessorBlt", blt));
+      return false;
+    }
+    return true;
   }
 
   std::chrono::nanoseconds FrameInterval() const {
@@ -854,17 +960,7 @@ class Session {
       if (nextFrameDue_ < now) nextFrameDue_ = now + interval;
     }
 
-    if (scale_) {
-      D3D11_VIDEO_PROCESSOR_STREAM stream = {};
-      stream.Enable = TRUE;
-      stream.pInputSurface = scalerInput_.Get();
-      const HRESULT blt =
-          videoContext_->VideoProcessorBlt(scaler_.Get(), scalerOutput_.Get(), 0, 1, &stream);
-      if (FAILED(blt)) {
-        Emit({}, false, HresultMessage("VideoProcessorBlt", blt));
-        return;
-      }
-    }
+    if (scale_ && !Scale()) return;
 
     ++arrivedCount_;
     const auto encodeStart = std::chrono::steady_clock::now();
@@ -884,12 +980,16 @@ class Session {
   // Distinguishes "the window is not redrawing" from "the encoder is slow",
   // which look identical from the outside.
   uint64_t arrived() const { return arrivedCount_; }
-  /** "h264" when NVENC encoded it, "bgra" when raw frames are being sent. */
-  const char* output() const { return encode_ ? "h264" : "bgra"; }
+  /** "h264" when NVENC encoded it; otherwise the raw frames' pixel format. */
+  const char* output() const { return encode_ ? "h264" : nv12_ ? "nv12" : "bgra"; }
   /** Empty unless NVENC was available, tried, and declined. */
   const std::string& fallbackReason() const { return fallbackReason_; }
   const char* vendor() const { return VendorName(adapter_.vendorId); }
   const std::string& adapterName() const { return adapter_.name; }
+  uint64_t offered() const { return offeredCount_; }
+  uint64_t encodeNanos() const { return encodeNanos_; }
+  uint64_t takeMaxReadbackNanos() { return maxReadbackNanos_.exchange(0); }
+
   double averageEncodeMs() const {
     return arrivedCount_ ? (static_cast<double>(encodeNanos_) / arrivedCount_) / 1e6 : 0.0;
   }
@@ -913,13 +1013,12 @@ class Session {
             L"Windows.Graphics.Capture.GraphicsCaptureSession", L"IsBorderRequired");
     if (!supported) return;
 
-    if (borderAccess_ == BorderAccess::Allowed) {
-      try {
-        session_.IsBorderRequired(false);
-      } catch (...) {
-      }
-      return;
+    try {
+      session_.IsBorderRequired(false);
+    } catch (...) {
     }
+
+    if (borderAccess_ == BorderAccess::Allowed) return;
     if (borderAccess_ != BorderAccess::Unknown) return;
 
     borderAccess_ = BorderAccess::Asking;
@@ -938,7 +1037,6 @@ class Session {
         } catch (...) {
         }
         borderAccess_ = allowed ? BorderAccess::Allowed : BorderAccess::Denied;
-        if (!allowed) return;
         try {
           session.IsBorderRequired(false);
         } catch (...) {
@@ -1029,8 +1127,15 @@ class Session {
     UINT support = 0;
     if (FAILED(scalerEnum->CheckVideoProcessorFormat(DXGI_FORMAT_B8G8R8A8_UNORM, &support)) ||
         !(support & D3D11_VIDEO_PROCESSOR_FORMAT_SUPPORT_INPUT) ||
-        !(support & D3D11_VIDEO_PROCESSOR_FORMAT_SUPPORT_OUTPUT)) {
+        (!nv12_ && !(support & D3D11_VIDEO_PROCESSOR_FORMAT_SUPPORT_OUTPUT))) {
       return "The GPU's video processor cannot scale BGRA frames.";
+    }
+    if (nv12_) {
+      UINT nv12Support = 0;
+      if (FAILED(scalerEnum->CheckVideoProcessorFormat(DXGI_FORMAT_NV12, &nv12Support)) ||
+          !(nv12Support & D3D11_VIDEO_PROCESSOR_FORMAT_SUPPORT_OUTPUT)) {
+        return "The GPU's video processor cannot convert frames to NV12.";
+      }
     }
     ComPtr<ID3D11VideoProcessor> scaler;
     hr = videoDevice->CreateVideoProcessor(scalerEnum.Get(), 0, scaler.GetAddressOf());
@@ -1059,7 +1164,8 @@ class Session {
     D3D11_VIDEO_PROCESSOR_OUTPUT_VIEW_DESC outDesc = {};
     outDesc.ViewDimension = D3D11_VPOV_DIMENSION_TEXTURE2D;
     ComPtr<ID3D11VideoProcessorOutputView> scalerOutput;
-    hr = videoDevice->CreateVideoProcessorOutputView(input_.Get(), scalerEnum.Get(), &outDesc,
+    hr = videoDevice->CreateVideoProcessorOutputView(encode_ ? input_.Get() : rendered_.Get(),
+                                                     scalerEnum.Get(), &outDesc,
                                                      scalerOutput.GetAddressOf());
     if (FAILED(hr)) return HresultMessage("CreateVideoProcessorOutputView", hr);
 
@@ -1068,6 +1174,17 @@ class Session {
     videoContext->VideoProcessorSetStreamAutoProcessingMode(scaler.Get(), 0, FALSE);
     videoContext->VideoProcessorSetStreamFrameFormat(scaler.Get(), 0,
                                                      D3D11_VIDEO_FRAME_FORMAT_PROGRESSIVE);
+    if (nv12_) {
+      // Full-range RGB in, BT.709 limited-range YUV out: what ffmpeg is told
+      // the frames are (see buildArgs), and what HD video is assumed to be.
+      D3D11_VIDEO_PROCESSOR_COLOR_SPACE in = {};
+      in.RGB_Range = 0;
+      videoContext->VideoProcessorSetStreamColorSpace(scaler.Get(), 0, &in);
+      D3D11_VIDEO_PROCESSOR_COLOR_SPACE out = {};
+      out.YCbCr_Matrix = 1;
+      out.Nominal_Range = D3D11_VIDEO_PROCESSOR_NOMINAL_RANGE_16_235;
+      videoContext->VideoProcessorSetOutputColorSpace(scaler.Get(), &out);
+    }
     const RECT whole{0, 0, static_cast<LONG>(sourceWidth), static_cast<LONG>(sourceHeight)};
     videoContext->VideoProcessorSetStreamSourceRect(scaler.Get(), 0, TRUE, &whole);
 
@@ -1127,6 +1244,8 @@ class Session {
   // Only when scaling: the captured frame at full size, and the processor
   // that scales it into input_.
   ComPtr<ID3D11Texture2D> source_;
+  // Raw path only: the scaler's output, copied into the staging input_.
+  ComPtr<ID3D11Texture2D> rendered_;
   ComPtr<ID3D11VideoDevice> videoDevice_;
   ComPtr<ID3D11VideoContext> videoContext_;
   ComPtr<ID3D11VideoProcessorEnumerator> scalerEnum_;
@@ -1134,6 +1253,8 @@ class Session {
   ComPtr<ID3D11VideoProcessorInputView> scalerInput_;
   ComPtr<ID3D11VideoProcessorOutputView> scalerOutput_;
   bool scale_ = false;
+  // Raw path only: frames are read back as NV12 rather than BGRA.
+  bool nv12_ = false;
   bool hideBorder_ = false;
   enum class BorderAccess { Unknown, Asking, Allowed, Denied };
   // Windows remembers the answer for the life of the process, and so do we.
@@ -1156,6 +1277,9 @@ class Session {
   int64_t frameIndex_ = 0;
   std::atomic<uint64_t> arrivedCount_{0};
   std::atomic<uint64_t> encodeNanos_{0};
+  std::atomic<uint64_t> offeredCount_{0};
+  // Raw path: the slowest scale + readback since stats() last asked.
+  std::atomic<uint64_t> maxReadbackNanos_{0};
   uint32_t width_ = 0;
   uint32_t height_ = 0;
   uint32_t targetFps_ = 0;
@@ -1240,6 +1364,17 @@ Napi::Value RequestKeyframe(const Napi::CallbackInfo& info) {
   return info.Env().Undefined();
 }
 
+// Running totals, for the raw path's periodic log line; the caller diffs them.
+Napi::Value Stats(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  Napi::Object stats = Napi::Object::New(env);
+  stats.Set("framesOffered", Napi::Number::New(env, static_cast<double>(g_session.offered())));
+  stats.Set("framesArrived", Napi::Number::New(env, static_cast<double>(g_session.arrived())));
+  stats.Set("encodeMs", Napi::Number::New(env, g_session.encodeNanos() / 1e6));
+  stats.Set("maxReadbackMs", Napi::Number::New(env, g_session.takeMaxReadbackNanos() / 1e6));
+  return stats;
+}
+
 Napi::Value Stop(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
   Napi::Object stats = Napi::Object::New(env);
@@ -1296,6 +1431,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   }
   exports.Set("start", Napi::Function::New(env, Start));
   exports.Set("stop", Napi::Function::New(env, Stop));
+  exports.Set("stats", Napi::Function::New(env, Stats));
   exports.Set("requestKeyframe", Napi::Function::New(env, RequestKeyframe));
   exports.Set("isSupported", Napi::Function::New(env, IsSupported));
   return exports;

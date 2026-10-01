@@ -90,8 +90,7 @@ export default function Player({
   onTogglePreview: () => void;
   localTrack: LocalVideoTrack | null;
   /**
-   * On the NVENC path the frames never enter this process — ffmpeg publishes
-   * them directly — so there is no local track to preview.
+   * Set when broadcasting via the WHIP / ffmpeg route (e.g. AMD AMF or Intel Quick Sync).
    */
   gpuBroadcasting?: boolean;
   /** Present while this device is sending audio. */
@@ -153,19 +152,17 @@ export default function Player({
     <section className="stage" ref={stageRef}>
       <video ref={videoRef} playsInline autoPlay muted />
 
-      {localTrack && !showPreview && (
+      {!showPreview ? (
         <div className="overlay">
           <h2>{t('player.youreLive')}</h2>
           <p className="muted">{t('player.previewHidden')}</p>
         </div>
-      )}
-
-      {!localTrack && gpuBroadcasting && (
+      ) : !localTrack && gpuBroadcasting ? (
         <div className="overlay">
-          <h2>{t('player.gpuTitle')}</h2>
-          <p className="muted">{t('player.gpuBody')}</p>
+          <h2>{t('player.youreLive')}</h2>
+          <p className="muted">{t('top.starting')}</p>
         </div>
-      )}
+      ) : null}
 
       <div className="remote-tile-footer">
         <span className="remote-tile-who">
@@ -182,7 +179,7 @@ export default function Player({
           </span>
         </span>
         <div className="remote-audio-controls">
-          {localTrack && (
+          {(localTrack || gpuBroadcasting) && (
             <button
               className={`icon-button${showPreview ? ' active' : ''}`}
               onClick={onTogglePreview}

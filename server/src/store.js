@@ -18,6 +18,27 @@ import { promisify } from 'node:util';
 
 const scryptAsync = promisify(scrypt);
 
+/** What Windows reports while something briefly holds the file a rename replaces. */
+const TRANSIENT_RENAME_ERRORS = new Set(['EPERM', 'EBUSY', 'EACCES']);
+
+/**
+ * Moves `from` over `to`, retrying while the target is locked.
+ *
+ * On Windows a rename onto a file that is open — a concurrent read, or an
+ * antivirus scan of what was just written — fails with EPERM or EBUSY for a
+ * few milliseconds. On Linux it never does, so there this is one rename.
+ */
+export async function replaceFile(from, to, { attempts = 5, delayMs = 20, move = rename } = {}) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await move(from, to);
+    } catch (err) {
+      if (attempt >= attempts || !TRANSIENT_RENAME_ERRORS.has(err.code)) throw err;
+      await new Promise((resolve) => setTimeout(resolve, delayMs * attempt));
+    }
+  }
+}
+
 const KEY_LENGTH = 64;
 const SCRYPT_PARAMS = { N: 16384, r: 8, p: 1 };
 
@@ -89,7 +110,7 @@ export function createJsonStore({ file, collection }) {
     // lock everyone out.
     const tmp = `${file}.tmp`;
     await writeFile(tmp, `${JSON.stringify(data, null, 2)}\n`, { mode: 0o600 });
-    await rename(tmp, file);
+    await replaceFile(tmp, file);
   }
 
   function mutate(fn) {
