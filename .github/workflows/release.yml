@@ -75,7 +75,7 @@ jobs:
       # anything expensive so a miss is cheap.
       - name: Restore the vendored ffmpeg
         id: ffmpeg
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: desktop/vendor/ffmpeg-gnutls.exe
           key: ffmpeg-${{ hashFiles('desktop/ffmpeg.json') }}
