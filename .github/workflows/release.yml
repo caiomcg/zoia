@@ -162,7 +162,7 @@ jobs:
           } | Out-File -Encoding ascii SHA256SUMS.txt
           Get-Content SHA256SUMS.txt
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: zoia-windows
           path: |
@@ -173,7 +173,7 @@ jobs:
 
       - name: Upload OTA artifact
         if: steps.classify.outputs.update_type == 'asar'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: zoia-ota
           path: desktop/release/*.asar
@@ -232,7 +232,7 @@ jobs:
           shasum -a 256 *.dmg > SHA256SUMS-macos.txt
           cat SHA256SUMS-macos.txt
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: zoia-macos
           path: |
