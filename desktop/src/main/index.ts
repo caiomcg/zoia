@@ -242,6 +242,12 @@ function createWindow(): void {
   }
 }
 
+/**
+ * Bumped by every encoder start and stop request, so a start that waits (to
+ * retry a failed WHIP connection) can tell it was replaced meanwhile.
+ */
+let encoderGeneration = 0;
+
 function registerIpc(): void {
   ipcMain.handle(IPC.pairingStatus, () => pairing.getRestoredStatus());
 
@@ -355,11 +361,13 @@ function registerIpc(): void {
       },
     ) => {
       if (!mainWindow) return;
+      const window = mainWindow;
+      const generation = ++encoderGeneration;
       // Refreshing picker thumbnails while live competes with the encoder
       // for the main process.
       sources.stopWarming();
 
-      try {
+      const attemptStart = async () => {
         // Fetched here, not in the renderer: the WHIP token is a credential
         // to publish into the room, and the renderer never needs one. The
         // server only answers for a participant with a claimed broadcast slot.
@@ -367,12 +375,37 @@ function registerIpc(): void {
           sourceName: options.sourceName,
           sourceKind: options.sourceKind,
         });
-        return await startEncoding(mainWindow, {
+        return await startEncoding(window, {
           ...options,
           whipUrl: whip.url,
           whipToken: whip.token,
         });
+      };
+
+      try {
+        try {
+          return await attemptStart();
+        } catch (err) {
+          if (err instanceof encoder.SupersededError || !isWhipConnectFailure(err)) throw err;
+          // The SFU answered and then the connection never came up: measured
+          // a second after the previous broadcast ended. Every WHIP publisher
+          // of a person shares one identity and release removes it *by
+          // identity*, so a release still in flight from the last broadcast
+          // removes the new one instead. Once more, after a release that is
+          // waited for, so nothing stale is left to land on the retry.
+          console.log('[gpu] WHIP connection failed, retrying once:', (err as Error).message);
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+          await api.whipRelease().catch(() => {});
+          // A start or stop that came in meanwhile owns the broadcast now.
+          if (generation !== encoderGeneration) throw new encoder.SupersededError();
+          return await attemptStart();
+        }
       } catch (err) {
+        // Replaced while still connecting — a second start (the League
+        // client handing over to the game, a source picked again) or a stop.
+        // The capture now belongs to whatever replaced it: stopping it here
+        // took the new broadcast down, and reporting it was noise.
+        if (err instanceof encoder.SupersededError) return;
         // Capture can refuse before ffmpeg is ever spawned — a window that has
         // gone, a minimised one, an adapter with no encoder. Those threw
         // straight back at the renderer and were never reported, so the only
@@ -390,6 +423,11 @@ function registerIpc(): void {
       }
     },
   );
+
+  /** ffmpeg's WHIP muxer giving up on a connection the SFU had answered. */
+  function isWhipConnectFailure(err: unknown): boolean {
+    return err instanceof Error && /I\/O error/i.test(err.message);
+  }
 
   function attemptContext(options: {
     hwnd: number | null;
@@ -441,7 +479,7 @@ function registerIpc(): void {
             : null,
           options.showBorder ?? false,
           (packet) => {
-            if (info.output === 'bgra') {
+            if (info.output !== 'h264') {
               if (sampleFrames < 5 || sampleFrames % 120 === 0) {
                 let nonZero = 0;
                 const step = Math.max(4, Math.floor(packet.length / 5000));
@@ -609,6 +647,7 @@ function registerIpc(): void {
   ipcMain.handle(IPC.nativeVideoKeyframe, () => capture.requestKeyframe());
 
   ipcMain.handle(IPC.encoderStop, async () => {
+    encoderGeneration++;
     capture.stop();
     await encoder.shutdown();
     audioCapture.stopCapture();

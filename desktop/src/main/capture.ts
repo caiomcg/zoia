@@ -22,8 +22,11 @@ import { createRequire } from 'node:module';
 /** Which encoder the captured frames will actually be handed to. */
 export type HardwareEncoder = 'nvenc' | 'amf' | 'qsv' | 'none';
 
-/** What the addon sends back: H.264 it encoded, or raw frames for ffmpeg. */
-export type CaptureOutput = 'h264' | 'bgra';
+/**
+ * What the addon sends back: H.264 it encoded, or raw frames for ffmpeg —
+ * NV12 when the GPU scaled and converted them, BGRA when it could not.
+ */
+export type CaptureOutput = 'h264' | 'nv12' | 'bgra';
 
 interface CaptureAddon {
   isSupported(): {
@@ -54,6 +57,7 @@ interface CaptureAddon {
     fallbackReason: string;
   };
   stop(): { framesArrived: number; averageEncodeMs: number };
+  stats(): CaptureStats;
   requestKeyframe(): void;
 }
 
@@ -195,6 +199,24 @@ export function start(
 export function requestKeyframe(): void {
   if (!running) return;
   load()?.requestKeyframe();
+}
+
+/** Running totals from the addon; diff two readings for a rate. */
+export interface CaptureStats {
+  framesOffered: number;
+  framesArrived: number;
+  encodeMs: number;
+  /** Slowest raw-path scale + readback since the last call. */
+  maxReadbackMs: number;
+}
+
+export function stats(): CaptureStats | null {
+  if (!running) return null;
+  try {
+    return load()?.stats() ?? null;
+  } catch {
+    return null;
+  }
 }
 
 export function stop(): { framesArrived: number; averageEncodeMs: number } | null {

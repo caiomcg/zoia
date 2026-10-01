@@ -35,6 +35,11 @@ export function useGpuBroadcast() {
   } | null>(null);
   const presetRef = useRef<QualityPreset | null>(null);
   const switchingRef = useRef(false);
+  // Bumped by every start and stop. A start that finds it changed when it
+  // returns was replaced while connecting, and leaves everything to whatever
+  // replaced it — its error used to run stop(), which killed the newer
+  // broadcast, and then fell back to sharing on the CPU.
+  const attemptRef = useRef(0);
   const startRef = useRef<
     ((preset: QualityPreset, source: SourceInfo | null) => Promise<boolean>) | null
   >(null);
@@ -81,6 +86,7 @@ export function useGpuBroadcast() {
   }, []);
 
   const stop = useCallback(async () => {
+    attemptRef.current += 1;
     activeRef.current = false;
     activeSourceRef.current = null;
     leagueFollowRef.current = null;
@@ -91,6 +97,7 @@ export function useGpuBroadcast() {
 
   const start = useCallback(
     async (preset: QualityPreset, source: SourceInfo | null) => {
+      const attempt = ++attemptRef.current;
       setError(null);
       setState('starting');
       presetRef.current = preset;
@@ -130,10 +137,14 @@ export function useGpuBroadcast() {
           sourceName: source?.name ?? 'Screen',
           sourceKind: source?.kind ?? 'screen',
         });
+        // Replaced meanwhile: true, so nobody falls back to the CPU path for
+        // a broadcast that is already someone else's to finish.
+        if (attempt !== attemptRef.current) return true;
         activeRef.current = true;
         setState('live');
         return true;
       } catch (err) {
+        if (attempt !== attemptRef.current) return true;
         await stop();
         setError(err instanceof Error ? err.message : String(err));
         return false;
