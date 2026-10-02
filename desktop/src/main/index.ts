@@ -177,6 +177,9 @@ function logScreenRecordingAccess(): void {
   }
 }
 
+/** window.open names that get the picture-in-picture player window. */
+const PIP_FRAME_PREFIX = 'zoia-pip';
+
 function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1280,
@@ -212,10 +215,55 @@ function createWindow(): void {
   }
 
   // Anything the app doesn't render itself opens in the real browser instead
-  // of a second Electron window.
-  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+  // of a second Electron window. The one exception is the picture-in-picture
+  // player: a blank window the renderer draws into itself (see Popout.tsx).
+  // Electron has no Document Picture-in-Picture, and Chromium's own video
+  // PiP has no volume control.
+  mainWindow.webContents.setWindowOpenHandler(({ url, frameName }) => {
+    if (url === 'about:blank' && frameName.startsWith(PIP_FRAME_PREFIX)) {
+      return {
+        action: 'allow',
+        overrideBrowserWindowOptions: {
+          width: 480,
+          height: 270,
+          minWidth: 240,
+          minHeight: 135,
+          frame: false,
+          alwaysOnTop: true,
+          fullscreenable: false,
+          maximizable: false,
+          backgroundColor: '#000000',
+          autoHideMenuBar: true,
+          icon: join(__dirname, '../../build/icon.png'),
+        },
+      };
+    }
     shell.openExternal(url);
     return { action: 'deny' };
+  });
+
+  const owner = mainWindow;
+  owner.webContents.on('did-create-window', (child, { frameName }) => {
+    if (!frameName.startsWith(PIP_FRAME_PREFIX)) return;
+    // Above other windows, games in borderless mode included, and in the
+    // bottom-right corner of the screen Zoia is on rather than its middle.
+    child.setAlwaysOnTop(true, 'floating');
+    const area = screen.getDisplayMatching(owner.getBounds()).workArea;
+    const { width, height } = child.getBounds();
+    child.setBounds({
+      x: area.x + area.width - width - 24,
+      y: area.y + area.height - height - 24,
+      width,
+      height,
+    });
+    child.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+    // Not owned by the main window, or it would minimize along with it; so
+    // it has to be closed with it instead, or it alone keeps the app running.
+    const closeChild = () => {
+      if (!child.isDestroyed()) child.close();
+    };
+    owner.once('closed', closeChild);
+    child.once('closed', () => owner.off('closed', closeChild));
   });
 
   mainWindow.webContents.on('before-input-event', (event, input) => {

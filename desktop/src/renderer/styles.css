@@ -995,6 +995,10 @@ button:disabled {
   background: #050608;
 }
 
+.remote-tile video.popped-out {
+  visibility: hidden;
+}
+
 /* Over the picture, not under it, like the local player's controls. Shown
    while the pointer is on the tile or focus is inside it, so it never hides
    a control someone is using. */
@@ -3571,4 +3575,74 @@ button.danger:active:not(:disabled),
 
 .crop-dialog footer {
   gap: 8px;
+}
+
+/* The picture-in-picture player's own window (Popout.tsx): the picture fills
+   it, the top strip moves it, and the controls appear on hover. Only a strip
+   drags, since a drag region swallows the mouse and would stop the hover. */
+.pip-body {
+  overflow: hidden;
+  background: #000;
+  user-select: none;
+}
+
+.pip-player {
+  position: fixed;
+  inset: 0;
+}
+
+.pip-player video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #000;
+}
+
+.pip-drag {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 32px;
+  -webkit-app-region: drag;
+}
+
+.pip-close {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  -webkit-app-region: no-drag;
+}
+
+.pip-controls {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 6px 10px;
+  background: linear-gradient(transparent, rgb(0 0 0 / 0.75));
+}
+
+.pip-name {
+  flex: 1;
+  overflow: hidden;
+  color: #fff;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.pip-close,
+.pip-controls {
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.pip-player:hover .pip-close,
+.pip-player:hover .pip-controls {
+  opacity: 1;
 }

@@ -14,6 +14,7 @@ import { createPortal } from 'react-dom';
 import type { LocalVideoTrack, RemoteTrack } from 'livekit-client';
 import type { RemoteScreen } from '../livekit/useRoom';
 import Avatar from './Avatar';
+import { PopoutPlayer, usePopout } from './Popout';
 import { IconEye, IconFullscreen, IconVolume } from './Player';
 import { useT, type T } from '../i18n';
 import {
@@ -322,6 +323,7 @@ function RemoteTile({
   const videoRef = useRef<HTMLVideoElement>(null);
   const { volume, muted } = audio;
   useMediaStream(videoRef, screen.videoTrack, screen.audioTrack);
+  const pip = usePopout();
 
   useEffect(() => {
     const element = videoRef.current;
@@ -332,7 +334,23 @@ function RemoteTile({
 
   return (
     <article className="remote-tile">
-      <video ref={videoRef} playsInline autoPlay onDoubleClick={onToggleFullscreen} />
+      {/* Hidden rather than removed while popped out: the sound still plays
+          from this element, and the player's volume controls drive it. */}
+      <video
+        ref={videoRef}
+        className={pip.active ? 'popped-out' : undefined}
+        playsInline
+        autoPlay
+        onDoubleClick={onToggleFullscreen}
+      />
+      {pip.active && (
+        <div className="overlay">
+          <h2>{t('grid.inPip')}</h2>
+          <button className="primary" onClick={pip.close}>
+            {t('grid.bringBack')}
+          </button>
+        </div>
+      )}
       <div className="remote-tile-footer">
         <span className="remote-tile-who">
           <Avatar name={screen.participantName} identity={screen.participantIdentity} live />
@@ -386,6 +404,18 @@ function RemoteTile({
             </button>
           )}
           <button
+            className={`icon-button${pip.active ? ' active' : ''}`}
+            onClick={pip.toggle}
+            aria-pressed={pip.active}
+            title={pip.active ? t('common.exitPip') : t('common.pip')}
+            aria-label={pip.active ? t('common.exitPip') : t('common.pip')}
+          >
+            <Icon>
+              <rect x="2" y="4" width="20" height="16" rx="2" />
+              <rect x="12" y="12" width="8" height="6" rx="1" />
+            </Icon>
+          </button>
+          <button
             className="icon-button"
             onClick={onToggleFullscreen}
             title={isFullscreen ? t('common.exitFullscreen') : t('common.fullscreen')}
@@ -407,6 +437,18 @@ function RemoteTile({
           )}
         </div>
       </div>
+      {pip.target && (
+        <PopoutPlayer
+          target={pip.target}
+          name={screen.participantName}
+          videoTrack={screen.videoTrack}
+          hasAudio={screen.audioTrack !== null}
+          volume={volume}
+          muted={muted}
+          onAudioChange={onAudioChange}
+          onClose={pip.close}
+        />
+      )}
     </article>
   );
 }
