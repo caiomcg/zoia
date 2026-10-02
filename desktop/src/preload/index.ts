@@ -62,6 +62,7 @@ const bridge: ZoiaBridge = {
     select: (source) => ipcRenderer.invoke(IPC.sourcesSelect, source),
     title: (hwnd) => ipcRenderer.invoke(IPC.sourcesTitle, hwnd),
     league: () => ipcRenderer.invoke(IPC.sourcesLeague),
+    windows: () => ipcRenderer.invoke(IPC.sourcesWindows),
   },
   encoder: {
     start: (options) => ipcRenderer.invoke(IPC.encoderStart, options),

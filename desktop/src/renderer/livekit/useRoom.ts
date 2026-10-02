@@ -54,13 +54,24 @@ function ownerIdentity(identity: string): string {
  * window for the game. Chromium reports the first capture track as `ended`
  * even though sharing should continue. Give the replacement window time to
  * appear before treating that event as an actual stop.
+ *
+ * Only a window that appeared after the share started counts. Closing one
+ * browser window used to hand the broadcast to another the same browser
+ * already had open — same process — so closing what you shared never ended
+ * the share.
  */
-async function replacementWindow(original: SourceInfo): Promise<SourceInfo | null> {
+async function replacementWindow(
+  original: SourceInfo,
+  known: ReadonlySet<string>,
+): Promise<SourceInfo | null> {
   const originalName = original.name.trim().toLocaleLowerCase();
   const leagueSource = isLeagueSource(original) || /league|riot/.test(originalName);
 
-  for (let attempt = 0; attempt < 12; attempt += 1) {
-    const sources = await window.zoia.sources.list().catch(() => []);
+  // Every close waits out this whole window unless a replacement turns up,
+  // so it stays short: a launcher opens the game about as it closes itself.
+  const deadline = Date.now() + 1500;
+  while (Date.now() < deadline) {
+    const sources = await window.zoia.sources.windows().catch(() => []);
     const replacement = sources.find((candidate) => {
       if (candidate.kind !== 'window' || candidate.id === original.id) return false;
 
@@ -68,6 +79,7 @@ async function replacementWindow(original: SourceInfo): Promise<SourceInfo | nul
       // The HWND changes during the LoL client -> game handoff, and the game
       // can also have a different PID. Its window title still identifies it.
       if (leagueSource && (isLeagueSource(candidate) || /league|riot/.test(name))) return true;
+      if (known.has(candidate.id)) return false;
       // For ordinary applications, prefer the same process or title. This
       // also handles apps that recreate their main window during an update.
       return (
@@ -77,7 +89,7 @@ async function replacementWindow(original: SourceInfo): Promise<SourceInfo | nul
     });
     if (replacement) return replacement;
 
-    await new Promise<void>((resolve) => setTimeout(resolve, 500));
+    await new Promise<void>((resolve) => setTimeout(resolve, 250));
   }
   return null;
 }
@@ -332,6 +344,8 @@ export function useRoom() {
   const sendAudioRef = useRef<SendAudio>(DEFAULT_SEND_AUDIO);
   const [sendAudio, setSendAudioState] = useState<SendAudio>(sendAudioRef.current);
   const [sendingAudio, setSendingAudio] = useState(false);
+  // Windows that already existed when the share started; see replacementWindow.
+  const knownWindowsRef = useRef<Set<string>>(new Set());
   const restartWindowRef = useRef<
     ((source: SourceInfo, preset?: QualityPreset) => Promise<boolean>) | null
   >(null);
@@ -971,6 +985,15 @@ export function useRoom() {
         }
       }
 
+      // A restart keeps what the original share knew about: the windows open
+      // back then are still not replacements for the one being shared.
+      const known = await window.zoia.sources.windows().catch(() => []);
+      if (!keepStage) knownWindowsRef.current = new Set();
+      for (const candidate of known) knownWindowsRef.current.add(candidate.id);
+
+      // Set once the capture is live: what to do when it ends on its own.
+      let onCaptureEnded: (() => void) | null = null;
+
       // The macOS loopback track, from getDisplayMedia until the audio step
       // takes it. Held out here so a video failure in between stops it rather
       // than leaving the system audio capture running.
@@ -1000,7 +1023,9 @@ export function useRoom() {
           setSharingKind('screen');
           const native = createNativeVideo(nativeTarget, quality, (message) => {
             console.warn('[native-video] capture failed:', message);
-            if (nativeVideoRef.current === native) void stopBroadcast();
+            if (nativeVideoRef.current !== native) return;
+            if (onCaptureEnded) onCaptureEnded();
+            else void stopBroadcast();
           });
           nativeVideoRef.current = native;
           mediaTrack = native.track;
@@ -1145,7 +1170,8 @@ export function useRoom() {
 
         // The OS/Chromium can end capture out from under us (window closed,
         // "Stop sharing" bar) — treat that exactly like clicking Stop here.
-        mediaTrack.addEventListener('ended', () => {
+        // The native path learns of it as an error rather than `ended`.
+        onCaptureEnded = () => {
           // `stopPublishing()` deliberately stops the same MediaStreamTrack.
           // Do not start a recovery for an explicit stop or source switch.
           if (localTrackRef.current?.mediaStreamTrack !== mediaTrack) return;
@@ -1175,7 +1201,7 @@ export function useRoom() {
             }
 
             if (source.kind === 'window') {
-              const replacement = await replacementWindow(source);
+              const replacement = await replacementWindow(source, knownWindowsRef.current);
               if (replacement && restartWindowRef.current) {
                 const ok = await restartWindowRef.current(replacement, preset);
                 if (ok) return;
@@ -1183,7 +1209,8 @@ export function useRoom() {
             }
             await stopBroadcast();
           })();
-        });
+        };
+        mediaTrack.addEventListener('ended', onCaptureEnded);
 
         // Audio is captured and published as its own step, deliberately not
         // inside the same try block as the video path above: a window whose

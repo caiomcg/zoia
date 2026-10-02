@@ -50,6 +50,8 @@ export interface ZoiaBridge {
     title(hwnd: number): Promise<string | null>;
     /** Fast resolution of League of Legends game and client windows via native Win32 window manager. */
     league(): Promise<{ game: SourceInfo | null; client: SourceInfo | null }>;
+    /** The open shareable windows, without thumbnails: cheap enough to poll. */
+    windows(): Promise<SourceInfo[]>;
   };
   /** The hardware-encoding path: ffmpeg + NVENC + WHIP, bypassing Chromium. */
   encoder: {
