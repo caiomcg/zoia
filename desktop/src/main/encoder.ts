@@ -34,6 +34,8 @@ import { join } from 'node:path';
 import { app, type BrowserWindow } from 'electron';
 import * as api from './api';
 import * as capture from './capture';
+import { bestError as pickError, isWhipHandshakeFailure } from './ffmpeg-log';
+import { BYTES_PER_MS, CHANNELS, SAMPLE_RATE, audioAheadMs, framesDue } from './media-clock';
 
 export interface EncoderOptions {
   /**
@@ -105,9 +107,6 @@ export interface EncoderStatus {
   error: string | null;
 }
 
-const SAMPLE_RATE = 48000;
-const CHANNELS = 2;
-
 // Windows named pipe. ffmpeg opens this as an ordinary input file.
 const AUDIO_PIPE = '\\\\.\\pipe\\zoia-audio';
 
@@ -141,7 +140,6 @@ let captureWidth = 0;
 let captureHeight = 0;
 let audioServer: Server | null = null;
 let audioSocket: Socket | null = null;
-let lastAudioAt = 0;
 let latestVideoFrame: Buffer | null = null;
 let videoPacer: ReturnType<typeof setInterval> | null = null;
 let targetFrameInterval = 1000 / 60;
@@ -173,7 +171,6 @@ function stopAudioPipe(): void {
 let keepAlive: ReturnType<typeof setInterval> | null = null;
 
 const KEEPALIVE_MS = 50;
-const BYTES_PER_MS = (SAMPLE_RATE * CHANNELS * 2) / 1000;
 // How far the audio written may run ahead of real time before incoming
 // chunks are dropped to pull it back.
 const MAX_AUDIO_AHEAD_MS = 100;
@@ -195,17 +192,54 @@ const FILL_AFTER_MS = 50;
  * those stalls was also heard: a 50ms hole of silence in the middle of the
  * sound, every time the app did anything heavy.
  */
-let audioClockStart = 0;
 let audioBytesWritten = 0;
 
+/**
+ * One origin for both synthetic timelines, and the whole reason audio and
+ * video line up at all on this path.
+ *
+ * Neither input carries a real timestamp: raw video is stamped by frame count
+ * (frame N at N/framerate) and raw PCM by sample count. ffmpeg aligns PTS 0
+ * with PTS 0, so the A/V offset of the published stream is exactly the gap
+ * between the wall-clock instants the two counts started at.
+ *
+ * Those were two separate instants. Video anchored on the first captured
+ * frame, which arrives within a frame of the pacer starting. Audio anchored
+ * on the first byte *written*, and the first byte written was a keepalive
+ * silence block, which cannot happen before KEEPALIVE_MS and in practice
+ * landed later still, because WASAPI capture only starts once ffmpeg has
+ * confirmed startup. So audio's zero sat 50-100ms after video's, and that is
+ * how much the sound ran ahead of the picture — every broadcast, start to
+ * finish, on a constant that nothing afterwards corrected.
+ *
+ * Now both counts measure from one anchor, taken on the first *real* media of
+ * either kind. The keepalive deliberately does not set it: silence anchoring
+ * the clock is the bug above. It fills the gap between the anchor and the
+ * first real chunk instead, which is what makes the audio timeline start
+ * where the video's does.
+ */
+let mediaClockStart = 0;
+
+/**
+ * The keepalive's own safety net, from before the anchor existed: a window
+ * that never redraws delivers no frame to anchor on, and an unfed audio pipe
+ * stalls ffmpeg until LiveKit's consent freshness drops the session. WGC
+ * delivers the window's initial contents on start, so this is a backstop
+ * rather than a path anything normally takes.
+ */
+const ANCHOR_DEADLINE_MS = 500;
+
+/** Anchors both timelines, on whichever real media arrives first. */
+function startMediaClock(now: number): void {
+  if (mediaClockStart === 0) mediaClockStart = now;
+}
+
 /** Positive when more audio has been written than time has passed. */
-function audioAheadMs(): number {
-  if (audioClockStart === 0) return 0;
-  return audioBytesWritten / BYTES_PER_MS - (performance.now() - audioClockStart);
+function audioAhead(): number {
+  return audioAheadMs(mediaClockStart, audioBytesWritten, performance.now());
 }
 
 function writeAudioBytes(socket: Socket, chunk: Buffer): void {
-  if (audioClockStart === 0) audioClockStart = performance.now();
   socket.write(chunk);
   audioBytesWritten += chunk.length;
 }
@@ -220,24 +254,21 @@ function writeAudioBytes(socket: Socket, chunk: Buffer): void {
  * the audio has actually fallen behind real time, never more.
  */
 function startKeepAlive(): void {
-  lastAudioAt = Date.now();
-  audioClockStart = 0;
-  audioBytesWritten = 0;
+  const startedAt = performance.now();
   keepAlive = setInterval(() => {
     const socket = audioSocket;
     if (!socket || socket.destroyed || !socket.writable) return;
-    if (audioClockStart === 0) {
-      // Nothing written yet: start the clock with one block of silence.
-      if (Date.now() - lastAudioAt < KEEPALIVE_MS) return;
-      try {
-        writeAudioBytes(socket, Buffer.alloc(KEEPALIVE_MS * BYTES_PER_MS));
-      } catch {
-        return;
-      }
-      lastAudioAt = Date.now();
-      return;
+    if (mediaClockStart === 0) {
+      // No real media yet, so there is no timeline to keep in step with and
+      // nothing to be out of sync with. Anchoring here is what put audio's
+      // zero after video's; wait for a real frame or a real chunk instead.
+      // Past the deadline, nothing is coming and feeding the pipe matters
+      // more than an anchor the broadcast will never use.
+      const now = performance.now();
+      if (now - startedAt < ANCHOR_DEADLINE_MS) return;
+      startMediaClock(now);
     }
-    if (-audioAheadMs() < FILL_AFTER_MS) return;
+    if (-audioAhead() < FILL_AFTER_MS) return;
     // Not yet: timers run before I/O in Node's loop, so after a main-thread
     // stall (a UI action) this fires while the WASAPI chunks delayed by that
     // stall are still queued. Filling now put silence where they belonged —
@@ -246,7 +277,7 @@ function startKeepAlive(): void {
     // real gap, the application being silent, is filled.
     setImmediate(() => {
       if (socket.destroyed || !socket.writable) return;
-      const behindMs = -audioAheadMs();
+      const behindMs = -audioAhead();
       if (behindMs < FILL_AFTER_MS) return;
       // Whole sample frames only (4 bytes: two 16-bit channels).
       const bytes = Math.floor((behindMs * BYTES_PER_MS) / 4) * 4;
@@ -255,7 +286,6 @@ function startKeepAlive(): void {
       } catch {
         return;
       }
-      lastAudioAt = Date.now();
     });
   }, KEEPALIVE_MS);
 }
@@ -289,12 +319,21 @@ function sendVideoFrame(frame: Buffer): boolean {
  *
  * Raw frames are timestamped by count (frame N is at N / framerate), so the
  * number written has to track real time: that keeps them evenly spaced and in
- * step with the audio. writeFrame sends real frames as they come, refusing
+ * step with the audio. Both counts measure from one anchor now — see
+ * mediaClockStart, which is what stops the sound running ahead of the picture
+ * by a fixed 50-100ms. writeFrame sends real frames as they come, refusing
  * any more than one ahead of the clock; this pacer repeats the latest frame
  * whenever the stream falls more than two behind — a window gone static, or a
  * frame lost to a busy pipe. Two, not one: the main thread routinely stalls
  * 25-35ms, and a repeat put in for a real frame that was merely late is a
  * duplicate now and a skipped frame once it arrives.
+ *
+ * On a pipe the capture outruns — AMD and Intel read every frame back, and
+ * 4K60 NV12 is ~745MB/s through this thread — the repeats are the stream's
+ * only way to keep the timeline at real time, and so the only thing holding
+ * sync. The picture then updates slower than it is paced, which is visible as
+ * stutter and is the honest symptom of the byte budget, not of the pacing.
+ * The fix for that is fewer bytes per frame, not different pacing.
  *
  * Frames used to be stamped with the time ffmpeg read them instead. They pass
  * through this busy main thread, so they reached ffmpeg unevenly — two close
@@ -305,7 +344,6 @@ function sendVideoFrame(frame: Buffer): boolean {
 function startVideoPacer(framerate: number): void {
   stopVideoPacer();
   targetFrameInterval = 1000 / Math.max(1, framerate);
-  videoClockStart = 0;
   framesWritten = 0;
   const checkInterval = Math.max(4, Math.floor(targetFrameInterval / 4));
   rawStats = freshRawStats(performance.now());
@@ -316,12 +354,12 @@ function startVideoPacer(framerate: number): void {
     // How late this tick ran is how long the main thread was busy elsewhere.
     if (lastTick !== 0) rawStats.maxLoopGap = Math.max(rawStats.maxLoopGap, now - lastTick);
     lastTick = now;
-    const ahead = audioAheadMs();
+    const ahead = audioAhead();
     rawStats.audioMin = Math.min(rawStats.audioMin, ahead);
     rawStats.audioMax = Math.max(rawStats.audioMax, ahead);
     reportRawStats(now);
-    if (!latestVideoFrame || !child || videoClockStart === 0) return;
-    const due = framesDue(now);
+    if (!latestVideoFrame || !child || mediaClockStart === 0) return;
+    const due = framesDueNow(now);
     // A loop, not one frame: catching up after a stall. A busy pipe ends it,
     // and the next tick carries on.
     while (framesWritten < due - 2) {
@@ -332,12 +370,10 @@ function startVideoPacer(framerate: number): void {
   }, checkInterval);
 }
 
-let videoClockStart = 0;
 let framesWritten = 0;
-
 /** How many frames should have been written by `now`, counting the first. */
-function framesDue(now: number): number {
-  return Math.floor((now - videoClockStart) / targetFrameInterval) + 1;
+function framesDueNow(now: number): number {
+  return framesDue(mediaClockStart, targetFrameInterval, now);
 }
 
 /**
@@ -398,7 +434,6 @@ function stopVideoPacer(): void {
   if (videoPacer) clearInterval(videoPacer);
   videoPacer = null;
   latestVideoFrame = null;
-  videoClockStart = 0;
   framesWritten = 0;
 }
 
@@ -637,8 +672,31 @@ function buildArgs(options: EncoderOptions): string[] {
           String(bitrate),
           '-maxrate',
           String(bitrate),
-          // Constrained VBV buffer (2 frames of data) to smooth packet pacing
-          // and eliminate UDP bursts that cause buffer overflows and NACK storms
+          // Two frames of VBV — 33ms at any preset. Deliberately tiny, and
+          // measured, which the three commits that arrived at it were not.
+          //
+          // The suspicion was that two frames cannot hold an IDR: under
+          // `-rc cbr` with `-enforce_hrd 1` and `-g` at half a second, the
+          // encoder would have to crush every keyframe to fit, collapsing and
+          // recovering quality twice a second. That would look like stutter
+          // while frame delivery stayed perfect, which is exactly what an
+          // affected Radeon's [raw-video] log showed (60.0 fps from capture,
+          // 60.0 written, zero dropped, zero repeats).
+          //
+          // It is wrong. Measured on an RX 9070 XT against this vendored
+          // ffmpeg, 1080p60 at 12Mbps, 10s of `mandelbrot` (dense detail in
+          // continuous motion, so bit demand sits above the budget):
+          //
+          //   bufsize        bitrate      I/P    P-swing   P-stddev
+          //   2 frames       12.0Mbps     2.1x      2.2x        8%
+          //   250ms          12.3Mbps     4.6x      5.7x       25%
+          //   500ms          11.9Mbps     4.7x      5.3x       15%
+          //
+          // Loosening it does let the IDR grow, and costs a 2.6x worse
+          // frame-size swing for it — bursts on a link that then drops them.
+          // Two frames holds the target bitrate exactly and emits the most
+          // even stream of the three. Do not loosen this without measuring
+          // the swing; the stutter is somewhere else.
           '-bufsize',
           String(Math.floor((bitrate / framerate) * 2)),
           // 0.5-second GOP ensures near-instantaneous (500ms) recovery from packet drops
@@ -764,25 +822,13 @@ let lastCommand = '';
 
 /**
  * ffmpeg's final line is almost always "Conversion failed!", which says
- * nothing. The cause is one of the lines above it, and the old matcher — any
- * line containing Error, failed, Invalid or Cannot, last one wins — reliably
- * picked the useless one. These are the lines that actually carry a reason.
+ * nothing. The cause is one of the lines above it, and picking it out is
+ * ffmpeg-log's job — it is subtle enough to be worth testing against real
+ * transcripts, and every line arrives wearing a component tag that defeated
+ * the matcher this used to have.
  */
-const GENERIC = /^(Conversion failed|Error opening output file|Exiting|Terminating)/i;
-
 function bestError(): string | null {
-  for (let i = recent.length - 1; i >= 0; i--) {
-    const line = recent[i]?.trim();
-    if (!line || GENERIC.test(line)) continue;
-    if (
-      /error|failed|invalid|cannot|unsupported|not (yet )?(implemented|supported)|no such/i.test(
-        line,
-      )
-    ) {
-      return line;
-    }
-  }
-  return recent.filter((l) => Boolean(l.trim()) && !GENERIC.test(l.trim())).slice(-1)[0] ?? null;
+  return pickError(recent);
 }
 
 function logLine(line: string): void {
@@ -841,6 +887,10 @@ export async function start(win: BrowserWindow, options: EncoderOptions): Promis
   lastError = null;
   lastFps = 0;
   frameCount = 0;
+  // Both timelines start unanchored: the first real frame or audio chunk of
+  // this run sets the one origin they share.
+  mediaClockStart = 0;
+  audioBytesWritten = 0;
   captureWidth = options.frames?.width ?? 0;
   captureHeight = options.frames?.height ?? 0;
 
@@ -1044,10 +1094,13 @@ export async function shutdown(): Promise<void> {
 export function writeAudio(chunk: Buffer): void {
   const socket = audioSocket;
   if (!socket || socket.destroyed || !socket.writable) return;
-  lastAudioAt = Date.now();
+  // Real media, so it may anchor the shared clock — and if it is first, the
+  // pacer pre-fills the video timeline from here rather than from whenever
+  // the first frame happens to land.
+  startMediaClock(performance.now());
   // Silence already stood in for this stretch (see audioAheadMs): writing it
   // too would push everything after it late.
-  if (audioAheadMs() > MAX_AUDIO_AHEAD_MS) return;
+  if (audioAhead() > MAX_AUDIO_AHEAD_MS) return;
   try {
     // Dropped rather than buffered: audio that cannot be written now is audio
     // that is already late, and queueing it would only grow the A/V offset.
@@ -1069,16 +1122,24 @@ export function writeAudio(chunk: Buffer): void {
  */
 export function writeFrame(frame: Buffer): void {
   if (isPassthrough) {
+    // The frame count means nothing here — passthrough video is stamped by
+    // wallclock, not by count — but the audio still measures from the shared
+    // origin, and the keepalive will not feed the pipe before there is one.
+    // Without this the pipe starves for up to ANCHOR_DEADLINE_MS at startup,
+    // and a starved audio input stalls *video* (ADR 0009). Anchoring on the
+    // first frame handed to the muxer also puts the audio's origin where
+    // ffmpeg starts stamping video, rather than a keepalive tick later.
+    startMediaClock(performance.now());
     sendVideoFrame(frame);
     return;
   }
   latestVideoFrame = frame;
   rawStats.fromCapture++;
   const now = performance.now();
-  if (videoClockStart === 0) videoClockStart = now;
+  startMediaClock(now);
   // Already a frame ahead of the clock: this one would push every frame
   // after it early. The pacer would only have to wait for it anyway.
-  if (framesWritten > framesDue(now)) {
+  if (framesWritten > framesDueNow(now)) {
     rawStats.ahead++;
     return;
   }
