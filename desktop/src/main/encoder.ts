@@ -1088,18 +1088,17 @@ async function attemptStart(win: BrowserWindow, options: EncoderOptions): Promis
     const fps = chunk.match(/fps=\s*([\d.]+)/);
     if (fps?.[1]) lastFps = Number(fps[1]);
 
+    // The reason, picked from the whole run rather than from this chunk alone.
+    // This used to filter the chunk inline against a `GENERIC` regex that the
+    // move to ffmpeg-log.ts deleted along with its two other uses, leaving a
+    // reference to nothing: the first stderr chunk saying "Error" then threw
+    // `ReferenceError: GENERIC is not defined` out of a stream handler, which
+    // takes the main process down with it. ffmpeg-log.ts exists to make this
+    // judgement — `bestError` skips the wreckage, prefers a line that gives a
+    // reason, and reads every line in `recent`, so a reason logged in an
+    // earlier chunk than the failure still counts.
     if (/Error|failed|Invalid|Cannot/i.test(chunk) && !/Last message repeated/.test(chunk)) {
-      const candidates = chunk
-        .trim()
-        .split('\n')
-        .map((l) => l.trim())
-        .filter(
-          (l) =>
-            Boolean(l) && !GENERIC.test(l) && /error|failed|invalid|cannot|unsupported/i.test(l),
-        );
-      if (candidates.length > 0) {
-        lastError = candidates[candidates.length - 1] ?? null;
-      }
+      lastError = bestError() ?? lastError;
     }
 
     if (!win.isDestroyed()) {
