@@ -53,14 +53,26 @@ export default function SourcePicker({
   // Thumbnails came from a single call when the picker opened, so they were
   // a photograph of the moment it appeared — a window that changed, or was
   // opened afterwards, never showed it. The list is polled while the picker
-  // is on screen instead; the main process keeps a warm cache, so this reads
-  // whatever the latest capture produced rather than forcing a new one.
+  // is on screen instead.
+  //
+  // What is polled is `instant()`, not `list()`. Measured on this machine,
+  // `desktopCapturer.getSources` with thumbnails takes 3.3 seconds, because a
+  // thumbnail is a real capture of each window — about 630ms apiece. Naming
+  // the same windows natively takes 8ms. So the list that arrives is the one
+  // that is current, and `list()` is called alongside it only to keep the
+  // thumbnail refresh turning over; its pictures are merged in by id as they
+  // land, and a tile without one renders the blank placeholder meanwhile.
+  //
+  // That ordering is the point: when someone clicks Share they are waiting to
+  // find a window, not to look at it.
   useEffect(() => {
     let cancelled = false;
 
-    const load = () =>
-      window.zoia.sources
-        .list()
+    const load = () => {
+      // Returns the warm cache immediately; refreshes behind it when stale.
+      void window.zoia.sources.list().catch(() => {});
+      return window.zoia.sources
+        .instant()
         .then((list) => {
           if (!cancelled) {
             setSources(list);
@@ -84,6 +96,7 @@ export default function SourcePicker({
             });
           }
         });
+    };
 
     void load();
     const timer = setInterval(() => void load(), 1500);

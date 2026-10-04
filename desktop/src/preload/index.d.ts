@@ -45,6 +45,8 @@ export interface ZoiaBridge {
   };
   sources: {
     list(fresh?: boolean): Promise<SourceInfo[]>;
+    /** Screens with their pictures and every window open right now without one. */
+    instant(): Promise<SourceInfo[]>;
     select(source: Pick<SourceInfo, 'id' | 'name' | 'processId'>): Promise<void>;
     /** A window's current title, or null once it is gone. */
     title(hwnd: number): Promise<string | null>;

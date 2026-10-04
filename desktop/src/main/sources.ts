@@ -63,23 +63,44 @@ function macScreenPermissionError(): Error | null {
   return status === 'granted' ? null : new Error(t('picker.macScreenPermission'));
 }
 
-async function captureSources(): Promise<SourceInfo[]> {
-  let sources: Electron.DesktopCapturerSource[];
+/**
+ * What a thumbnail actually costs, measured on a Radeon RX 9070 XT with
+ * Electron 44, three runs each:
+ *
+ *   windowManager.getWindows() + filter              8ms
+ *   getSources screen+window, thumbnail 320x180   3330ms
+ *   getSources screen+window, thumbnail 0x0        320ms
+ *   getSources screen+window, thumbnail 160x90    3320ms
+ *   getSources window only, thumbnail 320x180     3165ms
+ *   getSources screen only, thumbnail 320x180      285ms
+ *
+ * Two things follow. A thumbnail is a real capture of that window, so five
+ * windows cost ~630ms each and shrinking the thumbnail buys nothing — 160x90
+ * costs what 320x180 costs. And the *list* is not the expensive part: naming
+ * every window takes 8ms, three hundred times less than picturing them.
+ *
+ * So they are fetched apart. Screens are few, change rarely and cost 285ms;
+ * windows change constantly and are listed natively, with their pictures
+ * filled in afterwards. See instantSources.
+ */
+async function getSourcesOfType(
+  types: Array<'screen' | 'window'>,
+): Promise<Electron.DesktopCapturerSource[]> {
   try {
-    sources = await desktopCapturer.getSources({
-      types: ['screen', 'window'],
+    return await desktopCapturer.getSources({
+      types,
       thumbnailSize: { width: 320, height: 180 },
       fetchWindowIcons: false,
     });
   } catch (err) {
     throw macScreenPermissionError() ?? err;
   }
+}
 
-  // One native call, reused for every window source below rather than one
-  // enumeration per source. This part is cheap (~15ms) — it is never the
-  // reason to cache.
-  const windowsById = new Map(windowManager.getWindows().map((w) => [w.id, w]));
-
+function toSourceInfo(
+  sources: Electron.DesktopCapturerSource[],
+  windowsById: Map<number, ReturnType<typeof windowManager.getWindows>[number]>,
+): SourceInfo[] {
   return sources.flatMap((source) => {
     const isWindow = source.id.startsWith('window:');
     const hwnd = isWindow ? hwndFromSourceId(source.id) : null;
@@ -143,6 +164,91 @@ async function captureSources(): Promise<SourceInfo[]> {
       },
     ];
   });
+}
+
+async function captureSources(): Promise<SourceInfo[]> {
+  // Snapshotted before the call, not after: a refresh takes 3.3 seconds, and a
+  // window opened during it is legitimately missing from a result gathered
+  // before it existed. Judged against the list afterwards it would look like a
+  // window Chromium had refused, and be hidden from the instant list until the
+  // next refresh — which is precisely the window someone is waiting to see.
+  const asked = new Set(listWindows().map((w) => w.id));
+  const sources = await getSourcesOfType(['screen', 'window']);
+  // One native call, reused for every window source below rather than one
+  // enumeration per source. This part is cheap (~15ms) — it is never the
+  // reason to cache.
+  const windowsById = new Map(windowManager.getWindows().map((w) => [w.id, w]));
+  const mapped = toSourceInfo(sources, windowsById);
+  rememberOffered(sources, asked);
+  screenCache = mapped.filter((s) => s.kind === 'screen');
+  screenCacheTime = Date.now();
+  return mapped;
+}
+
+/**
+ * Screens alone, kept for ten seconds.
+ *
+ * They are the one part of the instant list that still has to come from
+ * desktopCapturer: a screen's id and `display_id` are what the Chromium path
+ * resolves a getDisplayMedia call against, and synthesising them from
+ * screen.getAllDisplays() would be guessing at Chromium's own indexing. At
+ * 285ms for two monitors that is affordable once; at 8ms a window list is
+ * affordable every time, which is why only this half is cached.
+ */
+const SCREEN_TTL_MS = 10_000;
+let screenCache: SourceInfo[] | null = null;
+let screenCacheTime = 0;
+
+async function captureScreens(): Promise<SourceInfo[]> {
+  if (screenCache && Date.now() - screenCacheTime < SCREEN_TTL_MS) return screenCache;
+  const sources = await getSourcesOfType(['screen']);
+  screenCache = toSourceInfo(sources, new Map());
+  screenCacheTime = Date.now();
+  return screenCache;
+}
+
+/**
+ * Windows the native enumeration sees but desktopCapturer will not offer.
+ *
+ * They are not hypothetical: they are the windows behind the
+ * "CreateForWindow failed ... Source is not capturable" pairs in the log.
+ * Listing a window natively is listing one Chromium may refuse to capture,
+ * and offering it in the picker would trade a stale list for one that fails
+ * when clicked. A window that survives a full refresh without being offered
+ * is recorded here and left out of the instant list; being offered clears it,
+ * so nothing is suppressed permanently.
+ */
+const unofferedIds = new Set<string>();
+
+function rememberOffered(sources: Electron.DesktopCapturerSource[], asked: Set<string>): void {
+  const offered = new Set(sources.map((s) => s.id));
+  for (const id of offered) unofferedIds.delete(id);
+  for (const id of asked) {
+    if (!offered.has(id)) unofferedIds.add(id);
+  }
+}
+
+/**
+ * The picker's list, as fast as it can honestly be produced: screens with
+ * their pictures, and every window open right now without one.
+ *
+ * The thumbnails for those windows arrive on the next full refresh and the
+ * picker swaps them in. That ordering is the whole point — the list being
+ * right is what someone is waiting for when they click Share, and it is the
+ * part that costs 8ms rather than 3.3 seconds.
+ */
+export async function instantSources(): Promise<SourceInfo[]> {
+  const screens = await captureScreens().catch(() => screenCache ?? []);
+  const windows = listWindows().filter((w) => !unofferedIds.has(w.id));
+  // Pictures from whatever the last full refresh produced, by id.
+  const thumbnails = new Map((cache ?? []).filter((s) => s.thumbnailDataUrl).map((s) => [s.id, s]));
+  return [
+    ...screens,
+    ...windows.map((w) => {
+      const pictured = thumbnails.get(w.id);
+      return pictured ? { ...w, thumbnailDataUrl: pictured.thumbnailDataUrl } : w;
+    }),
+  ];
 }
 
 let cache: SourceInfo[] | null = null;

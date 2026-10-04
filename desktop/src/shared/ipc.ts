@@ -264,6 +264,7 @@ export const IPC = {
   stageClaim: 'zoia:stage:claim',
   stageRelease: 'zoia:stage:release',
   sourcesList: 'zoia:sources:list',
+  sourcesInstant: 'zoia:sources:instant',
   sourcesSelect: 'zoia:sources:select',
   sourcesTitle: 'zoia:sources:title',
   sourcesLeague: 'zoia:sources:league',
