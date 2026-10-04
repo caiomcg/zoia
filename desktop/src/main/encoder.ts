@@ -355,6 +355,13 @@ function startVideoPacer(framerate: number): void {
     const now = performance.now();
     // How late this tick ran is how long the main thread was busy elsewhere.
     if (lastTick !== 0) rawStats.maxLoopGap = Math.max(rawStats.maxLoopGap, now - lastTick);
+    // How much ffmpeg has not read yet. "dropped (pipe busy)" says the pipe
+    // was full; this says how full, which is the difference between a frame
+    // lost to one busy moment and an ffmpeg that stopped draining stdin
+    // altogether — the shape of the 1.6fps failure, where this would have
+    // sat at the drop threshold for fourteen minutes.
+    const pending = child?.stdin?.writableLength ?? 0;
+    rawStats.maxPending = Math.max(rawStats.maxPending, pending);
     lastTick = now;
     const ahead = audioAhead();
     rawStats.audioMin = Math.min(rawStats.audioMin, ahead);
@@ -393,6 +400,7 @@ function freshRawStats(since: number) {
     audioMin: Infinity,
     audioMax: -Infinity,
     maxLoopGap: 0,
+    maxPending: 0,
     since,
   };
 }
@@ -427,7 +435,8 @@ function reportRawStats(now: number): void {
       `${fps(rawStats.ahead)} skipped (ahead of clock), ` +
       `${fps(rawStats.repeats)} repeats (stream behind), ` +
       `audio ${rawStats.audioMin.toFixed(0)}..${rawStats.audioMax.toFixed(0)}ms vs real time, ` +
-      `main thread stalled up to ${rawStats.maxLoopGap.toFixed(0)}ms`,
+      `main thread stalled up to ${rawStats.maxLoopGap.toFixed(0)}ms, ` +
+      `ffmpeg stdin backlog up to ${(rawStats.maxPending / 1024 / 1024).toFixed(1)}MB`,
   );
   rawStats = freshRawStats(now);
 }
@@ -609,8 +618,18 @@ function buildArgs(options: EncoderOptions): string[] {
 
   return [
     '-hide_banner',
+    // Verbose, not info, and measured before being turned up: encoding 300
+    // frames emits 46 stderr lines against info's 15, and every one of the
+    // extra 31 is startup — thread and filter-graph setup, and the line that
+    // says how AMF initialised ("AMF initialisation succeeded via D3D11.").
+    // There is no per-frame cost. What this is for is the failure described
+    // on startWatchdog: a broadcast that crawled at 1.6fps for fourteen
+    // minutes and logged, in 2578 lines, not one word from the WHIP muxer
+    // after its handshake. ffmpeg has no per-component loglevel — the option
+    // is global, and the whip muxer exposes no verbosity of its own — so
+    // this is the whole of what can be asked for from here.
     '-loglevel',
-    'info',
+    'verbose',
 
     // Video: captured and kept on the GPU all the way into the encoder.
     // ddagrab captures the desktop at its native resolution. Constraining it
