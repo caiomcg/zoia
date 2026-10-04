@@ -138,6 +138,8 @@ let framesAtLastCheck = -1;
 let frameCount = 0;
 let captureWidth = 0;
 let captureHeight = 0;
+/** The preset's frame rate, for the watchdog to measure ffmpeg against. */
+let targetFramerate = 0;
 let audioServer: Server | null = null;
 let audioSocket: Socket | null = null;
 let latestVideoFrame: Buffer | null = null;
@@ -507,16 +509,54 @@ function encoderTuning(encoder: string): string[] {
     case 'h264_amf':
       // AMF's ultralowlatency usage preset disables periodic IDR keyframes (-g)
       // in favor of external RTCP feedback, which WHIP does not support.
-      // Omitting -usage allows -g to insert periodic IDRs. -aud 0 disables AUD
-      // so dump_extra can cleanly prepend SPS/PPS before every IDR keyframe.
-      // -vbaq 1 enables Variance-Based Adaptive Quantization to prevent
-      // macroblocking ("craquelamento") in complex game textures.
-      // -enforce_hrd 1 strictly clamps output to the HRD buffer model.
+      // Omitting -usage allows -g to insert periodic IDRs — measured against
+      // this vendored build, 240 frames at -g 30: no -usage gives 8 IDRs at
+      // frames 0, 30, 60...; `ultralowlatency` and `lowlatency` give exactly
+      // one, the first. -aud 0 disables AUD so dump_extra can cleanly prepend
+      // SPS/PPS before every IDR keyframe. -vbaq 1 enables Variance-Based
+      // Adaptive Quantization to prevent macroblocking ("craquelamento") in
+      // complex game textures. -enforce_hrd 1 strictly clamps output to the
+      // HRD buffer model, which is what bounds the encoder's latency.
+      //
+      // **`vbr_latency`, not `cbr`.** CBR here does not mean "up to 12Mbps",
+      // it means *exactly* 12Mbps, forever, whatever is on screen. Measured on
+      // an RX 9070 XT against this build, 10s at 1080p60, -b:v 12M:
+      //
+      //   content              rc            bitrate   I/P   P-swing  P-stddev
+      //   mandelbrot           cbr           11.99     2.1x     1.2x       8%
+      //   mandelbrot           vbr_latency   11.15     4.2x     1.3x      11%
+      //   mandelbrot           vbr_peak      12.30     4.4x     1.7x      27%
+      //   frozen grey screen   cbr           11.99     1.0x     1.0x       0%
+      //   frozen grey screen   vbr_latency    0.04     7.3x     1.0x       1%
+      //
+      // The two CBR files came out byte-identical in size (14,987,543) —
+      // dense detail in continuous motion and a motionless screen cost the
+      // same, and P-stddev 0% on the frozen one says every frame was padded to
+      // the same size. It is filler, and `-filler_data 0` does not remove it:
+      // AMF ignores that under cbr with enforce_hrd. The [raw-video] log of a
+      // 19-minute broadcast had 150s of `windows delivered 0.0 fps` plus a
+      // mostly-static desktop for the rest, all of it uploaded at 12Mbps. A
+      // home uplink pinned at its ceiling 100% of the time is what the
+      // intermittent dropouts on this path looked like.
+      //
+      // vbr_latency holds the target under the worst motion available, keeps
+      // all 20 IDRs, and keeps the even frame sizes `-bufsize` is set for
+      // (1.3x swing against CBR's 1.2x — the 250ms/500ms bufsize experiments
+      // documented there gave 5.7x). vbr_peak is not the alternative: 1.7x
+      // swing and 27% stddev is bursts on a link that then drops them.
+      //
+      // `-usage lowlatency` plus `-force_key_frames expr:gte(t,n_forced*0.5)`
+      // does restore periodic IDRs under the low-latency preset — verified,
+      // 8 IDRs in the same places. It is deliberately not used: across 600
+      // frames paced at 60fps, first packet out and the inter-packet gap
+      // distribution were the same with every usage preset and every
+      // -async_depth (p50 15ms, p99 32ms), so it buys nothing measurable and
+      // costs a keyframe cadence that no longer follows -g.
       return [
         '-quality',
         'speed',
         '-rc',
-        'cbr',
+        'vbr_latency',
         '-bf',
         '0',
         '-forced_idr',
@@ -761,25 +801,73 @@ function redact(args: string[]): string[] {
 }
 
 /**
+ * How many consecutive checks ffmpeg has been encoding far below the rate it
+ * is being fed at. Three, at 5s each, before the UI is told: ffmpeg's own
+ * `fps=` is a running average that starts low — 46 of a target 60 a second
+ * and a half in, on a healthy run — and a broadcast that is merely starting
+ * is not a broadcast that is broken.
+ */
+let slowChecks = 0;
+const SLOW_CHECKS_BEFORE_REPORT = 3;
+
+/**
  * ddagrab is Desktop Duplication: it only produces frames when the screen
  * actually changes. A completely static desktop can therefore stall the
  * encoder, which viewers see as a frozen picture rather than an error. This
  * notices the stall so the UI can say so.
+ *
+ * A frozen counter is the easy case, and for a long time it was the only one
+ * checked. It missed the hard one: a 14-minute broadcast that ran at 1.6fps
+ * and speed=0.027x from its first frame to its last, with the capture side
+ * perfectly healthy throughout (60fps delivered, 1.0ms readback) and the
+ * [raw-video] log reading `0.0 written, 60.0 dropped (pipe busy)` — ffmpeg
+ * was not draining stdin. Not one line of it reached the user, because
+ * `frame=` kept advancing and that was all this looked at. Measured after the
+ * fact, neither the encoder nor the pipe was the limit: the same resolution
+ * encodes at ~180fps, and ~200fps fed through a pipe.
+ *
+ * So the rate is checked too, but only on the raw path. There the pacer feeds
+ * ffmpeg at the target rate whatever the window does — repeating the last
+ * frame when it has to, which is the whole reason the timeline holds — so
+ * sustained low fps there means ffmpeg itself is behind, never that the
+ * content went still. Passthrough is the opposite: those frames are stamped
+ * by wallclock as the window redraws, so a static window legitimately reads
+ * near zero and a rate check would cry wolf on every idle moment.
  */
 function startWatchdog(win: BrowserWindow): void {
   framesAtLastCheck = -1;
+  slowChecks = 0;
   watchdog = setInterval(() => {
+    const report = (fps: number, error: string) => {
+      if (win.isDestroyed()) return;
+      win.webContents.send('zoia:encoder:status', {
+        running: true,
+        fps,
+        encoder: currentEncoder,
+        width: captureWidth,
+        height: captureHeight,
+        error,
+      } satisfies EncoderStatus);
+    };
+
     if (framesAtLastCheck === frameCount && child) {
-      if (!win.isDestroyed()) {
-        win.webContents.send('zoia:encoder:status', {
-          running: true,
-          fps: 0,
-          encoder: currentEncoder,
-          width: captureWidth,
-          height: captureHeight,
-          error: 'No new frames — the screen may be static.',
-        } satisfies EncoderStatus);
+      report(0, 'No new frames — the screen may be static.');
+      slowChecks = 0;
+    } else if (child && !isPassthrough && targetFramerate > 0 && frameCount > 0) {
+      // Half the target, not a shade under it: a broadcast that drops the odd
+      // frame to a busy main thread is working, and the failure this exists
+      // for ran at a fortieth of the rate.
+      const behind = lastFps > 0 && lastFps < targetFramerate / 2;
+      slowChecks = behind ? slowChecks + 1 : 0;
+      if (slowChecks === SLOW_CHECKS_BEFORE_REPORT) {
+        report(
+          lastFps,
+          `Encoding at ${lastFps.toFixed(0)}fps of ${targetFramerate} — ` +
+            'the stream is behind and viewers will see it stutter.',
+        );
       }
+    } else {
+      slowChecks = 0;
     }
     framesAtLastCheck = frameCount;
   }, 5000);
@@ -882,8 +970,62 @@ export class SupersededError extends Error {
   }
 }
 
+/**
+ * The WHIP session never opened. Retryable, and nothing else here is.
+ */
+export class WhipHandshakeError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'WhipHandshakeError';
+  }
+}
+
+/**
+ * How many times a refused WHIP answer is worth retrying.
+ *
+ * The failure is ffmpeg's muxer keeping only the first `a=candidate:` of the
+ * answer and refusing it if it is not UDP, and LiveKit gathers its TCP
+ * fallback (port 7881) and its UDP candidates in no fixed order — see
+ * isWhipHandshakeFailure. A fresh offer gets a fresh order, so attempts are
+ * near enough independent: measured at two failures in ten starts, four
+ * attempts put a start failing at about one in six hundred, against one in
+ * five with none.
+ */
+const WHIP_ATTEMPTS = 4;
+
+/** A breather between attempts, so a refused answer is not retried in a tight
+ *  loop against the SFU. */
+const WHIP_RETRY_MS = 300;
+
+/**
+ * Bumped by every start and every stop, so a retry that lost the broadcast
+ * while it was waiting does not start one nobody asked for — and, worse, does
+ * not tear down whatever replaced it. The same hazard the per-process
+ * `isCurrent()` guards inside one attempt, across attempts.
+ */
+let startGeneration = 0;
+
 export async function start(win: BrowserWindow, options: EncoderOptions): Promise<void> {
-  await stop();
+  const generation = ++startGeneration;
+
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      await attemptStart(win, options);
+      return;
+    } catch (err) {
+      if (!(err instanceof WhipHandshakeError) || attempt >= WHIP_ATTEMPTS) throw err;
+      if (generation !== startGeneration) throw new SupersededError();
+      logLine(
+        `[zoia] WHIP answer refused (${err.message}) — attempt ${attempt} of ${WHIP_ATTEMPTS}, retrying`,
+      );
+      await new Promise((resolve) => setTimeout(resolve, WHIP_RETRY_MS));
+      if (generation !== startGeneration) throw new SupersededError();
+    }
+  }
+}
+
+async function attemptStart(win: BrowserWindow, options: EncoderOptions): Promise<void> {
+  await teardown();
   lastError = null;
   lastFps = 0;
   frameCount = 0;
@@ -893,6 +1035,7 @@ export async function start(win: BrowserWindow, options: EncoderOptions): Promis
   audioBytesWritten = 0;
   captureWidth = options.frames?.width ?? 0;
   captureHeight = options.frames?.height ?? 0;
+  targetFramerate = options.framerate;
 
   if (options.withAudio) startAudioPipe();
   const binary = ffmpegPath();
@@ -1076,8 +1219,20 @@ export async function start(win: BrowserWindow, options: EncoderOptions): Promis
     proc.once('error', onEarlyError);
 
     const checkStartup = (chunk: string) => {
-      if (!settled && (/frame=\s*[1-9]/.test(chunk) || frameCount > 0)) {
+      if (settled) return;
+      if (/frame=\s*[1-9]/.test(chunk) || frameCount > 0) {
         settleResolve();
+        return;
+      }
+      // ffmpeg does not exit when the muxer refuses the answer: it sits there
+      // draining the video pipe with `frame=` stuck at zero, so nothing above
+      // settles and the 10s timeout was the only thing that ever noticed —
+      // ten seconds of the UI saying "starting", and then an error asking the
+      // user to do by hand the retry that fixes it.
+      if (isWhipHandshakeFailure(recent)) {
+        settleReject(
+          new WhipHandshakeError(bestError() ?? lastError ?? 'the SFU answer was refused'),
+        );
       }
     };
 
@@ -1152,9 +1307,20 @@ export function writeFrame(frame: Buffer): void {
 }
 
 export async function stop(): Promise<void> {
+  // Deliberate: nothing may retry past this point.
+  startGeneration += 1;
+  await teardown();
+}
+
+/**
+ * Everything stop() does to the running process, without claiming the
+ * broadcast is over: each attempt clears the last one's wreckage this way.
+ */
+async function teardown(): Promise<void> {
   isPassthrough = false;
   lastFps = 0;
   frameCount = 0;
+  targetFramerate = 0;
   if (watchdog) clearInterval(watchdog);
   watchdog = null;
   if (keepAlive) clearInterval(keepAlive);

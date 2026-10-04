@@ -18,6 +18,7 @@ import {
   Track,
   VideoQuality,
   type RemoteTrack,
+  type RemoteVideoTrack,
 } from 'livekit-client';
 import type { QualityPreset, SourceInfo, TokenResult } from '../../shared/ipc';
 import { isLeagueClient, isLeagueGame, isLeagueSource } from '../../shared/league';
@@ -189,6 +190,97 @@ export interface VideoStats {
   captureFps: number;
   /** WebRTC's own reason for sending less than asked: cpu, bandwidth, or none. */
   limitation: string;
+}
+
+/**
+ * What the hardware path is actually sending, measured.
+ *
+ * The WHIP path has no local RTP sender to ask — ffmpeg publishes straight to
+ * the SFU, so `samplePublishStats` has nothing to read and `videoStats` stays
+ * null for the whole broadcast. That left the stats card showing the preset's
+ * configured bitrate as though it were a measurement. Under `-rc cbr` that
+ * happened to be true; under `vbr_latency` it is wrong by up to 300x on a
+ * still screen, which is exactly when someone would look.
+ *
+ * The broadcast does come back, though: a WHIP publisher joins the room under
+ * `<identity>-gpu` and the sharer subscribes to it for their own preview (see
+ * WHIP_SUFFIX). Its inbound RTP is the stream after the round trip through the
+ * SFU, so these are the numbers a viewer gets, not the ones we hoped to send.
+ */
+export interface IngressStats {
+  width: number;
+  height: number;
+  fps: number;
+  kbps: number;
+}
+
+/**
+ * This machine's own WHIP broadcast, as subscribed back from the room.
+ *
+ * Looked up per sample rather than held in a ref: the ingress joins, leaves
+ * and republishes on its own schedule — every broadcast switch is a new
+ * participant — and a ref would need clearing at each of the seven places the
+ * preview is torn down. Missing one leaves the card reporting a stream that
+ * has stopped.
+ */
+function ownIngressVideo(room: Room): RemoteVideoTrack | null {
+  const participant = room.remoteParticipants.get(
+    `${room.localParticipant.identity}${WHIP_SUFFIX}`,
+  );
+  if (!participant) return null;
+  const publication =
+    participant.getTrackPublication(Track.Source.ScreenShare) ??
+    participant.getTrackPublication(Track.Source.Camera) ??
+    [...participant.videoTrackPublications.values()].find((pub) => pub.track);
+  const track = publication?.track;
+  return track ? (track as RemoteVideoTrack) : null;
+}
+
+/**
+ * The inbound half of the arithmetic `samplePublishStats` does outbound: a
+ * byte counter is cumulative, so a rate needs the previous sample.
+ */
+async function sampleIngressStats(
+  track: RemoteVideoTrack,
+  lastSample: { current: { bytes: number; at: number } | null },
+  onStats: (stats: IngressStats) => void,
+): Promise<void> {
+  const receiver = track.receiver;
+  if (!receiver) return;
+
+  type Inbound = RTCInboundRtpStreamStats & {
+    kind?: string;
+    frameWidth?: number;
+    frameHeight?: number;
+    framesPerSecond?: number;
+    bytesReceived?: number;
+  };
+
+  const report = await receiver.getStats();
+  let inbound: Inbound | undefined;
+  report.forEach((entry) => {
+    const stat = entry as Inbound;
+    if (stat.type === 'inbound-rtp' && stat.kind === 'video') inbound = stat;
+  });
+  if (!inbound) return;
+
+  const bytes = inbound.bytesReceived ?? 0;
+  const now = performance.now();
+  const previous = lastSample.current;
+  const kbps =
+    previous && now > previous.at
+      ? Math.round(((bytes - previous.bytes) * 8) / (now - previous.at))
+      : 0;
+  lastSample.current = { bytes, at: now };
+
+  onStats({
+    width: inbound.frameWidth ?? 0,
+    height: inbound.frameHeight ?? 0,
+    // Instantaneous, unlike ffmpeg's `fps=`, which is a running average over
+    // the whole broadcast and so sits frozen on its target after a minute.
+    fps: Math.round(inbound.framesPerSecond ?? 0),
+    kbps,
+  });
 }
 
 export interface Viewer {
@@ -408,6 +500,27 @@ export function useRoom() {
     }, WATCHING_SETTLE_MS);
   }, []);
 
+  // The hardware path's own numbers. Same 2s cadence as the Chromium path's
+  // `samplePublishStats`, and for the same reason: a rate needs two samples
+  // far enough apart that the byte counter has moved.
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const room = roomRef.current;
+      const track = room ? ownIngressVideo(room) : null;
+      if (!track) {
+        // Not sharing on this path, or the ingress went away. Drop the last
+        // reading rather than leaving a stale rate on screen.
+        ingressSampleRef.current = null;
+        setIngressStats(null);
+        return;
+      }
+      void sampleIngressStats(track, ingressSampleRef, setIngressStats).catch(() => {
+        // The ingress can leave mid-sample; the next tick finds it gone.
+      });
+    }, 2000);
+    return () => clearInterval(timer);
+  }, []);
+
   // Round trip to the server, from LiveKit's own signalling pings.
   const [pingMs, setPingMs] = useState<number | null>(null);
   useEffect(() => {
@@ -426,6 +539,8 @@ export function useRoom() {
   const [audioLevel, setAudioLevel] = useState(0);
   const [audioLatencyMs, setAudioLatencyMs] = useState(0);
   const [videoStats, setVideoStats] = useState<VideoStats | null>(null);
+  const [ingressStats, setIngressStats] = useState<IngressStats | null>(null);
+  const ingressSampleRef = useRef<{ bytes: number; at: number } | null>(null);
   const statsTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const titleTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastSampleRef = useRef<{ bytes: number; at: number } | null>(null);
@@ -1363,6 +1478,7 @@ export function useRoom() {
     audioLevel,
     audioLatencyMs,
     videoStats,
+    ingressStats,
     sendingAudio,
     /**
      * Only the WASAPI path has a gain stage; a camera's microphone can only
