@@ -485,6 +485,13 @@ export default function App() {
   if (gpuLive) {
     const g = gpuCast.status;
     const encName = g?.encoder || gpu?.gpuEncoder || 'GPU';
+    // What the broadcast is subscribed back as, which is the only measurement
+    // this path has: ffmpeg publishes to the SFU itself, so there is no local
+    // sender to read, and ffmpeg's own `fps=` is a running average that sits
+    // frozen on the target after the first minute. Falls back to the preset
+    // and to ffmpeg's average until the first two samples are in — about four
+    // seconds — rather than showing a dash where a number belongs.
+    const sent = room.ingressStats;
     connectionStats.push(
       {
         label: t('stats.encoder'),
@@ -497,8 +504,22 @@ export default function App() {
         label: t('stats.resolution'),
         value: g && g.width > 0 ? `${g.width}×${g.height}` : t('stats.starting'),
       },
-      { label: t('stats.frameRate'), value: g && g.width > 0 ? `${Math.round(g.fps)} fps` : '—' },
-      { label: t('stats.bitrate'), value: `${(preset.maxBitrate / 1e6).toFixed(0)} Mbps` },
+      {
+        label: t('stats.frameRate'),
+        value:
+          sent && sent.fps > 0
+            ? `${sent.fps} fps`
+            : g && g.width > 0
+              ? `${Math.round(g.fps)} fps`
+              : '—',
+      },
+      {
+        label: t('stats.bitrate'),
+        value:
+          sent && sent.kbps > 0
+            ? `${(sent.kbps / 1000).toFixed(1)} Mbps`
+            : `${(preset.maxBitrate / 1e6).toFixed(0)} Mbps`,
+      },
     );
   } else if (encodingLive && stats) {
     connectionStats.push(
