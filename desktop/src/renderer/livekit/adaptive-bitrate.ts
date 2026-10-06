@@ -60,11 +60,15 @@ export function nextBitrate(
   previous: number | undefined,
   elapsedMs: number,
   limits: AdaptiveBitrateLimits,
+  /** How high a rise may go now, after congestion (see nextCeiling). */
+  ceiling: number = limits.max,
+  /** The estimate has sat below what is sent without climbing (see createBitrateController). */
+  stalled = false,
 ): number {
   if (elapsedMs < WARMUP_MS) return current;
   if (available === undefined || !Number.isFinite(available) || available <= 0) return current;
 
-  const falling = previous !== undefined && available < previous * FALL;
+  const falling = stalled || (previous !== undefined && available < previous * FALL);
   let target = current;
   if (available < current) {
     if (!falling) return current;
@@ -77,11 +81,112 @@ export function nextBitrate(
   } else if (available * HEADROOM > current) {
     target = Math.min(current * RAISE_STEP, available * HEADROOM);
   }
+  // A rise stops at the ceiling, but nothing is lowered to meet it: only a
+  // falling estimate lowers the rate.
+  if (target > current) target = Math.max(current, Math.min(target, ceiling));
   target = Math.round(Math.min(limits.max, Math.max(limits.floor, target)));
 
   if (Math.abs(target - current) < current * MIN_CHANGE) {
     // Except reaching a limit exactly, which a 5% rule would never let it do.
+    // Not the congestion ceiling: it lifts a little every second, and
+    // following it exactly would reconfigure the encoder every second.
     return target === limits.max || target === limits.floor ? target : current;
   }
   return target;
+}
+
+/** After congestion, rises stop this far below the rate that caused it. */
+export const CEILING_BACKOFF = 0.85;
+/** How fast that ceiling lifts again, per step (one step a second). */
+export const CEILING_RELAX = 1.002;
+
+/**
+ * How high the rate may climb, given what just happened.
+ *
+ * Without this, a link that carries 15Mbps had a 20Mbps stream in a sawtooth:
+ * Chromium's estimate, reading over 200Mbps while the link had room, let the
+ * rate climb back to the preset in ten seconds; the uplink saturated; the
+ * estimate collapsed to 1-5Mbps; the rate went to its floor and climbed
+ * again. Thirteen times in eight and a half minutes on one broadcast — every
+ * collapse a burst of loss for viewers, and most of the time spent far below
+ * what the link could carry. An estimate from a link with room to spare is
+ * optimistic, so it cannot be what tells the climb where to stop.
+ *
+ * So a drop remembers the rate it came from, and rises stop 15% short of it.
+ * The ceiling lifts by 0.2% a second — back to where it was in about eighty —
+ * so a congested moment that has passed costs a minute or so of a slightly
+ * lower ceiling, and a link that really is that size is probed rarely
+ * instead of every forty seconds.
+ */
+export function nextCeiling(
+  ceiling: number,
+  current: number,
+  next: number,
+  limits: AdaptiveBitrateLimits,
+): number {
+  if (next < current) return Math.max(limits.floor, Math.min(ceiling, current * CEILING_BACKOFF));
+  return Math.min(limits.max, ceiling * CEILING_RELAX);
+}
+
+/** An estimate within this of the last one is not climbing. */
+export const FLAT = 1.02;
+/** Readings below what is sent, not climbing, before that counts as a fall. */
+export const STALLED_STEPS = 3;
+
+export interface BitrateController {
+  /** One reading of Chromium's estimate, once a second; returns the new target. */
+  step(available: number | undefined, elapsedMs: number): number;
+  readonly current: number;
+  readonly ceiling: number;
+}
+
+/**
+ * The rules above, with the state they need between readings.
+ *
+ * One more is kept here: an estimate below what is being sent that has stopped
+ * climbing for three readings counts as a fall. "Only on a falling estimate"
+ * is what stops a broadcast that has just started from dropping while
+ * Chromium's estimate climbs (by 6-11% a second, logged); but a broadcast
+ * that starts above what its link carries can see the estimate settle low
+ * and stay there, never falling — and was left overrunning the link for good,
+ * as replaying a 15Mbps link under a 20Mbps preset showed.
+ */
+export function createBitrateController(
+  limits: AdaptiveBitrateLimits,
+  start: number = limits.max,
+): BitrateController {
+  let current = start;
+  let previous: number | undefined;
+  let ceiling = limits.max;
+  let flatBelow = 0;
+  return {
+    step(available, elapsedMs) {
+      const flat =
+        available !== undefined &&
+        previous !== undefined &&
+        available < current &&
+        available <= previous * FLAT;
+      flatBelow = flat ? flatBelow + 1 : 0;
+      const next = nextBitrate(
+        current,
+        available,
+        previous,
+        elapsedMs,
+        limits,
+        ceiling,
+        flatBelow >= STALLED_STEPS,
+      );
+      ceiling = nextCeiling(ceiling, current, next, limits);
+      if (next < current) flatBelow = 0;
+      previous = available;
+      current = next;
+      return next;
+    },
+    get current() {
+      return current;
+    },
+    get ceiling() {
+      return ceiling;
+    },
+  };
 }

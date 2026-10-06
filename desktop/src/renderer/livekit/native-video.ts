@@ -17,7 +17,7 @@
  */
 
 import { captureBorderEnabled } from '../capture-border';
-import { limitsFor, nextBitrate } from './adaptive-bitrate';
+import { createBitrateController, limitsFor } from './adaptive-bitrate';
 
 interface TrackGenerator extends MediaStreamTrack {
   writable: WritableStream<VideoFrame>;
@@ -137,11 +137,8 @@ export function createNativeVideo(
    * preset's bitrate went out whatever the link could carry.
    */
   const startAdapting = () => {
-    const limits = limitsFor(quality.maxBitrate);
+    const controller = createBitrateController(limitsFor(quality.maxBitrate));
     const startedAt = performance.now();
-    let current = quality.maxBitrate;
-    // Last second's estimate: a drop is followed only when it is falling.
-    let previous: number | undefined;
     let busy = false;
     adaptTimer = setInterval(() => {
       if (stopped || busy || !sender) return;
@@ -159,16 +156,14 @@ export function createNativeVideo(
               available = stat.availableOutgoingBitrate;
             }
           });
-          const last = previous;
-          previous = available;
-          const next = nextBitrate(current, available, last, performance.now() - startedAt, limits);
+          const current = controller.current;
+          const next = controller.step(available, performance.now() - startedAt);
           if (next === current || stopped) return;
           await window.zoia.nativeVideo.setBitrate(next);
           console.log(
             `[native-video] bitrate ${(current / 1e6).toFixed(1)} -> ${(next / 1e6).toFixed(1)} Mbps ` +
-              `(estimate ${((available ?? 0) / 1e6).toFixed(1)})`,
+              `(estimate ${((available ?? 0) / 1e6).toFixed(1)}, ceiling ${(controller.ceiling / 1e6).toFixed(1)})`,
           );
-          current = next;
         })
         .catch((err: unknown) => {
           // An encoder that will not change rate keeps the preset's, as before.

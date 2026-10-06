@@ -55,7 +55,15 @@ at once to 90% of the estimate when it is below what is being sent *and falling*
 15% a step, never above the preset nor below a floor, and nothing for the first ten seconds
 (`renderer/livekit/adaptive-bitrate.ts`). "Falling" matters: Chromium's estimate starts low and
 climbs, and a rule that followed any estimate below the preset started two test broadcasts at a
-third of it on a link that later measured 140Mbps.
+third of it on a link that later measured 140Mbps. An estimate that sits below what is sent
+without climbing for three readings counts as falling too, or a broadcast starting above its
+link would never come down.
+
+A drop also remembers the rate it came from, and rises stop 15% short of it, the ceiling lifting
+0.2% a second. Chromium's estimate reads far above the link while the link has room (211Mbps on
+one that carried ~15), so climbing to the preset on its word sawed a broadcast between the preset
+and the floor thirteen times in eight and a half minutes. Replayed against a 15Mbps link: 23
+collapses in five minutes at an average of 7.9Mbps without the ceiling, 4 at 12.9Mbps with it.
 
 Intel keeps the ffmpeg route, now with the patched ffmpeg.
 
