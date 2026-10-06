@@ -51,9 +51,11 @@ its frames on the room connection exactly as NVENC's are:
 And for both encoders, adapt the bitrate: once a second the renderer reads Chromium's estimate
 of the uplink (`availableOutgoingBitrate`) and moves the encoder to fit, in place, with no
 keyframe — `nvEncReconfigureEncoder` for NVENC, AMF's dynamic bitrate properties for AMF. Down
-at once to 90% of the estimate, up by at most 15% a step, never above the preset nor below a
-floor, and nothing for the first ten seconds while the estimate climbs
-(`renderer/livekit/adaptive-bitrate.ts`).
+at once to 90% of the estimate when it is below what is being sent *and falling*, up by at most
+15% a step, never above the preset nor below a floor, and nothing for the first ten seconds
+(`renderer/livekit/adaptive-bitrate.ts`). "Falling" matters: Chromium's estimate starts low and
+climbs, and a rule that followed any estimate below the preset started two test broadcasts at a
+third of it on a link that later measured 140Mbps.
 
 Intel keeps the ffmpeg route, now with the patched ffmpeg.
 
