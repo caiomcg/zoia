@@ -208,6 +208,8 @@ export interface CaptureStats {
   encodeMs: number;
   /** Slowest raw-path scale + readback since the last call. */
   maxReadbackMs: number;
+  /** Raw frames skipped because JavaScript had not taken the last ones yet. */
+  framesBacklogged: number;
 }
 
 export function stats(): CaptureStats | null {

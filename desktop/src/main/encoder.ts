@@ -30,6 +30,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { createServer, type Server, type Socket } from 'node:net';
 import { existsSync, appendFileSync, writeFileSync, statSync, renameSync } from 'node:fs';
+import { constants as osConstants, setPriority } from 'node:os';
 import { join } from 'node:path';
 import { app, type BrowserWindow } from 'electron';
 import * as api from './api';
@@ -418,9 +419,12 @@ function captureSummary(elapsed: number): string {
   const offered = current.framesOffered - previous.framesOffered;
   const kept = current.framesArrived - previous.framesArrived;
   const readbackMs = kept > 0 ? (current.encodeMs - previous.encodeMs) / kept : 0;
+  // An addon built before the counter existed reports nothing; read as zero.
+  const backlogged = (current.framesBacklogged ?? 0) - (previous.framesBacklogged ?? 0);
   return (
     `windows delivered ${((offered * 1000) / elapsed).toFixed(1)} fps, ` +
-    `readback avg ${readbackMs.toFixed(1)}ms max ${current.maxReadbackMs.toFixed(1)}ms; `
+    `readback avg ${readbackMs.toFixed(1)}ms max ${current.maxReadbackMs.toFixed(1)}ms, ` +
+    `${((backlogged * 1000) / elapsed).toFixed(1)} fps skipped (main thread behind); `
   );
 }
 
@@ -574,6 +578,18 @@ function encoderTuning(encoder: string): string[] {
         '1',
         '-enforce_hrd',
         '1',
+        // Rate-control frame skipping off, explicitly. Left at `auto` the
+        // driver decides. Where it is on, a two-frame VBV under enforce_hrd
+        // runs out of bits on IDRs and bursts of motion and the encoder
+        // answers with skip frames — the previous picture again, a dropped
+        // frame to every viewer while [raw-video] and ffmpeg's frame= read a
+        // perfect 60. Measured on an RX 9070 XT (driver 32.0.32015), 10s of
+        // testsrc2 at 1080p60: `auto` and `0` produce byte-identical output,
+        // so that driver already defaults to off; `1` lands exactly on
+        // 12.0Mbps by skipping. This pins the default rather than trusting
+        // every driver a Radeon owner might have to share it.
+        '-frame_skipping',
+        '0',
         '-aud',
         '0',
       ];
@@ -598,6 +614,30 @@ let isPassthrough = false;
 export function encoderInUse(): string {
   return currentEncoder;
 }
+
+/**
+ * What the addon's video processor converts to: BT.709, limited range.
+ *
+ * On the input as well as the output, and the input is the part that matters.
+ * Tagged on the output alone, ffmpeg took the raw frames as an unknown
+ * colourspace — BT.601, to swscale — and inserted a conversion to the BT.709
+ * it was asked to emit: every frame through an intermediate RGB on the CPU
+ * ("YUV color matrix differs for YUV->YUV, using intermediate RGB to
+ * convert"), shifting colours that were already right. Measured on 600
+ * frames at 1080p against this vendored build: 7.7s of CPU with the
+ * conversion, 0.9s without it — most of a core, on the GPUs that already pay
+ * a readback, and while a game is competing for the same CPU.
+ */
+const NV12_COLOR_TAGS = [
+  '-color_range',
+  'tv',
+  '-colorspace',
+  'bt709',
+  '-color_primaries',
+  'bt709',
+  '-color_trc',
+  'bt709',
+];
 
 function buildArgs(options: EncoderOptions): string[] {
   const { whipUrl, framerate, bitrate } = options;
@@ -671,6 +711,7 @@ function buildArgs(options: EncoderOptions): string[] {
             // in step with real time (see startVideoPacer), which is what
             // stops it drifting from the audio. Stamping on arrival instead
             // made the spacing as uneven as the main thread is.
+            ...(frames.output === 'nv12' ? NV12_COLOR_TAGS : []),
             '-thread_queue_size',
             '16',
             '-i',
@@ -715,18 +756,8 @@ function buildArgs(options: EncoderOptions): string[] {
           ...encoderTuning(encoder),
           // What the addon's video processor converts to (see addon.cpp).
           // Untagged, each viewer's decoder would have to guess the matrix.
-          ...(frames?.output === 'nv12'
-            ? [
-                '-color_range',
-                'tv',
-                '-colorspace',
-                'bt709',
-                '-color_primaries',
-                'bt709',
-                '-color_trc',
-                'bt709',
-              ]
-            : []),
+          // The input carries the same tags, so this only labels the stream.
+          ...(frames?.output === 'nv12' ? NV12_COLOR_TAGS : []),
           '-b:v',
           String(bitrate),
           '-maxrate',
@@ -1065,6 +1096,18 @@ async function attemptStart(win: BrowserWindow, options: EncoderOptions): Promis
   startLog([binary, ...redact(args)].join(' '));
   const proc = spawn(binary, args, { windowsHide: true });
   child = proc;
+  // Above normal, because what it competes with is the game being shared. On
+  // a Radeon or an Intel GPU ffmpeg is the encoder and the WHIP sender both,
+  // and at normal priority a game holding every core left it reading stdin
+  // late — frames lost as "pipe busy" while capture was fine. NVIDIA encodes
+  // in the addon and never depended on this process keeping up.
+  if (proc.pid !== undefined) {
+    try {
+      setPriority(proc.pid, osConstants.priority.PRIORITY_ABOVE_NORMAL);
+    } catch (err) {
+      logLine(`[zoia] could not raise ffmpeg's priority: ${err instanceof Error ? err.message : err}`);
+    }
+  }
 
   // Every handler below belongs to *this* process, and must do nothing once a
   // newer one has replaced it.
