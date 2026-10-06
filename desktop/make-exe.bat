@@ -75,13 +75,21 @@ REM completes the DTLS handshake and then fails with "no SRTP Protection
 REM Profile was chosen", because SChannel has no use_srtp extension, so
 REM WHIP cannot work with it at all.
 REM
-REM The version and URL live in ffmpeg.json so this and the release
-REM workflow fetch the same build. The old URL was a rolling "latest"
-REM pointer, so two builds weeks apart shipped different encoders with
-REM no record of which.
+REM Built from source in Docker, from ffmpeg\Dockerfile and the patches
+REM beside it, exactly as the release workflow builds it: the stock WHIP
+REM muxer refuses every NACK LiveKit sends. See ffmpeg.json.
 if not exist "vendor\ffmpeg-gnutls.exe" (
-  echo Downloading ffmpeg with NVENC + GnuTLS ^(~100MB, one time^)...
-  powershell -NoProfile -Command "$ErrorActionPreference='Stop'; $pin = Get-Content ffmpeg.json | ConvertFrom-Json; New-Item -ItemType Directory -Force -Path vendor,vendor\tmp | Out-Null; Invoke-WebRequest -Uri $pin.url -OutFile vendor\tmp\ff.zip -UseBasicParsing; Expand-Archive vendor\tmp\ff.zip vendor\tmp -Force; Copy-Item (Get-ChildItem vendor\tmp -Recurse -Filter ffmpeg.exe | Select-Object -First 1).FullName vendor\ffmpeg-gnutls.exe -Force; Remove-Item -Recurse -Force vendor\tmp" || goto :failed
+  where docker >nul 2>&1 || (
+    echo ffmpeg is missing, and Docker is not installed to build it.
+    echo Install Docker Desktop, or copy ffmpeg-gnutls.exe from the "ffmpeg"
+    echo artifact of a release workflow run into vendor\.
+    goto :failed
+  )
+  echo Building ffmpeg with GnuTLS, AMF, NVENC and Quick Sync ^(the first build takes a while^)...
+  docker build --output "type=local,dest=ffmpeg\out" ffmpeg || goto :failed
+  if not exist vendor mkdir vendor
+  copy /Y "ffmpeg\out\ffmpeg-gnutls.exe" "vendor\ffmpeg-gnutls.exe" >nul || goto :failed
+  rmdir /S /Q "ffmpeg\out"
   echo ffmpeg ready.
 )
 

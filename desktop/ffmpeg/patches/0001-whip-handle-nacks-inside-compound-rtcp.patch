@@ -1,0 +1,200 @@
+Subject: [PATCH] avformat/whip: handle NACKs inside compound RTCP packets
+
+handle_nack_rtx() accepted a NACK only when it was alone in its datagram:
+it computed the expected SRTCP size from the first packet's length field and
+refused anything else with "NACK packet size not match". RTCP datagrams are
+compound (RFC 3550 6.1), and LiveKit sends its NACKs with a further packet
+after them, so on a LiveKit WHIP ingress every NACK was refused and no lost
+packet was ever retransmitted. A viewer then waits for the next keyframe.
+
+Measured on a 13-minute publish to LiveKit 1.13.7: 30 refusals, every one
+32 bytes larger than the lone NACK it was sized against (50/82, 46/78, ...).
+
+The datagram is now decrypted whole — SRTCP authenticates and encrypts the
+compound as one — and each RTCP packet in it is walked, so a NACK is handled
+wherever it sits. The caller no longer filters on the first packet's type:
+in a compound the NACK need not come first. A verbose line
+reports how many of the requested packets were found in history and resent.
+
+Against FFmpeg n9.0.2. Upstream master has the same code.
+
+--- a/libavformat/whip.c
++++ b/libavformat/whip.c
+@@ -1882,7 +1882,7 @@
+  * See https://datatracker.ietf.org/doc/html/rfc4588#section-4
+  * Create RTX packet and send it out.
+  */
+-static void handle_rtx_packet(AVFormatContext *s, uint16_t seq)
++static int handle_rtx_packet(AVFormatContext *s, uint16_t seq)
+ {
+     int ret = -1;
+     WHIPContext *whip = s->priv_data;
+@@ -1896,7 +1896,7 @@
+         av_log(whip, AV_LOG_DEBUG,
+                "RTP history packet seq=%"PRIu16" not found, latest seq=%"PRIu16"\n",
+                seq, latest_seq);
+-        return;
++        return 0;
+     }
+     av_log(whip, AV_LOG_DEBUG,
+            "Found RTP history packet for RTX, seq=%"PRIu16", latest seq=%"PRIu16"\n",
+@@ -1943,55 +1943,40 @@
+ end:
+     if (ret < 0)
+         av_log(whip, AV_LOG_WARNING, "Failed to send RTX packet, skip this one\n");
++    return ret >= 0;
+ }
+ 
+-static void handle_nack_rtx(AVFormatContext *s, int size)
++/**
++ * Retransmits what one decrypted Generic NACK (RFC 4585 6.2.1) asks for.
++ * `pkt` points at the NACK's own RTCP header and `rtcp_len` is its length.
++ */
++static void handle_nack_rtx(AVFormatContext *s, const uint8_t *pkt, int rtcp_len)
+ {
+-    int ret, i = 0;
+     WHIPContext *whip = s->priv_data;
+-    uint8_t *buf = NULL;
+-    int rtcp_len, srtcp_len, header_len = 12/*RFC 4585 6.1*/;
++    int i = 0, header_len = 12/*RFC 4585 6.1*/, asked = 0, sent = 0;
+     uint32_t ssrc;
+ 
+-    /**
+-     * Refer to RFC 3550 6.4.1
+-     * The length of this RTCP packet in 32 bit words minus one,
+-     * including the header and any padding.
+-     */
+-    rtcp_len = (AV_RB16(&whip->buf[2]) + 1) * 4;
+     if (rtcp_len <= header_len) {
+         av_log(whip, AV_LOG_WARNING, "NACK packet is broken, size: %d\n", rtcp_len);
+-        goto error;
+-    }
+-    /* SRTCP index(4 bytes) + HMAC(SRTP_ARS128_CM_SHA1_80) 10bytes */
+-    srtcp_len = rtcp_len + 4 + 10;
+-    if (srtcp_len != size) {
+-        av_log(whip, AV_LOG_WARNING, "NACK packet size not match, srtcp_len:%d, size:%d\n", srtcp_len, size);
+-        goto error;
+-    }
+-    buf = av_memdup(whip->buf, srtcp_len);
+-    if (!buf)
+-        goto error;
+-    if ((ret = ff_srtp_decrypt(&whip->srtp_recv, buf, &srtcp_len)) < 0) {
+-        av_log(whip, AV_LOG_WARNING, "NACK packet decrypt failed: %d\n", ret);
+-        goto error;
++        return;
+     }
+-    ssrc = AV_RB32(&buf[8]);
++    ssrc = AV_RB32(&pkt[8]);
+     if (ssrc != whip->video_ssrc) {
+         av_log(whip, AV_LOG_DEBUG,
+                "NACK packet SSRC: %"PRIu32" not match with video track SSRC: %"PRIu32"\n",
+                ssrc, whip->video_ssrc);
+-        goto end;
++        return;
+     }
+     while (header_len + i + 4 <= rtcp_len) {
+         /**
+          * See https://datatracker.ietf.org/doc/html/rfc4585#section-6.1
+          * Handle multi NACKs in bundled packet.
+          */
+-        uint16_t pid = AV_RB16(&buf[12 + i]);
+-        uint16_t blp = AV_RB16(&buf[14 + i]);
++        uint16_t pid = AV_RB16(&pkt[12 + i]);
++        uint16_t blp = AV_RB16(&pkt[14 + i]);
+ 
+-        handle_rtx_packet(s, pid);
++        asked++;
++        sent += handle_rtx_packet(s, pid);
+         /* retransmit pid + any bit set in blp */
+         for (int bit = 0; bit < 16; bit++) {
+             uint16_t seq = pid + bit + 1;
+@@ -2000,13 +1985,62 @@
+             if (!(blp & (1 << bit)))
+                 continue;
+ 
+-            handle_rtx_packet(s, seq);
++            asked++;
++            sent += handle_rtx_packet(s, seq);
+         }
+         i += 4;
+     }
+-    goto end;
+-error:
+-    av_log(whip, AV_LOG_WARNING, "Failed to handle NACK and RTX, Skip...\n");
++    av_log(whip, AV_LOG_VERBOSE, "NACK: resent %d of %d packets\n", sent, asked);
++}
++
++/**
++ * Decrypts one SRTCP datagram and handles every NACK inside it.
++ *
++ * A datagram is a compound packet (RFC 3550 6.1): several RTCP packets back
++ * to back, under one SRTCP index and one authentication tag. This used to
++ * accept a NACK only when it was alone in its datagram, sized exactly one
++ * NACK plus index and tag. LiveKit sends its NACKs with another packet after
++ * them, so every one of them was refused ("NACK packet size not match") and
++ * no lost packet was ever retransmitted. Whatever the compound holds, it is
++ * decrypted whole and walked packet by packet.
++ */
++static void handle_rtcp(AVFormatContext *s, int size)
++{
++    int ret, off = 0, len = size;
++    WHIPContext *whip = s->priv_data;
++    uint8_t *buf;
++
++    buf = av_memdup(whip->buf, size);
++    if (!buf)
++        return;
++    if ((ret = ff_srtp_decrypt(&whip->srtp_recv, buf, &len)) < 0) {
++        av_log(whip, AV_LOG_WARNING, "RTCP packet decrypt failed: %d\n", ret);
++        goto end;
++    }
++    while (off + 4 <= len) {
++        uint8_t fmt = buf[off] & 0x1f;
++        uint8_t pt = buf[off + 1];
++        /**
++         * Refer to RFC 3550 6.4.1
++         * The length of this RTCP packet in 32 bit words minus one,
++         * including the header and any padding.
++         */
++        int rtcp_len = (AV_RB16(&buf[off + 2]) + 1) * 4;
++
++        if (off + rtcp_len > len) {
++            av_log(whip, AV_LOG_WARNING,
++                   "RTCP packet is broken, offset:%d, size:%d, total:%d\n", off, rtcp_len, len);
++            break;
++        }
++        /**
++         * Handle RTCP NACK packet
++         * Refer to RFC 4585 6.2.1
++         * The Generic NACK message is identified by PT=RTPFB and FMT=1
++         */
++        if (pt == RTCP_RTPFB && fmt == 1)
++            handle_nack_rtx(s, buf + off, rtcp_len);
++        off += rtcp_len;
++    }
+ end:
+     av_freep(&buf);
+ }
+@@ -2063,19 +2097,9 @@
+             goto end;
+         }
+     }
+-    if (media_is_rtcp(whip->buf, ret)) {
+-        uint8_t fmt = whip->buf[0] & 0x1f;
+-        uint8_t pt = whip->buf[1];
+-        /**
+-         * Handle RTCP NACK packet
+-         * Refer to RFC 4585 6.2.1
+-         * The Generic NACK message is identified by PT=RTPFB and FMT=1
+-         */
+-        if (pt != RTCP_RTPFB)
+-            goto write_packet;
+-        if (fmt == 1)
+-            handle_nack_rtx(s, ret);
+-    }
++    /* Any RTCP: in a compound packet the NACK need not be the first one. */
++    if (media_is_rtcp(whip->buf, ret))
++        handle_rtcp(s, ret);
+ write_packet:
+     now = av_gettime_relative();
+     if (now - whip->whip_last_consent_rx_time > WHIP_ICE_CONSENT_EXPIRED_TIMER * WHIP_US_PER_MS) {
