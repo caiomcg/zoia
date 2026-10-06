@@ -12,58 +12,71 @@
  * why underrun/overrun are handled here rather than upstream: this is the
  * one place that actually knows, sample by sample, whether data arrived in
  * time.
+ *
+ * Two clocks meet here. WASAPI loopback delivers on the clock of the device
+ * the captured application plays to; this processor is pulled on the
+ * AudioContext's. They are never exactly equal, so the buffer between them
+ * drifts. It used to be left to drift until it hit a wall: emptied, then
+ * re-primed with ~200ms of silence, or overfull, then cut. Measured on an
+ * RX 9070 XT broadcast, the context ran 0.5% fast — the buffer drained from
+ * 114 to 37ms in fifteen seconds of steady audio and re-primed every half
+ * minute or so, and the viewer heard it as crackle and cut-outs. (Those were
+ * the "re-buffering events every 15-30s" that an earlier, deeper cushion was
+ * meant to cure; a deeper cushion only takes longer to empty.)
+ *
+ * Now playback runs very slightly faster or slower — within 1%, interpolated
+ * — to hold the buffer at a target, the way every real-time audio receiver
+ * absorbs clock drift. A difference of 0.5% is inaudible; a 200ms hole is
+ * not. The same control absorbs the packets loopback-capture leaves out
+ * because it judged them silent.
  */
 
 const CHANNELS = 2;
 const RING_SECONDS = 1;
 const SAMPLE_RATE = 48000; // loopback-capture's documented, fixed output rate
 
+// Where the buffer is held, and how deep it must be before playback starts.
+//
 // Measured on real hardware: without priming, the very first process() calls
 // drain the ring the instant a single sample exists, while chunk delivery is
-// still ramping up (AudioContext/IPC startup jitter). That produced a burst
-// of underruns lasting tens of seconds before delivery caught up — audible
-// as choppy audio at the start of every broadcast. Holding silent output
-// until a cushion has built removes that race entirely.
-//
-// 300ms rather than a smaller value: with priming alone at 150ms, long
-// clean stretches (20-30s with zero underruns) were still interrupted every
-// 15-30s by a full re-buffering event — almost certainly the renderer's
-// main thread (also encoding 1080p60 video at the same time) occasionally
-// delaying the chunk hand-off by tens of milliseconds. A shallow cushion
-// drains to zero on that delay and re-primes audibly; a deeper one absorbs
-// it without ever emptying. The tradeoff is latency, and 300ms is still
-// small next to this app's end-to-end latency budget.
-const PRIME_MS = 150;
+// still ramping up (AudioContext/IPC startup jitter), heard as choppy audio
+// at the start of every broadcast. Holding silent output until a cushion has
+// built removes that race. The same depth is the target afterwards: deep
+// enough to ride out a main thread that delays the hand-off by tens of
+// milliseconds, shallow enough to keep audio close to the picture.
+const TARGET_MS = 120;
 
-// The hard ceiling on how far audio may lag video.
-//
-// The capture clock (WASAPI) and the playback clock (AudioContext) are not
-// the same clock, so the ring drifts: a producer even slightly faster than
-// the consumer accumulates samples, and every accumulated sample is added
-// latency that never comes back. Previously the only backstop was the ring
-// being *completely full* — a full second of drift before anything was
-// dropped, heard as audio running progressively behind the picture.
-//
-// Holding the buffer near the priming depth instead keeps the A/V offset
-// small and, more importantly, stable. Dropping a few milliseconds of audio
-// is inaudible; a drifting half-second offset is not.
-const MAX_LATENCY_MS = 260;
-// A single empty sample is unremarkable — re-buffering for 150ms over one
-// frame would be far more audible than the frame itself. Only a sustained
-// gap (a real stall, not a rounding-error blip) re-arms priming.
+// The playback-rate controller. Off target by 50ms, playback runs 0.5% fast
+// or slow; never more than 1%. The rate moves smoothly towards that,
+// rather than jumping, so it is never heard to change.
+const RATE_PER_MS = 0.0001;
+const MAX_RATE_ADJUST = 0.01;
+const RATE_SMOOTHING = 0.02;
+
+// The hard ceiling on how far audio may lag video: only a burst no gentle
+// rate change could absorb in time (a main thread stalled for a third of a
+// second, then delivering everything at once) is cut back to the target.
+const MAX_LATENCY_MS = 400;
+
+// A single empty sample is unremarkable — re-buffering for a whole target's
+// worth over one frame would be far more audible than the frame itself. Only
+// a sustained gap (the application went silent, or a real stall) re-arms
+// priming, in render quanta of 128 frames: about 53ms.
 const EMPTY_STREAK_TO_REPRIME = 20;
 
 class PcmPlaybackProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
     this.ringLength = SAMPLE_RATE * RING_SECONDS;
-    this.primeFrames = Math.floor((SAMPLE_RATE * PRIME_MS) / 1000);
+    this.targetFrames = Math.floor((SAMPLE_RATE * TARGET_MS) / 1000);
     this.maxFrames = Math.floor((SAMPLE_RATE * MAX_LATENCY_MS) / 1000);
     this.drifted = 0;
     this.channels = [new Float32Array(this.ringLength), new Float32Array(this.ringLength)];
     this.writeIndex = 0;
-    this.readIndex = 0;
+    // Fractional: playback reads between samples when its rate is not 1.
+    this.readPosition = 0;
     this.available = 0;
+    this.rate = 1;
     this.primed = false;
     this.emptyStreak = 0;
     this.underruns = 0;
@@ -83,21 +96,21 @@ class PcmPlaybackProcessor extends AudioWorkletProcessor {
           this.channels[c][this.writeIndex] = view.getInt16(offset, true) / 32768;
         }
         this.writeIndex = (this.writeIndex + 1) % this.ringLength;
-        if (this.available < this.ringLength) {
+        if (this.available < this.ringLength - 2) {
           this.available++;
         } else {
           // Overrun: the ring is full because process() is reading slower
           // than chunks arrive. Drop the oldest frame rather than block.
-          this.readIndex = (this.readIndex + 1) % this.ringLength;
+          this.readPosition = (this.readPosition + 1) % this.ringLength;
           this.overruns++;
         }
       }
 
-      // Discard anything beyond the latency ceiling, oldest first, so the
-      // offset against video stays bounded instead of growing all session.
+      // Beyond the ceiling, back to the target in one cut, oldest first. Rare
+      // by design now: the rate control keeps ordinary drift well inside it.
       if (this.available > this.maxFrames) {
-        const excess = this.available - this.maxFrames;
-        this.readIndex = (this.readIndex + excess) % this.ringLength;
+        const excess = Math.floor(this.available - this.targetFrames);
+        this.readPosition = (this.readPosition + excess) % this.ringLength;
         this.available -= excess;
         this.drifted += excess;
       }
@@ -124,6 +137,8 @@ class PcmPlaybackProcessor extends AudioWorkletProcessor {
           // contributed by this stage, so it is worth being able to see.
           latencyMs: Math.round((this.available / SAMPLE_RATE) * 1000),
           drifted: this.drifted,
+          // Playback speed against real time: how much drift is being absorbed.
+          rate: this.rate,
         });
         this.peak = 0;
       }
@@ -135,29 +150,40 @@ class PcmPlaybackProcessor extends AudioWorkletProcessor {
     const frameCount = output && output[0] ? output[0].length : 128;
 
     if (!this.primed) {
-      if (this.available >= this.primeFrames) {
+      if (this.available >= this.targetFrames) {
         this.primed = true;
         this.emptyStreak = 0;
+        this.rate = 1;
       } else {
         for (let c = 0; c < output.length; c++) output[c].fill(0);
         return true;
       }
     }
 
+    // Towards the rate that would bring the buffer back to its target.
+    const errorMs = ((this.available - this.targetFrames) / SAMPLE_RATE) * 1000;
+    const wanted = 1 + Math.max(-MAX_RATE_ADJUST, Math.min(MAX_RATE_ADJUST, errorMs * RATE_PER_MS));
+    this.rate += (wanted - this.rate) * RATE_SMOOTHING;
+
     let sawData = false;
     for (let i = 0; i < frameCount; i++) {
-      const hasData = this.available > 0;
+      // Two samples to interpolate between; one short is an underrun.
+      const hasData = this.available >= 2;
       if (hasData) sawData = true;
       else this.underruns++;
 
+      const index = Math.floor(this.readPosition);
+      const next = (index + 1) % this.ringLength;
+      const fraction = this.readPosition - index;
       for (let c = 0; c < output.length; c++) {
         const src = this.channels[c < CHANNELS ? c : CHANNELS - 1];
-        output[c][i] = hasData ? src[this.readIndex] : 0;
+        output[c][i] = hasData ? src[index] + (src[next] - src[index]) * fraction : 0;
       }
 
       if (hasData) {
-        this.readIndex = (this.readIndex + 1) % this.ringLength;
-        this.available--;
+        this.readPosition += this.rate;
+        if (this.readPosition >= this.ringLength) this.readPosition -= this.ringLength;
+        this.available -= this.rate;
       }
     }
 
