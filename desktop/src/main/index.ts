@@ -153,6 +153,8 @@ async function refreshGpuStatus(): Promise<void> {
   };
   console.log('[gpu] encoder path:', caps.encoder, 'on', caps.vendor, caps.adapter);
   if (caps.reason) console.log('[gpu]', caps.reason);
+  const outdated = capture.outdatedAddon();
+  if (outdated) console.warn('[gpu]', outdated);
 
   console.log('[gpu] video_encode:', videoEncode);
   console.log('[gpu] video_decode:', features.video_decode ?? 'unknown');
@@ -715,7 +717,8 @@ function registerIpc(): void {
         capture.stop();
         sources.startWarming();
         throw new Error(
-          `Hardware encoding is unavailable: ${info.fallbackReason || `no encoder for ${info.adapter}`}`,
+          capture.outdatedAddon() ??
+            `Hardware encoding is unavailable: ${info.fallbackReason || `no encoder for ${info.adapter}`}`,
         );
       }
       console.log(
