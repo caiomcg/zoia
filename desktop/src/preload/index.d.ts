@@ -91,9 +91,11 @@ export interface ZoiaBridge {
       maxWidth: number;
       maxHeight: number;
       showBorder: boolean;
-    }): Promise<{ width: number; height: number }>;
+    }): Promise<{ width: number; height: number; encoder: string }>;
     stop(): Promise<void>;
     requestKeyframe(): Promise<void>;
+    /** Moves the running encoder to a new target bitrate, without a keyframe. */
+    setBitrate(bitsPerSecond: number): Promise<void>;
     onError(cb: (message: string) => void): () => void;
   };
   device: {

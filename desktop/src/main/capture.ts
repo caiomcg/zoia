@@ -1,5 +1,6 @@
 /**
- * Native window capture: Windows Graphics Capture straight into NVENC.
+ * Native window capture: Windows Graphics Capture straight into NVENC on
+ * NVIDIA, or AMF on AMD (measured on an RX 9070 XT at 1080p: 3.7ms a frame).
  *
  * This is the path native apps take, and the only one measured working for
  * "a specific window, encoded on the GPU":
@@ -55,10 +56,13 @@ interface CaptureAddon {
     vendor: string;
     adapter: string;
     fallbackReason: string;
+    /** "nvenc" or "amf" when the addon encodes; empty when frames go out raw. */
+    encoder: string;
   };
   stop(): { framesArrived: number; averageEncodeMs: number };
   stats(): CaptureStats;
   requestKeyframe(): void;
+  setBitrate(bitsPerSecond: number): void;
 }
 
 const require = createRequire(import.meta.url);
@@ -166,6 +170,7 @@ export function start(
   vendor: string;
   adapter: string;
   fallbackReason: string;
+  encoder: string;
 } {
   const native = load();
   if (!native) throw new Error(loadError ?? 'The native capture module is unavailable.');
@@ -195,10 +200,22 @@ export function start(
   return info;
 }
 
-/** Makes NVENC's next frame a keyframe. A no-op when frames go out raw. */
+/** Makes the encoder's next frame a keyframe. A no-op when frames go out raw. */
 export function requestKeyframe(): void {
   if (!running) return;
   load()?.requestKeyframe();
+}
+
+/**
+ * Moves the addon's encoder (NVENC or AMF) to a new target bitrate in place.
+ * Throws when nothing is encoding — raw frames go to ffmpeg, whose rate is
+ * fixed for its run.
+ */
+export function setBitrate(bitsPerSecond: number): void {
+  if (!running) throw new Error('No capture is running.');
+  const native = load();
+  if (!native) throw new Error('The native capture module is unavailable.');
+  native.setBitrate(Math.round(bitsPerSecond));
 }
 
 /** Running totals from the addon; diff two readings for a rate. */

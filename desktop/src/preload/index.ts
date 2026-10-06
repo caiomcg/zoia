@@ -78,6 +78,7 @@ const bridge: ZoiaBridge = {
     start: (options) => ipcRenderer.invoke(IPC.nativeVideoStart, options),
     stop: () => ipcRenderer.invoke(IPC.nativeVideoStop),
     requestKeyframe: () => ipcRenderer.invoke(IPC.nativeVideoKeyframe),
+    setBitrate: (bitsPerSecond) => ipcRenderer.invoke(IPC.nativeVideoBitrate, bitsPerSecond),
     onError: (cb) => {
       const listener = (_e: Electron.IpcRendererEvent, message: string) => cb(message);
       ipcRenderer.on(IPC.nativeVideoError, listener);

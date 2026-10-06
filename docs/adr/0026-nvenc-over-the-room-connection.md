@@ -4,6 +4,8 @@
 - **Date:** 2026-09-28
 - **Amends:** [ADR 0011](0011-hardware-encoding-over-the-internet.md),
   [ADR 0024](0024-resilient-gpu-broadcasting-pipeline.md) — for NVIDIA only
+- **Amended by:** [ADR 0030](0030-amf-over-the-room-connection.md) — the same route for AMD,
+  and an adaptive bitrate for both
 
 ## Context
 

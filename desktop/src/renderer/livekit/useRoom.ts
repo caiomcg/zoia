@@ -1123,8 +1123,9 @@ export function useRoom() {
         const serverQuality = qualityRef.current;
         const quality = preset ? { ...serverQuality, ...preset } : serverQuality;
 
-        // NVIDIA on Windows can send NVENC's frames on this same connection
-        // instead of Chromium's own encode (see native-video.ts). Everything
+        // NVIDIA and AMD on Windows can send NVENC's or AMF's frames on this
+        // same connection instead of Chromium's own encode (see
+        // native-video.ts). Everything
         // else about the broadcast — stage, audio, teardown — is shared.
         const nativeTarget =
           source.kind === 'window' && source.hwnd !== null
@@ -1245,7 +1246,7 @@ export function useRoom() {
         statsTimerRef.current = setInterval(() => {
           // On the native path the sender's own numbers describe the
           // placeholder it encodes; frame rate and bitrate are the real
-          // stream's, but the encoder and size are NVENC's.
+          // stream's, but the encoder and size are NVENC's or AMF's.
           // Asked each time: the stream changes size with the shared window.
           const size = nativeSize && native ? native.size() : null;
           void samplePublishStats(
@@ -1255,7 +1256,7 @@ export function useRoom() {
               ? (stats) =>
                   setVideoStats({
                     ...stats,
-                    encoder: 'NVENC',
+                    encoder: (native?.encoder() ?? '').toUpperCase() || 'GPU',
                     codec: 'H264',
                     width: size.width,
                     height: size.height,
