@@ -140,6 +140,8 @@ export function createNativeVideo(
     const limits = limitsFor(quality.maxBitrate);
     const startedAt = performance.now();
     let current = quality.maxBitrate;
+    // Last second's estimate: a drop is followed only when it is falling.
+    let previous: number | undefined;
     let busy = false;
     adaptTimer = setInterval(() => {
       if (stopped || busy || !sender) return;
@@ -157,7 +159,9 @@ export function createNativeVideo(
               available = stat.availableOutgoingBitrate;
             }
           });
-          const next = nextBitrate(current, available, performance.now() - startedAt, limits);
+          const last = previous;
+          previous = available;
+          const next = nextBitrate(current, available, last, performance.now() - startedAt, limits);
           if (next === current || stopped) return;
           await window.zoia.nativeVideo.setBitrate(next);
           console.log(
