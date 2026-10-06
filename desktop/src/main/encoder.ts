@@ -127,7 +127,7 @@ function ffmpegPath(): string {
   }
   throw new Error(
     'ffmpeg is missing from this build. GPU encoding needs vendor/ffmpeg-gnutls.exe — ' +
-      'run make-exe.bat, which fetches it.',
+      'run make-exe.bat, which builds it.',
   );
 }
 
@@ -1105,7 +1105,9 @@ async function attemptStart(win: BrowserWindow, options: EncoderOptions): Promis
     try {
       setPriority(proc.pid, osConstants.priority.PRIORITY_ABOVE_NORMAL);
     } catch (err) {
-      logLine(`[zoia] could not raise ffmpeg's priority: ${err instanceof Error ? err.message : err}`);
+      logLine(
+        `[zoia] could not raise ffmpeg's priority: ${err instanceof Error ? err.message : err}`,
+      );
     }
   }
 

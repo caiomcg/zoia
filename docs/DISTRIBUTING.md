@@ -93,7 +93,7 @@ printed in CI and controls whether the OTA asset is published:
 | `none` | No desktop files changed | Publish the normal release without an updater artifact |
 
 The workflow marks a release as `full` when it sees changes under `desktop/native/`,
-`desktop/vendor/`, `desktop/build/`, or changes to `desktop/ffmpeg.json`,
+`desktop/vendor/`, `desktop/build/`, `desktop/ffmpeg/`, or changes to `desktop/ffmpeg.json`,
 `desktop/electron-builder.yml`, `desktop/electron.vite.config.ts`, or desktop dependency
 metadata/lockfiles. A version-only change to `desktop/package.json` or the lockfile does not
 force a full release. The classifier lives in

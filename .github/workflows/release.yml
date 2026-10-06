@@ -30,7 +30,35 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  ffmpeg:
+    # The ffmpeg every Windows build ships, compiled from desktop/ffmpeg with
+    # the patches there — the off-the-shelf build's WHIP muxer refuses every
+    # NACK LiveKit sends (patches/0001). A mingw cross-compile in Docker, so
+    # Linux; cached on the build's own files, so a release that does not touch
+    # them reuses the last binary instead of spending half an hour on it.
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Restore the built ffmpeg
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: desktop/ffmpeg/out/ffmpeg-gnutls.exe
+          key: ffmpeg-build-${{ hashFiles('desktop/ffmpeg/Dockerfile', 'desktop/ffmpeg/patches/**') }}
+
+      - name: Build ffmpeg
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: docker build --output type=local,dest=desktop/ffmpeg/out desktop/ffmpeg
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ffmpeg
+          path: desktop/ffmpeg/out/ffmpeg-gnutls.exe
+          if-no-files-found: error
+
   build:
+    needs: [ffmpeg]
     outputs:
       update_type: ${{ steps.classify.outputs.update_type }}
       base_tag: ${{ steps.classify.outputs.base_tag }}
@@ -71,27 +99,12 @@ jobs:
           python-version: '3.12'
 
       # electron-builder lists vendor/ffmpeg-gnutls.exe under extraResources,
-      # and it is gitignored, so packaging fails without it. Restored before
-      # anything expensive so a miss is cheap.
-      - name: Restore the vendored ffmpeg
-        id: ffmpeg
-        uses: actions/cache@v4
+      # and it is gitignored, so packaging fails without it. Built by the
+      # ffmpeg job above.
+      - uses: actions/download-artifact@v4
         with:
-          path: desktop/vendor/ffmpeg-gnutls.exe
-          key: ffmpeg-${{ hashFiles('desktop/ffmpeg.json') }}
-
-      - name: Download ffmpeg
-        if: steps.ffmpeg.outputs.cache-hit != 'true'
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $pin = Get-Content ffmpeg.json | ConvertFrom-Json
-          New-Item -ItemType Directory -Force -Path vendor, vendor/tmp | Out-Null
-          Invoke-WebRequest -Uri $pin.url -OutFile vendor/tmp/ff.zip -UseBasicParsing
-          Expand-Archive vendor/tmp/ff.zip vendor/tmp -Force
-          $exe = (Get-ChildItem vendor/tmp -Recurse -Filter ffmpeg.exe | Select-Object -First 1).FullName
-          Copy-Item $exe vendor/ffmpeg-gnutls.exe -Force
-          Remove-Item -Recurse -Force vendor/tmp
+          name: ffmpeg
+          path: desktop/vendor
 
       # Checked on a cache hit too: a cache entry is not trustworthy input to a
       # binary other people download. An SChannel build negotiates DTLS and then
@@ -111,8 +124,13 @@ jobs:
           if ($version -notmatch [regex]::Escape($pin.version)) {
             throw "ffmpeg is not $($pin.version): $($version.Split([Environment]::NewLine)[0])"
           }
+          if ($version -notmatch [regex]::Escape("$($pin.version)-zoia")) {
+            throw 'ffmpeg is not the patched build from desktop/ffmpeg; its WHIP muxer drops every NACK'
+          }
           if ($conf -notmatch '--enable-gnutls') { throw 'ffmpeg is not a GnuTLS build; WHIP cannot work with it' }
           if ($conf -notmatch '--enable-nvenc')  { throw 'ffmpeg has no NVENC support' }
+          if ($conf -notmatch '--enable-amf')    { throw 'ffmpeg has no AMF support' }
+          if ($conf -notmatch '--enable-libvpl') { throw 'ffmpeg has no Quick Sync support' }
           # Recorded so the exact binary inside a release can be identified later,
           # and so the pin can be tightened to a checksum once one is known good.
           Write-Host "ffmpeg $($pin.version) sha256: $((Get-FileHash vendor/ffmpeg-gnutls.exe -Algorithm SHA256).Hash.ToLower())"

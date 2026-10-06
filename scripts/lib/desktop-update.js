@@ -61,6 +61,8 @@ const fullReleaseReasons = [
   [/^desktop\/native\//, 'native addon changed'],
   [/^desktop\/vendor\//, 'bundled native/runtime asset changed'],
   [/^desktop\/ffmpeg\.json$/, 'FFmpeg pin changed'],
+  // The Dockerfile and patches the shipped ffmpeg.exe is built from.
+  [/^desktop\/ffmpeg\//, 'FFmpeg build changed'],
   [/^desktop\/electron-builder\.yml$/, 'packaging layout changed'],
   [/^desktop\/electron\.vite\.config\.ts$/, 'Electron bundling configuration changed'],
   [/^desktop\/build\//, 'application icon/resource changed'],
