@@ -9,6 +9,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   type Participant,
+  AudioPresets,
   DisconnectReason,
   LocalAudioTrack,
   LocalVideoTrack,
@@ -1357,9 +1358,20 @@ export function useRoom() {
           const audioTrack = new LocalAudioTrack(capture.track, undefined, false);
           audioTrack.source = Track.Source.ScreenShareAudio;
 
+          // Published as music, not as a microphone. LiveKit's defaults are
+          // for voice: 48kbps, stereo not negotiated, and DTX, which stops
+          // sending when the signal goes quiet and has the receiver fill in
+          // comfort noise — heard as crackle and cut-outs in a game's or a
+          // song's quiet passages. Reported as crackling on a Radeon the day
+          // it moved to this path; through ffmpeg its audio had gone out as
+          // 128kbps stereo Opus with no DTX, which is what this restores.
+          // RED stays on: redundant packets are what carry audio through loss.
           await room.localParticipant.publishTrack(audioTrack, {
             source: Track.Source.ScreenShareAudio,
             stream: 'screen',
+            audioPreset: AudioPresets.musicHighQualityStereo,
+            forceStereo: true,
+            dtx: false,
           });
 
           capture.setSendGain(sendAudioRef.current.volume);
