@@ -22,6 +22,47 @@ export interface CaptureStats {
   drifted: number;
 }
 
+const AUDIO_STATS_MS = 5000;
+
+/**
+ * Logs what the worklet counted every few seconds, as the raw video path's
+ * [raw-video] line does for frames.
+ *
+ * The counters were only ever drawn as a level meter, so a report of
+ * crackling sound had nothing in the log to check against. These are the
+ * two ways this pipeline can make one: an underrun plays silence where audio
+ * was due (a gap), and a drift drop discards buffered audio to hold the
+ * latency ceiling (a cut). Either, often enough, is heard as crackle; zero of
+ * both while it crackled puts the cause downstream of here.
+ *
+ * The worklet's counters are running totals; this reports their growth.
+ */
+export function audioStatsLogger(): (stats: CaptureStats) => void {
+  let last: CaptureStats | null = null;
+  let since = performance.now();
+  let minLatency = Infinity;
+  let maxLatency = 0;
+  return (stats) => {
+    minLatency = Math.min(minLatency, stats.latencyMs);
+    maxLatency = Math.max(maxLatency, stats.latencyMs);
+    const now = performance.now();
+    if (now - since < AUDIO_STATS_MS) return;
+    const base = last ?? { underruns: 0, overruns: 0, drifted: 0 };
+    const ms = (frames: number) => ((frames * 1000) / SAMPLE_RATE).toFixed(0);
+    console.log(
+      `[audio] ${((now - since) / 1000).toFixed(0)}s: ` +
+        `${ms(stats.underruns - base.underruns)}ms underrun (silence played), ` +
+        `${ms(stats.drifted - base.drifted)}ms dropped for drift, ` +
+        `${ms(stats.overruns - base.overruns)}ms overrun (ring full), ` +
+        `buffer ${minLatency}..${maxLatency}ms`,
+    );
+    last = stats;
+    since = now;
+    minLatency = Infinity;
+    maxLatency = 0;
+  };
+}
+
 export interface CaptureTrackHandle {
   track: MediaStreamTrack;
   /** How loud viewers hear it, 0..1. */

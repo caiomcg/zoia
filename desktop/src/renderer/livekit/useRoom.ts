@@ -23,6 +23,7 @@ import {
 import type { QualityPreset, SourceInfo, TokenResult } from '../../shared/ipc';
 import { isLeagueClient, isLeagueGame, isLeagueSource } from '../../shared/league';
 import {
+  audioStatsLogger,
   createCaptureAudioTrack,
   wrapAudioTrack,
   type CaptureTrackHandle,
@@ -1365,9 +1366,11 @@ export function useRoom() {
           if (sendAudioRef.current.muted) await audioTrack.mute();
           localAudioRef.current = { track: audioTrack, capture };
           setSendingAudio(true);
+          const logAudio = audioStatsLogger();
           capture.onStats((stats) => {
             setAudioLevel(stats.peak);
             setAudioLatencyMs(stats.latencyMs);
+            logAudio(stats);
           });
           // Said every time, because it is the surprising part: a notification
           // or another app's sound goes out too.
