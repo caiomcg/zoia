@@ -442,6 +442,7 @@ class Session {
                             uint32_t maxWidth,
                             uint32_t maxHeight, bool showBorder, Napi::ThreadSafeFunction tsfn) {
     tsfn_ = std::move(tsfn);
+    rawInFlight_ = 0;
     targetFps_ = fps;
     lastFrameTime_ = std::chrono::steady_clock::time_point{};
     nextFrameDue_ = std::chrono::steady_clock::time_point{};
@@ -886,6 +887,18 @@ class Session {
       return;
     }
 
+    // The JavaScript side has not taken the last frames yet: the main thread
+    // is stalled. Queueing more only delivered them later as a burst, each
+    // copied on that same thread — longer stall, older frames — and the
+    // pacer had already repeated the previous one in their place, so viewers
+    // got a duplicate and then a skip. Skipping the readback here also spares
+    // the GPU sync for a frame that would only have been late. Two in flight,
+    // not one: the main thread routinely stalls for about two frames.
+    if (rawInFlight_.load() >= kMaxRawInFlight) {
+      ++backlogDropped_;
+      return;
+    }
+
     ++arrivedCount_;
     const auto encodeStart = std::chrono::steady_clock::now();
 
@@ -925,7 +938,7 @@ class Session {
     encodeNanos_ += readbackNanos;
     if (readbackNanos > maxReadbackNanos_) maxReadbackNanos_ = readbackNanos;
     ++frameIndex_;
-    Emit(std::move(pixels), false, {});
+    EmitRaw(std::move(pixels));
   }
 
   // Scales the last copied frame into the scaler's output. Called with
@@ -989,6 +1002,7 @@ class Session {
   uint64_t offered() const { return offeredCount_; }
   uint64_t encodeNanos() const { return encodeNanos_; }
   uint64_t takeMaxReadbackNanos() { return maxReadbackNanos_.exchange(0); }
+  uint64_t backlogDropped() const { return backlogDropped_; }
 
   double averageEncodeMs() const {
     return arrivedCount_ ? (static_cast<double>(encodeNanos_) / arrivedCount_) / 1e6 : 0.0;
@@ -1233,9 +1247,36 @@ class Session {
           delete value;
         });
 
-    // Dropped rather than queued: a frame that cannot be delivered now is
-    // already late, and a backlog would only add latency.
+    // The queue is unbounded (see Start), so this only fails once the
+    // function is closing. Encoded packets are never dropped on purpose: one
+    // missing H.264 frame breaks every frame after it until the next IDR. The
+    // raw path bounds its own backlog instead, in OnFrameInternal.
     if (status != napi_ok) delete payload;
+  }
+
+  // A raw frame, counted while it waits for the JavaScript thread so the
+  // capture can stop reading back frames that would only queue behind it.
+  void EmitRaw(std::vector<uint8_t> data) {
+    if (!tsfn_) return;
+    auto* payload = new std::vector<uint8_t>(std::move(data));
+    ++rawInFlight_;
+    const napi_status status = tsfn_.NonBlockingCall(
+        payload, [this](Napi::Env env, Napi::Function callback, std::vector<uint8_t>* bytes) {
+          --rawInFlight_;
+          // Torn down with frames still queued: nothing left to deliver to.
+          if (env != nullptr && !callback.IsEmpty()) {
+            // A copy rather than an external buffer: Electron's V8 memory
+            // cage refuses buffers that point outside it.
+            callback.Call({env.Null(),
+                           Napi::Buffer<uint8_t>::Copy(env, bytes->data(), bytes->size()),
+                           Napi::Boolean::New(env, false)});
+          }
+          delete bytes;
+        });
+    if (status != napi_ok) {
+      --rawInFlight_;
+      delete payload;
+    }
   }
 
   ComPtr<ID3D11Device> device_;
@@ -1280,6 +1321,11 @@ class Session {
   std::atomic<uint64_t> offeredCount_{0};
   // Raw path: the slowest scale + readback since stats() last asked.
   std::atomic<uint64_t> maxReadbackNanos_{0};
+  // Raw path: frames emitted and not yet handed to JavaScript, and how many
+  // were skipped because that backlog was full.
+  static constexpr uint32_t kMaxRawInFlight = 2;
+  std::atomic<uint32_t> rawInFlight_{0};
+  std::atomic<uint64_t> backlogDropped_{0};
   uint32_t width_ = 0;
   uint32_t height_ = 0;
   uint32_t targetFps_ = 0;
@@ -1372,6 +1418,8 @@ Napi::Value Stats(const Napi::CallbackInfo& info) {
   stats.Set("framesArrived", Napi::Number::New(env, static_cast<double>(g_session.arrived())));
   stats.Set("encodeMs", Napi::Number::New(env, g_session.encodeNanos() / 1e6));
   stats.Set("maxReadbackMs", Napi::Number::New(env, g_session.takeMaxReadbackNanos() / 1e6));
+  stats.Set("framesBacklogged",
+            Napi::Number::New(env, static_cast<double>(g_session.backlogDropped())));
   return stats;
 }
 
