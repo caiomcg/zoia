@@ -92,11 +92,53 @@ bool NvencLibraryPresent() {
   return true;
 }
 
-bool AmfLibraryPresent() {
-  HMODULE module = LoadLibraryW(AMF_DLL_NAME);
-  if (!module) return false;
-  FreeLibrary(module);
-  return true;
+/**
+ * Loads AMF's runtime, which ships with AMD's display driver.
+ *
+ * By name first, from the system directory, which is how every AMF
+ * application finds it. Should that fail — a driver install without the
+ * System32 copy — the runtime is also
+ * looked for beside the user-mode D3D11 driver this process already has
+ * loaded: by the time an encoder starts, the capture's device exists on the
+ * AMD adapter, and the amfrt64.dll in that driver's DriverStore folder is the
+ * one matching exactly the driver in use.
+ *
+ * On failure `why` says what Windows said, so the next report names a cause.
+ */
+HMODULE LoadAmfRuntime(std::string* why) {
+  if (HMODULE module = LoadLibraryW(AMF_DLL_NAME)) return module;
+  const DWORD byName = GetLastError();
+
+  // amdxx64.dll is AMD's D3D11 user-mode driver; atidxx64.dll its older name.
+  for (const wchar_t* driver : {L"amdxx64.dll", L"atidxx64.dll"}) {
+    HMODULE loaded = GetModuleHandleW(driver);
+    if (!loaded) continue;
+    wchar_t path[MAX_PATH];
+    const DWORD length = GetModuleFileNameW(loaded, path, MAX_PATH);
+    if (length == 0 || length >= MAX_PATH) continue;
+    std::wstring candidate(path, length);
+    const size_t slash = candidate.find_last_of(L"\\/");
+    if (slash == std::wstring::npos) continue;
+    candidate.resize(slash + 1);
+    candidate += AMF_DLL_NAME;
+    if (HMODULE module = LoadLibraryExW(candidate.c_str(), nullptr, LOAD_WITH_ALTERED_SEARCH_PATH)) {
+      return module;
+    }
+    char buffer[160];
+    snprintf(buffer, sizeof(buffer),
+             "amfrt64.dll could not be loaded (Windows error %lu by name, %lu beside the driver).",
+             static_cast<unsigned long>(byName), static_cast<unsigned long>(GetLastError()));
+    *why = buffer;
+    return nullptr;
+  }
+
+  char buffer[160];
+  snprintf(buffer, sizeof(buffer),
+           "amfrt64.dll could not be loaded (Windows error %lu), and no AMD D3D11 driver is "
+           "loaded to look beside.",
+           static_cast<unsigned long>(byName));
+  *why = buffer;
+  return nullptr;
 }
 
 struct AdapterChoice {
@@ -105,7 +147,7 @@ struct AdapterChoice {
   std::string name;
   /** True only when this is an NVIDIA adapter AND the NVENC runtime loaded. */
   bool nvenc = false;
-  /** True only when this is an AMD adapter AND the AMF runtime loaded. */
+  /** True when this is an AMD adapter, whose encoder is AMF. */
   bool amf = false;
 };
 
@@ -157,10 +199,10 @@ AdapterChoice ChooseAdapter() {
     }
   }
 
-  // AMF ships with AMD's driver, so it is there whenever the adapter is a
-  // Radeon with a driver installed; the encoder itself is tried at start.
-  choice.amf = (choice.vendorId == kVendorAmd || choice.vendorId == kVendorAmdAlt) &&
-               AmfLibraryPresent();
+  // AMF ships with AMD's driver. Whether its runtime loads is only known once
+  // the capture's device exists (see LoadAmfRuntime), so a Radeon always tries,
+  // and one that cannot falls back to the raw path with the reason recorded.
+  choice.amf = choice.vendorId == kVendorAmd || choice.vendorId == kVendorAmdAlt;
   return choice;
 }
 
@@ -555,8 +597,9 @@ class AmfEncoder : public VideoEncoder {
     gop_ = fps_ * 2;
     frames_ = 0;
 
-    library_ = LoadLibraryW(AMF_DLL_NAME);
-    if (!library_) return "AMF is unavailable: amfrt64.dll could not be loaded.";
+    std::string loadError;
+    library_ = LoadAmfRuntime(&loadError);
+    if (!library_) return "AMF is unavailable: " + loadError;
     auto query = reinterpret_cast<AMFQueryVersion_Fn>(
         GetProcAddress(library_, AMF_QUERY_VERSION_FUNCTION_NAME));
     auto init = reinterpret_cast<AMFInit_Fn>(GetProcAddress(library_, AMF_INIT_FUNCTION_NAME));
@@ -783,6 +826,9 @@ class Session {
                             uint32_t maxWidth,
                             uint32_t maxHeight, bool showBorder, Napi::ThreadSafeFunction tsfn) {
     tsfn_ = std::move(tsfn);
+    // This run's reason, not the last one's: a stale one blamed a working
+    // encoder for an earlier failure.
+    fallbackReason_.clear();
     rawInFlight_ = 0;
     targetFps_ = fps;
     lastFrameTime_ = std::chrono::steady_clock::time_point{};
