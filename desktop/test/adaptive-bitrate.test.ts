@@ -4,8 +4,10 @@ import {
   HEADROOM,
   RAISE_STEP,
   WARMUP_MS,
+  createBitrateController,
   limitsFor,
   nextBitrate,
+  nextCeiling,
 } from '../src/renderer/livekit/adaptive-bitrate.ts';
 
 const M = 1_000_000;
@@ -132,5 +134,82 @@ describe('limitsFor', () => {
   test('a small preset is floored at 1Mbps, never above its own maximum', () => {
     assert.deepEqual(limitsFor(3 * M), { max: 3 * M, floor: 1 * M });
     assert.deepEqual(limitsFor(0.8 * M), { max: 0.8 * M, floor: 0.8 * M });
+  });
+});
+
+/**
+ * A link that carries 15Mbps under a 20Mbps preset, with the estimate Chromium
+ * gave on one: far above the link while it has room (211Mbps logged), then
+ * collapsing to 1-5Mbps the moment the stream overruns it.
+ */
+describe('a link smaller than the preset', () => {
+  const preset = limitsFor(20 * M);
+  const capacity = 15 * M;
+
+  function broadcast(seconds: number, withCeiling: boolean) {
+    // From a rate the link carries, as after any earlier drop: the climb, the
+    // collapse and the climb again are what the log showed.
+    const controller = createBitrateController(preset, 10 * M);
+    let current = 10 * M;
+    let previous: number | undefined;
+    let collapses = 0;
+    let wasOverrun = false;
+    let total = 0;
+    for (let s = 0; s < seconds; s++) {
+      const overrun = current > capacity;
+      // Each time the stream overruns the link: one burst of loss for viewers.
+      if (overrun && !wasOverrun) collapses++;
+      wasOverrun = overrun;
+      // The estimate falls from where it was the second the link overruns.
+      const estimate = overrun ? 2 * M : 211 * M;
+      if (withCeiling) {
+        current = controller.step(estimate, later);
+      } else {
+        current = nextBitrate(current, estimate, previous, later, preset);
+        previous = estimate;
+      }
+      total += current;
+    }
+    return { collapses, averageMbps: total / seconds / M };
+  }
+
+  test('without a ceiling, it saws: up to the preset, collapse, again', () => {
+    const run = broadcast(300, false);
+    // The shape of the broadcast that logged thirteen collapses in 8.5 minutes.
+    assert.ok(run.collapses >= 12, JSON.stringify(run));
+  });
+
+  test('with one, collapses are rare and the rate stays near what the link carries', () => {
+    const run = broadcast(300, true);
+    // The start, then one probe of the link every minute or so.
+    assert.ok(run.collapses <= 6, JSON.stringify(run));
+    assert.ok(run.averageMbps > 10, JSON.stringify(run));
+  });
+
+  test('a ceiling never holds a stream below its floor, nor lifts it past the preset', () => {
+    assert.equal(nextCeiling(20 * M, 3 * M, 2 * M, preset), preset.floor);
+    let ceiling = 10 * M;
+    for (let s = 0; s < 1000; s++) ceiling = nextCeiling(ceiling, 10 * M, 10 * M, preset);
+    assert.equal(ceiling, preset.max);
+  });
+
+  test('an estimate that settles low without ever falling still brings the rate down', () => {
+    // Started above the link: the estimate reads low from the first second
+    // and stays there, so it never falls.
+    const controller = createBitrateController(preset);
+    const targets = [3, 3, 3, 3, 3].map(() => controller.step(3 * M, later));
+    assert.ok(targets.at(-1)! < 20 * M, targets.join(', '));
+    // But an estimate still climbing at the start is left alone.
+    const starting = createBitrateController(preset);
+    const climbing = [7.4, 7.9, 8.6, 9.6, 10.7].map((e) => starting.step(e * M, later));
+    assert.ok(
+      climbing.every((t) => t === 20 * M),
+      climbing.join(', '),
+    );
+  });
+
+  test('a ceiling stops a rise, but never lowers a rate that did not drop', () => {
+    assert.equal(nextBitrate(12 * M, 211 * M, 211 * M, later, preset, 13 * M), 13 * M);
+    assert.equal(nextBitrate(14 * M, 211 * M, 211 * M, later, preset, 13 * M), 14 * M);
   });
 });
