@@ -1717,7 +1717,22 @@ class Session {
   Napi::ThreadSafeFunction tsfn_;
 };
 
-Session g_session;
+/**
+ * Never destroyed, deliberately.
+ *
+ * As a plain global it was destroyed by the C runtime during ExitProcess,
+ * after every other thread was gone, releasing the D3D11 device, the WGC
+ * session and the encoder into a driver already being torn down. AMD's
+ * D3D11 driver answers that with a fast-fail (0xC0000409, amdxx64.dll),
+ * so quitting the app crashed it — six times in one day on one Radeon,
+ * dumped and read: the only thread left, unwinding from ucrtbase's exit
+ * table through zoia_capture.node into d3d11.dll and amdxx64.dll.
+ *
+ * The capture is stopped properly by the environment cleanup hook in
+ * Init, while the process is still whole; what is left is reclaimed by
+ * the OS with the process, which is all a driver object at exit needs.
+ */
+Session& g_session = *new Session();
 
 Napi::Value Start(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
@@ -1870,6 +1885,12 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("requestKeyframe", Napi::Function::New(env, RequestKeyframe));
   exports.Set("setBitrate", Napi::Function::New(env, SetBitrate));
   exports.Set("isSupported", Napi::Function::New(env, IsSupported));
+
+  // Stops a capture still running when the environment is torn down —
+  // quitting mid-broadcast — before the process starts exiting, rather than
+  // leaving it to a destructor at exit (see g_session).
+  napi_add_env_cleanup_hook(
+      env, [](void*) { g_session.Stop(); }, nullptr);
   return exports;
 }
 
