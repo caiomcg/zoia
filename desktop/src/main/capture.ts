@@ -200,6 +200,25 @@ export function start(
   return info;
 }
 
+/**
+ * Set when the compiled addon is older than the JavaScript driving it.
+ *
+ * The addon is built separately (`npm run build:native`), so a checkout that
+ * only ran `npm run dev` after pulling keeps the addon it had. One from before
+ * AMF moved into it hands a Radeon raw frames, and the native path then
+ * refused with "no encoder for AMD Radeon RX 7800 XT" — which reads as a
+ * driver problem and was not one. `setBitrate` arrived with AMF, so its
+ * absence dates the build. A packaged app always carries a matching pair.
+ */
+export function outdatedAddon(): string | null {
+  const native = load();
+  if (!native || typeof native.setBitrate === 'function') return null;
+  return (
+    'The native capture addon is older than this app and has no AMF encoder. ' +
+    'Rebuild it with `npm run build:native` in desktop/, with the app closed.'
+  );
+}
+
 /** Makes the encoder's next frame a keyframe. A no-op when frames go out raw. */
 export function requestKeyframe(): void {
   if (!running) return;
