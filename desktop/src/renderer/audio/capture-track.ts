@@ -43,29 +43,47 @@ const AUDIO_STATS_MS = 5000;
  */
 export function audioStatsLogger(): (stats: CaptureStats) => void {
   let last: CaptureStats | null = null;
+  let previousUnderruns = 0;
   let since = performance.now();
   let minLatency = Infinity;
   let maxLatency = 0;
+  let maxPeak = 0;
+  // The loudest captured audio around any underrun: near silence there means
+  // the gap was the application going quiet — loopback-capture sends nothing
+  // for packets it judges silent — and nobody could have heard it.
+  let peakAtUnderrun = -1;
   return (stats) => {
     minLatency = Math.min(minLatency, stats.latencyMs);
     maxLatency = Math.max(maxLatency, stats.latencyMs);
+    maxPeak = Math.max(maxPeak, stats.peak);
+    if (stats.underruns > previousUnderruns) peakAtUnderrun = Math.max(peakAtUnderrun, stats.peak);
+    previousUnderruns = stats.underruns;
     const now = performance.now();
     if (now - since < AUDIO_STATS_MS) return;
     const base = last ?? { underruns: 0, overruns: 0, drifted: 0 };
     const ms = (frames: number) => ((frames * 1000) / SAMPLE_RATE).toFixed(0);
     console.log(
       `[audio] ${((now - since) / 1000).toFixed(0)}s: ` +
-        `${ms(stats.underruns - base.underruns)}ms underrun (silence played), ` +
-        `${ms(stats.drifted - base.drifted)}ms dropped for drift, ` +
+        `${ms(stats.underruns - base.underruns)}ms underrun (silence played)` +
+        (peakAtUnderrun >= 0 ? ` at level ${dbfs(peakAtUnderrun)}` : '') +
+        `, ${ms(stats.drifted - base.drifted)}ms dropped for drift, ` +
         `${ms(stats.overruns - base.overruns)}ms overrun (ring full), ` +
         `buffer ${minLatency}..${maxLatency}ms, ` +
-        `playback x${(stats.rate ?? 1).toFixed(4)}`,
+        `playback x${(stats.rate ?? 1).toFixed(4)}, ` +
+        `peak ${dbfs(maxPeak)}`,
     );
     last = stats;
     since = now;
     minLatency = Infinity;
     maxLatency = 0;
+    maxPeak = 0;
+    peakAtUnderrun = -1;
   };
+}
+
+/** A 0..1 peak as dBFS, the way audio levels are read. */
+function dbfs(peak: number): string {
+  return peak > 0 ? `${(20 * Math.log10(peak)).toFixed(0)}dBFS` : 'silent';
 }
 
 export interface CaptureTrackHandle {
