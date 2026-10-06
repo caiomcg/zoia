@@ -403,11 +403,12 @@ export default function App() {
       return;
     }
 
-    // NVIDIA sharing a window or a screen: NVENC's frames go out on the
-    // room's own WebRTC connection, alongside the audio
-    // (livekit/native-video.ts). AMD and Intel keep the ffmpeg route below.
+    // NVIDIA or AMD sharing a window or a screen: NVENC's or AMF's frames go
+    // out on the room's own WebRTC connection, alongside the audio
+    // (livekit/native-video.ts). Intel keeps the ffmpeg route below.
+    const encodesNatively = gpu?.gpuEncoder === 'nvenc' || gpu?.gpuEncoder === 'amf';
     if (
-      gpu?.gpuEncoder === 'nvenc' &&
+      encodesNatively &&
       (target.kind === 'window' || (target.kind === 'screen' && target.displayId))
     ) {
       if (switching && gpuCast.state !== 'idle') await gpuCast.stop();
@@ -415,11 +416,15 @@ export default function App() {
         keepStage: switching,
         nativeVideo: true,
       });
-      if (!ok) {
+      if (ok) return;
+      if (gpu?.gpuEncoder === 'nvenc') {
         console.warn('[native-video] failed, falling back to window broadcast');
         await room.startBroadcast(target, preset, { keepStage: switching });
+        return;
       }
-      return;
+      // A Radeon whose AMF declined still has the ffmpeg route, which reads
+      // the frames back and encodes them there — what every Radeon did before.
+      console.warn('[native-video] AMF failed, falling back to the ffmpeg route');
     }
 
     if (!switching) {

@@ -282,6 +282,7 @@ export const IPC = {
   nativeVideoStart: 'zoia:native-video:start',
   nativeVideoStop: 'zoia:native-video:stop',
   nativeVideoKeyframe: 'zoia:native-video:keyframe',
+  nativeVideoBitrate: 'zoia:native-video:bitrate',
   nativeVideoPort: 'zoia:native-video:port',
   nativeVideoError: 'zoia:native-video:error',
   renameDevice: 'zoia:device:rename',

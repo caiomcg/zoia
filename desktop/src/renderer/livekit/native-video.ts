@@ -1,6 +1,6 @@
 /**
- * NVIDIA only: a window captured and encoded by NVENC in the native addon,
- * sent on the room's own WebRTC connection.
+ * NVIDIA and AMD: a window captured and encoded by NVENC or AMF in the native
+ * addon, sent on the room's own WebRTC connection.
  *
  * The ffmpeg + WHIP route put a muxer between audio and video, and it kept
  * stalling one on the other. This follows the shape Discord describes
@@ -12,11 +12,12 @@
  * frame NVENC produces, and native-transform.worker.ts replaces each encoded
  * placeholder with the NVENC frame before it is packetized.
  *
- * AMD and Intel stay on the ffmpeg route; macOS never gets here, because the
- * native addon is Windows-only.
+ * Intel stays on the ffmpeg route; macOS never gets here, because the native
+ * addon is Windows-only.
  */
 
 import { captureBorderEnabled } from '../capture-border';
+import { limitsFor, nextBitrate } from './adaptive-bitrate';
 
 interface TrackGenerator extends MediaStreamTrack {
   writable: WritableStream<VideoFrame>;
@@ -25,6 +26,14 @@ interface TrackGenerator extends MediaStreamTrack {
 declare const MediaStreamTrackGenerator: {
   new (init: { kind: 'video' }): TrackGenerator;
 };
+
+/** The fields of an RTCIceCandidatePairStats this reads. */
+interface CandidatePairStats {
+  type: string;
+  nominated?: boolean;
+  state?: string;
+  availableOutgoingBitrate?: number;
+}
 
 // The placeholder is never seen by anyone; it only has to be a valid frame.
 const PLACEHOLDER_SIZE = 16;
@@ -41,6 +50,8 @@ export interface NativeVideo {
   start(): Promise<{ width: number; height: number }>;
   /** The size being sent now: it follows the shared window when that is resized. */
   size(): { width: number; height: number };
+  /** "nvenc" or "amf", once started. */
+  encoder(): string;
   stop(): Promise<void>;
 }
 
@@ -60,6 +71,9 @@ export function createNativeVideo(
   let stopped = false;
   let started = false;
   let size = { width: 0, height: 0 };
+  let encoderName = '';
+  let sender: RTCRtpSender | null = null;
+  let adaptTimer: ReturnType<typeof setInterval> | null = null;
 
   worker.onmessage = (event: MessageEvent) => {
     const message = event.data as { type: string };
@@ -109,10 +123,59 @@ export function createNativeVideo(
   });
 
   let attached = false;
-  const attachTo = (sender: RTCRtpSender) => {
+  const attachTo = (target: RTCRtpSender) => {
     if (attached) return;
     attached = true;
-    sender.transform = new RTCRtpScriptTransform(worker, { role: 'sender' });
+    sender = target;
+    target.transform = new RTCRtpScriptTransform(worker, { role: 'sender' });
+  };
+
+  /**
+   * Fits the hardware encoder to Chromium's estimate of the uplink, once a
+   * second (see adaptive-bitrate.ts). Chromium paces and retransmits what goes
+   * out but cannot slow an encoder it does not own, so without this the
+   * preset's bitrate went out whatever the link could carry.
+   */
+  const startAdapting = () => {
+    const limits = limitsFor(quality.maxBitrate);
+    const startedAt = performance.now();
+    let current = quality.maxBitrate;
+    let busy = false;
+    adaptTimer = setInterval(() => {
+      if (stopped || busy || !sender) return;
+      busy = true;
+      void sender
+        .getStats()
+        .then(async (report) => {
+          let available: number | undefined;
+          report.forEach((stat: CandidatePairStats) => {
+            if (
+              stat.type === 'candidate-pair' &&
+              (stat.nominated || stat.state === 'succeeded') &&
+              typeof stat.availableOutgoingBitrate === 'number'
+            ) {
+              available = stat.availableOutgoingBitrate;
+            }
+          });
+          const next = nextBitrate(current, available, performance.now() - startedAt, limits);
+          if (next === current || stopped) return;
+          await window.zoia.nativeVideo.setBitrate(next);
+          console.log(
+            `[native-video] bitrate ${(current / 1e6).toFixed(1)} -> ${(next / 1e6).toFixed(1)} Mbps ` +
+              `(estimate ${((available ?? 0) / 1e6).toFixed(1)})`,
+          );
+          current = next;
+        })
+        .catch((err: unknown) => {
+          // An encoder that will not change rate keeps the preset's, as before.
+          console.warn('[native-video] bitrate adaptation stopped:', err);
+          if (adaptTimer) clearInterval(adaptTimer);
+          adaptTimer = null;
+        })
+        .finally(() => {
+          busy = false;
+        });
+    }, 1000);
   };
 
   // Chromium only runs frames through a sender's transform if it is set
@@ -148,9 +211,10 @@ export function createNativeVideo(
       attachTo(sender);
     },
     size: () => size,
+    encoder: () => encoderName,
     async start() {
       started = true;
-      size = await window.zoia.nativeVideo.start({
+      const info = await window.zoia.nativeVideo.start({
         hwnd: 'hwnd' in target ? target.hwnd : null,
         displayId: 'displayId' in target ? target.displayId : null,
         framerate: quality.maxFramerate,
@@ -159,11 +223,16 @@ export function createNativeVideo(
         maxHeight: quality.height,
         showBorder: captureBorderEnabled(),
       });
+      size = { width: info.width, height: info.height };
+      encoderName = info.encoder;
+      startAdapting();
       return size;
     },
     async stop() {
       if (stopped) return;
       stopped = true;
+      if (adaptTimer) clearInterval(adaptTimer);
+      adaptTimer = null;
       restoreAddTransceiver();
       window.removeEventListener('message', onPort);
       offError();

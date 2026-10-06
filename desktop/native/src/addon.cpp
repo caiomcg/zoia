@@ -34,9 +34,14 @@
 
 #include <ffnvcodec/nvEncodeAPI.h>
 
+#include <AMF/components/ColorSpace.h>
+#include <AMF/components/VideoEncoderVCE.h>
+#include <AMF/core/Factory.h>
+
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -87,12 +92,21 @@ bool NvencLibraryPresent() {
   return true;
 }
 
+bool AmfLibraryPresent() {
+  HMODULE module = LoadLibraryW(AMF_DLL_NAME);
+  if (!module) return false;
+  FreeLibrary(module);
+  return true;
+}
+
 struct AdapterChoice {
   ComPtr<IDXGIAdapter1> adapter;
   UINT vendorId = 0;
   std::string name;
   /** True only when this is an NVIDIA adapter AND the NVENC runtime loaded. */
   bool nvenc = false;
+  /** True only when this is an AMD adapter AND the AMF runtime loaded. */
+  bool amf = false;
 };
 
 /**
@@ -108,7 +122,8 @@ struct AdapterChoice {
  *
  * Preference order: an NVIDIA adapter when NVENC is loadable, since that path
  * encodes without the frame ever leaving the GPU. Otherwise the first hardware
- * adapter, whose frames go out to ffmpeg for AMF or Quick Sync.
+ * adapter: AMF encodes in-process on a Radeon, and anything else's frames go
+ * out to ffmpeg for Quick Sync.
  */
 AdapterChoice ChooseAdapter() {
   AdapterChoice choice;
@@ -142,6 +157,10 @@ AdapterChoice ChooseAdapter() {
     }
   }
 
+  // AMF ships with AMD's driver, so it is there whenever the adapter is a
+  // Radeon with a driver installed; the encoder itself is tried at start.
+  choice.amf = (choice.vendorId == kVendorAmd || choice.vendorId == kVendorAmdAlt) &&
+               AmfLibraryPresent();
   return choice;
 }
 
@@ -151,9 +170,48 @@ struct Packet {
   bool keyframe = false;
 };
 
-class Encoder {
+/**
+ * A hardware H.264 encoder that reads textures on the capture's own D3D11
+ * device. NVENC on NVIDIA, AMF on AMD: either way the frame never leaves the
+ * GPU, and what comes back is an Annex B bitstream for the room's WebRTC
+ * connection (renderer/livekit/native-video.ts).
+ *
+ * Every method is called with Session::encodeMutex_ held.
+ */
+class VideoEncoder {
  public:
-  ~Encoder() { Stop(); }
+  virtual ~VideoEncoder() = default;
+  /** For logs and the stats card: "nvenc" or "amf". */
+  virtual const char* Name() const = 0;
+  /** The format of the surface the scaler renders into for this encoder. */
+  virtual DXGI_FORMAT InputFormat() const = 0;
+  virtual std::string Start(ID3D11Device* device, uint32_t width, uint32_t height,
+                            uint32_t maxWidth, uint32_t maxHeight, uint32_t fps,
+                            uint32_t bitrate) = 0;
+  /** The one surface every frame is rendered into, until the next Resize. */
+  virtual std::string RegisterInput(ID3D11Texture2D* texture) = 0;
+  virtual std::string Resize(ID3D11Texture2D* texture, uint32_t width, uint32_t height) = 0;
+  /** Changes the target bitrate in place, without a keyframe. */
+  virtual std::string SetBitrate(uint32_t bitrate) = 0;
+  virtual bool Encode(int64_t timestamp, Packet* out, std::string* error) = 0;
+  virtual void Stop() = 0;
+
+  // Makes the next frame an IDR, with SPS/PPS in front of it. Called when a
+  // viewer asks for a keyframe (a WebRTC PLI): after loss, or on joining
+  // mid-stream, nothing decodes until one arrives, and waiting out the GOP
+  // means seconds of a frozen or broken picture.
+  void RequestIdr() { forceIdr_ = true; }
+
+ protected:
+  std::atomic<bool> forceIdr_{false};
+};
+
+class NvencEncoder : public VideoEncoder {
+ public:
+  ~NvencEncoder() override { Stop(); }
+  const char* Name() const override { return "nvenc"; }
+  // WGC hands over BGRA; NVENC calls that ARGB and converts on the GPU.
+  DXGI_FORMAT InputFormat() const override { return DXGI_FORMAT_B8G8R8A8_UNORM; }
 
   // Opens an NVENC session on the same D3D11 device the capture runs on, so
   // the input surface never has to move between devices.
@@ -190,7 +248,8 @@ class Encoder {
   // NVENC only changes resolution in place up to the maximum it was opened
   // with, and that maximum cannot itself be reconfigured.
   std::string Start(ID3D11Device* device, uint32_t width, uint32_t height, uint32_t maxWidth,
-                    uint32_t maxHeight, uint32_t fps, uint32_t bitrate) {
+                    uint32_t maxHeight, uint32_t fps, uint32_t bitrate) override {
+    fps_ = std::max<uint32_t>(fps, 1);
     library_ = LoadLibraryW(L"nvEncodeAPI64.dll");
     if (!library_) return "NVENC is unavailable: nvEncodeAPI64.dll could not be loaded.";
 
@@ -279,7 +338,7 @@ class Encoder {
    * doing it inside the encode loop measured 19fps where the capture itself
    * was willing to go faster.
    */
-  std::string RegisterInput(ID3D11Texture2D* texture) {
+  std::string RegisterInput(ID3D11Texture2D* texture) override {
     NV_ENC_REGISTER_RESOURCE registration = {};
     registration.version = NV_ENC_REGISTER_RESOURCE_VER;
     registration.resourceType = NV_ENC_INPUT_RESOURCE_TYPE_DIRECTX;
@@ -304,7 +363,7 @@ class Encoder {
    *
    * On failure nothing has changed: the old size and input stay registered.
    */
-  std::string Resize(ID3D11Texture2D* texture, uint32_t width, uint32_t height) {
+  std::string Resize(ID3D11Texture2D* texture, uint32_t width, uint32_t height) override {
     NV_ENC_RECONFIGURE_PARAMS reconfigure = {};
     reconfigure.version = NV_ENC_RECONFIGURE_PARAMS_VER;
     reconfigure.reInitEncodeParams = init_;
@@ -330,16 +389,33 @@ class Encoder {
     return RegisterInput(texture);
   }
 
-  // Makes the next frame an IDR, with SPS/PPS in front of it. Called when a
-  // viewer asks for a keyframe (a WebRTC PLI): after loss, or on joining
-  // mid-stream, nothing decodes until one arrives, and waiting out the GOP
-  // means seconds of a frozen or broken picture.
-  void RequestIdr() { forceIdr_ = true; }
-  std::atomic<bool> forceIdr_{false};
+  /**
+   * The same reconfigure Resize uses, with the rate control changed and
+   * nothing reset: no keyframe, no new SPS, the stream carries straight on.
+   * VBV stays one frame of the new rate, as Start sets it.
+   */
+  std::string SetBitrate(uint32_t bitrate) override {
+    NV_ENC_CONFIG config = config_;
+    config.rcParams.averageBitRate = bitrate;
+    config.rcParams.vbvBufferSize = bitrate / fps_;
+    config.rcParams.vbvInitialDelay = config.rcParams.vbvBufferSize;
+    NV_ENC_RECONFIGURE_PARAMS reconfigure = {};
+    reconfigure.version = NV_ENC_RECONFIGURE_PARAMS_VER;
+    reconfigure.reInitEncodeParams = init_;
+    reconfigure.reInitEncodeParams.encodeConfig = &config;
+    if (const NVENCSTATUS status = functions_.nvEncReconfigureEncoder(encoder_, &reconfigure);
+        status != NV_ENC_SUCCESS) {
+      return NvencError("nvEncReconfigureEncoder(bitrate)", status);
+    }
+    // nvEncInitializeEncoder keeps the pointer; keep it pointing at ours.
+    config_ = config;
+    init_.encodeConfig = &config_;
+    return {};
+  }
 
   // Encodes one already-on-GPU texture. Returns false only on a real failure;
   // a frame the encoder chooses not to emit is not an error.
-  bool Encode(int64_t timestamp, Packet* out, std::string* error) {
+  bool Encode(int64_t timestamp, Packet* out, std::string* error) override {
     NV_ENC_MAP_INPUT_RESOURCE mapped = {};
     mapped.version = NV_ENC_MAP_INPUT_RESOURCE_VER;
     mapped.registeredResource = registered_;
@@ -387,7 +463,7 @@ class Encoder {
     return ok;
   }
 
-  void Stop() {
+  void Stop() override {
     if (encoder_) {
       if (registered_) {
         functions_.nvEncUnregisterResource(encoder_, registered_);
@@ -419,6 +495,271 @@ class Encoder {
   NV_ENC_REGISTERED_PTR registered_ = nullptr;
   uint32_t width_ = 0;
   uint32_t height_ = 0;
+  uint32_t fps_ = 1;
+};
+
+/**
+ * AMD's hardware encoder through AMF, driven the way NVENC is above: opened on
+ * the capture's own D3D11 device, fed the scaler's output texture, and asked
+ * for one frame's bitstream at a time.
+ *
+ * This replaces reading every frame back to the CPU and piping it to ffmpeg's
+ * h264_amf, which on a Radeon cost a GPU sync per frame, several megabytes
+ * through the main process sixty times a second, a CPU colour conversion in
+ * ffmpeg, and a WHIP muxer that never retransmitted a lost packet. Here the
+ * frame stays on the GPU and the bitstream goes out on the room's WebRTC
+ * connection, which paces it, retransmits, and asks for keyframes.
+ *
+ * The runtime (amfrt64.dll) ships with AMD's driver and is loaded at run time;
+ * only the SDK's headers are built in (include/AMF, from AMF v1.5.3).
+ */
+class AmfEncoder : public VideoEncoder {
+ public:
+  ~AmfEncoder() override { Stop(); }
+  const char* Name() const override { return "amf"; }
+  // The scaler converts to BT.709 limited-range NV12 on the GPU (see
+  // ConfigureScaler), which is the encoder's native input.
+  DXGI_FORMAT InputFormat() const override { return DXGI_FORMAT_NV12; }
+
+  static std::string AmfError(const char* what, AMF_RESULT result) {
+    const char* meaning = "";
+    switch (result) {
+      case AMF_NOT_SUPPORTED:
+        meaning = " (not supported by this GPU or driver)";
+        break;
+      case AMF_NO_DEVICE:
+      case AMF_ENCODER_NOT_PRESENT:
+        meaning = " (this GPU has no AMF encoder)";
+        break;
+      case AMF_DIRECTX_FAILED:
+        meaning = " (the D3D11 device was refused)";
+        break;
+      case AMF_OUT_OF_MEMORY:
+        meaning = " (the GPU is out of memory)";
+        break;
+      default:
+        break;
+    }
+    char buffer[192];
+    snprintf(buffer, sizeof(buffer), "AMF: %s failed with result %d%s", what,
+             static_cast<int>(result), meaning);
+    return buffer;
+  }
+
+  std::string Start(ID3D11Device* device, uint32_t width, uint32_t height, uint32_t /*maxWidth*/,
+                    uint32_t /*maxHeight*/, uint32_t fps, uint32_t bitrate) override {
+    fps_ = std::max<uint32_t>(fps, 1);
+    // A keyframe every two seconds, as NVENC's GOP. Counted here rather than
+    // left to AMF_VIDEO_ENCODER_IDR_PERIOD: the low-latency usages were
+    // measured ignoring it (ffmpeg's h264_amf, -g 30: one IDR in 240 frames).
+    gop_ = fps_ * 2;
+    frames_ = 0;
+
+    library_ = LoadLibraryW(AMF_DLL_NAME);
+    if (!library_) return "AMF is unavailable: amfrt64.dll could not be loaded.";
+    auto query = reinterpret_cast<AMFQueryVersion_Fn>(
+        GetProcAddress(library_, AMF_QUERY_VERSION_FUNCTION_NAME));
+    auto init = reinterpret_cast<AMFInit_Fn>(GetProcAddress(library_, AMF_INIT_FUNCTION_NAME));
+    if (!query || !init) return "AMF is unavailable: the runtime has no AMFInit.";
+
+    amf_uint64 runtime = 0;
+    query(&runtime);
+    // A driver older than these headers refuses to be asked for their version;
+    // asking for what the driver has works with every property used here.
+    AMF_RESULT result = init(std::min<amf_uint64>(runtime, AMF_FULL_VERSION), &factory_);
+    if (result != AMF_OK || !factory_) return AmfError("AMFInit", result);
+
+    result = factory_->CreateContext(&context_);
+    if (result != AMF_OK) return AmfError("CreateContext", result);
+    // AMF submits work on this device from threads of its own, while the
+    // capture callback uses its immediate context.
+    ComPtr<ID3D10Multithread> multithread;
+    if (SUCCEEDED(device->QueryInterface(IID_PPV_ARGS(multithread.GetAddressOf())))) {
+      multithread->SetMultithreadProtected(TRUE);
+    }
+    result = context_->InitDX11(device);
+    if (result != AMF_OK) return AmfError("InitDX11", result);
+
+    result = factory_->CreateComponent(context_, AMFVideoEncoderVCE_AVC, &encoder_);
+    if (result != AMF_OK) return AmfError("CreateComponent(H.264)", result);
+
+    // Usage first: setting it resets every other property to its defaults.
+    std::string error;
+    Set(AMF_VIDEO_ENCODER_USAGE, AMF_VIDEO_ENCODER_USAGE_ULTRA_LOW_LATENCY, &error);
+    Set(AMF_VIDEO_ENCODER_PROFILE, AMF_VIDEO_ENCODER_PROFILE_HIGH, &error);
+    Set(AMF_VIDEO_ENCODER_QUALITY_PRESET, AMF_VIDEO_ENCODER_QUALITY_PRESET_SPEED, &error);
+    Set(AMF_VIDEO_ENCODER_FRAMESIZE, ::AMFConstructSize(width, height), &error);
+    Set(AMF_VIDEO_ENCODER_FRAMERATE, ::AMFConstructRate(fps_, 1), &error);
+    // The rate control the ffmpeg route measured best (see encoder.ts): the
+    // target held under heavy motion, near nothing on a still screen, and
+    // even frame sizes. CBR pads every frame with filler to the full rate.
+    Set(AMF_VIDEO_ENCODER_RATE_CONTROL_METHOD,
+        AMF_VIDEO_ENCODER_RATE_CONTROL_METHOD_LATENCY_CONSTRAINED_VBR, &error);
+    Set(AMF_VIDEO_ENCODER_ENFORCE_HRD, true, &error);
+    if (!error.empty()) return error;
+
+    // Not every generation supports each of these; one it lacks is not a
+    // reason to refuse the hardware.
+    Optional(AMF_VIDEO_ENCODER_B_PIC_PATTERN, 0);
+    Optional(AMF_VIDEO_ENCODER_FILLER_DATA_ENABLE, false);
+    Optional(AMF_VIDEO_ENCODER_RATE_CONTROL_SKIP_FRAME_ENABLE, false);
+    Optional(AMF_VIDEO_ENCODER_ENABLE_VBAQ, true);
+    Optional(AMF_VIDEO_ENCODER_IDR_PERIOD, static_cast<amf_int64>(gop_));
+    Optional(AMF_VIDEO_ENCODER_INPUT_COLOR_PROFILE, AMF_VIDEO_CONVERTER_COLOR_PROFILE_709);
+    Optional(AMF_VIDEO_ENCODER_OUTPUT_COLOR_PROFILE, AMF_VIDEO_CONVERTER_COLOR_PROFILE_709);
+    // QueryOutput waits this long for the frame instead of returning at once.
+    Optional(AMF_VIDEO_ENCODER_QUERY_TIMEOUT, static_cast<amf_int64>(kQueryTimeoutMs));
+
+    const std::string rateError = SetBitrate(bitrate);
+    if (!rateError.empty()) return rateError;
+
+    result = encoder_->Init(amf::AMF_SURFACE_NV12, static_cast<amf_int32>(width),
+                            static_cast<amf_int32>(height));
+    if (result != AMF_OK) return AmfError("Init", result);
+    width_ = width;
+    height_ = height;
+    return {};
+  }
+
+  // Wrapped per frame rather than once: an AMF surface built from a native
+  // texture is a thin reference, and the texture is what stays registered.
+  std::string RegisterInput(ID3D11Texture2D* texture) override {
+    input_ = texture;
+    return {};
+  }
+
+  // The encoder rebuilt at the new size in place; its first frame is an IDR
+  // carrying the new SPS.
+  std::string Resize(ID3D11Texture2D* texture, uint32_t width, uint32_t height) override {
+    const AMF_RESULT result =
+        encoder_->ReInit(static_cast<amf_int32>(width), static_cast<amf_int32>(height));
+    if (result != AMF_OK) return AmfError("ReInit", result);
+    input_ = texture;
+    width_ = width;
+    height_ = height;
+    forceIdr_ = true;
+    return {};
+  }
+
+  // Dynamic properties in AMF: the next frame is encoded at the new rate.
+  // VBV stays two frames of it, as measured in encoder.ts's -bufsize.
+  std::string SetBitrate(uint32_t bitrate) override {
+    std::string error;
+    Set(AMF_VIDEO_ENCODER_TARGET_BITRATE, static_cast<amf_int64>(bitrate), &error);
+    Set(AMF_VIDEO_ENCODER_PEAK_BITRATE, static_cast<amf_int64>(bitrate), &error);
+    Set(AMF_VIDEO_ENCODER_VBV_BUFFER_SIZE, static_cast<amf_int64>(bitrate) * 2 / fps_, &error);
+    return error;
+  }
+
+  bool Encode(int64_t timestamp, Packet* out, std::string* error) override {
+    amf::AMFSurfacePtr surface;
+    AMF_RESULT result = context_->CreateSurfaceFromDX11Native(input_.Get(), &surface, nullptr);
+    if (result != AMF_OK) {
+      *error = AmfError("CreateSurfaceFromDX11Native", result);
+      return false;
+    }
+    constexpr amf_pts kSecond = 10'000'000;  // AMF time is in 100ns units.
+    surface->SetPts(timestamp * kSecond / fps_);
+    surface->SetDuration(kSecond / fps_);
+
+    if (forceIdr_.exchange(false) || frames_ % gop_ == 0) {
+      // A requested keyframe restarts the cadence, as it would with -g.
+      frames_ = 0;
+      surface->SetProperty(AMF_VIDEO_ENCODER_FORCE_PICTURE_TYPE,
+                           AMF_VIDEO_ENCODER_PICTURE_TYPE_IDR);
+      surface->SetProperty(AMF_VIDEO_ENCODER_INSERT_SPS, true);
+      surface->SetProperty(AMF_VIDEO_ENCODER_INSERT_PPS, true);
+    }
+    ++frames_;
+
+    result = encoder_->SubmitInput(surface);
+    if (result == AMF_INPUT_FULL) {
+      // Only if a frame was left behind by a slow one before: collect it and
+      // try again, rather than lose this one.
+      amf::AMFDataPtr stale;
+      encoder_->QueryOutput(&stale);
+      result = encoder_->SubmitInput(surface);
+    }
+    if (result != AMF_OK) {
+      *error = AmfError("SubmitInput", result);
+      return false;
+    }
+
+    // One frame in, one frame out: the encoder holds no lookahead and no
+    // B-frames, so its output is this frame's, a few milliseconds later.
+    // QueryOutput waits up to kQueryTimeoutMs itself where the runtime knows
+    // QUERY_TIMEOUT; the loop covers runtimes that return at once.
+    amf::AMFDataPtr data;
+    const auto deadline =
+        std::chrono::steady_clock::now() + std::chrono::milliseconds(kQueryTimeoutMs);
+    for (;;) {
+      result = encoder_->QueryOutput(&data);
+      if (result == AMF_OK && data) break;
+      if (result != AMF_OK && result != AMF_REPEAT) {
+        *error = AmfError("QueryOutput", result);
+        return false;
+      }
+      if (std::chrono::steady_clock::now() >= deadline) return true;  // Late, not failed.
+      Sleep(1);
+    }
+
+    amf::AMFBufferPtr buffer(data);
+    if (!buffer) {
+      *error = "AMF returned something other than a bitstream.";
+      return false;
+    }
+    const auto* bytes = static_cast<const uint8_t*>(buffer->GetNative());
+    out->data.assign(bytes, bytes + buffer->GetSize());
+    amf_int64 type = -1;
+    data->GetProperty(AMF_VIDEO_ENCODER_OUTPUT_DATA_TYPE, &type);
+    out->keyframe = type == AMF_VIDEO_ENCODER_OUTPUT_DATA_TYPE_IDR ||
+                    type == AMF_VIDEO_ENCODER_OUTPUT_DATA_TYPE_I;
+    return true;
+  }
+
+  void Stop() override {
+    input_.Reset();
+    if (encoder_) {
+      encoder_->Terminate();
+      encoder_ = nullptr;
+    }
+    if (context_) {
+      context_->Terminate();
+      context_ = nullptr;
+    }
+    // The factory belongs to the runtime; it lives as long as the DLL does.
+    factory_ = nullptr;
+    if (library_) {
+      FreeLibrary(library_);
+      library_ = nullptr;
+    }
+  }
+
+ private:
+  static constexpr int kQueryTimeoutMs = 50;
+
+  template <typename T>
+  void Set(const wchar_t* name, const T& value, std::string* error) {
+    const AMF_RESULT result = encoder_->SetProperty(name, value);
+    if (result != AMF_OK && error->empty()) {
+      *error = AmfError(Narrow(name).c_str(), result);
+    }
+  }
+  template <typename T>
+  void Optional(const wchar_t* name, const T& value) {
+    encoder_->SetProperty(name, value);
+  }
+
+  HMODULE library_ = nullptr;
+  amf::AMFFactory* factory_ = nullptr;
+  amf::AMFContextPtr context_;
+  amf::AMFComponentPtr encoder_;
+  ComPtr<ID3D11Texture2D> input_;
+  uint32_t width_ = 0;
+  uint32_t height_ = 0;
+  uint32_t fps_ = 1;
+  uint32_t gop_ = 120;
+  uint32_t frames_ = 0;
 };
 
 class Session {
@@ -464,10 +805,16 @@ class Session {
 
     adapter_ = ChooseAdapter();
     if (!adapter_.adapter) return "No hardware graphics adapter was found.";
-    // NVENC only when the adapter we are actually rendering on is NVIDIA's.
-    // Otherwise the frames go out raw and ffmpeg encodes them with AMF on a
-    // Radeon or Quick Sync on an Intel GPU.
-    encode_ = adapter_.nvenc;
+    // The encoder belongs to the adapter we are actually rendering on: NVENC
+    // on NVIDIA's, AMF on AMD's. Anything else — Intel, or either of those
+    // declining below — sends frames out raw for ffmpeg to encode.
+    encoder_.reset();
+    if (adapter_.nvenc) {
+      encoder_ = std::make_unique<NvencEncoder>();
+    } else if (adapter_.amf) {
+      encoder_ = std::make_unique<AmfEncoder>();
+    }
+    encode_ = encoder_ != nullptr;
 
     UINT flags = D3D11_CREATE_DEVICE_BGRA_SUPPORT;
     // D3D_DRIVER_TYPE_UNKNOWN is required when an adapter is named; passing
@@ -563,9 +910,17 @@ class Session {
       }
     }
 
+    // AMF is fed NV12, which only the scaler produces. Without a preset to
+    // scale into there is no NV12, so the frames go out raw instead.
+    if (encode_ && encoder_->InputFormat() == DXGI_FORMAT_NV12 && !scale_) {
+      fallbackReason_ = "AMF needs the frame scaled to NV12, and no output size was given.";
+      encode_ = false;
+      encoder_.reset();
+    }
+
     if (encode_) {
-      const std::string encoderError = encoder_.Start(device_.Get(), width_, height_, maxWidth_, maxHeight_,
-                                                        fps, bitrate);
+      const std::string encoderError =
+          encoder_->Start(device_.Get(), width_, height_, maxWidth_, maxHeight_, fps, bitrate);
       if (!encoderError.empty()) {
         // Degrade rather than refuse. NVENC can be present and still decline —
         // most often on a driver older than the headers this was built
@@ -575,13 +930,16 @@ class Session {
         // broadcast. Reported so it is visible rather than a silent downgrade.
         fallbackReason_ = encoderError;
         encode_ = false;
-        encoder_.Stop();
+        const bool wasNvenc = encoder_->InputFormat() != DXGI_FORMAT_NV12;
+        encoder_.reset();
         // An NVIDIA card whose NVENC declined keeps exactly what it had: the
-        // window at its own size, unscaled BGRA. The scaled NV12 readback
-        // below is for the GPUs that never had NVENC (AMD, Intel).
-        width_ = sourceWidth_;
-        height_ = sourceHeight_;
-        scale_ = false;
+        // window at its own size, unscaled BGRA. A Radeon whose AMF declined
+        // keeps the scaled NV12 readback below, which is what it always had.
+        if (wasNvenc) {
+          width_ = sourceWidth_;
+          height_ = sourceHeight_;
+          scale_ = false;
+        }
       }
     }
 
@@ -601,7 +959,8 @@ class Session {
     // through a pipe, and only about half the frames made it — ffmpeg then
     // duplicated the rest, which looked like slow motion. It also spares
     // ffmpeg converting every frame to NV12 on the CPU.
-    nv12_ = !encode_ && scale_;
+    // An encoder that takes NV12 (AMF) gets it from the scaler the same way.
+    nv12_ = encode_ ? encoder_->InputFormat() == DXGI_FORMAT_NV12 : scale_;
     desc.Format = nv12_ ? DXGI_FORMAT_NV12 : DXGI_FORMAT_B8G8R8A8_UNORM;
     desc.SampleDesc.Count = 1;
     if (encode_) {
@@ -616,7 +975,7 @@ class Session {
     if (FAILED(hr)) return HresultMessage("CreateTexture2D", hr);
 
     if (encode_) {
-      const std::string registerError = encoder_.RegisterInput(input_.Get());
+      const std::string registerError = encoder_->RegisterInput(input_.Get());
       if (!registerError.empty()) return registerError;
     }
 
@@ -744,7 +1103,7 @@ class Session {
 
     // Under the lock so a frame already inside OnFrame finishes first.
     std::lock_guard<std::mutex> guard(encodeMutex_);
-    encoder_.Stop();
+    if (encoder_) encoder_->Stop();
     if (tsfn_) {
       tsfn_.Release();
       tsfn_ = nullptr;
@@ -754,7 +1113,7 @@ class Session {
   uint32_t width() const { return width_; }
   uint32_t height() const { return height_; }
   void RequestKeyframe() {
-    if (encode_) encoder_.RequestIdr();
+    if (encode_ && encoder_) encoder_->RequestIdr();
   }
 
  private:
@@ -979,7 +1338,7 @@ class Session {
     const auto encodeStart = std::chrono::steady_clock::now();
     Packet packet;
     std::string error;
-    if (!encoder_.Encode(frameIndex_++, &packet, &error)) {
+    if (!encoder_->Encode(frameIndex_++, &packet, &error)) {
       Emit({}, false, error);
       return;
     }
@@ -995,6 +1354,19 @@ class Session {
   uint64_t arrived() const { return arrivedCount_; }
   /** "h264" when NVENC encoded it; otherwise the raw frames' pixel format. */
   const char* output() const { return encode_ ? "h264" : nv12_ ? "nv12" : "bgra"; }
+  /** "nvenc" or "amf" when the addon encodes; empty when frames go out raw. */
+  const char* encoderName() const { return encode_ && encoder_ ? encoder_->Name() : ""; }
+
+  /**
+   * Moves the encoder to a new target bitrate mid-stream — what the room's
+   * WebRTC sender estimates the uplink will carry. Raw frames have no
+   * encoder here to tell; ffmpeg's rate is fixed for its run.
+   */
+  std::string SetBitrate(uint32_t bitrate) {
+    std::lock_guard<std::mutex> guard(encodeMutex_);
+    if (!running_ || !encode_ || !encoder_) return "No encoder is running.";
+    return encoder_->SetBitrate(bitrate);
+  }
   /** Empty unless NVENC was available, tried, and declined. */
   const std::string& fallbackReason() const { return fallbackReason_; }
   const char* vendor() const { return VendorName(adapter_.vendorId); }
@@ -1089,7 +1461,7 @@ class Session {
     desc.Height = height;
     desc.MipLevels = 1;
     desc.ArraySize = 1;
-    desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+    desc.Format = encoder_->InputFormat();
     desc.SampleDesc.Count = 1;
     desc.Usage = D3D11_USAGE_DEFAULT;
     desc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
@@ -1100,7 +1472,7 @@ class Session {
       return;
     }
 
-    const std::string error = encoder_.Resize(texture.Get(), width, height);
+    const std::string error = encoder_->Resize(texture.Get(), width, height);
     if (!error.empty()) {
       // A driver that will not change size in place keeps the stream at its
       // starting size, letterboxed, as before: worse, not broken. Not tried
@@ -1308,7 +1680,7 @@ class Session {
   wgc::GraphicsCaptureSession session_{nullptr};
   winrt::event_token frameToken_{};
 
-  Encoder encoder_;
+  std::unique_ptr<VideoEncoder> encoder_;
   AdapterChoice adapter_;
   /** True when NVENC drives this session; false when frames go out raw. */
   bool encode_ = false;
@@ -1402,7 +1774,22 @@ Napi::Value Start(const Napi::CallbackInfo& info) {
   result.Set("fallbackReason", Napi::String::New(env, g_session.fallbackReason()));
   result.Set("vendor", Napi::String::New(env, g_session.vendor()));
   result.Set("adapter", Napi::String::New(env, g_session.adapterName()));
+  result.Set("encoder", Napi::String::New(env, g_session.encoderName()));
   return result;
+}
+
+Napi::Value SetBitrate(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  if (info.Length() < 1 || !info[0].IsNumber()) {
+    Napi::TypeError::New(env, "setBitrate(bitsPerSecond) expects a number")
+        .ThrowAsJavaScriptException();
+    return env.Undefined();
+  }
+  const std::string error = g_session.SetBitrate(info[0].ToNumber().Uint32Value());
+  if (!error.empty()) {
+    Napi::Error::New(env, error).ThrowAsJavaScriptException();
+  }
+  return env.Undefined();
 }
 
 Napi::Value RequestKeyframe(const Napi::CallbackInfo& info) {
@@ -1481,6 +1868,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("stop", Napi::Function::New(env, Stop));
   exports.Set("stats", Napi::Function::New(env, Stats));
   exports.Set("requestKeyframe", Napi::Function::New(env, RequestKeyframe));
+  exports.Set("setBitrate", Napi::Function::New(env, SetBitrate));
   exports.Set("isSupported", Napi::Function::New(env, IsSupported));
   return exports;
 }

@@ -659,11 +659,12 @@ function registerIpc(): void {
     });
     return { x: Math.round(point.x), y: Math.round(point.y) };
   }
-  // NVIDIA only: the window is captured and encoded by NVENC in the addon, and
-  // each encoded frame goes to the renderer, which sends it on the room's own
-  // WebRTC connection in place of a placeholder frame (see native-video.ts).
-  // Audio and video then share one connection and one clock, which is what
-  // the ffmpeg + WHIP route could not do. AMD and Intel keep that route.
+  // NVIDIA and AMD: the window is captured and encoded in the addon — NVENC or
+  // AMF — and each encoded frame goes to the renderer, which sends it on the
+  // room's own WebRTC connection in place of a placeholder frame (see
+  // native-video.ts). Audio and video then share one connection and one
+  // clock, which is what the ffmpeg + WHIP route could not do. Intel keeps
+  // that route, and so does a Radeon whose AMF declines.
   ipcMain.handle(
     IPC.nativeVideoStart,
     (
@@ -709,21 +710,37 @@ function registerIpc(): void {
         throw err;
       }
       if (info.output !== 'h264') {
-        // NVENC declined, and the addon fell back to raw frames, which only
-        // the ffmpeg route can encode.
+        // NVENC or AMF declined, and the addon fell back to raw frames, which
+        // only the ffmpeg route can encode.
         capture.stop();
         sources.startWarming();
-        throw new Error(`NVENC is unavailable: ${info.fallbackReason || 'not an NVIDIA adapter'}`);
+        throw new Error(
+          `Hardware encoding is unavailable: ${info.fallbackReason || `no encoder for ${info.adapter}`}`,
+        );
       }
-      console.log(`[native-video] ${info.adapter} -> ${info.width}x${info.height}`);
+      console.log(
+        `[native-video] ${info.adapter} -> ${info.width}x${info.height} (${info.encoder})`,
+      );
       watchWindow(options.hwnd, () => {
         if (!win.isDestroyed()) {
           win.webContents.send(IPC.nativeVideoError, 'The shared window was closed.');
         }
       });
-      return { width: info.width, height: info.height };
+      return { width: info.width, height: info.height, encoder: info.encoder };
     },
   );
+
+  // The renderer's bandwidth estimate, applied to the running encoder.
+  ipcMain.handle(IPC.nativeVideoBitrate, (_event, bitsPerSecond: unknown) => {
+    if (
+      typeof bitsPerSecond !== 'number' ||
+      !Number.isFinite(bitsPerSecond) ||
+      bitsPerSecond <= 0
+    ) {
+      throw new Error(`Not a bitrate: ${String(bitsPerSecond)}`);
+    }
+    capture.setBitrate(bitsPerSecond);
+  });
 
   ipcMain.handle(IPC.nativeVideoStop, () => {
     unwatchWindow();
