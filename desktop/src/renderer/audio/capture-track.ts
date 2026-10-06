@@ -20,6 +20,8 @@ export interface CaptureStats {
   latencyMs: number;
   /** Frames dropped to hold the latency ceiling, i.e. accumulated clock drift. */
   drifted: number;
+  /** Playback speed against real time, as the worklet absorbs clock drift. */
+  rate?: number;
 }
 
 const AUDIO_STATS_MS = 5000;
@@ -33,7 +35,9 @@ const AUDIO_STATS_MS = 5000;
  * two ways this pipeline can make one: an underrun plays silence where audio
  * was due (a gap), and a drift drop discards buffered audio to hold the
  * latency ceiling (a cut). Either, often enough, is heard as crackle; zero of
- * both while it crackled puts the cause downstream of here.
+ * both while it crackled puts the cause downstream of here. The playback
+ * rate says how hard the worklet is working to keep the two clocks together:
+ * x0.995 is a consumer running 0.5% ahead of the capture, absorbed.
  *
  * The worklet's counters are running totals; this reports their growth.
  */
@@ -54,7 +58,8 @@ export function audioStatsLogger(): (stats: CaptureStats) => void {
         `${ms(stats.underruns - base.underruns)}ms underrun (silence played), ` +
         `${ms(stats.drifted - base.drifted)}ms dropped for drift, ` +
         `${ms(stats.overruns - base.overruns)}ms overrun (ring full), ` +
-        `buffer ${minLatency}..${maxLatency}ms`,
+        `buffer ${minLatency}..${maxLatency}ms, ` +
+        `playback x${(stats.rate ?? 1).toFixed(4)}`,
     );
     last = stats;
     since = now;
