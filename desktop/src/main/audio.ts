@@ -14,6 +14,8 @@
 
 import type { BrowserWindow } from 'electron';
 import { createRequire } from 'node:module';
+import { silenceToFillMs } from './audio-gaps';
+import { BYTES_PER_MS } from './media-clock';
 
 interface LoopbackCaptureInstance {
   start(processId: number, includeProcessTree: boolean, callback: (chunk: Buffer) => void): void;
@@ -58,6 +60,10 @@ function loadCtor(): LoopbackCaptureCtor {
 export const perAppAudioSupported = process.platform === 'win32';
 
 let capture: LoopbackCaptureInstance | null = null;
+let gapTimer: ReturnType<typeof setInterval> | null = null;
+
+const GAP_CHECK_MS = 20;
+const CAPTURE_STATS_MS = 5000;
 
 /**
  * Starts capturing one process's audio (or the whole system's, if `processId`
@@ -78,13 +84,62 @@ export function startCapture(
 
   const Ctor = loadCtor();
   capture = new Ctor();
+
+  // Wall-clock time the audio relayed so far reaches (see audio-gaps.ts), and
+  // what the log reports every few seconds: how much of real time arrived,
+  // and how much had to be filled.
+  let coveredUntil = 0;
+  let receivedMs = 0;
+  let filledMs = 0;
+  let gaps = 0;
+  let statsSince = performance.now();
+  const relay = (chunk: Buffer) => {
+    if (!win.isDestroyed()) win.webContents.send('zoia:audio:chunk', chunk);
+  };
+
   const onChunk = (chunk: Buffer) => {
     if (sink) {
       sink(chunk);
       return;
     }
-    if (!win.isDestroyed()) win.webContents.send('zoia:audio:chunk', chunk);
+    coveredUntil = performance.now();
+    receivedMs += chunk.length / BYTES_PER_MS;
+    relay(chunk);
   };
+
+  // The ffmpeg route has its own keepalive in encoder.ts; this is the relay's.
+  if (!sink) {
+    gapTimer = setInterval(() => {
+      const now = performance.now();
+      if (now - statsSince >= CAPTURE_STATS_MS) {
+        const elapsed = now - statsSince;
+        console.log(
+          `[audio-capture] ${(elapsed / 1000).toFixed(0)}s: ` +
+            `${receivedMs.toFixed(0)}ms delivered (${((receivedMs / elapsed) * 100).toFixed(1)}% of real time), ` +
+            `${filledMs.toFixed(0)}ms of gaps filled with silence in ${gaps} gaps`,
+        );
+        receivedMs = 0;
+        filledMs = 0;
+        gaps = 0;
+        statsSince = now;
+      }
+      if (silenceToFillMs(coveredUntil, now) === 0) return;
+      // Not yet: timers run before I/O in Node's loop, so after a main-thread
+      // stall this fires while packets delayed by it are still queued. Filling
+      // now would put silence where they belong — the same trap encoder.ts's
+      // keepalive learned to step around. setImmediate runs after that I/O.
+      setImmediate(() => {
+        const fill = silenceToFillMs(coveredUntil, performance.now());
+        if (fill === 0 || !capture) return;
+        // Whole sample frames only (4 bytes: two 16-bit channels).
+        const bytes = Math.floor((fill * BYTES_PER_MS) / 4) * 4;
+        relay(Buffer.alloc(bytes));
+        coveredUntil += fill;
+        filledMs += fill;
+        gaps++;
+      });
+    }, GAP_CHECK_MS);
+  }
 
   if (processId !== null) {
     capture.start(processId, true, onChunk);
@@ -94,6 +149,8 @@ export function startCapture(
 }
 
 export function stopCapture(): void {
+  if (gapTimer) clearInterval(gapTimer);
+  gapTimer = null;
   capture?.stop();
   capture = null;
 }
