@@ -36,26 +36,38 @@ export function limitsFor(maxBitrate: number): AdaptiveBitrateLimits {
   return { max: maxBitrate, floor: Math.min(maxBitrate, Math.max(1_000_000, maxBitrate * 0.15)) };
 }
 
+/** How far the estimate must fall between two readings to count as falling. */
+export const FALL = 0.95;
+
 /**
- * The next target, from the current one and Chromium's estimate. Returns
- * `current` when nothing should change.
+ * The next target, from the current one and Chromium's estimate now and a
+ * second ago. Returns `current` when nothing should change.
  *
- * Lowered only when the estimate is below what is being sent now: on a
- * healthy link Chromium's estimate sits at the configured maximum, and
- * shaving headroom off that every second would walk a good stream down for
- * nothing.
+ * Lowered only when the estimate is below what is being sent now *and* has
+ * just fallen. Below what is being sent, because on a healthy link the
+ * estimate sits well above the preset (142Mbps measured on a 20Mbps one),
+ * and shaving headroom off it would walk a good stream down for nothing.
+ * Fallen, because an estimate below the preset is also what a connection
+ * that has only just started looks like: Chromium's begins low and climbs,
+ * and ten seconds in it read 7.4Mbps on a link that went on to measure 140 —
+ * a broadcast started at a third of its preset for nothing, twice in one
+ * test. A link that really cannot carry the preset says so by the estimate
+ * falling once the stream overruns it, which this then follows at once.
  */
 export function nextBitrate(
   current: number,
   available: number | undefined,
+  previous: number | undefined,
   elapsedMs: number,
   limits: AdaptiveBitrateLimits,
 ): number {
   if (elapsedMs < WARMUP_MS) return current;
   if (available === undefined || !Number.isFinite(available) || available <= 0) return current;
 
+  const falling = previous !== undefined && available < previous * FALL;
   let target = current;
   if (available < current) {
+    if (!falling) return current;
     target = available * HEADROOM;
   } else if (available >= limits.max) {
     // An estimate at the ceiling is Chromium saying "as much as you are
