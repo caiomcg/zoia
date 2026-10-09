@@ -27,6 +27,9 @@ ARG GMP_VERSION=6.3.0
 ARG NETTLE_VERSION=3.10.2
 ARG GNUTLS_VERSION=3.8.13
 ARG OPUS_VERSION=1.5.2
+# x264 has no releases; this is its `stable` branch. Fetched with git because
+# code.videolan.org answers archive downloads with a bot challenge page.
+ARG X264_COMMIT=b35605ace3ddf7c1a5d67a2eb553f034aef41d55
 ARG VPL_VERSION=2.17.0
 ARG AMF_VERSION=1.5.3
 ARG NVCODEC_VERSION=13.0.19.0
@@ -78,8 +81,9 @@ RUN curl -fsSL https://downloads.xiph.org/releases/opus/opus-${OPUS_VERSION}.tar
       --disable-doc --disable-extra-programs \
  && make -j"$(nproc)" && make install
 
-RUN curl -fsSL https://code.videolan.org/videolan/x264/-/archive/stable/x264-stable.tar.bz2 | tar xj \
+RUN git clone --branch stable --single-branch https://code.videolan.org/videolan/x264.git x264-stable \
  && cd x264-stable \
+ && git checkout --detach ${X264_COMMIT} \
  && ./configure --host=$HOST --cross-prefix=$HOST- --prefix=$PREFIX \
       --enable-static --disable-cli \
  && make -j"$(nproc)" && make install
