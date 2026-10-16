@@ -1,9 +1,24 @@
+import groovy.json.JsonSlurper
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
     id("org.jetbrains.kotlin.plugin.serialization")
 }
+
+// The APK carries the repo's release version, read from the root package.json
+// rather than kept here, so a release tag cannot ship an APK that says
+// something else. scripts/check-release-version.js already holds the tag to
+// that file. versionCode must only ever grow: MAJOR*10000 + MINOR*100 + PATCH.
+val releaseVersion = (JsonSlurper().parse(rootDir.resolve("../package.json")) as Map<*, *>)["version"] as String
+val releaseVersionCode = releaseVersion.substringBefore('-').split('.').map(String::toInt)
+    .let { (major, minor, patch) -> major * 10000 + minor * 100 + patch }
+
+// Release signing comes from the environment, never from a file in the repo.
+// Without it the release APK is built unsigned, which compiles but will not
+// install. CI refuses to publish one; see .github/workflows/release.yml.
+val releaseKeystore = System.getenv("ZOIA_ANDROID_KEYSTORE")?.takeIf { it.isNotBlank() }
 
 android {
     namespace = "im.zoia"
@@ -13,14 +28,26 @@ android {
         applicationId = "im.zoia"
         minSdk = 29
         targetSdk = 34
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = releaseVersionCode
+        versionName = releaseVersion
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    signingConfigs {
+        if (releaseKeystore != null) {
+            create("release") {
+                storeFile = file(releaseKeystore)
+                storePassword = System.getenv("ZOIA_ANDROID_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("ZOIA_ANDROID_KEY_ALIAS")
+                keyPassword = System.getenv("ZOIA_ANDROID_KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
+            if (releaseKeystore != null) signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
