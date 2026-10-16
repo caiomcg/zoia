@@ -77,6 +77,7 @@ class SessionManager(
             if (e is kotlin.coroutines.cancellation.CancellationException) throw e
             val msg = when {
                 e is ApiException && e.statusCode == 401 -> "Convite inválido ou expirado."
+                e is ApiException && e.statusCode == 409 -> "Este convite já atingiu o limite de ativações (já está em uso em outro aparelho)."
                 e is ApiException && e.statusCode == 429 -> "Limite de tentativas excedido. Tente novamente mais tarde."
                 else -> e.message ?: "Falha ao parear com o servidor."
             }
