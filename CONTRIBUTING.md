@@ -56,7 +56,7 @@ a pull request still cannot prove the addon builds — if you change anything un
 addon *links*; only a real machine tells you it loads.
 
 Commits follow [Conventional Commits](https://www.conventionalcommits.org/). The allowed
-scopes are in `commitlint.config.js` — `desktop`, `api`, `web`, `infra` and a few others.
+scopes are in `commitlint.config.js` — `desktop`, `android`, `api`, `web`, `infra` and a few others.
 `feat(desktop): …`, `fix(api): …`.
 
 ## Things worth knowing before you change them

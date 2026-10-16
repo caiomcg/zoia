@@ -10,6 +10,7 @@ export default {
         'api',
         'web',
         'desktop',
+        'android',
         'livekit',
         'infra',
         'deploy',
