@@ -327,7 +327,10 @@ fun RoomScreen(
                                 verticalArrangement = Arrangement.spacedBy(12.dp),
                                 modifier = Modifier.fillMaxSize()
                             ) {
-                                items(streams) { stream ->
+                                items(
+                                    items = streams,
+                                    key = { it.participantId }
+                                ) { stream ->
                                     StreamCard(
                                         stream = stream,
                                         roomManager = roomManager,
@@ -811,12 +814,13 @@ fun VideoTrackSurface(videoTrack: VideoTrack, roomManager: LiveKitRoomManager) {
     AndroidView(
         factory = { ctx ->
             SurfaceViewRenderer(ctx).apply {
+                setEnableHardwareScaler(true)
                 roomManager.initVideoRenderer(this)
                 videoTrack.addRenderer(this)
             }
         },
-        update = {
-            // Track is bound
+        update = { renderer ->
+            renderer.setEnableHardwareScaler(true)
         },
         onRelease = { renderer ->
             videoTrack.removeRenderer(renderer)
