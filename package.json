@@ -23,7 +23,7 @@
   "dependencies": {
     "cookie-parser": "^1.4.7",
     "express": "^5.1.0",
-    "express-rate-limit": "^8.1.0",
+    "express-rate-limit": "^8.7.1",
     "livekit-server-sdk": "^2.13.1"
   },
   "devDependencies": {
