@@ -63,7 +63,13 @@ class LiveKitRoomManager(
 
         try {
             val tokenResponse = apiClient.getToken(channelId)
-            val newRoom = LiveKit.create(context)
+            val newRoom = LiveKit.create(
+                appContext = context,
+                options = io.livekit.android.RoomOptions(
+                    adaptiveStream = true,
+                    dynacast = true
+                )
+            )
             room = newRoom
 
             // Observe room events via SharedFlow
@@ -116,6 +122,11 @@ class LiveKitRoomManager(
         val items = currentRoom.remoteParticipants.values.mapNotNull { participant ->
             val videoTrack = participant.videoTrackPublications.firstOrNull()?.second as? VideoTrack
             val audioTrack = participant.audioTrackPublications.firstOrNull()?.second as? AudioTrack
+
+            // Only include participants who are actively broadcasting (skip passive viewers)
+            if (videoTrack == null && audioTrack == null) {
+                return@mapNotNull null
+            }
 
             val isAudioActive = (participant.identity?.value == activeAudioId) || 
                 (activeAudioId == null && audioTrack != null)
