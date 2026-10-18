@@ -489,12 +489,14 @@ export function createApp({
   /** Which channel each device is in right now, by device id. */
   async function whereAll() {
     const where = new Map();
-    for (const channel of await channelSet.list()) {
-      const participants = await channel.stage.participants().catch(() => []);
-      for (const p of participants) {
+    // All at once: one LiveKit call per channel, and a move waits on them.
+    const channels = await channelSet.list();
+    const lists = await Promise.all(channels.map((c) => c.stage.participants().catch(() => [])));
+    channels.forEach((channel, i) => {
+      for (const p of lists[i]) {
         if (!p.identity.endsWith(WHIP_SUFFIX)) where.set(p.identity, channel);
       }
-    }
+    });
     return where;
   }
 
@@ -578,7 +580,7 @@ export function createApp({
       const from = (await whereAll()).get(device.id);
       if (!from) return adminRefuse(res, 'not_connected');
       if (from.id === destination.id) return res.json({ moved: false });
-      await from.stage.send(device.id, MOVE_TOPIC, { channel: destination.id, by: req.user.name });
+      await from.stage.send(device.id, MOVE_TOPIC, { channel: destination.id });
       logger.info(
         `[admin] ${req.user.accountId} moved ${device.id} (${target.id}) to ${destination.id}`,
       );

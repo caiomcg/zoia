@@ -802,7 +802,7 @@ describe('admins move people between channels', () => {
     assert.equal(res.status, 200);
     assert.equal(res.body.moved, true);
     assert.deepEqual(lobby.sent, [
-      { to: [bob.id], topic: 'zoia.move', message: { channel: 'lounge', by: 'admin' } },
+      { to: [bob.id], topic: 'zoia.move', message: { channel: 'lounge' } },
     ]);
     // Already there: nothing to send.
     assert.equal((await move(laptop.id, 'lounge')).body.moved, false);
