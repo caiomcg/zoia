@@ -2,10 +2,9 @@ name: Release
 
 # Builds the Windows and macOS binaries and the Android APK, and publishes them.
 #
-# The desktop builds need no secrets, which is the whole point of the change
-# that introduced them: the published exe carries no server URL and no pairing
-# token, so there is nothing to inject. Whoever downloads it supplies a
-# zoia-invite.json at runtime. See docs/adr/0010-invites-outside-the-binary.md.
+# The desktop builds need no secrets: the published exe carries no server
+# address and no credential. Whoever downloads it types their server's address
+# and signs in with an account. See docs/adr/0031-accounts-with-admin-approval.md.
 
 on:
   push:
@@ -152,8 +151,6 @@ jobs:
         run: npm run build:native
 
       - name: Bundle main, preload and renderer
-        env:
-          ZOIA_TOKENLESS_BUILD: '1'
         run: npm run build
 
       - name: Package the Windows installer
@@ -233,8 +230,6 @@ jobs:
         run: npm ci
 
       - name: Bundle main, preload and renderer
-        env:
-          ZOIA_TOKENLESS_BUILD: '1'
         run: npm run build
 
       # Both architectures from one runner; electron-builder rebuilds the

@@ -1,37 +1,48 @@
 /**
- * Pairing orchestration: turn an invitation into a working session, once per
- * machine, and re-establish that session on every launch.
+ * Who this machine is signed in as, and getting it signed in.
  *
- * The invitation used to be compiled into the binary; it now normally arrives
- * as an invite file, because a published build cannot carry a secret (see
- * src/main/config.ts). Either way the shape is the same: it is spent once for
- * a per-device credential, and after that this module's job on every launch is
- * just to prove that credential still works, since it may have been revoked.
+ * A machine signs in to an account once, with an email and a password, and
+ * gets a per-device credential back; after that this module's job on every
+ * launch is just to prove that credential still works, since it may have
+ * been revoked, replaced or its account disabled. See ADR 0031.
  */
 
 import { hostname } from 'node:os';
 import * as api from './api';
-import { ApiError, NoServerError } from './api';
+import { ApiError, NoServerError, type SessionInfo } from './api';
 import * as config from './config';
+import { normalizeServerUrl } from './server-url';
 import { t } from './language';
 import { loadCredential, saveCredential, clearCredential } from './credential-store';
-import type { PairingStatus } from '../shared/ipc';
+import type { AccountInfo, AuthOutcome, PairingStatus } from '../shared/ipc';
 
 let status: PairingStatus = {
   paired: false,
   deviceName: null,
   error: null,
   serverUrl: null,
-  needsInvite: true,
 };
+
+/** Tells the window, which keeps its own copy. Set by index.ts. */
+let notify: (status: PairingStatus) => void = () => {};
+
+export function onStatusChange(listener: (status: PairingStatus) => void): void {
+  notify = listener;
+}
+
+function setStatus(next: PairingStatus): PairingStatus {
+  status = next;
+  notify(status);
+  return status;
+}
 
 export function getStatus(): PairingStatus {
   return status;
 }
 
 // Settled once restoreSession has run. Until then `status` is only a
-// placeholder, and answering with it made the pairing screen flash on every
-// launch of an already-paired machine.
+// placeholder, and answering with it made the sign-in screen flash on every
+// launch of an already signed-in machine.
 let markRestored: () => void = () => {};
 const restored = new Promise<void>((resolve) => {
   markRestored = resolve;
@@ -43,17 +54,39 @@ export async function getRestoredStatus(): Promise<PairingStatus> {
   return status;
 }
 
-/** Folds the current config into the status the UI renders. */
-function unpaired(error: string | null): PairingStatus {
-  const resolved = config.describe();
+function signedOut(error: string | null): PairingStatus {
+  return { paired: false, deviceName: null, error, serverUrl: config.getServerUrl() };
+}
+
+function accountOf(info: SessionInfo): AccountInfo {
   return {
-    paired: false,
-    deviceName: null,
-    error: error ?? resolved.error,
-    serverUrl: resolved.serverUrl,
-    // An invite is needed when nothing has supplied a server and a token.
-    needsInvite: !resolved.serverUrl || !resolved.hasPairingToken,
+    id: info.accountId,
+    email: info.email,
+    role: info.role,
+    status: info.status,
+    ...(info.pendingApprovals !== undefined ? { pendingApprovals: info.pendingApprovals } : {}),
   };
+}
+
+function signedIn(info: SessionInfo): PairingStatus {
+  return {
+    paired: true,
+    deviceName: info.name,
+    error: null,
+    serverUrl: config.getServerUrl(),
+    deviceId: info.id,
+    avatar: info.avatar ?? null,
+    account: accountOf(info),
+  };
+}
+
+/** The server's refusal code, or `unreachable` when there was no answer at all. */
+function errorCode(err: unknown): string {
+  if (err instanceof ApiError) {
+    return (err.body as { error?: string } | null)?.error ?? `http_${err.status}`;
+  }
+  if (err instanceof NoServerError) return 'invalid_server';
+  return 'unreachable';
 }
 
 /**
@@ -70,137 +103,136 @@ export async function restoreSession(): Promise<PairingStatus> {
 
 async function restore(): Promise<PairingStatus> {
   const stored = await loadCredential();
-  if (!stored) {
-    status = unpaired(null);
-    return status;
-  }
+  if (!stored) return setStatus(signedOut(null));
 
-  // The credential is only valid at the server that issued it, so that server
-  // wins over any invite still sitting next to the exe. Records written before
-  // invites existed carry no URL, and fall back to whatever config resolved.
-  if (stored.serverUrl) config.useCredentialServer(stored.serverUrl);
-
-  // A credential from a build that had its server compiled in, now running in
-  // a build that does not. The credential is probably still good, but there is
-  // nowhere to present it, and an invite for the same server is what fixes it.
-  if (!config.getServerUrl()) {
-    status = unpaired(t('pair.error.noServer'));
-    return status;
-  }
+  // The credential is only valid at the server that issued it, so that
+  // server wins over whatever address the build starts with.
+  config.useCredentialServer(stored.serverUrl);
 
   try {
-    const { name, id, avatar } = await api.deviceSession(stored.deviceCredential);
-    status = {
-      paired: true,
-      deviceName: name,
-      error: null,
-      serverUrl: config.getServerUrl(),
-      needsInvite: false,
-      deviceId: id,
-      avatar: avatar ?? null,
-    };
+    return setStatus(signedIn(await api.deviceSession(stored.deviceCredential)));
   } catch (err) {
-    // Only a 401 means "this device is gone". Anything else — the server being
-    // down, a laptop opened on a train, DNS not up yet — is temporary, and
-    // deleting the credential for it would un-pair a working machine and
-    // demand a fresh invite the user almost certainly no longer has. This
-    // previously cleared on *any* failure, so a brief server outage un-paired
-    // everybody at once.
-    if (err instanceof ApiError && err.status === 401) {
+    // A 401 means this device is gone — revoked, replaced by a newer machine,
+    // or unused too long; a 403 that its account was disabled. Anything else
+    // — the server being down, a laptop opened on a train — is temporary, and
+    // deleting the credential for it would sign out a working machine.
+    if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
       await clearCredential();
-      status = unpaired(t('pair.error.removed'));
-      return status;
+      const reason = err.status === 403 ? t('pair.error.disabled') : t('pair.error.removed');
+      return setStatus(signedOut(reason));
     }
-
-    status = {
+    return setStatus({
       paired: false,
       deviceName: stored.deviceName,
       error: t('pair.error.unreachable', { error: (err as Error).message }),
       serverUrl: config.getServerUrl(),
-      // The credential is still there and still believed good, so this is not
-      // a state an invite fixes. Saying otherwise sends people hunting for a
-      // file when the real answer is to try again later.
-      needsInvite: false,
-    };
+      offline: true,
+    });
   }
-  return status;
+}
+
+/** Points this copy at a typed address, if it is one. Returns an error code otherwise. */
+function adoptServer(serverUrl: string): string | null {
+  try {
+    config.useTypedServer(normalizeServerUrl(serverUrl.trim()));
+    return null;
+  } catch {
+    return 'invalid_server';
+  }
 }
 
 /**
- * Spends the pairing token for a device credential, stores it, and establishes
- * the session. `deviceName` defaults to the machine's hostname — it exists so
- * an admin's `keytool device:list` output means something.
+ * Signs this machine in to an account and keeps the credential it gets, so
+ * the password is typed once per machine. The machine is named after its
+ * hostname, which is what someone reads in their list of devices.
  */
-export async function pair(deviceName?: string): Promise<PairingStatus> {
-  const serverUrl = config.getServerUrl();
-  const pairingToken = config.getPairingToken();
-
-  if (!serverUrl || !pairingToken) {
-    status = unpaired(config.describe().error ?? t('pair.error.noInvite'));
-    return status;
-  }
-
-  const name = deviceName?.trim() || hostname();
-
+export async function signIn(
+  serverUrl: string,
+  email: string,
+  password: string,
+): Promise<AuthOutcome> {
+  const invalid = adoptServer(serverUrl);
+  if (invalid) return { ok: false, error: invalid };
   try {
-    const result = await api.pair(pairingToken, name);
+    const result = await api.login(email, password, hostname());
     await saveCredential({
       deviceId: result.deviceId,
       deviceCredential: result.deviceCredential,
       deviceName: result.name,
-      serverUrl,
+      // Set by adoptServer above, so never null here.
+      serverUrl: config.getServerUrl() ?? serverUrl,
     });
-    // Spends the pairing activation; still need the actual session cookie.
-    await api.deviceSession(result.deviceCredential);
-    status = {
-      paired: true,
-      deviceName: result.name,
-      error: null,
-      serverUrl,
-      needsInvite: false,
-      // A newly paired device has no picture yet.
-      deviceId: result.deviceId,
-      avatar: null,
-    };
+    return { ok: true, status: setStatus(signedIn(result)) };
   } catch (err) {
-    status = unpaired(
-      err instanceof ApiError
-        ? pairingErrorMessage(err)
-        : err instanceof NoServerError
-          ? err.message
-          : t('pair.error.unreachable', { error: (err as Error).message }),
-    );
+    return { ok: false, error: errorCode(err) };
   }
-  return status;
 }
 
 /**
- * Adopts an invite the user picked or dropped, then reports the resulting
- * state. Pairing stays a separate, deliberate step so they can see which
- * server they are about to join before joining it.
+ * Creates an account and signs in to it straight away. It is pending until an
+ * admin approves it, which the app shows as a waiting screen.
  */
-export async function useInvite(path: string): Promise<PairingStatus> {
+export async function signUp(
+  serverUrl: string,
+  email: string,
+  password: string,
+): Promise<AuthOutcome> {
+  const invalid = adoptServer(serverUrl);
+  if (invalid) return { ok: false, error: invalid };
   try {
-    await config.importInvite(path);
-    status = unpaired(null);
+    await api.signup(email, password);
   } catch (err) {
-    status = unpaired((err as Error).message);
+    return { ok: false, error: errorCode(err) };
   }
-  return status;
+  return signIn(serverUrl, email, password);
 }
 
-function pairingErrorMessage(err: ApiError): string {
-  const code = (err.body as { error?: string })?.error;
-  switch (code) {
-    case 'invalid':
-      return t('pair.error.tokenRejected');
-    case 'exhausted':
-      return t('pair.error.exhausted');
-    case 'device_name_required':
-      return t('pair.error.nameRequired');
-    case 'pairing_not_configured':
-      return t('pair.error.notSetUp');
-    default:
-      return t('pair.error.failed', { status: err.status });
+/**
+ * Spends a reset code from an admin, then signs in with the new password: a
+ * reset signs every machine of the account out, this one included.
+ */
+export async function redeem(
+  serverUrl: string,
+  code: string,
+  password: string,
+): Promise<AuthOutcome> {
+  const invalid = adoptServer(serverUrl);
+  if (invalid) return { ok: false, error: invalid };
+  let result: { email: string };
+  try {
+    result = await api.redeemCode(code.trim(), password);
+  } catch (err) {
+    return { ok: false, error: errorCode(err) };
   }
+  return signIn(serverUrl, result.email, password);
+}
+
+/**
+ * Asks the server who this machine is now: an approval, a rename, a role
+ * change or new sign-ups waiting. A machine that has been signed out
+ * meanwhile drops back to the sign-in screen; an unreachable server changes
+ * nothing.
+ */
+export async function refresh(): Promise<PairingStatus> {
+  if (!status.paired) return status;
+  try {
+    return setStatus(signedIn(await api.session()));
+  } catch (err) {
+    if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
+      await clearCredential();
+      return setStatus(signedOut(t('pair.error.removed')));
+    }
+    return status;
+  }
+}
+
+/**
+ * Signs this machine out, and asks the server to forget it so it stops holding
+ * a seat. Local state goes either way: an unreachable server is no reason to
+ * stay signed in against someone's wishes.
+ */
+export async function signOut(): Promise<PairingStatus> {
+  await api.forgetDevice().catch(() => undefined);
+  await clearCredential();
+  return setStatus(signedOut(null));
 }

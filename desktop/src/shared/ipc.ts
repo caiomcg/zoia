@@ -6,25 +6,77 @@
 export interface PairingStatus {
   paired: boolean;
   deviceName: string | null;
-  /** Set when a stored credential exists but was rejected — revoked or corrupt. */
+  /** Why this device is not signed in, or why the server could not be reached. */
   error: string | null;
   /**
-   * The server this copy is pointed at, so the pairing screen can show it
-   * before anyone commits to joining. Null until an invite supplies one.
-   * The pairing token itself is never sent to the renderer.
+   * The server this copy is pointed at, which the sign-in screen offers as
+   * its address. Null until something supplies one: an earlier sign-in or
+   * the build. Nothing secret is ever sent to the renderer.
    */
   serverUrl: string | null;
   /**
-   * True when there is nothing to pair with and the user has to supply an
-   * invite. Distinct from `error`: a server that is merely unreachable is not
-   * something an invite fixes, and saying so sends people hunting for a file.
+   * True when a stored credential is believed good but the server could not
+   * be reached. Signing in again is not what fixes that; waiting is.
    */
-  needsInvite: boolean;
+  offline?: boolean;
   /** This device's id, which is also its identity in the room. */
   deviceId?: string | null;
   /** The version of this device's picture, or null without one. */
   avatar?: string | null;
+  /** The account this machine is signed in to (ADR 0031); absent when signed out. */
+  account?: AccountInfo;
 }
+
+export type AccountRole = 'user' | 'admin' | 'super_admin';
+export type AccountState = 'pending' | 'active' | 'disabled';
+
+/** Who a signed-in device is, as the server describes it. */
+export interface AccountInfo {
+  id: string;
+  email: string;
+  role: AccountRole;
+  status: AccountState;
+  /** Sign-ups waiting for an admin. Only sent to admins. */
+  pendingApprovals?: number;
+}
+
+/** An account as an admin sees it. */
+export interface AdminAccount {
+  id: string;
+  email: string;
+  name: string;
+  role: AccountRole;
+  status: AccountState;
+  createdAt: string;
+  lastSeen: string | null;
+  signupIp: string | null;
+  devices: number;
+}
+
+/** One of your own signed-in machines. */
+export interface AccountDevice {
+  id: string;
+  name: string;
+  createdAt: string;
+  lastSeen: string | null;
+  current: boolean;
+}
+
+export type AdminAction = 'approve' | 'reject' | 'disable' | 'enable' | 'reset' | 'role';
+
+/** A one-time code an admin hands on, to set a forgotten password. */
+export interface IssuedCode {
+  code: string;
+  expiresAt: string;
+}
+
+/**
+ * How an account request went. `error` is the server's code when it refused,
+ * `unreachable` when there was no answer, or `invalid_server` for an address
+ * that is not one; the renderer turns it into words.
+ */
+export type AuthOutcome = { ok: true; status: PairingStatus } | { ok: false; error: string };
+export type ActionOutcome<T = undefined> = { ok: true; value: T } | { ok: false; error: string };
 
 /** A channel, who is in it, and who is live there. */
 export interface RoomInfo {
@@ -32,9 +84,23 @@ export interface RoomInfo {
   name: string;
   /** Where clients that name no channel land. Renamable, never removable. */
   isDefault: boolean;
-  /** `avatar` is the version of their picture, when they have one. */
-  participants: Array<{ identity: string; name: string; avatar?: string }>;
+  /**
+   * `avatar` is the version of their picture, when they have one; `role` is
+   * there for admins and the super admin, from the server's own records.
+   */
+  participants: Array<{ identity: string; name: string; avatar?: string; role?: AccountRole }>;
   broadcasters: Array<{ identity: string; name: string }>;
+}
+
+/**
+ * The channel list, the most channels the server holds, and who is asking as
+ * the server sees them now — so a role given or taken away shows within one
+ * poll rather than at the next account check.
+ */
+export interface RoomsList {
+  rooms: RoomInfo[];
+  max: number;
+  you?: { role: AccountRole; pendingApprovals?: number };
 }
 
 /** How a channel change went; `error` is the server's code when refused. */
@@ -252,9 +318,16 @@ export interface SourceInfo {
 
 export const IPC = {
   pairingStatus: 'zoia:pairing:status',
-  pairingStart: 'zoia:pairing:start',
-  pairingUseInvite: 'zoia:pairing:use-invite',
-  pairingChooseInvite: 'zoia:pairing:choose-invite',
+  accountSignIn: 'zoia:account:sign-in',
+  accountSignUp: 'zoia:account:sign-up',
+  accountRedeem: 'zoia:account:redeem',
+  accountRefresh: 'zoia:account:refresh',
+  accountSignOut: 'zoia:account:sign-out',
+  accountPassword: 'zoia:account:password',
+  accountDevices: 'zoia:account:devices',
+  accountRemoveDevice: 'zoia:account:devices:remove',
+  adminAccounts: 'zoia:admin:accounts',
+  adminAction: 'zoia:admin:action',
   getToken: 'zoia:token:get',
   roomsList: 'zoia:rooms:list',
   roomsCreate: 'zoia:rooms:create',

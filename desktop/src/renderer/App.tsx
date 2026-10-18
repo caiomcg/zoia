@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Banner from './components/Banner';
 import CameraDialog from './components/CameraDialog';
-import PairingScreen from './components/PairingScreen';
+import AuthScreen from './components/AuthScreen';
+import WaitingScreen from './components/WaitingScreen';
 import Player from './components/Player';
 import RemoteGrid, {
   type GridControls,
@@ -10,7 +11,7 @@ import RemoteGrid, {
 } from './components/RemoteGrid';
 import Sidebar from './components/Sidebar';
 import SourcePicker from './components/SourcePicker';
-import SettingsDialog from './components/SettingsDialog';
+import SettingsDialog, { type Section as SettingsSection } from './components/SettingsDialog';
 import ReleaseNotesDialog from './components/ReleaseNotesDialog';
 import Splash from './components/Splash';
 import StatusLight, { type StatusStat, type StatusTone } from './components/StatusLight';
@@ -45,6 +46,12 @@ const ONBOARDING_STORAGE_KEY = 'zoia.onboardingDismissed';
 // 5s a move between channels showed up late: the mover needs about a second
 // to reach their new channel, after the immediate re-read had already run.
 const ROOMS_POLL_MS = 2_000;
+/**
+ * How often a signed-in account asks the server who it is now: a rename, a
+ * role change. Admins ask more often, since a sign-up is someone waiting.
+ */
+const ACCOUNT_POLL_MS = 30_000;
+const ADMIN_POLL_MS = 10_000;
 
 /**
  * Who to list in a channel being hopped to, before its room has connected:
@@ -80,6 +87,7 @@ export default function App() {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [cameraOpen, setCameraOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsSection, setSettingsSection] = useState<SettingsSection>('profile');
   const [showOnboarding, setShowOnboarding] = useState(
     () => localStorage.getItem(ONBOARDING_STORAGE_KEY) !== 'true',
   );
@@ -135,6 +143,27 @@ export default function App() {
     return window.zoia.pairing.onChange(setStatus);
   }, []);
 
+  // Signed in and let in: an account still waiting for approval is signed in
+  // but can reach nothing, so nothing that talks to the room runs for it.
+  const usable = Boolean(status?.paired) && status?.account?.status !== 'pending';
+  const account = status?.account ?? null;
+  const pendingApprovals = account?.pendingApprovals ?? 0;
+
+  // By id: the account object is new after every refresh, and restarting the
+  // timer each time would be harmless but pointless.
+  const accountId = account?.id ?? null;
+  // The poll below compares against this without restarting whenever the
+  // account object changes, which is after every refresh.
+  const accountRef = useRef(account);
+  accountRef.current = account;
+  const isAdmin = account?.role === 'admin' || account?.role === 'super_admin';
+  useEffect(() => {
+    if (!usable || !accountId) return;
+    const every = isAdmin ? ADMIN_POLL_MS : ACCOUNT_POLL_MS;
+    const timer = setInterval(() => void window.zoia.account.refresh(), every);
+    return () => clearInterval(timer);
+  }, [usable, accountId, isAdmin]);
+
   useEffect(() => {
     // Not written back to storage when there is no encoder: that would read
     // as the person having turned it off, and keep it off on a machine that
@@ -143,7 +172,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!status?.paired || channel === null || room.state !== 'idle' || connectingRef.current) {
+    if (!usable || channel === null || room.state !== 'idle' || connectingRef.current) {
       return;
     }
     connectingRef.current = true;
@@ -161,29 +190,46 @@ export default function App() {
       .finally(() => {
         connectingRef.current = false;
       });
-  }, [status?.paired, room, channel, t]);
+  }, [usable, room, channel, t]);
 
   // Who is in which channel, and who is live there, for the channel list.
   useEffect(() => {
-    if (!status?.paired) return;
+    if (!usable) return;
     let cancelled = false;
     const load = () =>
       window.zoia.rooms
         .list()
-        .then(({ rooms, max }) => {
+        .then(({ rooms, max, you }) => {
           if (cancelled) return;
           setChannels(rooms);
           setMaxChannels(max);
           setBooted(true);
+          // Made or unmade an admin, or new sign-ups waiting: take it in now.
+          const known = accountRef.current;
+          if (
+            you &&
+            known &&
+            (you.role !== known.role ||
+              (you.pendingApprovals ?? 0) !== (known.pendingApprovals ?? 0))
+          ) {
+            void window.zoia.account.refresh();
+          }
         })
-        .catch(() => {});
+        .catch((err: unknown) => {
+          // Refused rather than unreachable: this machine was signed out or
+          // its account disabled. Asking who it is now finds out at once,
+          // instead of at the next account check, half a minute away.
+          if (/\b40[13]\b/.test(String((err as Error)?.message ?? err))) {
+            void window.zoia.account.refresh();
+          }
+        });
     load();
     const timer = setInterval(load, ROOMS_POLL_MS);
     return () => {
       cancelled = true;
       clearInterval(timer);
     };
-  }, [status?.paired, channel, room.state, channelsVersion]);
+  }, [usable, channel, room.state, channelsVersion]);
 
   // Someone joining or leaving this channel has also left or joined another,
   // and the poll would not show that for up to five seconds. Re-read now.
@@ -280,7 +326,7 @@ export default function App() {
   const [releaseNotes, setReleaseNotes] = useState<ReleaseInfo | null>(null);
   const releaseNotesChecked = useRef(false);
   useEffect(() => {
-    if (!status?.paired || !booted || releaseNotesChecked.current) return;
+    if (!usable || !booted || releaseNotesChecked.current) return;
     releaseNotesChecked.current = true;
     void (async () => {
       const version = await window.zoia.app.version();
@@ -308,13 +354,33 @@ export default function App() {
     })().catch(() => {
       // Offline or rate-limited: try again on the next start.
     });
-  }, [status?.paired, booted, showOnboarding]);
+  }, [usable, booted, showOnboarding]);
 
   // Dialogs fade out however they are closed; see useExit. The notes are
   // kept while theirs fades, since the state holding them is already cleared.
   const picker = useExit(pickerOpen);
   const camera = useExit(cameraOpen);
   const settings = useExit(settingsOpen);
+
+  /** Leaves the room first, so nobody is left watching a session that has ended. */
+  async function handleSignOut() {
+    setSettingsOpen(false);
+    await leaveChannel();
+    setStatus(await window.zoia.account.signOut());
+  }
+
+  // Signed out or disabled from elsewhere: out of the channel too, sharing
+  // stopped, rather than left in a room the server no longer lets us use.
+  useEffect(() => {
+    if (status && !usable && channel !== null) void leaveChannel();
+    // leaveChannel is a fresh function each render; what matters is the state.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status, usable, channel]);
+
+  function openSettings(section: SettingsSection = 'profile') {
+    setSettingsSection(section);
+    setSettingsOpen(true);
+  }
   const notesDialog = useExit(releaseNotes !== null);
   const [shownNotes, setShownNotes] = useState<ReleaseInfo | null>(null);
   if (releaseNotes && releaseNotes !== shownNotes) setShownNotes(releaseNotes);
@@ -373,7 +439,10 @@ export default function App() {
   );
 
   if (!status) return <Splash />;
-  if (!status.paired) return <PairingScreen status={status} onPaired={setStatus} />;
+  if (!status.paired) return <AuthScreen status={status} onSignedIn={setStatus} />;
+  if (status.account?.status === 'pending') {
+    return <WaitingScreen status={status} onChange={setStatus} />;
+  }
   if (!booted) return <Splash />;
 
   /** Messages are keyed by content, so a new one reappears after a dismissal. */
@@ -763,7 +832,9 @@ export default function App() {
           myName={status.deviceName ?? t('common.you')}
           myIdentity={myIdentity}
           viewerIds={viewerIds}
-          onOpenSettings={() => setSettingsOpen(true)}
+          onOpenSettings={() => openSettings()}
+          settingsBadge={pendingApprovals}
+          myRole={account?.role}
           loadingRemoteIds={loadingRemoteIds}
           channels={channels}
           currentChannel={channel}
@@ -832,6 +903,10 @@ export default function App() {
           hardware={hardware}
           onHardwareChange={handleHardwareChange}
           hardwareAvailable={Boolean(gpu?.hardwareEncoder)}
+          account={account}
+          onSignOut={handleSignOut}
+          onAccountsChanged={() => void window.zoia.account.refresh()}
+          initialSection={settingsSection}
         />
       )}
 

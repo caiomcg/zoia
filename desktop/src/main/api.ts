@@ -2,13 +2,12 @@
  * All HTTP communication with the Zoia server lives here, in the main
  * process, using Electron's `net.fetch` on the default session. That session
  * owns the cookie jar, so the session cookie `POST /api/device/session` sets
- * is stored and replayed automatically on every later request — the same
- * cookie-based auth the web client uses, with no server changes and no
+ * is stored and replayed automatically on every later request, with no
  * cookie handling of our own to get wrong.
  *
- * The renderer never sees the pairing token, the device credential, or the
- * session cookie. It only ever receives what it needs: a LiveKit token, or a
- * stage result.
+ * The renderer never sees the device credential or the session cookie, and a
+ * password only passes through on its way to the server. It receives what it
+ * needs: who is signed in, a LiveKit token, a stage result.
  */
 
 import { net } from 'electron';
@@ -17,8 +16,13 @@ import type {
   StageState,
   ClaimResult,
   WhipEndpoint,
-  RoomInfo,
+  RoomsList,
   ChannelOutcome,
+  AccountDevice,
+  AccountRole,
+  AccountState,
+  AdminAccount,
+  IssuedCode,
 } from '../shared/ipc';
 import { getServerUrl } from './config';
 
@@ -39,13 +43,13 @@ class ApiError extends Error {
 export class NoServerError extends Error {
   override name = 'NoServerError';
   constructor() {
-    super('No server is configured. Add an invite to connect.');
+    super('No server is configured. Sign in to connect.');
   }
 }
 
 async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
   // Read per request, not once at module load. The URL is resolved at startup
-  // from an invite, and can change again when a stored credential names the
+  // from the build or what was typed, and can change again when a stored credential names the
   // server it was paired against — a module constant captured whichever value
   // happened to exist when this file was first imported.
   const base = getServerUrl();
@@ -64,18 +68,110 @@ async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
 
 export { ApiError };
 
-export function pair(pairingToken: string, deviceName: string) {
-  return call<{ deviceCredential: string; deviceId: string; name: string }>('/api/pair', {
-    method: 'POST',
-    body: JSON.stringify({ pairingToken, deviceName }),
-  });
+/**
+ * A request's result, or the server's refusal code, for the renderer. An
+ * error crossing IPC arrives as a message string without the server's body,
+ * so refusals worth showing are turned into codes here; `unreachable` is
+ * what no answer at all becomes.
+ */
+export async function attempt<T>(
+  request: Promise<T>,
+): Promise<{ ok: true; value: T } | { ok: false; error: string }> {
+  try {
+    return { ok: true, value: await request };
+  } catch (err) {
+    if (err instanceof ApiError) {
+      const code = (err.body as { error?: string } | null)?.error;
+      return { ok: false, error: code ?? `http_${err.status}` };
+    }
+    if (err instanceof NoServerError) return { ok: false, error: 'invalid_server' };
+    return { ok: false, error: 'unreachable' };
+  }
+}
+
+/**
+ * Who a session is, as `/api/session`, `/api/device/session` and a login all
+ * describe it: a machine (`id`) and the account it is signed in to.
+ */
+export interface SessionInfo {
+  name: string;
+  id: string;
+  avatar?: string | null;
+  accountId: string;
+  email: string;
+  role: AccountRole;
+  status: AccountState;
+  /** Sign-ups waiting for approval; only sent to admins. */
+  pendingApprovals?: number;
 }
 
 export function deviceSession(deviceCredential: string) {
-  return call<{ name: string; id: string; avatar?: string | null }>('/api/device/session', {
+  return call<SessionInfo>('/api/device/session', {
     method: 'POST',
     body: JSON.stringify({ deviceCredential }),
   });
+}
+
+export function session() {
+  return call<SessionInfo>('/api/session');
+}
+
+// ---- accounts ----------------------------------------------------------
+// The password goes to the server and nowhere else: it is not stored, and a
+// login answers with the same kind of device credential pairing did.
+
+export function signup(email: string, password: string) {
+  return call<{ status: AccountState }>('/api/signup', {
+    method: 'POST',
+    body: JSON.stringify({ email, password }),
+  });
+}
+
+export function login(email: string, password: string, deviceName: string) {
+  return call<SessionInfo & { deviceCredential: string; deviceId: string }>('/api/login', {
+    method: 'POST',
+    body: JSON.stringify({ email, password, deviceName }),
+  });
+}
+
+/** Spends a reset code. The app signs in afterwards, with the new password. */
+export function redeemCode(code: string, password: string) {
+  return call<{ ok: boolean; email: string }>('/api/reset', {
+    method: 'POST',
+    body: JSON.stringify({ code, password }),
+  });
+}
+
+/** Signs this machine out for good, so it stops holding one of the account's seats. */
+export function forgetDevice() {
+  return call<{ ok: boolean }>('/api/device/forget', { method: 'POST' });
+}
+
+export function changePassword(currentPassword: string, newPassword: string) {
+  return call<{ ok: boolean; signedOut: number }>('/api/password', {
+    method: 'POST',
+    body: JSON.stringify({ currentPassword, newPassword }),
+  });
+}
+
+export function devices() {
+  return call<{ devices: AccountDevice[] }>('/api/devices');
+}
+
+export function removeDevice(id: string) {
+  return call<{ ok: boolean }>(`/api/devices/${encodeURIComponent(id)}`, { method: 'DELETE' });
+}
+
+export function adminAccounts() {
+  return call<{ accounts: AdminAccount[] }>('/api/admin/accounts');
+}
+
+/** One admin action on one account. `reset` answers with the code to hand on. */
+export function adminAction(id: string, action: string, role?: AccountRole) {
+  return call<{ account?: AdminAccount } & Partial<IssuedCode>>(
+    `/api/admin/accounts/${encodeURIComponent(id)}/${encodeURIComponent(action)}`,
+    { method: 'POST', body: JSON.stringify(role ? { role } : {}) },
+  );
 }
 
 /**
@@ -95,7 +191,7 @@ export async function getToken(room?: string) {
 }
 
 export function roomsList() {
-  return call<{ rooms: RoomInfo[]; max: number }>('/api/rooms');
+  return call<RoomsList>('/api/rooms');
 }
 
 /**
