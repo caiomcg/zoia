@@ -33,7 +33,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import im.zoia.auth.SessionState
-import im.zoia.ui.pair.PairingScreen
+import im.zoia.ui.auth.AuthScreen
+import im.zoia.ui.auth.WaitingScreen
+import kotlinx.coroutines.delay
 import im.zoia.ui.room.RoomScreen
 
 class MainActivity : ComponentActivity() {
@@ -41,14 +43,9 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        val extraCredential = intent.getStringExtra("inject_credential")
-        if (!extraCredential.isNullOrBlank()) {
-            val serverUrl = intent.getStringExtra("inject_server_url") ?: "https://zoia.nullptrlabs.com"
-            val deviceName = intent.getStringExtra("inject_name") ?: "Anderson"
-            app.credentialStore.savePairing(serverUrl, extraCredential, deviceName)
-        }
-
+        // No credential is ever taken from the launching intent: this activity
+        // is exported, so any app could start it with one and point Zoia at a
+        // server of its choosing. Signing in is the only way in.
         setContent {
             ZoiaRoot()
         }
@@ -63,12 +60,29 @@ class MainActivity : ComponentActivity() {
             app.sessionManager.restoreSession()
         }
 
+        // Signed in: ask now and then who this device is, so a role change,
+        // or being signed out or disabled from elsewhere, is taken in without
+        // a restart. The channel list notices sooner when it is open.
+        val signedIn = sessionState is SessionState.Authenticated
+        LaunchedEffect(signedIn) {
+            while (signedIn) {
+                delay(ACCOUNT_POLL_MS)
+                app.sessionManager.refresh()
+            }
+        }
+
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(Color(0xFF0D0F12))
         ) {
             when (val state = sessionState) {
+                is SessionState.Pending -> {
+                    WaitingScreen(sessionManager = app.sessionManager, email = state.email)
+                }
+                is SessionState.SignedOut -> {
+                    AuthScreen(sessionManager = app.sessionManager, initialMessage = state.message)
+                }
                 is SessionState.Initial, is SessionState.Loading -> {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator(color = Color(0xFF4E75FF))
@@ -117,20 +131,12 @@ class MainActivity : ComponentActivity() {
                             }
                             Spacer(modifier = Modifier.height(12.dp))
                             TextButton(
-                                onClick = { app.sessionManager.unpair() }
+                                onClick = { scope.launch { app.sessionManager.signOut() } }
                             ) {
-                                Text("Usar outro convite", color = Color(0xFF6B7280), fontSize = 13.sp)
+                                Text("Sair desta conta", color = Color(0xFF6B7280), fontSize = 13.sp)
                             }
                         }
                     }
-                }
-                else -> {
-                    PairingScreen(
-                        sessionManager = app.sessionManager,
-                        onPairedSuccess = {
-                            // Automatically switches state to Authenticated
-                        }
-                    )
                 }
             }
         }
@@ -150,6 +156,10 @@ class MainActivity : ComponentActivity() {
                 .build()
             enterPictureInPictureMode(params)
         }
+    }
+
+    companion object {
+        private const val ACCOUNT_POLL_MS = 30_000L
     }
 
     override fun onDestroy() {

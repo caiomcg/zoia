@@ -19,14 +19,25 @@ class CredentialStore(context: Context) {
 
     private val plainPrefs = context.getSharedPreferences("zoia_settings", Context.MODE_PRIVATE)
 
-    fun savePairing(serverUrl: String, deviceCredential: String, deviceName: String) {
+    /**
+     * What a sign-in leaves behind: the server and this machine's credential,
+     * so the password is typed once per device. The server is also kept in
+     * the clear, to start the sign-in screen with after signing out.
+     */
+    fun saveSignIn(serverUrl: String, deviceCredential: String, deviceName: String) {
         prefs.edit()
             .putString(KEY_SERVER_URL, serverUrl)
             .putString(KEY_DEVICE_CREDENTIAL, deviceCredential)
             .putString(KEY_DEVICE_NAME, deviceName)
             .apply()
-        plainPrefs.edit().putString(KEY_LAST_NAME, deviceName).apply()
+        plainPrefs.edit()
+            .putString(KEY_LAST_NAME, deviceName)
+            .putString(KEY_LAST_SERVER, serverUrl)
+            .apply()
     }
+
+    /** The server last signed in to, for the sign-in screen to start with. */
+    fun getLastServerUrl(): String? = plainPrefs.getString(KEY_LAST_SERVER, null)
 
     fun saveDeviceName(deviceName: String) {
         prefs.edit().putString(KEY_DEVICE_NAME, deviceName).apply()
@@ -57,5 +68,6 @@ class CredentialStore(context: Context) {
         private const val KEY_DEVICE_CREDENTIAL = "device_credential"
         private const val KEY_DEVICE_NAME = "device_name"
         private const val KEY_LAST_NAME = "last_display_name"
+        private const val KEY_LAST_SERVER = "last_server_url"
     }
 }
