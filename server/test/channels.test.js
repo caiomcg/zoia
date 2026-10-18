@@ -14,7 +14,7 @@ import request from 'supertest';
 
 import { createApp } from '../src/app.js';
 import { createChannelStore, cleanChannelName, CHANNEL_NAME_MAX } from '../src/channels.js';
-import { createKeyStore } from '../src/keys.js';
+import { signIn, testStores } from './people.js';
 import { createTokenIssuer, decodeTokenPayload } from '../src/token.js';
 import { createStage } from '../src/stage.js';
 import { createWhipPublisher } from '../src/whip.js';
@@ -143,11 +143,11 @@ describe('the channel store', () => {
 });
 
 describe('the channel routes', () => {
-  let keyStore;
+  let stores;
   let app;
 
   beforeEach(() => {
-    keyStore = createKeyStore({ file: join(dir, 'keys.json') });
+    stores = testStores(join(dir, 'zoia.db'));
     app = createApp({
       config: {
         sessionSecret: 'test-session-secret-long-enough',
@@ -156,7 +156,8 @@ describe('the channel routes', () => {
         roomName: 'zoia',
         rateLimit: { windowMs: 60_000, limit: 1000 },
       },
-      keyStore,
+      accountStore: stores.accounts,
+      deviceStore: stores.devices,
       tokenIssuer: createTokenIssuer({
         apiKey: 'devkey',
         apiSecret: SECRET,
@@ -171,14 +172,13 @@ describe('the channel routes', () => {
   });
 
   afterEach(async () => {
-    await keyStore.idle();
+    await stores.db.idle();
+    stores.db.close();
   });
 
   /** Signs someone in and, given a room, puts them in its LiveKit room. */
-  async function signedIn(name, room) {
-    const { rawKey, record } = await keyStore.add({ name });
-    const agent = request.agent(app);
-    await agent.get(`/?k=${encodeURIComponent(rawKey)}`);
+  async function signedIn(name, room, role = 'user') {
+    const { agent, record } = await signIn(app, stores.accounts, name, { role });
     if (room) {
       (byRoom[room] ??= []).push({
         identity: record.id,
@@ -196,8 +196,19 @@ describe('the channel routes', () => {
     return res.body.room.id;
   }
 
-  test('anyone signed in can add, rename and list channels', async () => {
-    const { agent } = await signedIn('Alice');
+  test('only admins add, rename and remove channels; everyone lists them', async () => {
+    const { agent: admin } = await signedIn('Alice', undefined, 'admin');
+    const { agent: bob } = await signedIn('Bob');
+    const id = await newChannel(admin, 'Jogos');
+
+    assert.equal((await bob.post('/api/rooms').send({ name: 'Mine' })).status, 403);
+    assert.equal((await bob.patch(`/api/rooms/${id}`).send({ name: 'Mine' })).status, 403);
+    assert.equal((await bob.delete(`/api/rooms/${id}`)).status, 403);
+    assert.equal((await bob.get('/api/rooms')).body.rooms.length, 2);
+  });
+
+  test('an admin can add, rename and list channels', async () => {
+    const { agent } = await signedIn('Alice', undefined, 'admin');
     const id = await newChannel(agent, 'Jogos');
     assert.equal((await agent.patch(`/api/rooms/${id}`).send({ name: 'Filmes' })).status, 200);
 
@@ -213,7 +224,7 @@ describe('the channel routes', () => {
   });
 
   test('the sixth channel is refused', async () => {
-    const { agent } = await signedIn('Alice');
+    const { agent } = await signedIn('Alice', undefined, 'admin');
     for (let i = 2; i <= 5; i += 1) await newChannel(agent, `Sala ${i}`);
     const res = await agent.post('/api/rooms').send({ name: 'Sala 6' });
     assert.equal(res.status, 409);
@@ -221,14 +232,14 @@ describe('the channel routes', () => {
   });
 
   test('a bad name is refused', async () => {
-    const { agent } = await signedIn('Alice');
+    const { agent } = await signedIn('Alice', undefined, 'admin');
     const res = await agent.post('/api/rooms').send({ name: '' });
     assert.equal(res.status, 400);
     assert.equal(res.body.error, 'invalid_name');
   });
 
   test('an empty channel can be removed; an occupied or default one cannot', async () => {
-    const { agent } = await signedIn('Alice');
+    const { agent } = await signedIn('Alice', undefined, 'admin');
     const empty = await newChannel(agent, 'Vazia');
     const occupied = await newChannel(agent, 'Cheia');
     await signedIn('Bob', occupied);
@@ -250,7 +261,7 @@ describe('the channel routes', () => {
   });
 
   test('a token is for the channel asked for, and still subscribe-only', async () => {
-    const { agent } = await signedIn('Alice');
+    const { agent } = await signedIn('Alice', undefined, 'admin');
     const id = await newChannel(agent, 'Jogos');
     const res = await agent.post('/api/token').send({ room: id });
     assert.equal(res.status, 200);
@@ -261,12 +272,12 @@ describe('the channel routes', () => {
   });
 
   test('naming no channel means the default, as clients from before channels do', async () => {
-    const { agent } = await signedIn('Alice');
+    const { agent } = await signedIn('Alice', undefined, 'admin');
     assert.equal((await agent.post('/api/token')).body.room, 'zoia');
   });
 
   test('a channel that does not exist is refused, never created', async () => {
-    const { agent } = await signedIn('Alice', 'zoia');
+    const { agent } = await signedIn('Alice', 'zoia', 'admin');
     // One at a time: a supertest request starts its server when awaited.
     for (const call of [
       () => agent.post('/api/token').send({ room: 'elsewhere' }),
@@ -281,7 +292,7 @@ describe('the channel routes', () => {
   });
 
   test('broadcasts are per channel', async () => {
-    const { agent: alice } = await signedIn('Alice', 'zoia');
+    const { agent: alice } = await signedIn('Alice', 'zoia', 'admin');
     const other = await newChannel(alice, 'Jogos');
     const { agent: bob } = await signedIn('Bob', other);
     await alice.post('/api/stage/claim').send({ room: 'zoia' });
@@ -300,7 +311,7 @@ describe('the channel routes', () => {
   });
 
   test('claiming in one channel releases a slot held in another', async () => {
-    const { agent, record } = await signedIn('Alice', 'zoia');
+    const { agent, record } = await signedIn('Alice', 'zoia', 'admin');
     const other = await newChannel(agent, 'Jogos');
     await agent.post('/api/stage/claim').send({ room: 'zoia' });
     // Switched channel without releasing, as a crashed client would.
@@ -313,7 +324,7 @@ describe('the channel routes', () => {
   });
 
   test('the room list shows who is in each channel and who is live', async () => {
-    const { agent } = await signedIn('Alice', 'zoia');
+    const { agent } = await signedIn('Alice', 'zoia', 'admin');
     const other = await newChannel(agent, 'Jogos');
     await signedIn('Bob', other);
     await agent.post('/api/stage/claim').send({ room: 'zoia' });
@@ -339,5 +350,17 @@ describe('the channel routes', () => {
       ['Bob'],
     );
     assert.deepEqual(two.broadcasters, []);
+  });
+
+  test('the room list says who the admins are, from the database alone', async () => {
+    const { agent } = await signedIn('Owner', 'zoia', 'super_admin');
+    await signedIn('Admin', 'zoia', 'admin');
+    await signedIn('Bob', 'zoia');
+    // Whatever a client puts on itself in the room says nothing about its role.
+    byRoom.zoia[2].attributes = { 'zoia.role': 'super_admin' };
+
+    const [room] = (await agent.get('/api/rooms')).body.rooms;
+    const roles = Object.fromEntries(room.participants.map((p) => [p.name, p.role ?? 'user']));
+    assert.deepEqual(roles, { Owner: 'super_admin', Admin: 'admin', Bob: 'user' });
   });
 });

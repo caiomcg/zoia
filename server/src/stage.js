@@ -122,6 +122,24 @@ export function createStage({ rooms, roomName, logger = console, now = () => Dat
   return {
     broadcasters,
 
+    /**
+     * Takes these identities out of the room now, hardware broadcasts and
+     * all, rather than when their token next needs renewing. For someone
+     * disabled or a machine signed out: their session is refused on its next
+     * request, but a LiveKit connection makes none.
+     */
+    async disconnect(identities) {
+      for (const identity of identities) {
+        for (const id of [identity, `${identity}${WHIP_SUFFIX}`]) {
+          try {
+            await rooms.removeParticipant?.(roomName, id);
+          } catch {
+            // Not in this room, which is most rooms.
+          }
+        }
+      }
+    },
+
     // Kept for integrations that have not migrated yet. New code should use
     // broadcasters(), since there may be more than one result.
     async holder() {

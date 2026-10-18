@@ -29,8 +29,9 @@ echo "==> deploying to ${HOST}:${DEST}"
 
 # The excludes are load-bearing:
 #   .env          secrets live only on the server
-#   server/data   the invite-key store. --delete without this exclude would
-#                 wipe it and lock out every user, including you.
+#   server/data   the database (zoia.db: every account and device) and the
+#                 pictures. --delete without this exclude would wipe it and
+#                 lock out every user, including you.
 #   desktop       the server never runs the desktop app, and the directory
 #                 holds a gitignored .pairing-token (a live credential) plus
 #                 ~400MB of built exes and a vendored ffmpeg once anyone has

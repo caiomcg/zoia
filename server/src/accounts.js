@@ -11,19 +11,28 @@
  */
 
 import { randomBytes } from 'node:crypto';
-import { createJsonStore, decoyHash, hashSecret, parseCredential, secretMatches } from './store.js';
+import { PASSWORD_SCRYPT, decoyHash, hashSecret, parseCredential, secretMatches } from './store.js';
+import { createTableStore } from './database.js';
 import { MAX_NAME_LENGTH, nameKey, uniqueName } from './names.js';
 
 export const ROLES = ['user', 'admin', 'super_admin'];
-export const PASSWORD_MIN_LENGTH = 10;
+/**
+ * At least six characters, with an uppercase and a lowercase letter, a digit
+ * and a symbol. Short by itself; what keeps a short password from being
+ * guessed online is the per-account lockout and the per-address rate limit.
+ */
+export const PASSWORD_MIN_LENGTH = 6;
 // scrypt takes any length, but nothing a person types is longer, and an
 // unbounded one is free work for whoever sends it.
 export const PASSWORD_MAX_LENGTH = 128;
 
+/** Each kind of character a password needs one of. Must match the app's rules. */
+const PASSWORD_NEEDS = [/\p{Lu}/u, /\p{Ll}/u, /\p{Nd}/u, /[^\p{L}\p{N}]/u];
+
 /** Failed logins before an account locks, and for how long. */
 const LOCK_AFTER = 10;
 const LOCK_MS = 15 * 60_000;
-/** How long a reset or claim code stays good. */
+/** How long a reset code stays good. */
 const CODE_TTL_MS = 24 * 60 * 60_000;
 /** Codes look like credentials, `zcode_<account id>_<secret>`, so parsing is shared. */
 const CODE_PREFIX = 'zcode';
@@ -41,7 +50,8 @@ export function isValidPassword(password) {
   return (
     typeof password === 'string' &&
     password.length >= PASSWORD_MIN_LENGTH &&
-    password.length <= PASSWORD_MAX_LENGTH
+    password.length <= PASSWORD_MAX_LENGTH &&
+    PASSWORD_NEEDS.every((need) => need.test(password))
   );
 }
 
@@ -65,16 +75,16 @@ function safe(record) {
 }
 
 function withoutSecrets({ salt: _salt, hash: _hash, code, ...rest }) {
-  return code ? { ...rest, code: { kind: code.kind, expiresAt: code.expiresAt } } : rest;
+  return { ...rest, code: code ? { expiresAt: code.expiresAt } : null };
 }
 
 async function hashPassword(password) {
   const salt = randomBytes(16).toString('base64');
-  return { salt, hash: await hashSecret(password, salt) };
+  return { salt, hash: await hashSecret(password, salt, PASSWORD_SCRYPT) };
 }
 
-export function createAccountStore({ file, maxPending = 20, logger = console }) {
-  const store = createJsonStore({ file, collection: 'accounts' });
+export function createAccountStore({ db, maxPending = 20, logger = console }) {
+  const store = createTableStore({ db, table: 'accounts' });
 
   function newId(records) {
     for (;;) {
@@ -83,10 +93,9 @@ export function createAccountStore({ file, maxPending = 20, logger = console }) 
     }
   }
 
-  /** A display name nobody has, from `wanted`, among accounts and `alsoTaken`. */
-  function freeName(records, wanted, alsoTaken, exceptId = null) {
-    const taken = new Set(alsoTaken);
-    for (const r of records) if (r.id !== exceptId) taken.add(nameKey(r.name));
+  /** A display name nobody has, from `wanted`. */
+  function freeName(records, wanted) {
+    const taken = new Set(records.map((r) => nameKey(r.name)));
     const base =
       String(wanted ?? '')
         .trim()
@@ -114,17 +123,12 @@ export function createAccountStore({ file, maxPending = 20, logger = console }) 
       return (await store.all()).filter((r) => r.status === 'pending').length;
     },
 
-    /** Name keys of every account, for checks made against another store. */
-    async nameKeys() {
-      return new Set((await store.all()).map((r) => nameKey(r.name)));
-    },
-
     /**
      * A new account, pending until an admin approves it. Its display name is
      * the part of the email before the `@`, made unique; the person changes
-     * it afterwards. `alsoTaken` holds name keys in use outside this store.
+     * it afterwards.
      */
-    async signup({ email, password, ip = null, alsoTaken = new Set() }) {
+    async signup({ email, password, ip = null }) {
       const address = normalizeEmail(email);
       if (!address) return { ok: false, reason: 'invalid_email' };
       if (!isValidPassword(password)) return { ok: false, reason: 'weak_password' };
@@ -139,7 +143,7 @@ export function createAccountStore({ file, maxPending = 20, logger = console }) 
         const record = {
           id: newId(records),
           email: address,
-          name: freeName(records, address.split('@')[0], alsoTaken),
+          name: freeName(records, address.split('@')[0]),
           role: 'user',
           status: 'pending',
           ...secret,
@@ -158,9 +162,9 @@ export function createAccountStore({ file, maxPending = 20, logger = console }) 
     },
 
     /**
-     * Checks an email and password. An unknown email, an account with no
-     * password yet and a wrong password all answer `invalid_login` and all
-     * cost one scrypt, so the answer says nothing about which accounts exist.
+     * Checks an email and password. An unknown email and a wrong password both
+     * answer `invalid_login` and both cost one scrypt, so the answer says
+     * nothing about which accounts exist.
      */
     async authenticate(email, password) {
       const address = normalizeEmail(email);
@@ -169,14 +173,14 @@ export function createAccountStore({ file, maxPending = 20, logger = console }) 
       const presented = typeof password === 'string' ? password.slice(0, PASSWORD_MAX_LENGTH) : '';
 
       if (!record?.hash) {
-        await decoyHash(presented);
+        await decoyHash(presented, PASSWORD_SCRYPT);
         return { ok: false, reason: 'invalid_login' };
       }
       if (record.lockedUntil && Date.parse(record.lockedUntil) > Date.now()) {
         return { ok: false, reason: 'locked' };
       }
 
-      if (!(await secretMatches(presented, record))) {
+      if (!(await secretMatches(presented, record, PASSWORD_SCRYPT))) {
         let locked = false;
         await store.mutate((all) => {
           const live = findLive(all, record.id);
@@ -207,10 +211,10 @@ export function createAccountStore({ file, maxPending = 20, logger = console }) 
     async checkPassword(id, password) {
       const record = await store.find(id);
       if (!record?.hash || typeof password !== 'string') {
-        await decoyHash(String(password ?? ''));
+        await decoyHash(String(password ?? ''), PASSWORD_SCRYPT);
         return false;
       }
-      return secretMatches(password.slice(0, PASSWORD_MAX_LENGTH), record);
+      return secretMatches(password.slice(0, PASSWORD_MAX_LENGTH), record, PASSWORD_SCRYPT);
     },
 
     async setPassword(id, password) {
@@ -228,17 +232,16 @@ export function createAccountStore({ file, maxPending = 20, logger = console }) 
     },
 
     /**
-     * Changes the display name. Unique per server, as before accounts, judged
-     * the way a person reads the list; `alsoTaken` holds names in use by
-     * devices that do not belong to an account yet.
+     * Changes the display name. Unique per server, judged the way a person
+     * reads the list, so "Flavi" and "flávi" are one name.
      */
-    async rename(id, name, { alsoTaken = new Set() } = {}) {
+    async rename(id, name) {
       return store.mutate((records) => {
         const record = findLive(records, id);
         if (!record) return { ok: false, reason: 'unknown_account' };
         const key = nameKey(name);
         const holder = records.find((r) => r.id !== id && nameKey(r.name) === key);
-        if (holder || alsoTaken.has(key)) return { ok: false, reason: 'name_taken' };
+        if (holder) return { ok: false, reason: 'name_taken' };
         record.name = name;
         record.renamedAt = new Date().toISOString();
         return { ok: true, account: safe(record) };
@@ -335,37 +338,11 @@ export function createAccountStore({ file, maxPending = 20, logger = console }) 
     },
 
     /**
-     * An account for someone who was already here before accounts: active, with
-     * no email or password until they claim it with a code.
+     * A one-time code to set a forgotten password, which an admin passes on:
+     * there is no mail to send a link with. Shown once and stored hashed; a
+     * new code replaces any earlier one.
      */
-    async createClaimable({ name, avatar = null }) {
-      return store.mutate((records) => {
-        const record = {
-          id: newId(records),
-          email: null,
-          name: freeName(records, name, new Set()),
-          role: 'user',
-          status: 'active',
-          salt: null,
-          hash: null,
-          createdAt: new Date().toISOString(),
-          migratedAt: new Date().toISOString(),
-          lastSeen: null,
-          failedLogins: 0,
-          lockedUntil: null,
-          ...(avatar ? { avatar } : {}),
-        };
-        records.push(record);
-        return safe(record);
-      });
-    },
-
-    /**
-     * A one-time code for this account: `reset` to set a forgotten password,
-     * or `claim` for an account migrated without an email. Shown once and
-     * stored hashed; a new code replaces any earlier one.
-     */
-    async issueCode(id, kind, { ttlMs = CODE_TTL_MS } = {}) {
+    async issueCode(id, { ttlMs = CODE_TTL_MS } = {}) {
       const secret = randomBytes(32).toString('base64url');
       const salt = randomBytes(16).toString('base64');
       const hash = await hashSecret(secret, salt);
@@ -373,19 +350,15 @@ export function createAccountStore({ file, maxPending = 20, logger = console }) 
       const ok = await store.mutate((records) => {
         const record = findLive(records, id);
         if (!record) return false;
-        record.code = { kind, salt, hash, expiresAt };
+        record.code = { salt, hash, expiresAt };
         return true;
       });
       if (!ok) return null;
-      return { code: `${CODE_PREFIX}_${id}_${secret}`, expiresAt, kind };
+      return { code: `${CODE_PREFIX}_${id}_${secret}`, expiresAt };
     },
 
-    /**
-     * Spends a code: sets the password, and for a claim also the email. Every
-     * failure is `invalid_code`, whatever the reason, apart from an email that
-     * is malformed or already someone else's.
-     */
-    async redeemCode(raw, { password, email = null }) {
+    /** Spends a code: sets the password. Every failure is `invalid_code`, whatever the reason. */
+    async redeemCode(raw, { password }) {
       const parsed = parseCredential(raw, CODE_PREFIX);
       const record = parsed ? await store.find(parsed.id) : null;
       const code = record?.code;
@@ -396,30 +369,21 @@ export function createAccountStore({ file, maxPending = 20, logger = console }) 
       if (!(await secretMatches(parsed.secret, code))) return { ok: false, reason: 'invalid_code' };
       if (!isValidPassword(password)) return { ok: false, reason: 'weak_password' };
 
-      const address = code.kind === 'claim' && !record.email ? normalizeEmail(email) : null;
-      if (code.kind === 'claim' && !record.email && !address) {
-        return { ok: false, reason: 'invalid_email' };
-      }
-
       const secret = await hashPassword(password);
       const result = await store.mutate((records) => {
         const live = findLive(records, record.id);
         // Spent or replaced while the password was hashing.
         if (!live?.code || live.code.hash !== code.hash)
           return { ok: false, reason: 'invalid_code' };
-        if (address && records.some((r) => r.email === address)) {
-          return { ok: false, reason: 'email_taken' };
-        }
-        if (address) live.email = address;
         Object.assign(live, secret, {
           passwordChangedAt: new Date().toISOString(),
           failedLogins: 0,
           lockedUntil: null,
+          code: null,
         });
-        delete live.code;
-        return { ok: true, account: safe(live), kind: code.kind };
+        return { ok: true, account: safe(live) };
       });
-      if (result.ok) logger.info(`[account] ${record.id} used a ${code.kind} code`);
+      if (result.ok) logger.info(`[account] ${record.id} used a reset code`);
       return result;
     },
   };

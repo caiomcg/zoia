@@ -1,19 +1,16 @@
 #!/usr/bin/env node
-/** Entry point: wires config, key store and token issuer into the HTTP app. */
+/** Entry point: wires config, the database and the token issuer into the HTTP app. */
 
 import { RoomServiceClient } from 'livekit-server-sdk';
 
 import { loadConfig } from './config.js';
-import { createKeyStore } from './keys.js';
-import { createPairingStore } from './pairings.js';
-import { createDeviceStore } from './devices.js';
 import { createTokenIssuer } from './token.js';
 import { createStage } from './stage.js';
 import { createWhipPublisher } from './whip.js';
 import { createReportStore } from './reports.js';
 import { createChannelStore } from './channels.js';
 import { createAvatarStore } from './avatars.js';
-import { createAccountStore } from './accounts.js';
+import { openStores } from './stores.js';
 import { createApp } from './app.js';
 
 try {
@@ -24,16 +21,11 @@ try {
 
 const config = loadConfig();
 
-const keyStore = createKeyStore({ file: config.keyStoreFile });
-const pairingStore = createPairingStore({ file: config.pairingStoreFile });
-const deviceStore = createDeviceStore({ file: config.deviceStoreFile });
-const avatarStore = createAvatarStore({ dir: config.avatarDir });
-const accountStore = createAccountStore({
-  file: config.accountStoreFile,
+const { devices: deviceStore, accounts: accountStore } = openStores({
+  databaseFile: config.databaseFile,
   maxPending: config.accounts.maxPending,
 });
-// Names are unique per server; settle any shared from before they were.
-await deviceStore.dedupeNames();
+const avatarStore = createAvatarStore({ dir: config.avatarDir });
 const tokenIssuer = createTokenIssuer({
   apiKey: config.livekit.apiKey,
   apiSecret: config.livekit.apiSecret,
@@ -73,11 +65,9 @@ const reports = createReportStore();
 
 const app = createApp({
   config,
-  keyStore,
   tokenIssuer,
   channels,
   reports,
-  pairingStore,
   deviceStore,
   avatarStore,
   accountStore,
