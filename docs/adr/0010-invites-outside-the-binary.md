@@ -2,6 +2,7 @@
 
 - **Status:** accepted
 - **Date:** 2026-09-23
+- **Superseded by** [ADR 0031](0031-accounts-with-admin-approval.md): there are no invites; the app asks for a server address and an account.
 - **Extends** [ADR 0007](0007-device-pairing.md), which put the pairing token *in* the build
 
 ## Context

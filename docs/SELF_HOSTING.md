@@ -130,63 +130,50 @@ The server sends one copy of the stream per viewer, so **upload is the binding c
 CPU is not the limit — an SFU forwards packets without decoding them. If the numbers do not
 fit your link, lower `MAX_BITRATE` first, then `MAX_FRAMERATE`, then resolution.
 
-## 5. Mint an invite
+## 5. Make yourself the super admin
 
-Nobody can reach the server until you invite them. An invite is what you revoke later, so
-mint one per group rather than one for everyone:
-
-```bash
-docker compose exec app node server/bin/keytool.js \
-  pair:new --name "friends" --max-activations 5 --invite zoia-invite.json
-```
-
-That writes a small file, mode `0600`:
-
-```json
-{
-  "serverUrl": "https://zoia.your-domain.com",
-  "pairingToken": "zpair_a1b2c3d4_…"
-}
-```
-
-The token inside is shown **once** and is not recoverable. `--max-activations` caps how many
-live machines the invite can have paired at once — revoking a device frees its seat — which bounds the damage if it is forwarded.
-
-**This file is the credential.** Send it over something private.
-
-## 6. Send it, with a binary
-
-People need two things, and only one of them is secret:
-
-| | Where from | Sensitive |
-|---|---|---|
-| `Zoia-Setup-<version>-x64.exe` | Your [Releases](https://github.com/caiomcg/zoia/releases) page, or theirs | No — it carries no server and no token |
-| `zoia-invite.json` | You, over a private channel | **Yes** |
-
-They install Zoia, then drag the invite onto the window or choose it from the pairing screen.
-Zoia copies it into its own data directory, so it does not have to stay where they put it.
-
-You do not have to build anything: a release binary is the same file for everyone. If you
-would rather hand over a single file, `desktop/make-exe.bat` on a Windows machine produces a
-private build with the token baked in. [DISTRIBUTING.md](DISTRIBUTING.md) covers both paths,
-what SmartScreen will say, and how to revoke an invite that gets away from you.
-
-## Two kill switches
-
-Access is per device, and the two levers are independent:
+Install Zoia (next section), enter `https://zoia.your-domain.com` on its sign-in screen, and
+create an account. Then, on the server, make it the super admin — the one who approves
+people and makes other admins:
 
 ```bash
-# Stop new machines activating. Everyone already paired keeps working.
-node server/bin/keytool.js pair:list
-node server/bin/keytool.js pair:revoke <id>
+docker compose exec app node server/bin/keytool.js account:super you@example.com
+```
 
-# Cut off one machine. Nobody else notices.
-node server/bin/keytool.js device:list
-node server/bin/keytool.js device:revoke <id>
+Your app moves on from the waiting screen by itself. From here on, letting people in is done
+in the app, under **Settings › Accounts**.
+
+## 6. Send people the app and the address
+
+Nothing about it is secret:
+
+| | Where from |
+|---|---|
+| `Zoia-Setup-<version>-x64.exe` | Your [Releases](https://github.com/caiomcg/zoia/releases) page, or theirs |
+| The server address | You |
+
+They install Zoia, enter the address, and create an account; you approve it, and they are
+in. Approve only people you recognise: the email is not verified, so your approval is the
+check.
+
+You do not have to build anything: a release binary is the same file for everyone.
+`desktop/make-exe.bat` on a Windows machine builds the same installer, with your address
+already filled in if you set `ZOIA_SERVER_URL` first. [DISTRIBUTING.md](DISTRIBUTING.md) has
+the details and what SmartScreen will say.
+
+## Cutting someone off
+
+**Disable** them in Settings › Accounts: every machine of theirs loses access on its next
+request. For one machine only, such as a lost laptop:
+
+```bash
+docker compose exec app node server/bin/keytool.js device:list
+docker compose exec app node server/bin/keytool.js device:revoke <id>
 ```
 
 Both take effect on the next request, not the next login: the session cookie holds an id
-that is re-resolved against the store every time. See [ADR 0007](adr/0007-device-pairing.md).
+that is re-read from the database every time. See
+[ADR 0031](adr/0031-accounts-with-admin-approval.md).
 
 `device:list` shows a `lastSeen` per machine, which is how you tell a device somebody
 stopped using from one that is simply idle right now.

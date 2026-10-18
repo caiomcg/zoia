@@ -201,69 +201,71 @@ Then verify:
 bash scripts/preflight.sh
 ```
 
-Finally mint a pairing token, which is what a build carries:
+Finally sign up from the app yourself, at `https://<PUBLIC_HOST>`, and make that account the
+super admin — the one who approves people and makes other admins:
 
 ```bash
-docker compose exec app node server/bin/keytool.js \
-  pair:new --name "friends" --max-activations 5
+docker compose exec app node server/bin/keytool.js account:super you@example.com
 ```
 
-It prints once. Bake it into an `.exe` with `desktop/make-exe.bat` — see
-[DISTRIBUTING.md](DISTRIBUTING.md).
-
-> `keytool add` still exists and still mints invite keys. Nothing consumes them since the
-> browser client was retired ([ADR 0008](adr/0008-retire-the-browser-client.md)); the desktop
-> app pairs instead ([ADR 0007](adr/0007-device-pairing.md)).
+That is the only step done on the server; everything after it is done in the app
+([ADR 0031](adr/0031-accounts-with-admin-approval.md)).
 
 ---
 
 ## Day to day
 
-### Invite someone
+### Let someone in
 
-Send them a build. The pairing token inside it is what grants access, so the question is
-which token that build carries — mint one per group rather than one for everyone:
+Send them a release (or a build from `desktop/make-exe.bat`) and your server's address. They
+create an account in the app; it waits for approval. Admins see a count on the settings
+button and a notice when someone new is waiting, and approve or reject them in
+**Settings › Accounts**.
+
+Approve only people you recognise. The email is not verified — there is no mail — so the
+approval is the check.
+
+### Admins
+
+Admins approve sign-ups, disable and re-enable people, and issue password reset codes. Only
+the super admin makes or removes admins, from the same list. Nobody can touch the super
+admin from the app; to hand the role to someone else:
 
 ```bash
-docker compose exec app node server/bin/keytool.js \
-  pair:new --name "friends" --max-activations 5
+docker compose exec app node server/bin/keytool.js account:super new-owner@example.com
 ```
 
-Printed once, and not recoverable. `--max-activations` caps how many live machines it can
-have enrolled at once (revoking a device frees its seat), which bounds the damage if it gets passed around. `--expires-in-days 30` works too.
+The previous super admin becomes an admin.
 
-Then build an `.exe` carrying it: [DISTRIBUTING.md](DISTRIBUTING.md).
+### Someone forgot their password
 
-### See who has access
+An admin picks **Reset password** next to them in Settings › Accounts and passes the code on;
+it works once, for 24 hours. The person chooses **Have a code from an admin?** on the sign-in
+screen. Every machine of theirs is signed out when it is used.
+
+When the locked-out person is the only admin, issue the code on the server instead. It is
+written to a file, never printed:
 
 ```bash
-docker compose exec app node server/bin/keytool.js device:list
+docker compose exec app node server/bin/keytool.js account:list
+docker compose exec app node server/bin/keytool.js account:reset <accountId> --codes /tmp/code.json
+docker compose exec app cat /tmp/code.json && docker compose exec app rm /tmp/code.json
 ```
 
-One row per machine, with the token it came from and when it was last seen. `lastSeen`
-updates on every token renewal, not just at launch, so a machine that has been streaming all
-week reads as current.
+Ten wrong passwords lock an account for 15 minutes on their own; that needs no action.
 
-### Revoke someone
+### Cut someone off
 
-Two levers, and which one to reach for depends on what went wrong:
+**Disable** them in Settings › Accounts. Every machine of theirs loses access on its next
+request, not its next launch: the session is re-checked against the database every time.
+
+One machine only, such as a lost laptop: they can sign it out themselves under Settings ›
+Profile, or on the server:
 
 ```bash
-# One machine loses access. Nobody else notices.
+docker compose exec app node server/bin/keytool.js device:list <accountId>
 docker compose exec app node server/bin/keytool.js device:revoke <deviceId>
-
-# No NEW machines can activate. Everyone already paired keeps working.
-docker compose exec app node server/bin/keytool.js pair:list
-docker compose exec app node server/bin/keytool.js pair:revoke <pairingId>
 ```
-
-Both take effect on the next request, not the next launch — the session cookie holds an id
-that is re-resolved against the store every time. See
-[ADR 0007](adr/0007-device-pairing.md).
-
-Revoking a pairing token does **not** cut off machines that already paired with it. If a
-build leaked and you want everyone on it gone, revoke the token *and* the devices it
-enrolled — `device:list` shows which those are.
 
 ### Deploy a change
 
@@ -274,18 +276,22 @@ enrolled — `device:list` shows which those are.
 The script refuses to proceed if `.env` is missing on the server, and never transfers `.env`
 or `server/data` — secrets and the access records live only on the VM.
 
-### Back up the access records
+### Back up the database
 
-Three files, and all of them matter — devices and pairings are what the desktop app runs on:
+Every account and device is in `server/data/zoia.db`
+([ADR 0032](adr/0032-sqlite-for-credentials.md)). Take a consistent copy while the server
+runs, then fetch it:
 
 ```bash
-ssh zoia@<server-ip> 'tar czf - -C /opt/zoia server/data' \
-  > zoia-data-$(date +%F).tar.gz
+ssh zoia@<server-ip> 'cd /opt/zoia && docker compose exec -T app \
+  node server/bin/keytool.js db:backup server/data/backup.db'
+scp zoia@<server-ip>:/opt/zoia/server/data/backup.db zoia-$(date +%F).db
+ssh zoia@<server-ip> 'rm /opt/zoia/server/data/backup.db'
 ```
 
-They hold scrypt hashes, not secrets, but losing them means re-pairing every machine. Keep
-them out of git — `deploy.sh` already refuses to transfer `server/data` in either
-direction.
+It holds password hashes and every email: keep it private, and out of git — `deploy.sh`
+already refuses to transfer `server/data` in either direction. Losing it means everyone
+signs up again. Profile pictures are beside it, in `server/data/avatars/`.
 
 ---
 
@@ -445,13 +451,13 @@ docker compose logs -f app
 docker compose logs -f livekit
 ```
 
-Raw pairing tokens, device credentials and invite keys must never appear there. If one
-does, that is a bug — fix it, then revoke and reissue whatever leaked. There are tests
-asserting this for the pairing flow, because it is the kind of guarantee that breaks
-silently.
+Passwords, device credentials, reset codes and email addresses must never appear there;
+accounts and machines are logged by id. If one does, that is a bug — fix it, then reset or
+revoke whatever leaked. There are tests asserting this, because it is the kind of guarantee
+that breaks silently.
 
 Client-side crashes are reported automatically and readable without asking anyone to find a
-log file:
+log file — with an admin's session cookie, since a report names someone's machine:
 
 ```bash
 curl -s --cookie "$COOKIE" https://zoia.<domain>/api/reports | jq .

@@ -3,10 +3,10 @@
 - **Status:** proposed
 - **Date:** 2026-10-17
 - **Supersedes** invite keys ([ADR 0002](0002-invite-keys-over-shared-password.md)), pairing
-  tokens as the way in ([ADR 0007](0007-device-pairing.md),
-  [ADR 0010](0010-invites-outside-the-binary.md)), the per-invite seat cap
-  ([ADR 0024](0024-activation-cap-counts-seats.md)) and the "no roles at all" half of
-  [ADR 0005](0005-one-tier-claimable-stage.md). Device credentials from ADR 0007 stay.
+  tokens ([ADR 0007](0007-device-pairing.md), [ADR 0010](0010-invites-outside-the-binary.md)),
+  the per-invite seat cap ([ADR 0024](0024-activation-cap-counts-seats.md)) and the "no roles
+  at all" half of [ADR 0005](0005-one-tier-claimable-stage.md). The per-device credential from
+  ADR 0007 stays, issued by a login instead of a pairing token.
 
 ## Context
 
@@ -42,7 +42,8 @@ to an account.
   the `@`, made unique with `names.js` as names are today, and the person changes it
   afterwards from Settings › Profile. Name and picture move from the device to the account,
   so every one of a person's devices shows the same person.
-- **Passwords** are at least 10 characters and are stored only as scrypt hashes, using the
+- **Passwords** are at least 6 characters, with an uppercase and a lowercase letter, a digit
+  and a symbol, and are stored only as scrypt hashes, using the
   machinery in `store.js` that already hashes keys and device credentials.
 
 ### Roles
@@ -50,8 +51,8 @@ to an account.
 | Role            | Who                                                       | Can                                                                                                     |
 | --------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
 | **SUPER_ADMIN** | Exactly one account, the operator                         | Everything an admin can, and make or remove admins                                                      |
-| **ADMIN**       | Assigned by the super admin                               | Approve or reject sign-ups; disable, re-enable and reset the password of users who are not admins       |
-| **USER**        | Everyone else                                             | Watch and broadcast, as today                                                                           |
+| **ADMIN**       | Assigned by the super admin                               | Approve or reject sign-ups; disable, re-enable and reset the password of users who are not admins; add, rename and remove channels |
+| **USER**        | Everyone else                                             | Watch and broadcast, and join any channel                                                                           |
 
 The super admin is set **only on the server**, with `keytool account:super <email>`. No API
 call can create, demote, disable or reset the super admin, so a compromised admin cannot take
@@ -80,9 +81,9 @@ Approving is desktop-only for now. Android gets the sign-up, login and waiting s
 
 ### Devices, after login
 
-A password is typed once per device. Logging in issues the same per-device credential that
-pairing issues today, so the session layer, `device:revoke` and per-request revocation are
-unchanged; a device record gains an `accountId`.
+A password is typed once per device. Logging in issues the same kind of per-device
+credential pairing used to, so the session layer, `device:revoke` and per-request revocation
+work as before; every device belongs to an account.
 
 - **Each account has a device cap** (default 5). Logging in on one more device revokes the
   account's least recently seen device instead of refusing. A reinstall is the same person
@@ -94,8 +95,9 @@ unchanged; a device record gains an `accountId`.
 
 There is no email, so there is no "forgot password". An admin generates a **reset code** for
 the account: shown once, valid for 24 hours, single use, stored hashed. The person enters
-their email, the code and a new password. Using a code, or changing the password from
-Settings, signs out the account's other devices.
+the code and a new password, and is signed in. Using a code signs out every machine of the
+account; changing the password from Settings signs out all but the one doing it. An admin
+nobody else can reset gets a code from `keytool account:reset` on the server.
 
 ### What guards the public endpoints
 
@@ -111,24 +113,28 @@ hostname.
 - Every admin action is checked on the server against the caller's role, re-read from the
   store on every request. The app hiding a button is presentation, not enforcement.
 
-### Moving the existing people over
+### No migration: every older way in ends
 
-`keytool account:migrate` groups today's live devices into accounts by base name (`Diego`,
-`Diego 2`, `Diego 3` → Diego) and prints the plan. After the operator corrects and applies
-it, each account is **active** with no email or password yet, and gets a one-time **claim
-code**, printed once. Their devices keep working. On next launch the app asks for an email,
-the code and a password; until then it keeps working as before. Once everyone has claimed,
-`pair:revoke` the shared invite.
+Everyone signs up again. Invite keys, pairing tokens and every device paired with them are
+removed — from the code, and from the server's data when this is deployed — rather than
+carried into accounts.
 
-The invite-key path (`keys.js`), whose keys are all revoked, is removed with this change.
+Moving people over was designed and built first: group the existing devices into accounts by
+name, and have each person claim theirs with a one-time code. It was dropped before release.
+The group is small enough that signing up takes each person a minute, while a migration
+needs the operator to guess who owns which machine, hand out a code per person, and keep two
+ways in alive until the last one claims. Starting clean also means no account exists that
+nobody has chosen a password for.
+
+Channel management moves to admins too: adding, renaming and removing a channel, which
+[ADR 0015](0015-channels.md) left to anyone, now needs an admin. Joining one does not.
 
 ## Consequences
 
-- **The server now holds passwords and email addresses.** Both live in
-  `server/data/accounts.json`, on the same gitignored, never-deployed-over volume as the
-  key store. Passwords are hashed; emails are not, because admins need to read them. Neither
-  is ever logged — the account id is, as `keyId` is today. Backups of the VM now contain
-  personal data.
+- **The server now holds passwords and email addresses**, in the database
+  ([ADR 0032](0032-sqlite-for-credentials.md)) on the gitignored, never-deployed-over volume.
+  Passwords are hashed; emails are not, because admins need to read them. Neither is ever
+  logged — the account id is. Backups of the VM now contain personal data.
 - **There is a public sign-up form.** Before, nobody without a file from the operator could
   even reach the approval stage. The rate limit and the pending cap bound how much noise
   that can make, but an admin will see junk requests and has to reject them.
@@ -142,12 +148,12 @@ The invite-key path (`keys.js`), whose keys are all revoked, is removed with thi
 - **The operator is no longer the only one who can let people in.** That is the point, and
   also new trust: an admin can approve anyone. Only the super admin can make admins, and
   only from the server.
-- **The invite file is no longer needed.** The app needs a server address and nothing
-  secret; `zoia-invite.json` may still carry `serverUrl` so nobody types it.
-- **Old clients keep their devices.** A device paired before this keeps working through the
-  migration, but signing up, claiming an account and approving need the new app.
-- **AGENTS.md changes** when this is accepted: "Access is by per-person invite key; there
-  are no roles beyond 'has a key'" becomes accounts and roles, and the rule against logging a
-  raw invite key extends to passwords, reset codes, claim codes and emails.
+- **There are no invite files any more.** The app needs a server address and nothing
+  secret, so a build carries no credential and needs none handed over with it.
+- **Everyone is signed out on deploy**, and an app from before this cannot sign in at all:
+  it only knows pairing. Desktop updates itself; the Android app needs its own release with
+  account login before it works again.
+- **AGENTS.md** says accounts and roles where it said invite keys, and the rule against
+  logging a raw invite key now covers passwords, credentials, reset codes and emails.
 - Display names stay unique per server, as before, but per account rather than per device,
   which is what ends `Diego 2` and `Diego 3`.

@@ -2,6 +2,7 @@
 
 - **Status:** accepted
 - **Date:** 2026-09-20
+- **Superseded by** [ADR 0031](0031-accounts-with-admin-approval.md): accounts replace invite keys.
 - **Extended by** [ADR 0007](0007-device-pairing.md), which is how the desktop app gets access
 
 ## Context

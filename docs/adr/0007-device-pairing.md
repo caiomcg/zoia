@@ -2,6 +2,7 @@
 
 - **Status:** accepted
 - **Date:** 2026-09-21
+- **Superseded by** [ADR 0031](0031-accounts-with-admin-approval.md): a login issues the device credential; pairing tokens are gone.
 - **Extends** [ADR 0002](0002-invite-keys-over-shared-password.md)
 
 ## Context
