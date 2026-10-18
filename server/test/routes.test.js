@@ -6,13 +6,13 @@ import { join } from 'node:path';
 import request from 'supertest';
 
 import { createApp } from '../src/app.js';
-import { createKeyStore, parseKey } from '../src/keys.js';
+import { PASSWORD, signIn, testStores } from './people.js';
 import { createTokenIssuer } from '../src/token.js';
 import { createStage } from '../src/stage.js';
 import { createWhipPublisher } from '../src/whip.js';
 
 let dir;
-let keyStore;
+let stores;
 let app;
 let logLines;
 let roomsStub;
@@ -64,7 +64,8 @@ function buildApp(config = {}) {
 
   return createApp({
     config: { ...BASE_CONFIG, rateLimit: { windowMs: 60_000, limit: 1000 }, ...config },
-    keyStore,
+    accountStore: stores.accounts,
+    deviceStore: stores.devices,
     tokenIssuer,
     stage,
     whip,
@@ -74,14 +75,15 @@ function buildApp(config = {}) {
 
 beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), 'zoia-routes-'));
-  keyStore = createKeyStore({ file: join(dir, 'keys.json') });
+  stores = testStores(join(dir, 'zoia.db'));
   app = buildApp();
 });
 
 afterEach(async () => {
   // touch() is fire-and-forget, so let queued writes settle before the
   // directory disappears underneath them.
-  await keyStore.idle();
+  await stores.db.idle();
+  stores.db.close();
   await rm(dir, { recursive: true, force: true });
 });
 
@@ -90,20 +92,15 @@ function sessionCookie(res) {
   return cookies.filter((c) => c.startsWith('zoia_sid='));
 }
 
-describe('key login via URL', () => {
-  test('a valid key sets a session and redirects with the key stripped', async () => {
-    const { rawKey } = await keyStore.add({ name: 'Alice' });
+/** Someone signed in, and their machine, which is also their LiveKit identity. */
+const member = (name) => signIn(app, stores.accounts, name);
 
-    const res = await request(app).get(`/?k=${encodeURIComponent(rawKey)}`);
-
-    assert.equal(res.status, 302);
-    assert.equal(res.headers.location, '/', 'the key must not survive in the redirect target');
-    assert.equal(sessionCookie(res).length, 1);
-  });
-
+describe('sessions', () => {
   test('the session cookie is HttpOnly, SameSite=Lax and signed', async () => {
-    const { rawKey } = await keyStore.add({ name: 'Alice' });
-    const res = await request(app).get(`/?k=${encodeURIComponent(rawKey)}`);
+    const { email } = await member('Alice');
+    const res = await request(app)
+      .post('/api/login')
+      .send({ email, password: PASSWORD, deviceName: 'PC' });
     const [cookie] = sessionCookie(res);
 
     assert.match(cookie, /HttpOnly/i);
@@ -112,68 +109,24 @@ describe('key login via URL', () => {
     assert.match(cookie, /zoia_sid=s%3A/);
   });
 
-  test('the cookie carries only the key id, never the secret', async () => {
-    const { rawKey, record } = await keyStore.add({ name: 'Alice' });
-    // parseKey, not split('_'): the secret may contain '_' and a truncated
-    // fragment matches unrelated text by chance.
-    const secret = parseKey(rawKey).secret;
-    const [cookie] = sessionCookie(await request(app).get(`/?k=${encodeURIComponent(rawKey)}`));
+  test('the cookie carries only the device id, never a secret', async () => {
+    const { email } = await member('Alice');
+    const res = await request(app)
+      .post('/api/login')
+      .send({ email, password: PASSWORD, deviceName: 'PC' });
+    const [cookie] = sessionCookie(res);
+    const secret = res.body.deviceCredential.split('_').slice(2).join('_');
 
-    assert.ok(cookie.includes(record.id));
-    assert.ok(!cookie.includes(secret), 'the secret must never reach the cookie');
+    assert.ok(cookie.includes(res.body.deviceId));
+    assert.ok(!cookie.includes(secret), 'the credential must never reach the cookie');
+    assert.ok(!cookie.includes(encodeURIComponent(PASSWORD)));
   });
-
-  test('an invalid key redirects without a session', async () => {
-    const res = await request(app).get(`/?k=zoia_deadbeef_${'x'.repeat(43)}`);
-    assert.equal(res.status, 302);
-    assert.equal(res.headers.location, '/?error=invalid_key');
-    assert.equal(sessionCookie(res).length, 0);
-  });
-
-  test('a garbage key is rejected the same way', async () => {
-    const res = await request(app).get('/?k=nonsense');
-    assert.equal(res.headers.location, '/?error=invalid_key');
-    assert.equal(sessionCookie(res).length, 0);
-  });
-
-  test('a revoked key cannot start a session', async () => {
-    const { rawKey, record } = await keyStore.add({ name: 'Alice' });
-    await keyStore.revoke(record.id);
-
-    const res = await request(app).get(`/?k=${encodeURIComponent(rawKey)}`);
-    assert.equal(res.headers.location, '/?error=invalid_key');
-    assert.equal(sessionCookie(res).length, 0);
-  });
-
-  test('no raw key is written to any log line', async () => {
-    const { rawKey } = await keyStore.add({ name: 'Alice' });
-    // parseKey, not split('_'): the secret may contain '_' and a truncated
-    // fragment matches unrelated text by chance.
-    const secret = parseKey(rawKey).secret;
-
-    await request(app).get(`/?k=${encodeURIComponent(rawKey)}`);
-    await request(app).get(`/?k=zoia_deadbeef_${'x'.repeat(43)}`);
-
-    const combined = logLines.join('\n');
-    assert.ok(!combined.includes(secret), 'a raw secret reached the logs');
-    assert.ok(!combined.includes(rawKey), 'a raw key reached the logs');
-  });
-});
-
-describe('sessions', () => {
-  async function agentWithKey() {
-    const { rawKey, record } = await keyStore.add({ name: 'Alice' });
-    const agent = request.agent(app);
-    await agent.get(`/?k=${encodeURIComponent(rawKey)}`);
-    return { agent, record };
-  }
 
   test('/api/session reports the signed-in person', async () => {
-    const { agent, record } = await agentWithKey();
+    const { agent, record } = await member('Alice');
     const res = await agent.get('/api/session');
 
     assert.equal(res.status, 200);
-    assert.equal(res.body.name, 'Alice');
     assert.equal(res.body.name, 'Alice');
     assert.equal(res.body.id, record.id);
   });
@@ -183,45 +136,50 @@ describe('sessions', () => {
   });
 
   test('a forged cookie is rejected because it is unsigned', async () => {
-    const res = await request(app).get('/api/session').set('Cookie', 'zoia_sid=deadbeef');
+    const { record } = await member('Alice');
+    const res = await request(app)
+      .get('/api/session')
+      .set('Cookie', `zoia_sid=device:${record.id}`);
     assert.equal(res.status, 401);
   });
 
-  test('revocation takes effect on the very next request', async () => {
-    const { agent, record } = await agentWithKey();
+  test('signing a machine out takes effect on the very next request', async () => {
+    const { agent, record } = await member('Alice');
     assert.equal((await agent.get('/api/session')).status, 200);
 
-    await keyStore.revoke(record.id);
+    await stores.devices.revoke(record.id);
 
     assert.equal(
       (await agent.get('/api/session')).status,
       401,
-      'a revoked key must not survive on an existing session',
+      'a revoked machine must not survive on an existing session',
     );
   });
 
   test('logout clears the session', async () => {
-    const { agent } = await agentWithKey();
+    const { agent } = await member('Alice');
     await agent.post('/api/logout');
     assert.equal((await agent.get('/api/session')).status, 401);
   });
 
-  test('POST /api/login accepts a pasted key', async () => {
-    const { rawKey } = await keyStore.add({ name: 'Bob' });
-    const res = await request(app).post('/api/login').send({ key: rawKey });
-
-    assert.equal(res.status, 200);
-    assert.ok(res.body.name);
-  });
-
-  test('POST /api/login rejects a bad key with 401', async () => {
-    const res = await request(app).post('/api/login').send({ key: 'nope' });
-    assert.equal(res.status, 401);
-    assert.equal(res.body.error, 'invalid_key');
-  });
-
   test('POST /api/login with no body does not crash', async () => {
-    assert.equal((await request(app).post('/api/login').send({})).status, 401);
+    assert.equal((await request(app).post('/api/login').send({})).status, 400);
+  });
+
+  test('no password or credential is written to any log line', async () => {
+    const { email } = await member('Alice');
+    await request(app)
+      .post('/api/login')
+      .send({ email, password: 'not it at all', deviceName: 'PC' });
+    const ok = await request(app)
+      .post('/api/login')
+      .send({ email, password: PASSWORD, deviceName: 'PC' });
+
+    const combined = logLines.join('\n');
+    assert.ok(!combined.includes(PASSWORD), 'a password reached the logs');
+    assert.ok(!combined.includes('not it at all'), 'a wrong password reached the logs');
+    assert.ok(!combined.includes(ok.body.deviceCredential), 'a credential reached the logs');
+    assert.ok(!combined.includes(email), 'an email reached the logs');
   });
 });
 
@@ -231,9 +189,7 @@ describe('token issuance', () => {
   });
 
   test('every session receives a subscribe-only token', async () => {
-    const { rawKey } = await keyStore.add({ name: 'Alice' });
-    const agent = request.agent(app);
-    await agent.get(`/?k=${encodeURIComponent(rawKey)}`);
+    const { agent } = await member('Alice');
 
     const res = await agent.post('/api/token');
     assert.equal(res.status, 200);
@@ -245,11 +201,9 @@ describe('token issuance', () => {
     assert.equal(grant.canPublish, false, 'publishing is granted by the stage, never at join');
   });
 
-  test('a revoked member cannot obtain a token afterwards', async () => {
-    const { rawKey, record } = await keyStore.add({ name: 'Alice' });
-    const agent = request.agent(app);
-    await agent.get(`/?k=${encodeURIComponent(rawKey)}`);
-    await keyStore.revoke(record.id);
+  test('a disabled member cannot obtain a token afterwards', async () => {
+    const { agent, account } = await member('Alice');
+    await stores.accounts.setStatus(account.id, 'disabled', 'test');
 
     assert.equal((await agent.post('/api/token')).status, 401);
   });
@@ -257,9 +211,7 @@ describe('token issuance', () => {
 
 describe('the stage', () => {
   async function signedIn(name, identity) {
-    const { rawKey, record } = await keyStore.add({ name });
-    const agent = request.agent(app);
-    await agent.get(`/?k=${encodeURIComponent(rawKey)}`);
+    const { agent, record } = await member(name);
     roomsStub.participants.push({
       identity: identity ?? record.id,
       name,
@@ -319,12 +271,13 @@ describe('the stage', () => {
 });
 
 describe('rate limiting', () => {
-  test('repeated failed attempts are throttled', async () => {
+  test('repeated failed logins are throttled', async () => {
     app = buildApp({ rateLimit: { windowMs: 60_000, limit: 3 } });
+    const login = { email: 'nobody@example.com', password: 'wrong password', deviceName: 'PC' };
 
     const statuses = [];
     for (let i = 0; i < 5; i += 1) {
-      statuses.push((await request(app).post('/api/login').send({ key: 'wrong' })).status);
+      statuses.push((await request(app).post('/api/login').send(login)).status);
     }
 
     assert.deepEqual(statuses.slice(0, 3), [401, 401, 401]);
@@ -335,8 +288,8 @@ describe('rate limiting', () => {
   });
 
   test('loading the page does not consume the attempt budget', async () => {
-    // Reloading your own room is not a credential check. Counting it locked
-    // people out for refreshing.
+    // Reloading a page is not a credential check. Counting it locked people
+    // out for refreshing.
     app = buildApp({ rateLimit: { windowMs: 60_000, limit: 3 } });
 
     for (let i = 0; i < 10; i += 1) {
@@ -344,13 +297,11 @@ describe('rate limiting', () => {
     }
   });
 
-  test('a successful key login does not consume the budget either', async () => {
+  test('a successful login does not consume the budget either', async () => {
     app = buildApp({ rateLimit: { windowMs: 60_000, limit: 3 } });
 
     for (let i = 0; i < 6; i += 1) {
-      const { rawKey } = await keyStore.add({ name: `user${i}` });
-      const res = await request(app).get(`/?k=${encodeURIComponent(rawKey)}`);
-      assert.equal(res.headers.location, '/', `valid login ${i} was throttled`);
+      await member(`user${i}`);
     }
   });
 });
@@ -365,9 +316,7 @@ describe('health', () => {
 
 describe('publishing over WHIP', () => {
   async function signedIn(name) {
-    const { rawKey, record } = await keyStore.add({ name });
-    const agent = request.agent(app);
-    await agent.get(`/?k=${encodeURIComponent(rawKey)}`);
+    const { agent, record } = await member(name);
     roomsStub.participants.push({
       identity: record.id,
       name,

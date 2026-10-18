@@ -1,5 +1,7 @@
 /** Environment parsing. Validates once at startup so misconfiguration fails loudly. */
 
+import { storePaths } from './stores.js';
+
 const required = ['SESSION_SECRET', 'LIVEKIT_API_KEY', 'LIVEKIT_API_SECRET', 'LIVEKIT_WS_URL'];
 
 export function loadConfig(env = process.env) {
@@ -39,10 +41,8 @@ export function loadConfig(env = process.env) {
       // Server-side API endpoint, used only to create the room.
       apiUrl: env.LIVEKIT_API_URL ?? 'http://127.0.0.1:7880',
     },
-    keyStoreFile: env.KEY_STORE_FILE ?? 'server/data/keys.json',
-    pairingStoreFile: env.PAIRING_STORE_FILE ?? 'server/data/pairings.json',
-    deviceStoreFile: env.DEVICE_STORE_FILE ?? 'server/data/devices.json',
-    accountStoreFile: env.ACCOUNT_STORE_FILE ?? 'server/data/accounts.json',
+    // Accounts and their devices, in one SQLite file; see ADR 0032.
+    ...storePaths(env),
     // See ADR 0031. Machines one person may have signed in at once, how long
     // one may sit unused before it stops counting, and how many sign-ups may
     // wait for an admin before sign-up closes until someone works the queue.

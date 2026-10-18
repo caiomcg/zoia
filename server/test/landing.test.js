@@ -13,7 +13,7 @@ import { dirname, join } from 'node:path';
 import request from 'supertest';
 
 import { createApp } from '../src/app.js';
-import { createKeyStore } from '../src/keys.js';
+import { testStores } from './people.js';
 import { createStage } from '../src/stage.js';
 
 const PUBLIC_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'public');
@@ -33,7 +33,9 @@ function build() {
   const rooms = { listParticipants: async () => [], updateParticipant: async () => {} };
   return createApp({
     config,
-    keyStore: createKeyStore({ file: join(PUBLIC_DIR, '..', 'test-keys-unused.json') }),
+    ...(({ accounts, devices }) => ({ accountStore: accounts, deviceStore: devices }))(
+      testStores(':memory:'),
+    ),
     tokenIssuer: { issue: async () => ({ token: 't', wsUrl: 'wss://s' }) },
     stage: createStage({ rooms, roomName: 'zoia', logger }),
     logger,

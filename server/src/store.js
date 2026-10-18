@@ -15,6 +15,7 @@ import { randomBytes, scrypt, timingSafeEqual } from 'node:crypto';
 import { readFile, writeFile, mkdir, rename } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { promisify } from 'node:util';
+import { createTableStore } from './database.js';
 
 const scryptAsync = promisify(scrypt);
 
@@ -40,10 +41,24 @@ export async function replaceFile(from, to, { attempts = 5, delayMs = 20, move =
 }
 
 const KEY_LENGTH = 64;
-const SCRYPT_PARAMS = { N: 16384, r: 8, p: 1 };
 
-export async function hashSecret(secret, salt) {
-  const derived = await scryptAsync(secret, salt, KEY_LENGTH, SCRYPT_PARAMS);
+/**
+ * For secrets this server mints — device credentials, reset codes — 256
+ * random bits each. Nobody cracks those offline at any cost, so the hash only
+ * has to be irreversible and compared in constant time.
+ */
+export const SECRET_SCRYPT = { N: 16384, r: 8, p: 1 };
+
+/**
+ * For passwords, which people choose, and which an attacker holding a copy of
+ * the database would try to crack offline: OWASP's scrypt setting, the
+ * N=2^14, p=5 form of it, which keeps each hash to 16MB of memory. About five
+ * times the work of the setting above.
+ */
+export const PASSWORD_SCRYPT = { N: 16384, r: 8, p: 5 };
+
+export async function hashSecret(secret, salt, params = SECRET_SCRYPT) {
+  const derived = await scryptAsync(secret, salt, KEY_LENGTH, params);
   return derived.toString('base64');
 }
 
@@ -74,22 +89,23 @@ export function isActive(record, now = Date.now()) {
 }
 
 /** Timing-safe comparison of a presented secret against a stored record. */
-export async function secretMatches(secret, record) {
-  const candidate = Buffer.from(await hashSecret(secret, record.salt));
+export async function secretMatches(secret, record, params = SECRET_SCRYPT) {
+  const candidate = Buffer.from(await hashSecret(secret, record.salt, params));
   const expected = Buffer.from(record.hash);
   if (candidate.length !== expected.length) return false;
   return timingSafeEqual(candidate, expected);
 }
 
 /** Hashes against a throwaway salt so a miss costs what a hit costs. */
-export async function decoyHash(secret) {
-  await hashSecret(secret, 'decoy');
+export async function decoyHash(secret, params = SECRET_SCRYPT) {
+  await hashSecret(secret, 'decoy', params);
 }
 
 /**
  * A JSON file holding one collection of records, with serialised writes.
- * These files hold at most a few dozen entries; a promise chain is enough,
- * and anything more would be machinery without a purpose.
+ * Only for what is not a credential or an identity — the channel list — and
+ * only ever written by the server itself. Anything keytool also writes lives
+ * in the database instead, where two writers cannot undo each other.
  */
 export function createJsonStore({ file, collection }) {
   let queue = Promise.resolve();
@@ -173,10 +189,11 @@ export function createJsonStore({ file, collection }) {
 /**
  * A store of revocable credentials: mint one, verify a presented value, revoke
  * it. Invite keys, pairing tokens and device credentials are all this, differing
- * only in prefix and in the extra fields they carry.
+ * only in prefix and in the extra fields they carry. Kept in the database,
+ * one table each; see database.js.
  */
-export function createCredentialStore({ file, collection, prefix }) {
-  const store = createJsonStore({ file, collection });
+export function createCredentialStore({ db, table, prefix }) {
+  const store = createTableStore({ db, table });
 
   return {
     ...store,
