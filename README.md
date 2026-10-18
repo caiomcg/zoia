@@ -33,8 +33,9 @@ notifications, your music and your other calls stay out of the stream.
 - **Switch what you share** without stopping, so the picture never drops for viewers.
 - **Preview a camera first**, with device pickers and a level meter, before anything is
   published.
-- **Per-device access, with two kill switches.** Revoke a pairing token to stop new
-  machines; revoke a single device to cut off one.
+- **Accounts, approved by an admin.** Anyone can sign up with an email and password; an
+  admin lets them in. Admins can disable someone, reset a password or sign out one machine,
+  all from the app.
 
 ## How it works
 
@@ -42,7 +43,7 @@ notifications, your music and your other calls stay out of the stream.
   Windows desktop app                         your server
  ┌──────────────────────┐                ┌────────────────────────┐
  │  window / screen     │   WebRTC       │  Caddy  (TLS)          │
- │  camera              │ ─────────────► │    ├── app   (Node)    │ ── pairing, tokens,
+ │  camera              │ ─────────────► │    ├── app   (Node)    │ ── accounts, tokens,
  │  app audio (WASAPI)  │                │    └── LiveKit (SFU)   │    the stage
  └──────────────────────┘                └────────────────────────┘
                                                    │  many streams in,
@@ -66,13 +67,13 @@ the first open is right-click › **Open**.
 1. Download the Windows installer or the Mac `.dmg` (`-mac-arm64` for Apple Silicon,
    `-mac-x64` for Intel) from [Releases](https://github.com/caiomcg/zoia/releases), or build
    it yourself (below).
-2. Get a `zoia-invite.json` from whoever runs the server you are joining.
-3. Run Zoia and drag the invite onto the window, or choose it when prompted.
+2. Run Zoia, enter the address of the server you are joining, and create an account.
+3. Wait for an admin of that server to approve it; the app moves on by itself.
 4. Share something.
 
 The download itself carries no server and no credentials, so it is the same file for
-everybody and safe to link publicly. The invite is the part that grants access, and the part
-to send privately.
+everybody and safe to link publicly. Access is your account, and an admin decides who gets
+one.
 
 ### Watching
 
@@ -95,18 +96,19 @@ cp .env.example .env        # fill in the secrets
 docker compose up -d
 ```
 
-Then mint an invite and send it to whoever is joining:
+Then sign up from the app yourself, and make that account the super admin — the one who
+makes other admins:
 
 ```bash
-node server/bin/keytool.js pair:new --name "friends" --max-activations 5 \
-  --invite zoia-invite.json
+docker compose exec app node server/bin/keytool.js account:super you@example.com
 ```
 
-They pair with that plus a release binary; there is nothing to build unless you want to.
+Everyone else downloads a release, enters your server's address and signs up; you approve
+them in Settings › Accounts. There is nothing to build unless you want to.
 
 Full walkthrough, including DNS, TLS and the router ports that actually matter:
-[docs/SELF_HOSTING.md](docs/SELF_HOSTING.md). Day-to-day operations — revoking access,
-reading crash reports, upgrading — are in [docs/RUNBOOK.md](docs/RUNBOOK.md).
+[docs/SELF_HOSTING.md](docs/SELF_HOSTING.md). Day-to-day operations — backups, locked-out
+admins, reading crash reports, upgrading — are in [docs/RUNBOOK.md](docs/RUNBOOK.md).
 
 ## Hardware encoding (WHIP)
 
@@ -181,10 +183,9 @@ the common messages to their causes.
 ## Distributing builds
 
 Pushing a version tag builds the Windows and macOS binaries in CI and attaches them to a
-GitHub Release with checksums. `desktop/make-exe.bat` still produces a private build with a token
-baked in, for when you would rather hand over one file than two. See
-[docs/DISTRIBUTING.md](docs/DISTRIBUTING.md) for both paths, what SmartScreen will say, and
-how to revoke an invite that escapes.
+GitHub Release with checksums. `desktop/make-exe.bat` builds the same installer locally; set
+`ZOIA_SERVER_URL` first and its sign-in screen starts with your server's address filled in.
+See [docs/DISTRIBUTING.md](docs/DISTRIBUTING.md) for both, and what SmartScreen will say.
 
 ## Known limits
 

@@ -7,87 +7,85 @@ forwarded link, a shared password that outlived its usefulness, or a former memb
 group. Secondarily: a viewer taking over the stream.
 
 It is not designed to withstand a targeted attacker with resources. It is designed so that
-access is per-person, revocable, and enforced by the server rather than by the UI.
+access is per-person, approved by someone, revocable, and enforced by the server rather than
+by the UI.
 
-## Device pairing
+## Accounts
 
-This is the path the desktop app uses, and the one that matters today. Full reasoning in
-[ADR 0007](adr/0007-device-pairing.md).
+Access is an account: an email and a password, approved by an admin before it can reach
+anything ([ADR 0031](adr/0031-accounts-with-admin-approval.md)). Anyone who knows the host
+can sign up, so most of what follows is about what sign-up does *not* let through.
 
-An invitation is a **pairing token**, not an access token. The distinction is the whole
-design:
+- **Pending is nothing.** A pending account can sign in and ask whether it has been
+  approved, and nothing else: no token, no channels, no stage. `accounts.test.js` checks each.
+- **The email is not verified.** There is no mail, so anyone can sign up with anyone's
+  address. Approval is the check; an admin must recognise who they approve.
+- **Roles are checked on the server, every request.** Admins approve, disable and reset
+  users; only the super admin manages admins; nothing in the app can create, demote,
+  disable or reset the super admin, who is set with `keytool account:super` on the server.
+  The role is re-read from the database on every request, so a demotion is immediate.
+  A modified app — or DevTools — can show itself any button it likes; every request behind
+  one is refused unless the database says the caller may make it, and no field a client
+  sends is ever read as a role or a status. `accounts.test.js` sends exactly those forged
+  requests.
 
-> **A secret inside a distributed binary is extractable.** Anyone with the `.exe` can
-> recover it. No build flag or obfuscation changes that.
+### Passwords
 
-That is why the published binary contains no token at all, and no server URL either
-([ADR 0010](adr/0010-invites-outside-the-binary.md)). A release is inert: it can be linked
-publicly because it is not a credential. The invitation travels separately, as a
-`zoia-invite.json` sent over a private channel, and **that file is the credential** — a fact
-worth repeating to anyone you send one to, because it lands in a Downloads folder like
-anything else.
+Stored as **scrypt** with a per-account 16-byte salt, compared with `timingSafeEqual`, at
+OWASP's setting for passwords: `N=2^14, r=8, p=5` — the form of it that keeps each hash to
+16MB of memory, so a burst of logins cannot exhaust the VM. People choose passwords, and
+someone holding a copy of the database would try to crack them offline; this is what that
+costs them. At least 6 characters, with an uppercase and a lowercase letter, a digit and a
+symbol; at most 128. Six is short on its own: what stops a short password being guessed
+online is the per-account lockout and the per-address rate limit below.
 
-A pairing token grants nothing by itself even so. It is spent once, at first run, for a
-credential belonging to that one machine, stored with Electron `safeStorage` (DPAPI on
-Windows). That gives two independent kill switches — revoke the invite to stop *new*
-machines, revoke a device to cut off *one* — and means a leaked invitation is a bounded
-problem rather than a permanent one. `--max-activations` bounds it further, and revoking now
-costs nothing to redo: no rebuild, no re-sending a binary.
+An unknown email and a wrong password get the same answer and take the same time: a miss is
+hashed against a decoy at the same setting. Ten wrong passwords lock an account for 15
+minutes, and login is rate-limited per address on top.
 
-A private build made with `make-exe.bat` still embeds a token, and such a build **is** a
-credential. The build script fails loudly if a `--public` build comes out with one inside.
+There is no "forgot password" link, because there is no mail to send one with. An admin
+issues a **reset code** instead: 256 random bits, shown once, valid 24 hours, single use,
+stored hashed. Using it signs out every machine of the account.
+
+### Devices
+
+A password is typed once per machine. A login answers with a **device credential** —
+`zdev_<8 hex id>_<43 char secret>` — which the app keeps with Electron `safeStorage` (DPAPI
+on Windows, the Keychain on macOS) and presents at each launch. An account holds at most five
+live machines; one more replaces the least recently used. A machine unused for 60 days
+expires. Each can be signed out alone, by its owner, an admin disabling the account, or
+`keytool device:revoke`.
+
+Device credentials and reset codes are random, not chosen: 256 bits that nobody cracks
+offline at any hash cost. They use scrypt at `N=2^14, r=8, p=1`, which only has to be
+irreversible and compared in constant time. The **id** is public — it picks the record to
+check, so verification is one hash, and it is what gets logged.
+
+### Where it is all kept
+
+In one SQLite file, `server/data/zoia.db`, readable by the server's user only
+([ADR 0032](adr/0032-sqlite-for-credentials.md)). Every change is a transaction, so the
+server and `keytool` writing at once cannot undo each other, and the schema refuses records
+that should not exist: two accounts with one email, a device of an account that is gone.
+It holds password hashes and every email; a backup of it is as private as the original.
 
 ### Pointing the app at a server
 
-Taking the server URL from a file is a new attack surface, so `src/main/invite.ts` validates
-it before anything is sent: **https only**, except on loopback where a self-hoster has no
-certificate yet. Honouring `http://` would put a device credential — and every later request
-carrying the session cookie — on the wire in the clear, at the choosing of whoever wrote the
-file. The token's shape is checked too, so a mistyped one fails as a bad token rather than as
-an opaque 401.
-
-Pairing tokens and device credentials use the same scrypt-at-rest and timing-safe comparison
-as invite keys below, and neither raw value is ever persisted or logged. `pairing.test.js`
-asserts both, including that no raw secret reaches a log line.
-
-`/api/pair` is rate-limited harder than login: a pairing token is worth more than one
-person's access, so it is guessed at more aggressively.
-
-## Invite keys
-
-A key looks like `zoia_<8 hex id>_<43 char secret>`:
-
-- The **id** is public. It identifies which record to check, so verification is a single
-  hash rather than a scan over every record, and it is what gets logged.
-- The **secret** is 32 bytes from `crypto.randomBytes`, base64url-encoded — 256 bits of
-  entropy. Guessing it is not a threat model, which is why the hash choice below is safe.
-
-Stored as **scrypt** (`N=16384, r=8, p=1`) with a per-record 16-byte salt, compared with
-`timingSafeEqual`.
-
-> **Why scrypt rather than argon2id:** the slow-hash arms race exists to protect *low-entropy
-> human passwords* against offline cracking. A 256-bit random secret has no such weakness —
-> no attacker cracks it at any hash cost. What matters is that the stored form is
-> irreversible and the comparison is timing-safe, both of which `node:crypto` provides
-> without a native dependency in the image. If the scheme ever changes to accept
-> user-chosen passphrases, this reasoning no longer holds and argon2id becomes required.
-
-The raw key is displayed **once**, when minted. It is never stored, never logged, and never
-recoverable; a lost key is replaced, not looked up.
+The sign-in screen asks for the server's address, and the password goes wherever it points,
+so `src/main/server-url.ts` checks it before anything is sent: **https only**, except on
+loopback, where someone trying a server they just started has no certificate yet. An address
+typed without a scheme is taken as https, never http.
 
 ## Session handling
 
-The session cookie holds only `<kind>:<id>` — a device or key id, never a secret — signed
-with `SESSION_SECRET`, and is set
-`HttpOnly`, `Secure`, `SameSite=Lax`, 30-day expiry.
+The session cookie holds only `device:<id>` — never a secret — signed with
+`SESSION_SECRET`, and is set `HttpOnly`, `Secure`, `SameSite=Lax`, 30-day expiry.
 
-**Every request re-resolves that id against the store it came from.** Revocation is
-therefore immediate. The alternative — trusting the cookie until it expires — would mean
-`keytool device:revoke` silently does nothing for up to a month, which is the precise moment
-revocation matters.
-
-The key is stripped from the URL by a 302 redirect immediately after login, so it does not
-survive in browser history, the URL bar, or a `Referer` header sent to some other site.
+**Every request re-reads that device and its account from the database.** Signing a machine
+out or disabling someone is therefore immediate. The server also removes their machines from
+every channel at that moment, since a LiveKit connection makes no requests to refuse. The alternative — trusting the cookie until
+it expires — would mean both silently do nothing for up to a month, which is the precise
+moment they matter.
 
 ## Publishing is a permission, not a UI state
 
@@ -98,34 +96,39 @@ by the server, only to the participant who claimed their own broadcast slot
 every publish attempt.
 
 So a client editing its own JavaScript achieves nothing: it holds a token that says it may
-not publish. `server/test/token.test.js` feeds the issuer `'host'`, `'admin'` and assorted
-junk and asserts none of it grants publish, so a refactor that reintroduces a privileged
-role fails loudly.
+not publish. Account roles are about administration and never reach the token:
+`server/test/token.test.js` feeds the issuer `'host'`, `'admin'` and assorted junk and
+asserts none of it grants publish, so a refactor that lets a role leak into the grant fails
+loudly.
 
 ## Logging
 
-Raw keys, pairing tokens and device credentials must never reach a log line. The **id** is
-logged instead: it identifies the person for auditing without being a credential.
-`routes.test.js` asserts that a full login flow emits no raw key, and `pairing.test.js`
-asserts the same for a full pairing flow.
+Passwords, device credentials, reset codes and email addresses must never reach a log line.
+The account or device **id** is logged instead: it identifies the person for auditing
+without being a credential, or personal data. `routes.test.js` and `accounts.test.js` assert
+that sign-up, login and resets emit none of them.
 
 Crash reports collected from clients are held in memory and reachable only with a session,
 so a report never becomes a public channel.
 
 ## Rate limiting
 
-Login routes are limited to 10 attempts/minute/IP. With 256-bit secrets this is belt and
-braces, but it also caps log noise and blunts anyone probing the endpoint.
+Failed logins are limited per address (20 a minute), on top of the per-account lockout.
+Sign-up is limited to 3 an hour per address, counting successes, and the server holds at
+most 20 accounts waiting for approval; past that, sign-up is closed until an admin works the
+queue. Reset codes are limited harder than logins, since one is worth an account.
 
 `TRUST_PROXY=1` is required: behind Caddy, every request otherwise appears to come from the
 proxy's address and the limiter would throttle all users as one client.
 
 ## Known limitations
 
-- **Credentials are bearer credentials.** Whoever holds one is that person. Revocation is
-  the mitigation, not prevention.
-- **The pairing token in a build is extractable**, by design and unavoidably. It is an
-  invitation, not a key — see above.
+- **Credentials are bearer credentials.** Whoever holds a device credential is that person
+  on that machine. Signing it out is the mitigation, not prevention.
+- **Passwords get reused.** A password leaked from somewhere else is a working login here.
+  The lockout bounds online guessing; nothing bounds reuse.
+- **Sign-up is public.** Anyone who knows the host can fill the approval queue up to its
+  cap. It costs an admin a click per junk request, and nothing more.
 - **Binaries are unsigned.** SmartScreen will warn, and a warning people are taught to click
   through is a real weakness. Code signing costs money this project does not have.
 - **No per-viewer watermarking or DRM.** A viewer can record what they see. If that matters,
@@ -137,7 +140,7 @@ proxy's address and the limiter would throttle all users as one client.
   service is exposed. Publishing needs a LiveKit token that `/api/whip` hands out **only
   to the current stage holder**: it lasts five minutes, allows publishing only, and is
   redacted from logs and crash reports. Before this, a separate Ingress endpoint checked
-  only for a session, so any paired device could publish around the stage
+  only for a session, so any signed-in device could publish around the stage
   ([ADR 0011](adr/0011-hardware-encoding-over-the-internet.md)).
 
 ## Stronger options, if wanted later
@@ -147,6 +150,6 @@ proxy's address and the limiter would throttle all users as one client.
   here. Cost: painful to install on phones, and re-issuing on device changes falls to you.
 - **Tailscale** — put the VM on a tailnet and open zero router ports. The attack surface
   disappears rather than being guarded, which beats any authentication scheme. Cost: a VPN
-  client on every viewer's machine. Layers cleanly on top of device pairing.
+  client on every viewer's machine. Layers cleanly on top of accounts.
 - **OIDC via Authelia or oauth2-proxy** with an email allowlist, so nobody holds a secret at
   all. Worth it only if the group grows well beyond fifteen.

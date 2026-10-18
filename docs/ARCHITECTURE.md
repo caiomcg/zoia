@@ -84,12 +84,14 @@ go through was removed.
 
 ## Request flow
 
-1. **First run.** The app POSTs its embedded pairing token to `/api/pair` and receives a
-   device credential, stored with Electron `safeStorage` (DPAPI on Windows).
+1. **First run.** The person signs up (`/api/signup`) or signs in (`/api/login`) with an
+   email and password, and the app receives a device credential, stored with Electron
+   `safeStorage` (DPAPI on Windows). A new account is pending until an admin approves it.
 2. **Every run.** It POSTs that credential to `/api/device/session` and receives a **signed
    session cookie holding `device:<id>` and no secret**.
-3. On every subsequent request the id is re-resolved against the device store. A revoked
-   record is rejected immediately, not when the cookie expires.
+3. On every subsequent request the device and its account are re-read from the database. A
+   signed-out machine or a disabled account is rejected immediately, not when the cookie
+   expires.
 4. `POST /api/token` mints a LiveKit JWT. Everyone joins **subscribe-only** —
    `canPublish: false` — regardless of any stored role.
 5. To broadcast, the client calls `POST /api/stage/claim`. The server raises that
@@ -97,7 +99,7 @@ go through was removed.
 6. The client connects to `wss://sfu.<domain>`, authenticates with the JWT, and publishes or
    subscribes.
 
-Pairing and revocation: [ADR 0007](adr/0007-device-pairing.md). The stage:
+Accounts, approval and roles: [ADR 0031](adr/0031-accounts-with-admin-approval.md). The stage:
 [ADR 0005](adr/0005-one-tier-claimable-stage.md).
 
 ## Why these choices
@@ -118,9 +120,10 @@ broadcaster's laptop closes — the stage stays locked and nobody can present. A
 who has gone is simply not in the list, so the failure mode disappears rather than being
 handled.
 
-**No database.** The stores are JSON files of a few dozen records, read and written under a
-mutex with write-then-rename. Postgres for fifteen invite records would be more to back up,
-not more safety.
+**SQLite, not a database server.** Accounts and devices are one SQLite file on the VM, every
+change a transaction, so the server and `keytool` can both write without undoing each other.
+Postgres for a few dozen accounts would be one more service to run and back up, not more
+safety ([ADR 0032](adr/0032-sqlite-for-credentials.md)).
 
 **Revocation is re-checked per request.** Trusting a valid cookie until it expires would mean
 `device:revoke` does nothing for up to a month. That is not a revocation.
@@ -158,12 +161,12 @@ degrading the stream for everyone.
 
 ```
 zoia/
-├── server/          Node + Express: pairing, tokens, the stage, crash reports
-│   ├── src/         app.js · token.js · stage.js · devices.js · pairings.js · keys.js
-│   ├── bin/         keytool.js — mint and revoke
+├── server/          Node + Express: accounts, tokens, the stage, crash reports
+│   ├── src/         app.js · token.js · stage.js · accounts.js · devices.js · database.js
+│   ├── bin/         keytool.js — super admin, reset codes, devices, backups
 │   └── public/      the static landing page (no client JavaScript)
 ├── desktop/         Electron + React, Windows x64
-│   ├── src/main/    sources · audio (WASAPI) · nvenc · capture · pairing
+│   ├── src/main/    sources · audio (WASAPI) · nvenc · capture · sign-in
 │   ├── src/renderer/  the UI, the player, the LiveKit hooks
 │   └── native/      C++ addon: Windows Graphics Capture + NVENC
 └── docs/            this, the runbook, self-hosting, and the ADRs

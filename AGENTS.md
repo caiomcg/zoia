@@ -5,21 +5,22 @@ Conventions and invariants for anyone — human or agent — working on this rep
 
 ## What this is
 
-Zoia is a private one-to-many screen broadcast. Everyone who has an invite key picks one of
-a **channel** (each its own LiveKit room; a permanent default plus any people add, up to five;
+Zoia is a private one-to-many screen broadcast. Everyone with an approved account picks one of
+a **channel** (each its own LiveKit room; a permanent default plus any admins add, up to five;
 see ADR 0015) and watches
 there; **anyone may claim an independent broadcast slot** in their channel and share a screen,
 window or tab with audio. Multiple people may stream at the same time, and each viewer chooses
-which broadcasts to watch. Latency is ~200–500 ms. Access is by per-person invite key; there
-are no roles beyond "has a key".
+which broadcasts to watch. Latency is ~200–500 ms. Access is by account: anyone may sign up
+with an email and password, and an admin approves them before they can join. Roles (user,
+admin, one super admin) govern administration only, never who may broadcast — see ADR 0031.
 
 It is three pieces:
 
 1. **LiveKit** — a self-hosted SFU. Each broadcaster uploads one stream; LiveKit fans
    every active stream out to the viewers who selected it. It does no transcoding, so it
    is cheap on CPU and expensive on upstream bandwidth.
-2. **This Node app** — serves the page, authenticates people against the invite-key store,
-   and mints short-lived LiveKit tokens whose grants encode the person's role.
+2. **This Node app** — signs people in against the accounts in its SQLite database (ADR
+   0032), and mints short-lived LiveKit tokens that only ever subscribe.
 3. **Caddy**, running on the same VM — terminates TLS for exactly two hostnames and nothing
    else, with certificates from a Cloudflare DNS-01 challenge. It is the only publicly
    reachable surface in the deployment. Media does **not** pass through it; WebRTC goes
@@ -36,11 +37,12 @@ npm run dev                  # app on :3000, watch mode
 npm test                     # node:test suite
 npm run lint                 # eslint
 npm run format               # prettier --write
-npm run keytool -- add --name "Alice"          # mint an invite key
-npm run keytool -- list
-npm run keytool -- revoke <keyId>
 npm run keytool -- account:super <email>       # the one super admin (ADR 0031)
 npm run keytool -- account:list
+npm run keytool -- account:reset <id> --codes <path>   # for an admin nobody can reset
+npm run keytool -- device:list [accountId]
+npm run keytool -- device:revoke <deviceId>
+npm run keytool -- db:backup <path>            # consistent copy while the server runs
 ./deploy.sh                  # rsync to the VM + docker compose up -d --build
 ```
 
@@ -60,14 +62,16 @@ and `npm run dev` regenerate it; the Dockerfile runs it at image build.
 | Path | Holds |
 |---|---|
 | `server/src/index.js` | Express app, routes, middleware wiring |
-| `server/src/keys.js` | Invite-key store: mint, verify, revoke, touch |
 | `server/src/accounts.js` | Accounts: email, password, role, approval, reset and claim codes |
+| `server/src/database.js` | The SQLite database: schema, migrations, transactions, JSON import |
+| `server/src/stores.js` | Opens the database and every store in it, for the server and keytool |
 | `server/src/token.js` | LiveKit AccessToken minting — subscribe-only, always |
 | `server/src/stage.js` | Who may broadcast right now — **the security boundary** |
 | `server/src/config.js` | Env parsing and validation, fail-fast on startup |
-| `server/bin/keytool.js` | CLI over `keys.js` |
+| `server/src/devices.js` | One credential per machine signed in to an account |
+| `server/bin/keytool.js` | CLI on the server: the super admin, reset codes, devices, backups |
 | `server/public/` | The login page and viewer app (no build step, plain ESM) |
-| `server/data/keys.json` | Key store. Server-only, gitignored, never deployed over |
+| `server/data/zoia.db` | Every credential and identity (ADR 0032). Server-only, gitignored, never deployed over |
 | `docs/adr/` | Architecture decision records |
 
 ## Invariants — do not break these
@@ -76,17 +80,22 @@ and `npm run dev` regenerate it; the Dockerfile runs it at image build.
    is a broadcaster by default. Publishing is granted at runtime by `stage.js`, independently
    per participant and only for that participant's slot. `server/test/token.test.js` and
    `server/test/stage.test.js` guard this.
-2. **Never log a raw invite key** — not in the app, not in an error message, not in a debug
-   branch. Log the `keyId` instead; it is safe and identifies the person.
-3. **Sessions are re-validated against the key store on every request**, not just at login.
-   Otherwise `keytool revoke` does nothing until the cookie expires, which makes revocation
-   useless exactly when it is needed.
-4. **Never commit secrets.** `.env`, `server/data/`, and any key material stay out of git.
+2. **Never log a secret or an email** — no password, device credential or reset code, and no
+   email address — not in the app, not in an error message, not in a debug branch. Log the
+   account or device id instead; it is safe and identifies the person.
+3. **Sessions are re-validated against the database on every request**, not just at login:
+   the device and its account. Otherwise signing a machine out or disabling someone does
+   nothing until the cookie expires, which makes it useless exactly when it is needed.
+4. **Admin rules are enforced on the server.** Every admin route checks the caller's role,
+   re-read on every request; nothing in the app can create, demote, disable or reset the super
+   admin, who is set only with `keytool account:super`. Hiding a button in the app is
+   presentation, not enforcement.
+5. **Never commit secrets.** `.env`, `server/data/`, and any key material stay out of git.
    `livekit.yaml` is committed deliberately *without* credentials — LiveKit reads them from
    `LIVEKIT_KEYS` in the environment.
-5. **`deploy.sh` must keep excluding `server/data`.** It runs `rsync --delete`; dropping that
-   exclude would wipe the key store and lock out every user, including you.
-6. **`app.set('trust proxy', ...)` must stay.** Behind Caddy every request otherwise appears to
+6. **`deploy.sh` must keep excluding `server/data`.** It runs `rsync --delete`; dropping that
+   exclude would wipe the database and lock out every user, including you.
+7. **`app.set('trust proxy', ...)` must stay.** Behind Caddy every request otherwise appears to
    originate from the proxy, so rate limiting would throttle all users as a single client.
 
 ## Environment gotchas

@@ -1,15 +1,8 @@
 # Distributing builds
 
-There are two ways to get Zoia onto someone's machine, and they differ in **where the
-invitation lives**.
-
-| | The binary | What you send |
-|---|---|---|
-| **Public release** | Knows nothing | The exe is a public link; the invite is private |
-| **Private build** | Carries a token | One file, nothing to configure |
-
-Either way the invitation is capped and revocable — see
-[ADR 0007](adr/0007-device-pairing.md) and [ADR 0010](adr/0010-invites-outside-the-binary.md).
+A Zoia installer carries no server and no credential: people enter their server's address
+and sign in with an account ([ADR 0031](adr/0031-accounts-with-admin-approval.md)). So there
+is one kind of build, safe to link publicly, made either by CI or locally.
 
 ## Public releases
 
@@ -108,8 +101,8 @@ The [desktop/src/main/updater.ts](../desktop/src/main/updater.ts) module starts 
 to `%APPDATA%/Zoia/updates`, validates SHA-256, starts a helper process, quits Electron, and
 replaces `resources/app.asar` with a temporary backup before relaunching the installed executable.
 
-The published binary contains **no server URL and no pairing token**, so it is not a
-credential and can be linked anywhere. It is inert until someone supplies an invite.
+The published binary contains **no server address and no credential**, so it can be linked
+anywhere. It is inert until someone signs in to a server with an account.
 
 Tag a version and CI does the rest:
 
@@ -154,62 +147,17 @@ Verifying a download:
 Get-FileHash Zoia-Setup-0.2.0-x64.exe -Algorithm SHA256   # compare with SHA256SUMS.txt
 ```
 
-## The invite
+## Local builds
 
-What people actually need from you. Generate it on your server:
-
-```bash
-node server/bin/keytool.js pair:new --name "friends" --max-activations 5 \
-  --invite zoia-invite.json
-```
-
-It writes a small file, mode `0600`, and deliberately does **not** also print the token —
-terminal scrollback is shared far more casually than files are:
-
-```json
-{
-  "serverUrl": "https://zoia.example.com",
-  "pairingToken": "zpair_a1b2c3d4_…"
-}
-```
-
-**Treat this file as the credential, because it is one.** The exe is not.
-
-Send it over something private. The person then drags it onto the Zoia window or uses
-**Choose invite file…** on the pairing screen. Zoia copies it into its own data directory,
-so it does not have to stay where they put it.
-
-`--max-activations` caps how many live machines that invite can have paired at once, which
-bounds the damage if it is forwarded. Revoking a device frees its seat. One invite per group makes it possible to cut off a group without touching
-anyone else.
-
-## Private builds
-
-Still the quickest way to hand Zoia to one person: the token is baked in, and they configure
-nothing at all. From Windows, in `desktop/`:
+From Windows, in `desktop/`:
 
 ```bat
 make-exe.bat
 ```
 
-It asks for a pairing token on first run and remembers it in the gitignored `.pairing-token`.
-The result is in `desktop/release/`.
-
-```bat
-make-exe.bat --public
-```
-
-builds the tokenless kind instead — the same thing CI publishes, useful for testing the invite
-flow locally.
-
-The script verifies the build **in both directions**, and the second check is the important
-one now:
-
-- A private build that came out *without* its token fails, because it would dead-end on the
-  pairing screen and only whoever you sent it to would find out.
-- A `--public` build that came out *with* one fails loudly with **DO NOT DISTRIBUTE**. A
-  stale `ZOIA_PAIRING_TOKEN` in the shell is the usual cause. That exe is a credential, and
-  publishing it cannot be undone — only revoked.
+The same installer CI publishes, in `desktop/release/`. Set `ZOIA_SERVER_URL` first to have
+the sign-in screen start with that address filled in; it is only a default, and people can
+change it.
 
 It also closes any running copy first: a running `Zoia.exe` holds `release/win-unpacked` open
 and the build fails one line before writing the exe.
@@ -224,22 +172,7 @@ is broken.
 The installer is large because it carries Electron and ffmpeg. The ffmpeg build alone is
 about 100 MB of the package.
 
-## Revoking
+## Letting people in, and cutting them off
 
-Two independent levers, both immediate:
-
-```bash
-node server/bin/keytool.js pair:revoke <pairingId>            # no new machines
-node server/bin/keytool.js pair:revoke <pairingId> --cascade  # also cut off machines it paired
-node server/bin/keytool.js device:revoke <deviceId>           # one machine only
-```
-
-Revoking an invite stops it pairing anywhere new and leaves already-paired machines working;
-`--cascade` takes those with it. Both take effect on the next request, not at some refresh
-interval.
-
-Because the invitation is no longer inside the binary, **revoking one no longer means
-rebuilding or re-sending anything** — issue a new invite and carry on.
-
-`pair:list` and `device:list` show what exists, including how many seats an invite has in use
-and when each device was last seen.
+Both happen in the app, under **Settings › Accounts**, not by sending anything: approve a
+sign-up, disable someone, or reset their password. See [RUNBOOK.md](RUNBOOK.md#day-to-day).

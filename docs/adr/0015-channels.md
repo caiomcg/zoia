@@ -2,7 +2,8 @@
 
 ## Status
 
-accepted
+accepted; amended by [ADR 0031](0031-accounts-with-admin-approval.md): only admins add, rename
+and remove channels.
 
 ## Context
 

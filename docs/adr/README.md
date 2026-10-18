@@ -10,15 +10,15 @@ record that supersedes it, so the history stays legible.
 | #                                                        | Decision                                                      | Status                                                                             |
 | -------------------------------------------------------- | ------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
 | [0001](0001-livekit-sfu.md)                              | Use a self-hosted LiveKit SFU                                 | accepted                                                                           |
-| [0002](0002-invite-keys-over-shared-password.md)         | Per-person invite keys, not a shared password                 | accepted, extended by [0007](0007-device-pairing.md)                               |
+| [0002](0002-invite-keys-over-shared-password.md)         | Per-person invite keys, not a shared password                 | superseded by [0031](0031-accounts-with-admin-approval.md) |
 | [0003](0003-npm-as-front-door.md)                        | Reuse an existing reverse proxy as the front door             | superseded by [0004](0004-isolated-caddy-front-end.md)                             |
 | [0004](0004-isolated-caddy-front-end.md)                 | An isolated Caddy front end on the VM                         | accepted                                                                           |
 | [0005](0005-one-tier-claimable-stage.md)                 | One tier of user, with a claimable stage                      | accepted, stage superseded by [0013](0013-multiple-broadcast-slots.md)             |
 | [0006](0006-native-desktop-client.md)                    | A native desktop client, for per-application audio            | accepted                                                                           |
-| [0007](0007-device-pairing.md)                           | Device pairing, not a key in the binary                       | accepted, extended by [0010](0010-invites-outside-the-binary.md)                   |
+| [0007](0007-device-pairing.md)                           | Device pairing, not a key in the binary                       | superseded by [0031](0031-accounts-with-admin-approval.md) |
 | [0008](0008-retire-the-browser-client.md)                | Retire the browser client                                     | accepted                                                                           |
 | [0009](0009-hardware-encoding.md)                        | Hardware encoding via WGC and NVENC                           | accepted, partly superseded by [0011](0011-hardware-encoding-over-the-internet.md) |
-| [0010](0010-invites-outside-the-binary.md)               | The invitation lives outside the binary                       | accepted                                                                           |
+| [0010](0010-invites-outside-the-binary.md)               | The invitation lives outside the binary                       | superseded by [0031](0031-accounts-with-admin-approval.md) |
 | [0011](0011-hardware-encoding-over-the-internet.md)      | Hardware encoding over the internet, on any GPU               | accepted                                                                           |
 | [0013](0013-multiple-broadcast-slots.md)                 | Multiple independent broadcast slots                          | accepted                                                                           |
 | [0014](0014-browser-viewer.md)                           | Restore a viewer-only browser client                          | superseded by 0021                                                                 |
@@ -32,12 +32,14 @@ record that supersedes it, so the history stays legible.
 | [0022](0022-unified-league-streaming.md)                 | Unified League of Legends streaming and bidirectional handoff | accepted                                                                           |
 | [0023](0023-interface-languages.md)                      | Interface languages                                           | accepted                                                                           |
 | [0024](0024-resilient-gpu-broadcasting-pipeline.md)      | Resilient GPU broadcasting pipeline with opt-in fallback      | accepted                                                                           |
+| [0024](0024-activation-cap-counts-seats.md) | The activation cap counts seats | superseded by [0031](0031-accounts-with-admin-approval.md) |
 | [0025](0025-macos-client.md)                             | A macOS desktop client with system audio                      | accepted                                                                           |
 | [0026](0026-nvenc-over-the-room-connection.md)           | NVENC frames over the room's own WebRTC connection            | accepted                                                                           |
 | [0027](0027-profile-pictures.md)                         | Profile pictures kept by the app server                       | proposed                                                                           |
 | [0028](0028-updates-from-releases.md)                    | Updates found from the latest GitHub release                  | accepted                                                                           |
 | [0030](0030-amf-over-the-room-connection.md)             | AMF frames over the room connection, at an adaptive bitrate   | accepted                                                                           |
 | [0031](0031-accounts-with-admin-approval.md) | Accounts with an email and password, approved by an admin | proposed |
+| [0032](0032-sqlite-for-credentials.md) | Credentials and identities in SQLite | proposed |
 
 ## The two that explain the most
 
