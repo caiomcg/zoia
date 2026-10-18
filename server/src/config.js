@@ -42,6 +42,15 @@ export function loadConfig(env = process.env) {
     keyStoreFile: env.KEY_STORE_FILE ?? 'server/data/keys.json',
     pairingStoreFile: env.PAIRING_STORE_FILE ?? 'server/data/pairings.json',
     deviceStoreFile: env.DEVICE_STORE_FILE ?? 'server/data/devices.json',
+    accountStoreFile: env.ACCOUNT_STORE_FILE ?? 'server/data/accounts.json',
+    // See ADR 0031. Machines one person may have signed in at once, how long
+    // one may sit unused before it stops counting, and how many sign-ups may
+    // wait for an admin before sign-up closes until someone works the queue.
+    accounts: {
+      deviceCap: Number(env.ACCOUNT_DEVICE_CAP ?? 5),
+      deviceIdleDays: Number(env.ACCOUNT_DEVICE_IDLE_DAYS ?? 60),
+      maxPending: Number(env.ACCOUNT_MAX_PENDING ?? 20),
+    },
     // Profile pictures, one file per device. Under server/data so it shares the
     // store's volume and deploy.sh's exclude.
     avatarDir: env.AVATAR_DIR ?? 'server/data/avatars',
