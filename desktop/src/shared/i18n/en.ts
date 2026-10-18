@@ -378,6 +378,8 @@ export const en = {
   'about.role.stefano':
     'Hardware-encoded sharing on NVIDIA cards, and a stage whose strip and tiles go where you put them.',
   'about.role.yure': 'Channels you join with a click, and a button to leave them.',
+  'about.role.anderson':
+    'The Android app: watching on a phone, with the sound still playing in the background.',
 
   // ---- main process: tray and update dialogs
   'tray.open': 'Open Zoia',

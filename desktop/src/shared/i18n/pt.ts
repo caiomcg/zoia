@@ -373,6 +373,8 @@ export const pt: Messages = {
   'about.role.stefano':
     'O compartilhamento codificado por hardware em placas NVIDIA, e um palco cuja faixa e janelas ficam onde você as coloca.',
   'about.role.yure': 'Os canais em que se entra com um clique, e um botão para sair deles.',
+  'about.role.anderson':
+    'O app para Android: assistir pelo celular, com o som tocando mesmo em segundo plano.',
 
   'tray.open': 'Abrir o Zoia',
   'tray.keep': 'Manter na bandeja ao fechar',

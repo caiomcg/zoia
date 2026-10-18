@@ -374,6 +374,8 @@ export const es: Messages = {
   'about.role.stefano':
     'Compartir codificado por hardware en tarjetas NVIDIA, y un escenario cuya franja y ventanas quedan donde las pones.',
   'about.role.yure': 'Los canales a los que se entra con un clic, y un botón para salir de ellos.',
+  'about.role.anderson':
+    'La app para Android: ver desde el móvil, con el sonido sonando incluso en segundo plano.',
 
   'tray.open': 'Abrir Zoia',
   'tray.keep': 'Mantener en la bandeja al cerrar',
