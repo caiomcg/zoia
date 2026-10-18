@@ -118,14 +118,21 @@ body {
   }
 }
 
+/* Scrolls when the window is shorter than the form, and the card shrinks
+   with a narrow one; margin: auto centres it only while there is room, so
+   the top of a tall form is never pushed out of reach. */
 .pairing {
-  display: grid;
-  place-items: center;
+  display: flex;
   height: 100%;
+  padding: 24px 16px;
+  overflow-y: auto;
+  box-sizing: border-box;
 }
 
 .pairing-card {
-  width: 340px;
+  width: min(340px, 100%);
+  margin: auto;
+  box-sizing: border-box;
   padding: 28px;
   background: var(--surface);
   border: 1px solid var(--border);
@@ -197,58 +204,8 @@ button.primary:hover:not(:disabled) {
   margin-top: 18px;
 }
 
-/* The whole window is a drop target, so the card is what acknowledges a drag
-   — a border that lights up where the file is about to land. */
-.pairing-card.dragging {
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
-}
-
-.invite-drop {
-  display: grid;
-  gap: 12px;
-  place-items: center;
-  margin-top: 18px;
-  padding: 22px 16px;
-  text-align: center;
-  border: 1px dashed var(--border);
-  border-radius: 10px;
-}
-
-.invite-drop p {
-  margin: 0;
-  font-size: 13px;
-  color: var(--muted);
-}
-
-/* Which server this invite points at. Shown before pairing because agreeing
-   to it is a trust decision, and it must not be the thing nobody reads. */
-.invite-target {
-  display: grid;
-  gap: 2px;
-  margin-top: 18px;
-  padding: 10px 12px;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-}
-
-.invite-target span {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.invite-target strong {
-  font-size: 13px;
-  font-weight: 500;
-  /* A long hostname must wrap rather than widen the card or get clipped —
-     a truncated hostname is exactly the wrong thing to hide. */
-  overflow-wrap: anywhere;
-}
-
-/* A quiet secondary action, for the case where the loaded invite is the
-   wrong one. */
+/* Quiet secondary actions under the form: switching between signing in,
+   creating an account and using a code. */
 .pairing button.link {
   width: 100%;
   margin-top: 8px;
@@ -3645,4 +3602,183 @@ button.danger:active:not(:disabled),
 .pip-player:hover .pip-close,
 .pip-player:hover .pip-controls {
   opacity: 1;
+}
+
+/* ---- accounts (ADR 0031) ------------------------------------------------ */
+
+.pairing-card .auth-hint {
+  margin: 6px 0 0;
+  font-size: 12px;
+}
+
+.waiting-spinner {
+  margin: 22px auto 8px;
+}
+
+/* A banner's own action: an inline link inside its text, not a second bar. */
+.banner .link-button {
+  padding: 0;
+  font-weight: 600;
+  color: inherit;
+  text-decoration: underline;
+  background: none;
+  border: none;
+}
+
+.settings-subheading {
+  margin: 22px 0 6px;
+}
+
+.settings-password {
+  margin-top: 6px;
+}
+
+.account-devices,
+.admin-accounts {
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.account-devices li,
+.admin-accounts li {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.admin-accounts li.disabled > span:first-child {
+  opacity: 0.6;
+}
+
+.admin-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  justify-content: flex-end;
+}
+
+.admin-accounts .link-button,
+.account-devices .link-button {
+  padding: 2px 0;
+  font-size: 12px;
+  color: var(--accent);
+  background: none;
+  border: none;
+}
+
+/* A code is shown once, so it sits apart from the list, easy to select. */
+.admin-code {
+  display: grid;
+  gap: 6px;
+  margin: 10px 0;
+  padding: 12px 14px;
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+}
+
+.admin-code p {
+  margin: 0;
+}
+
+.admin-code code {
+  padding: 6px 8px;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  user-select: all;
+  background: var(--bg);
+  border-radius: 6px;
+}
+
+.admin-code .admin-actions {
+  justify-content: flex-start;
+}
+
+/* Sign-ups waiting: a count on the settings button and on the Accounts tab. */
+.sidebar-settings {
+  position: relative;
+}
+
+.settings-dot,
+.nav-count {
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+  color: #fff;
+  background: var(--danger);
+  border-radius: 999px;
+}
+
+.settings-dot {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+}
+
+.nav-count {
+  display: inline-block;
+  margin-left: 6px;
+}
+
+/* Who the admins are: a small crown on their picture, for everyone to see.
+   Silver for an admin, gold for the super admin. */
+.avatar-crowned {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+.avatar-crown {
+  position: absolute;
+  top: -6px;
+  right: -5px;
+  width: 13px;
+  height: 10px;
+  transform: rotate(18deg);
+  stroke: rgb(0 0 0 / 0.65);
+  stroke-width: 2;
+  paint-order: stroke;
+  filter: drop-shadow(0 1px 1px rgb(0 0 0 / 0.5));
+  pointer-events: none;
+}
+
+.avatar-crown.admin {
+  fill: #cfd5dd;
+}
+
+.avatar-crown.super_admin {
+  fill: #f2c14e;
+}
+
+/* What a new password still needs, ticked off while it is typed. */
+.password-rules {
+  display: grid;
+  gap: 2px;
+  margin: 8px 0 0;
+  padding: 0;
+  font-size: 12px;
+  color: var(--muted);
+  list-style: none;
+}
+
+.password-rules li {
+  display: flex;
+  gap: 6px;
+}
+
+.password-rules li span {
+  width: 10px;
+  text-align: center;
+}
+
+.password-rules li.met {
+  color: var(--live);
 }

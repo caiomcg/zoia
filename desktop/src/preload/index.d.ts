@@ -1,6 +1,6 @@
 import type {
   PairingStatus,
-  RoomInfo,
+  RoomsList,
   ChannelOutcome,
   TokenResult,
   StageState,
@@ -12,19 +12,45 @@ import type {
   LanguageState,
   UpdaterCheckResult,
   ReleaseInfo,
+  AuthOutcome,
+  ActionOutcome,
+  AccountDevice,
+  AdminAccount,
+  AdminAction,
+  IssuedCode,
 } from '../shared/ipc';
 
 export interface ZoiaBridge {
   pairing: {
     status(): Promise<PairingStatus>;
-    start(deviceName?: string): Promise<PairingStatus>;
-    /** Adopts an invite the user dropped on the window, by absolute path. */
-    useInvite(path: string): Promise<PairingStatus>;
-    /** Opens a file dialog; resolves to null if the user cancelled. */
-    chooseInvite(): Promise<PairingStatus | null>;
-    /** The on-disk path of a dropped File. Empty for anything not from disk. */
-    pathForFile(file: File): string;
     onChange(cb: (status: PairingStatus) => void): () => void;
+  };
+  /** Your account (ADR 0031). Refusals come back as the server's error code. */
+  account: {
+    signIn(server: string, email: string, password: string): Promise<AuthOutcome>;
+    /** Creates the account, pending approval, and signs in to it. */
+    signUp(server: string, email: string, password: string): Promise<AuthOutcome>;
+    /** Spends a reset code from an admin, then signs in with the new password. */
+    redeem(server: string, code: string, password: string): Promise<AuthOutcome>;
+    /** Asks the server who this machine is now: approval, role, waiting sign-ups. */
+    refresh(): Promise<PairingStatus>;
+    /** Signs out, and frees this machine's seat. */
+    signOut(): Promise<PairingStatus>;
+    changePassword(
+      current: string,
+      next: string,
+    ): Promise<ActionOutcome<{ ok: boolean; signedOut: number }>>;
+    devices(): Promise<ActionOutcome<AccountDevice[]>>;
+    removeDevice(id: string): Promise<ActionOutcome<{ ok: boolean }>>;
+  };
+  /** Only answers for admins; the server checks every call. */
+  admin: {
+    accounts(): Promise<ActionOutcome<AdminAccount[]>>;
+    act(
+      id: string,
+      action: AdminAction,
+      role?: 'admin' | 'user',
+    ): Promise<ActionOutcome<{ account?: AdminAccount } & Partial<IssuedCode>>>;
   };
   token: {
     /** A join token for a channel; the first channel when none is named. */
@@ -32,7 +58,7 @@ export interface ZoiaBridge {
   };
   rooms: {
     /** Every channel, and the most the server will hold. */
-    list(): Promise<{ rooms: RoomInfo[]; max: number }>;
+    list(): Promise<RoomsList>;
     create(name: string): Promise<ChannelOutcome>;
     rename(id: string, name: string): Promise<ChannelOutcome>;
     /** Only an empty channel that is not the default. */

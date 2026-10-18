@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { RoomMember } from '../livekit/useRoom';
-import type { RoomInfo } from '../../shared/ipc';
+import type { AccountRole, RoomInfo } from '../../shared/ipc';
 import type { GridTarget } from './RemoteGrid';
 import Avatar from './Avatar';
 import { IconEye } from './Player';
@@ -142,6 +142,8 @@ export default function Sidebar({
   myIdentity,
   viewerIds,
   onOpenSettings,
+  settingsBadge = 0,
+  myRole,
   loadingRemoteIds,
   channels,
   currentChannel,
@@ -162,6 +164,10 @@ export default function Sidebar({
   /** Who is watching your broadcast right now; empty while you are not live. */
   viewerIds: ReadonlySet<string>;
   onOpenSettings: () => void;
+  /** Sign-ups waiting for an admin; shown on the settings button. */
+  settingsBadge?: number;
+  /** Yours, shown beside your name; nothing for a plain user. */
+  myRole?: AccountRole;
   loadingRemoteIds: Set<string>;
   /** Every channel, who is in it and who is live, polled from the server. */
   channels: RoomInfo[];
@@ -178,6 +184,7 @@ export default function Sidebar({
   onWatchBroadcast: (target: GridTarget) => void;
 }) {
   const t = useT();
+  const canManageChannels = myRole === 'admin' || myRole === 'super_admin';
   // Your own channel is listed from the live room, which is current to the
   // second; the others come from the server's poll. Sharers first.
   const liveMembers = [
@@ -185,6 +192,13 @@ export default function Sidebar({
     ...members.filter((m) => !m.isBroadcasting),
   ];
   const here = new Set(members.map((m) => m.identity));
+  // Who the admins are, from the server's channel poll: the live room only
+  // knows what each client says about itself, and a role is not that.
+  const roles = new Map<string, AccountRole>();
+  for (const c of channels) {
+    for (const p of c.participants) if (p.role) roles.set(p.identity, p.role);
+  }
+  const roleOf = (m: RoomMember) => (m.isLocal ? myRole : roles.get(m.identity));
   // Someone who leaves fades out rather than vanishing; see presence.ts.
   const shownMembers = useLeaving(liveMembers, (m) => m.identity, currentChannel ?? '');
 
@@ -347,27 +361,30 @@ export default function Sidebar({
                         {current ? liveMembers.length : othersInChannel(c, here).length}
                       </span>
                     </button>
-                    <span className="channel-actions">
-                      <button
-                        className="channel-action"
-                        onClick={() => setEditing(c.id)}
-                        title={t('sidebar.rename', { channel: c.name })}
-                        aria-label={t('sidebar.rename', { channel: c.name })}
-                      >
-                        <IconPencil />
-                      </button>
-                      {/* Only an empty channel that is not the default. */}
-                      {!c.isDefault && c.participants.length === 0 && (
+                    {/* Admins only: the server refuses anyone else anyway. */}
+                    {canManageChannels && (
+                      <span className="channel-actions">
                         <button
                           className="channel-action"
-                          onClick={() => onRemoveChannel(c.id)}
-                          title={t('sidebar.delete', { channel: c.name })}
-                          aria-label={t('sidebar.delete', { channel: c.name })}
+                          onClick={() => setEditing(c.id)}
+                          title={t('sidebar.rename', { channel: c.name })}
+                          aria-label={t('sidebar.rename', { channel: c.name })}
                         >
-                          <IconTrash />
+                          <IconPencil />
                         </button>
-                      )}
-                    </span>
+                        {/* Only an empty channel that is not the default. */}
+                        {!c.isDefault && c.participants.length === 0 && (
+                          <button
+                            className="channel-action"
+                            onClick={() => onRemoveChannel(c.id)}
+                            title={t('sidebar.delete', { channel: c.name })}
+                            aria-label={t('sidebar.delete', { channel: c.name })}
+                          >
+                            <IconTrash />
+                          </button>
+                        )}
+                      </span>
+                    )}
                   </div>
                   {/* Everyone sits under the channel they are in: in full for
                       yours, as faces for the rest, so who is where reads at a
@@ -375,7 +392,13 @@ export default function Sidebar({
                   {current ? (
                     <div className="channel-members">
                       {shownMembers.map(({ item: m, key, leaving }) => (
-                        <MemberRow key={key} member={m} leaving={leaving} {...rowProps} />
+                        <MemberRow
+                          key={key}
+                          member={m}
+                          role={roleOf(m)}
+                          leaving={leaving}
+                          {...rowProps}
+                        />
                       ))}
                     </div>
                   ) : (
@@ -383,11 +406,15 @@ export default function Sidebar({
                       // Just faces until you join: enough to see who is where.
                       <div className="channel-people">
                         {othersInChannel(c, here).map((p) => (
-                          <span key={p.identity} title={p.name}>
+                          <span
+                            key={p.identity}
+                            title={p.role ? `${p.name} · ${t(`account.role.${p.role}`)}` : p.name}
+                          >
                             <Avatar
                               name={p.name}
                               identity={p.identity}
                               live={c.broadcasters.some((b) => b.identity === p.identity)}
+                              role={p.role}
                             />
                           </span>
                         ))}
@@ -406,6 +433,7 @@ export default function Sidebar({
                 }}
               />
             ) : (
+              canManageChannels &&
               channels.length < maxChannels && (
                 <button
                   className="channel channel-new"
@@ -428,14 +456,14 @@ export default function Sidebar({
           <section className="member-group">
             <h2 className="member-heading">{t('sidebar.inRoom', { count: liveMembers.length })}</h2>
             {shownMembers.map(({ item: m, key, leaving }) => (
-              <MemberRow key={key} member={m} leaving={leaving} {...rowProps} />
+              <MemberRow key={key} member={m} role={roleOf(m)} leaving={leaving} {...rowProps} />
             ))}
           </section>
         )}
       </div>
 
       <div className="sidebar-footer" title={collapsed ? myName : undefined}>
-        <Avatar name={myName} identity={myIdentity} live={false} />
+        <Avatar name={myName} identity={myIdentity} live={false} role={myRole} />
         {!collapsed && (
           <span className="sidebar-name" title={myName}>
             {myName}
@@ -455,10 +483,23 @@ export default function Sidebar({
         <button
           className="icon-button sidebar-settings"
           onClick={onOpenSettings}
-          title={t('sidebar.settings')}
-          aria-label={t('sidebar.settings')}
+          title={
+            settingsBadge > 0
+              ? t('sidebar.settingsPending', { count: settingsBadge })
+              : t('sidebar.settings')
+          }
+          aria-label={
+            settingsBadge > 0
+              ? t('sidebar.settingsPending', { count: settingsBadge })
+              : t('sidebar.settings')
+          }
         >
           <IconSliders />
+          {settingsBadge > 0 && (
+            <span className="settings-dot" aria-hidden="true">
+              {settingsBadge}
+            </span>
+          )}
         </button>
       </div>
     </aside>
@@ -471,6 +512,7 @@ export default function Sidebar({
  */
 function MemberRow({
   member: m,
+  role,
   leaving,
   viewerIds,
   loadingRemoteIds,
@@ -479,6 +521,7 @@ function MemberRow({
   onWatch,
 }: {
   member: RoomMember;
+  role?: AccountRole;
   leaving: boolean;
   viewerIds: ReadonlySet<string>;
   loadingRemoteIds: Set<string>;
@@ -518,7 +561,7 @@ function MemberRow({
       onBlur={live ? () => onHover(null) : undefined}
     >
       <span className="avatar-wrap">
-        <Avatar name={m.name} identity={m.identity} live={live} />
+        <Avatar name={m.name} identity={m.identity} live={live} role={role} />
         {viewerIds.has(m.identity) && <WatchingYou />}
       </span>
       <span className="member-name">{m.name}</span>

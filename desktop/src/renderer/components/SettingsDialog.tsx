@@ -1,6 +1,8 @@
 import { captureBorderEnabled, setCaptureBorderEnabled } from '../capture-border';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { UpdaterConfig } from '../../shared/ipc';
+import type { AccountInfo, UpdaterConfig } from '../../shared/ipc';
+import AccountPanel from './AccountPanel';
+import AccountsSection from './AccountsSection';
 import Avatar from './Avatar';
 import AvatarCropDialog from './AvatarCropDialog';
 import { encodeAvatar, type AvatarCrop, type EncodedAvatar } from '../avatars';
@@ -20,10 +22,12 @@ import { playCue } from '../sounds/synth';
 import ReleaseNotesDialog from './ReleaseNotesDialog';
 import { useExit } from '../presence';
 
-type Section = 'profile' | 'broadcast' | 'general' | 'sounds' | 'updates' | 'about';
+export type Section =
+  'profile' | 'accounts' | 'broadcast' | 'general' | 'sounds' | 'updates' | 'about';
 
-const SECTIONS: { id: Section; label: MessageKey }[] = [
+const SECTIONS: { id: Section; label: MessageKey; adminOnly?: boolean }[] = [
   { id: 'profile', label: 'settings.nav.profile' },
+  { id: 'accounts', label: 'settings.nav.accounts', adminOnly: true },
   { id: 'broadcast', label: 'settings.nav.broadcast' },
   { id: 'general', label: 'settings.nav.general' },
   { id: 'sounds', label: 'settings.nav.sounds' },
@@ -47,6 +51,13 @@ interface SettingsDialogProps {
   hardwareAvailable?: boolean;
   /** Fading out: it stays on screen for that, and ignores clicks. */
   closing?: boolean;
+  /** This machine's account, or none for one paired before accounts. */
+  account?: AccountInfo | null;
+  onSignOut?: () => Promise<void>;
+  /** Asks the server again, after an admin action changes what is waiting. */
+  onAccountsChanged?: () => void;
+  /** Where to open: Accounts, when a sign-up notice was clicked. */
+  initialSection?: Section;
 }
 
 /**
@@ -66,9 +77,15 @@ export default function SettingsDialog({
   onHardwareChange,
   hardwareAvailable,
   closing = false,
+  account = null,
+  onSignOut,
+  onAccountsChanged,
+  initialSection = 'profile',
 }: SettingsDialogProps) {
   const t = useT();
-  const [section, setSection] = useState<Section>('profile');
+  const [section, setSection] = useState<Section>(initialSection);
+  const isAdmin = account?.role === 'admin' || account?.role === 'super_admin';
+  const pending = account?.pendingApprovals ?? 0;
 
   return (
     <div className={`picker-backdrop${closing ? ' closing' : ''}`} onClick={onClose}>
@@ -92,7 +109,7 @@ export default function SettingsDialog({
 
         <div className="settings-body">
           <nav className="settings-nav" aria-label={t('settings.sections')}>
-            {SECTIONS.map((s) => (
+            {SECTIONS.filter((s) => !s.adminOnly || isAdmin).map((s) => (
               <button
                 key={s.id}
                 className={section === s.id ? 'active' : undefined}
@@ -100,6 +117,11 @@ export default function SettingsDialog({
                 onClick={() => setSection(s.id)}
               >
                 {t(s.label)}
+                {s.id === 'accounts' && pending > 0 && (
+                  <span className="nav-count" aria-label={t('admin.waiting', { count: pending })}>
+                    {pending}
+                  </span>
+                )}
               </button>
             ))}
           </nav>
@@ -114,6 +136,12 @@ export default function SettingsDialog({
                 hasAvatar={hasAvatar}
                 onAvatarChange={onAvatarChange}
               />
+            )}
+            {section === 'profile' && account && onSignOut && (
+              <AccountPanel account={account} onSignOut={onSignOut} />
+            )}
+            {section === 'accounts' && account && isAdmin && (
+              <AccountsSection me={account} onChanged={() => onAccountsChanged?.()} />
             )}
             {section === 'broadcast' && (
               <BroadcastSection

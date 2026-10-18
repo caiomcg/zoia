@@ -1,7 +1,6 @@
 import {
   app,
   BrowserWindow,
-  dialog,
   ipcMain,
   Menu,
   MessageChannelMain,
@@ -14,7 +13,6 @@ import {
 import { join } from 'node:path';
 import * as pairing from './pairing';
 import * as config from './config';
-import { INVITE_FILENAME } from './invite';
 import * as api from './api';
 import * as sources from './sources';
 import * as audioCapture from './audio';
@@ -37,6 +35,12 @@ import {
   startUpdater,
   stopUpdater,
 } from './updater';
+
+// A separate profile — its own sign-in, settings and logs — for trying a
+// build against another server without touching the everyday one. Set before
+// anything reads a path, and before the single-instance lock, which is per
+// profile: two profiles can run side by side, as an admin and a second user.
+if (process.env.ZOIA_USER_DATA) app.setPath('userData', process.env.ZOIA_USER_DATA);
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -301,26 +305,36 @@ let encoderGeneration = 0;
 function registerIpc(): void {
   ipcMain.handle(IPC.pairingStatus, () => pairing.getRestoredStatus());
 
-  ipcMain.handle(IPC.pairingStart, (_event, deviceName?: string) => pairing.pair(deviceName));
-
-  ipcMain.handle(IPC.pairingUseInvite, (_event, path: string) => pairing.useInvite(path));
-
-  // The dialog lives in main because the renderer has no filesystem access at
-  // all, by design — it receives a status back, never a path or a token.
-  ipcMain.handle(IPC.pairingChooseInvite, async () => {
-    const result = await dialog.showOpenDialog({
-      title: language.t('pair.dialogTitle'),
-      defaultPath: INVITE_FILENAME,
-      filters: [
-        { name: language.t('pair.dialogInvite'), extensions: ['json'] },
-        { name: language.t('pair.dialogAll'), extensions: ['*'] },
-      ],
-      properties: ['openFile'],
-    });
-    const [path] = result.filePaths;
-    if (result.canceled || !path) return null;
-    return pairing.useInvite(path);
-  });
+  // ---- accounts (ADR 0031) ----
+  // Passwords cross IPC once, on their way to the server, and are never kept.
+  ipcMain.handle(IPC.accountSignIn, (_event, server: string, email: string, password: string) =>
+    pairing.signIn(String(server), String(email), String(password)),
+  );
+  ipcMain.handle(IPC.accountSignUp, (_event, server: string, email: string, password: string) =>
+    pairing.signUp(String(server), String(email), String(password)),
+  );
+  ipcMain.handle(IPC.accountRedeem, (_event, server: string, code: string, password: string) =>
+    pairing.redeem(String(server), String(code), String(password)),
+  );
+  ipcMain.handle(IPC.accountRefresh, () => pairing.refresh());
+  ipcMain.handle(IPC.accountSignOut, () => pairing.signOut());
+  ipcMain.handle(IPC.accountPassword, (_event, current: string, next: string) =>
+    api.attempt(api.changePassword(String(current), String(next))),
+  );
+  ipcMain.handle(IPC.accountDevices, () => api.attempt(api.devices().then((r) => r.devices)));
+  ipcMain.handle(IPC.accountRemoveDevice, (_event, id: string) =>
+    api.attempt(api.removeDevice(String(id))),
+  );
+  ipcMain.handle(IPC.adminAccounts, () => api.attempt(api.adminAccounts().then((r) => r.accounts)));
+  ipcMain.handle(IPC.adminAction, (_event, id: string, action: string, role?: string) =>
+    api.attempt(
+      api.adminAction(
+        String(id),
+        String(action),
+        role === 'admin' || role === 'user' ? role : undefined,
+      ),
+    ),
+  );
 
   ipcMain.handle(IPC.getToken, (_event, room?: string) =>
     api.getToken(typeof room === 'string' ? room : undefined),
@@ -894,15 +908,14 @@ app.whenReady().then(async () => {
   // expensive capture gets to finish in the background.
   sources.startWarming();
 
-  // Resolve which server this copy points at before anything tries to reach
-  // one. A release build carries no URL and no token; both normally arrive in
-  // an invite file (see src/main/config.ts).
+  // Resolve the address the sign-in screen starts with, before anything tries
+  // to reach a server. A release build carries none (see src/main/config.ts).
   await config.init();
 
   // safeStorage needs the app to be ready on Windows, so this is the first
   // point at which restoring a stored credential can succeed.
+  pairing.onStatusChange((status) => mainWindow?.webContents.send('zoia:pairing:changed', status));
   await pairing.restoreSession();
-  mainWindow?.webContents.send('zoia:pairing:changed', pairing.getStatus());
   void startUpdater();
 
   // Clicking the Dock icon. With close-to-tray on, the window still exists
