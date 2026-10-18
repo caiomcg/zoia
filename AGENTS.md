@@ -39,6 +39,8 @@ npm run format               # prettier --write
 npm run keytool -- add --name "Alice"          # mint an invite key
 npm run keytool -- list
 npm run keytool -- revoke <keyId>
+npm run keytool -- account:super <email>       # the one super admin (ADR 0031)
+npm run keytool -- account:list
 ./deploy.sh                  # rsync to the VM + docker compose up -d --build
 ```
 
@@ -59,6 +61,7 @@ and `npm run dev` regenerate it; the Dockerfile runs it at image build.
 |---|---|
 | `server/src/index.js` | Express app, routes, middleware wiring |
 | `server/src/keys.js` | Invite-key store: mint, verify, revoke, touch |
+| `server/src/accounts.js` | Accounts: email, password, role, approval, reset and claim codes |
 | `server/src/token.js` | LiveKit AccessToken minting — subscribe-only, always |
 | `server/src/stage.js` | Who may broadcast right now — **the security boundary** |
 | `server/src/config.js` | Env parsing and validation, fail-fast on startup |

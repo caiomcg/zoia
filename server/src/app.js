@@ -14,12 +14,14 @@ import rateLimit from 'express-rate-limit';
 import { NotStageHolderError, WHIP_SUFFIX } from './whip.js';
 import { fixedChannels } from './channels.js';
 import { AVATAR_MAX_BYTES, imageType, isAvatarId } from './avatars.js';
+import { canManage, isAdmin } from './accounts.js';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const PUBLIC_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'public');
 const COOKIE_NAME = 'zoia_sid';
 const COOKIE_MAX_AGE = 30 * 24 * 60 * 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 export function createApp({
   config,
@@ -32,9 +34,15 @@ export function createApp({
   pairingStore = null,
   deviceStore = null,
   avatarStore = null,
+  accountStore = null,
   logger = console,
 }) {
   const app = express();
+
+  // How many machines one person may have, and how long one may sit unused,
+  // before it stops counting. See ADR 0031.
+  const deviceCap = config.accounts?.deviceCap ?? 5;
+  const deviceIdleMs = (config.accounts?.deviceIdleDays ?? 60) * DAY_MS;
 
   // Each channel is its own LiveKit room, with its own stage and WHIP
   // publisher; see src/channels.js. A single-room caller (the tests, mostly)
@@ -118,9 +126,15 @@ export function createApp({
   }
 
   /**
-   * Resolves the session to a live key record. Deliberately hits the store on
+   * Resolves the session to a live record. Deliberately hits the store on
    * every request: trusting the cookie until it expires would mean `keytool
    * revoke` does nothing for up to a month.
+   *
+   * A device that belongs to an account is that account's person: the name,
+   * picture, role and status come from the account, which is re-read too, so
+   * disabling someone takes effect on their next request. The id stays the
+   * device's, since it is the LiveKit identity and two machines of one person
+   * must not share it.
    */
   async function currentUser(req, res) {
     const value = req.signedCookies?.[COOKIE_NAME];
@@ -134,16 +148,41 @@ export function createApp({
       clearSession(res);
       return null;
     }
-    return { ...record, kind };
+    if (kind !== 'device') return { ...record, kind };
+
+    const user = await deviceUser(record);
+    if (!user) clearSession(res);
+    return user;
+  }
+
+  /** The person a live device is: itself, or its account while that is not disabled. */
+  async function deviceUser(record) {
+    if (!record.accountId) return { ...record, kind: 'device' };
+    const account = await accountStore?.get(record.accountId);
+    if (!account || account.status === 'disabled') return null;
+    return {
+      ...record,
+      kind: 'device',
+      name: account.name,
+      avatar: account.avatar ?? null,
+      accountId: account.id,
+      email: account.email,
+      role: account.role,
+      status: account.status,
+    };
   }
 
   /** Records activity against whichever store the session belongs to. */
   function touchFor(user) {
-    if (user.kind === 'device') deviceStore?.touch(user.id);
-    else keyStore?.touch(user.id);
+    if (user.kind !== 'device') return keyStore?.touch(user.id);
+    if (!user.accountId) return deviceStore?.touch(user.id);
+    // In use, so not idle: the device's expiry moves forward with it.
+    deviceStore?.touch(user.id, { expiresAt: new Date(Date.now() + deviceIdleMs).toISOString() });
+    accountStore?.touch(user.accountId);
   }
 
-  async function requireSession(req, res, next) {
+  /** Any live session, pending accounts included. Only for what a pending account may do. */
+  async function requireAnySession(req, res, next) {
     try {
       const user = await currentUser(req, res);
       if (!user) return res.status(401).json({ error: 'unauthenticated' });
@@ -152,6 +191,56 @@ export function createApp({
     } catch (err) {
       next(err);
     }
+  }
+
+  /** A session that may use the server: not an account still waiting for approval. */
+  function requireSession(req, res, next) {
+    requireAnySession(req, res, (err) => {
+      if (err) return next(err);
+      if (req.user.status === 'pending') {
+        return res.status(403).json({ error: 'pending_approval' });
+      }
+      next();
+    });
+  }
+
+  function requireAccount(req, res, next) {
+    requireSession(req, res, (err) => {
+      if (err) return next(err);
+      if (!req.user.accountId) return res.status(403).json({ error: 'no_account' });
+      next();
+    });
+  }
+
+  /** Every admin action is checked here, on the server; the app hiding a button is not enough. */
+  function requireAdmin(req, res, next) {
+    requireAccount(req, res, (err) => {
+      if (err) return next(err);
+      if (!isAdmin(req.user)) return res.status(403).json({ error: 'forbidden' });
+      next();
+    });
+  }
+
+  /** What a client is told about who it is signed in as. */
+  async function describe(user) {
+    const about = { name: user.name, id: user.id, avatar: user.avatar ?? null };
+    if (!user.accountId) return about;
+    return {
+      ...about,
+      accountId: user.accountId,
+      email: user.email,
+      role: user.role,
+      status: user.status,
+      // Migrated before accounts: active, but with no email or password yet.
+      needsClaim: !user.email,
+      ...(isAdmin(user) ? { pendingApprovals: await accountStore.countPending() } : {}),
+    };
+  }
+
+  /** Names in use by the other kind of record, for keeping names unique across both. */
+  async function namesTakenOutside(store) {
+    if (store === 'accounts') return (await deviceStore?.legacyNameKeys()) ?? new Set();
+    return (await accountStore?.nameKeys()) ?? new Set();
   }
 
   /** Verifies a presented key and starts a session. Returns the record or null. */
@@ -198,6 +287,7 @@ export function createApp({
 
   app.post('/api/login', loginLimiter, async (req, res, next) => {
     try {
+      if (req.body?.email !== undefined) return await accountLogin(req, res);
       const record = await login(req.body?.key ?? '', req, res);
       if (!record) return res.status(401).json({ error: 'invalid_key' });
       res.json({ name: record.name, id: record.id });
@@ -211,11 +301,10 @@ export function createApp({
     res.json({ ok: true });
   });
 
-  app.get('/api/session', async (req, res, next) => {
+  // A pending account may ask this, so the app can tell when it is approved.
+  app.get('/api/session', requireAnySession, async (req, res, next) => {
     try {
-      const user = await currentUser(req, res);
-      if (!user) return res.status(401).json({ error: 'unauthenticated' });
-      res.json({ name: user.name, id: user.id });
+      res.json(await describe(req.user));
     } catch (err) {
       next(err);
     }
@@ -257,6 +346,9 @@ export function createApp({
       ? next()
       : res.status(501).json({ error: 'pairing_not_configured' });
 
+  const requireDevices = (_req, res, next) =>
+    deviceStore ? next() : res.status(501).json({ error: 'pairing_not_configured' });
+
   app.post('/api/pair', pairLimiter, requirePairing, async (req, res, next) => {
     try {
       const deviceName = String(req.body?.deviceName ?? '').trim();
@@ -274,6 +366,7 @@ export function createApp({
       const { record, raw } = await deviceStore.issue({
         name: deviceName,
         pairingId: claim.pairing.id,
+        alsoTaken: await namesTakenOutside('devices'),
       });
 
       // The credential is returned exactly once; the app stores it in the OS
@@ -284,7 +377,7 @@ export function createApp({
     }
   });
 
-  app.post('/api/device/session', loginLimiter, requirePairing, async (req, res, next) => {
+  app.post('/api/device/session', loginLimiter, requireDevices, async (req, res, next) => {
     try {
       const record = await deviceStore.verify(req.body?.deviceCredential ?? '');
       if (!record) {
@@ -292,10 +385,271 @@ export function createApp({
         return res.status(401).json({ error: 'invalid_credential' });
       }
 
+      const user = await deviceUser(record);
+      if (!user) {
+        // A device whose account was disabled or removed.
+        logger.warn(`[device] ${record.id} refused: its account is not active`);
+        return res.status(403).json({ error: 'account_disabled' });
+      }
       setSession(res, 'device', record.id);
-      deviceStore.touch(record.id);
-      logger.info(`[device] ${record.name} (${record.id}) signed in`);
-      res.json({ name: record.name, id: record.id, avatar: record.avatar ?? null });
+      touchFor(user);
+      logger.info(`[device] ${record.id} signed in`);
+      res.json(await describe(user));
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // ---- accounts ----------------------------------------------------------
+  // See ADR 0031. Sign-up and login are reachable by anyone who knows the
+  // host, so each has its own budget, and no route logs an email, a password
+  // or a code: the account id is what identifies someone in the log.
+
+  const requireAccounts = (_req, res, next) =>
+    accountStore && deviceStore
+      ? next()
+      : res.status(501).json({ error: 'accounts_not_configured' });
+
+  // Counts every attempt, successful or not: what this blunts is someone
+  // filling the approval queue, and their sign-ups succeed.
+  const signupLimiter = rateLimit({
+    windowMs: config.rateLimit?.signupWindowMs ?? 60 * 60_000,
+    limit: config.rateLimit?.signupLimit ?? 3,
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+    message: { error: 'too_many_attempts' },
+  });
+
+  const LOGIN_ERRORS = {
+    invalid_login: [401, 'invalid_login'],
+    locked: [429, 'too_many_attempts'],
+    disabled: [403, 'account_disabled'],
+  };
+
+  async function accountLogin(req, res) {
+    if (!accountStore || !deviceStore) {
+      return res.status(501).json({ error: 'accounts_not_configured' });
+    }
+    const deviceName = String(req.body?.deviceName ?? '').trim();
+    if (!deviceName) return res.status(400).json({ error: 'device_name_required' });
+
+    const result = await accountStore.authenticate(req.body.email, req.body.password);
+    if (!result.ok) {
+      logger.warn(`[account] rejected login (${result.reason}) from ${req.ip}`);
+      const [status, error] = LOGIN_ERRORS[result.reason] ?? [401, 'invalid_login'];
+      return res.status(status).json({ error });
+    }
+
+    const { account } = result;
+    const { record, raw } = await deviceStore.issueForAccount({
+      name: deviceName,
+      accountId: account.id,
+      cap: deviceCap,
+      idleMs: deviceIdleMs,
+    });
+    setSession(res, 'device', record.id);
+    accountStore.touch(account.id);
+    logger.info(`[account] ${account.id} signed in on device ${record.id}`);
+    // The credential is returned exactly once, as pairing does; the app keeps
+    // it in the OS keychain so the password is typed once per machine.
+    res.json({
+      deviceCredential: raw,
+      deviceId: record.id,
+      ...(await describe(await deviceUser(record))),
+    });
+  }
+
+  app.post('/api/signup', signupLimiter, requireAccounts, async (req, res, next) => {
+    try {
+      const result = await accountStore.signup({
+        email: req.body?.email,
+        password: req.body?.password,
+        ip: req.ip,
+        alsoTaken: await namesTakenOutside('accounts'),
+      });
+      if (!result.ok) {
+        const status = { email_taken: 409, signup_closed: 503 }[result.reason] ?? 400;
+        return res.status(status).json({ error: result.reason });
+      }
+      res.status(201).json({ status: result.account.status });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // A reset code sets a forgotten password and signs every device out; a
+  // claim code is how someone from before accounts adds an email and a
+  // password, and their devices carry on. Either way the app logs in after.
+  app.post('/api/reset', pairLimiter, requireAccounts, async (req, res, next) => {
+    try {
+      const result = await accountStore.redeemCode(req.body?.code, {
+        password: req.body?.password,
+        email: req.body?.email ?? null,
+      });
+      if (!result.ok) {
+        logger.warn(`[account] rejected code (${result.reason}) from ${req.ip}`);
+        const status = { invalid_code: 401, email_taken: 409 }[result.reason] ?? 400;
+        return res.status(status).json({ error: result.reason });
+      }
+      if (result.kind === 'reset') await deviceStore.revokeByAccount(result.account.id);
+      res.json({ ok: true, email: result.account.email });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // Changing your password signs out every other machine of yours, which is
+  // usually why someone changes it.
+  app.post('/api/password', requireAccount, async (req, res, next) => {
+    try {
+      if (!(await accountStore.checkPassword(req.user.accountId, req.body?.currentPassword))) {
+        return res.status(401).json({ error: 'invalid_login' });
+      }
+      const result = await accountStore.setPassword(req.user.accountId, req.body?.newPassword);
+      if (!result.ok) return res.status(400).json({ error: result.reason });
+      const signedOut = await deviceStore.revokeByAccount(req.user.accountId, {
+        except: req.user.id,
+      });
+      res.json({ ok: true, signedOut });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // Your own machines, so you can see what is signed in as you.
+  app.get('/api/devices', requireAccount, async (req, res, next) => {
+    try {
+      const devices = await deviceStore.listByAccount(req.user.accountId);
+      res.json({
+        devices: devices.map(({ id, name, createdAt, lastSeen }) => ({
+          id,
+          name,
+          createdAt,
+          lastSeen,
+          current: id === req.user.id,
+        })),
+      });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  app.delete('/api/devices/:id', requireAccount, async (req, res, next) => {
+    try {
+      const mine = await deviceStore.listByAccount(req.user.accountId);
+      if (!mine.some((d) => d.id === req.params.id)) {
+        return res.status(404).json({ error: 'unknown_device' });
+      }
+      await deviceStore.revoke(req.params.id);
+      res.json({ ok: true });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // ---- administration ----------------------------------------------------
+  // Admins approve sign-ups and look after users; only the super admin makes
+  // admins, and nothing here can touch the super admin. Which accounts are
+  // admins is read from the store on every request, like everything else.
+
+  const ADMIN_ERRORS = {
+    unknown_account: 404,
+    forbidden: 403,
+    not_pending: 409,
+    pending: 409,
+    not_active: 409,
+    invalid_role: 400,
+  };
+  const adminRefuse = (res, reason) =>
+    res.status(ADMIN_ERRORS[reason] ?? 400).json({ error: reason });
+
+  /** The target account, if `req.user` may manage it; refuses otherwise. */
+  async function manageable(req, res) {
+    const target = await accountStore.get(req.params.id);
+    if (!target) return adminRefuse(res, 'unknown_account') && null;
+    if (!canManage(req.user, target)) return adminRefuse(res, 'forbidden') && null;
+    return target;
+  }
+
+  app.get('/api/admin/accounts', requireAdmin, async (_req, res, next) => {
+    try {
+      const accounts = await accountStore.list();
+      const rows = await Promise.all(
+        accounts.map(async (a) => ({
+          id: a.id,
+          email: a.email,
+          name: a.name,
+          role: a.role,
+          status: a.status,
+          createdAt: a.createdAt,
+          lastSeen: a.lastSeen,
+          signupIp: a.signupIp ?? null,
+          devices: (await deviceStore.listByAccount(a.id)).length,
+        })),
+      );
+      res.json({ accounts: rows });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  app.post('/api/admin/accounts/:id/approve', requireAdmin, async (req, res, next) => {
+    try {
+      const result = await accountStore.approve(req.params.id, req.user.accountId);
+      if (!result.ok) return adminRefuse(res, result.reason);
+      res.json({ account: result.account });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  app.post('/api/admin/accounts/:id/reject', requireAdmin, async (req, res, next) => {
+    try {
+      const result = await accountStore.reject(req.params.id, req.user.accountId);
+      if (!result.ok) return adminRefuse(res, result.reason);
+      res.json({ ok: true });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  for (const [action, status] of [
+    ['disable', 'disabled'],
+    ['enable', 'active'],
+  ]) {
+    app.post(`/api/admin/accounts/:id/${action}`, requireAdmin, async (req, res, next) => {
+      try {
+        if (!(await manageable(req, res))) return;
+        const result = await accountStore.setStatus(req.params.id, status, req.user.accountId);
+        if (!result.ok) return adminRefuse(res, result.reason);
+        res.json({ account: result.account });
+      } catch (err) {
+        next(err);
+      }
+    });
+  }
+
+  // The code is shown once, to the admin, who passes it on. It is never logged.
+  app.post('/api/admin/accounts/:id/reset', requireAdmin, async (req, res, next) => {
+    try {
+      const target = await manageable(req, res);
+      if (!target) return;
+      const issued = await accountStore.issueCode(target.id, target.email ? 'reset' : 'claim');
+      if (!issued) return adminRefuse(res, 'unknown_account');
+      logger.info(`[admin] ${req.user.accountId} issued a ${issued.kind} code for ${target.id}`);
+      res.json(issued);
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  app.post('/api/admin/accounts/:id/role', requireAdmin, async (req, res, next) => {
+    try {
+      if (req.user.role !== 'super_admin') return adminRefuse(res, 'forbidden');
+      if (req.params.id === req.user.accountId) return adminRefuse(res, 'forbidden');
+      const result = await accountStore.setRole(req.params.id, req.body?.role, req.user.accountId);
+      if (!result.ok) return adminRefuse(res, result.reason);
+      res.json({ account: result.account });
     } catch (err) {
       next(err);
     }
@@ -478,16 +832,25 @@ export function createApp({
       if (!name) return res.status(400).json({ error: 'name_required' });
       if (name.length > 32) return res.status(400).json({ error: 'name_too_long' });
 
-      const result = deviceStore
-        ? await deviceStore.rename(req.user.id, name).catch(() => null)
-        : null;
+      // An account's name is the person's, on every machine of theirs; a
+      // device from before accounts still carries its own.
+      let result = null;
+      if (req.user.accountId) {
+        result = await accountStore
+          .rename(req.user.accountId, name, { alsoTaken: await namesTakenOutside('accounts') })
+          .catch(() => null);
+      } else if (deviceStore) {
+        result = await deviceStore
+          .rename(req.user.id, name, { alsoTaken: await namesTakenOutside('devices') })
+          .catch(() => null);
+      }
       // One name per server, so nobody is mistaken for someone else.
       if (result?.reason === 'name_taken') return res.status(409).json({ error: 'name_taken' });
       if (!result?.ok) return res.status(404).json({ error: 'unknown_device' });
 
       // No separate session state to update: the name is read back out of
-      // the device store on every request, so the record *is* the source of
-      // truth and the next token issued carries the new name.
+      // the store on every request, so the record *is* the source of truth
+      // and the next token issued carries the new name.
       res.json({ ok: true, name });
     } catch (err) {
       next(err);
@@ -500,6 +863,12 @@ export function createApp({
 
   const requireAvatars = (_req, res, next) =>
     avatarStore && deviceStore ? next() : res.status(501).json({ error: 'avatars_not_configured' });
+
+  /** Where a person's picture is kept: their account, or a device from before accounts. */
+  const pictureOwner = (user) =>
+    user.accountId
+      ? { id: user.accountId, store: accountStore }
+      : { id: user.id, store: deviceStore };
 
   const rawAvatar = express.raw({ type: () => true, limit: AVATAR_MAX_BYTES });
   // Answered here rather than by the error handler below, which would call an
@@ -515,14 +884,16 @@ export function createApp({
 
   app.put('/api/avatar', requireSession, requireAvatars, readAvatarBody, async (req, res, next) => {
     try {
-      // Like a rename, a picture belongs to a device record.
+      // Like a rename, a picture belongs to the account, or to a device from
+      // before accounts.
       if (req.user.kind !== 'device') return res.status(404).json({ error: 'unknown_device' });
       if (!imageType(req.body)) return res.status(400).json({ error: 'invalid_image' });
 
-      const avatar = await avatarStore.save(req.user.id, req.body);
-      const updated = await deviceStore.setAvatar(req.user.id, avatar);
+      const owner = pictureOwner(req.user);
+      const avatar = await avatarStore.save(owner.id, req.body);
+      const updated = await owner.store.setAvatar(owner.id, avatar);
       if (!updated) {
-        await avatarStore.remove(req.user.id);
+        await avatarStore.remove(owner.id);
         return res.status(404).json({ error: 'unknown_device' });
       }
       res.json({ ok: true, avatar });
@@ -534,9 +905,10 @@ export function createApp({
   app.delete('/api/avatar', requireSession, requireAvatars, async (req, res, next) => {
     try {
       if (req.user.kind !== 'device') return res.status(404).json({ error: 'unknown_device' });
-      const updated = await deviceStore.setAvatar(req.user.id, null);
+      const owner = pictureOwner(req.user);
+      const updated = await owner.store.setAvatar(owner.id, null);
       if (!updated) return res.status(404).json({ error: 'unknown_device' });
-      await avatarStore.remove(req.user.id);
+      await avatarStore.remove(owner.id);
       res.json({ ok: true });
     } catch (err) {
       next(err);
@@ -544,15 +916,17 @@ export function createApp({
   });
 
   // Anyone signed in may see anyone's picture, as they see their name. The
-  // id is checked against the device store before it goes near a path, and a
-  // revoked device's picture goes with it.
+  // id is a participant identity — a device — checked against the device
+  // store before anything goes near a path, and a revoked device's picture
+  // goes with it. A device of an account shows the account's picture.
   app.get('/api/avatar/:id', requireSession, requireAvatars, async (req, res, next) => {
     try {
       const { id } = req.params;
       if (!isAvatarId(id)) return res.status(404).json({ error: 'no_avatar' });
       const record = await deviceStore.getActive(id);
-      if (!record?.avatar) return res.status(404).json({ error: 'no_avatar' });
-      const picture = await avatarStore.read(id);
+      const holder = record?.accountId ? await accountStore?.get(record.accountId) : record;
+      if (!holder?.avatar) return res.status(404).json({ error: 'no_avatar' });
+      const picture = await avatarStore.read(holder.id);
       if (!picture) return res.status(404).json({ error: 'no_avatar' });
 
       // The type is the one sniffed from the stored bytes, never one a client

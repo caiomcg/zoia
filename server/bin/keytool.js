@@ -1,17 +1,21 @@
 #!/usr/bin/env node
 /**
- * Access administration: invite keys for the web client, pairing tokens and
- * device credentials for the desktop app.
+ * Access administration: accounts, invite keys for the web client, pairing
+ * tokens and device credentials for the desktop app.
  *
  * Every secret this prints is shown once and is unrecoverable afterwards —
  * only its hash is stored. A lost credential is replaced, not looked up.
  */
 
 import { parseArgs } from 'node:util';
-import { writeFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { createKeyStore } from '../src/keys.js';
 import { createPairingStore } from '../src/pairings.js';
 import { createDeviceStore } from '../src/devices.js';
+import { createAccountStore } from '../src/accounts.js';
+import { createAvatarStore } from '../src/avatars.js';
+import { isActive } from '../src/store.js';
+import { nameKey } from '../src/names.js';
 
 try {
   process.loadEnvFile('.env');
@@ -32,9 +36,25 @@ const devices = createDeviceStore({
   file: process.env.DEVICE_STORE_FILE ?? 'server/data/devices.json',
   logger: quiet,
 });
+const accounts = createAccountStore({
+  file: process.env.ACCOUNT_STORE_FILE ?? 'server/data/accounts.json',
+  logger: quiet,
+});
+const avatars = createAvatarStore({ dir: process.env.AVATAR_DIR ?? 'server/data/avatars' });
+const deviceIdleMs = Number(process.env.ACCOUNT_DEVICE_IDLE_DAYS ?? 60) * 86_400_000;
+// Long enough for everyone to open the app once; an admin can issue a new one.
+const CLAIM_CODE_TTL_MS = 14 * 86_400_000;
 
 const USAGE = `
 zoia keytool
+
+  Accounts — see ADR 0031
+    account:list
+    account:super <email>                    make this account the one super admin
+    account:reset <accountId> --codes <path> write a one-time reset (or claim) code
+    account:migrate --plan <path>            group devices from before accounts
+    account:migrate --apply <path> --codes <path>
+                                             create those accounts, write claim codes
 
   Web invite keys
     add --name "Alice" [--expires-in-days N]
@@ -71,9 +91,140 @@ function status(record) {
   return 'active';
 }
 
+/** 0600, like an invite file: a code is a credential until it is spent. */
+async function writeSecretFile(path, value) {
+  await writeFile(path, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 });
+}
+
+/**
+ * Live devices from before accounts, grouped into the people they probably
+ * are: "Diego", "Diego 2" and "Diego 3" are one person, because the numbers
+ * were only ever added to keep names unique. It is a guess; the plan is a
+ * file so the operator can correct it before anything is applied.
+ */
+function migrationPlan(records) {
+  const groups = new Map();
+  for (const d of records.filter((r) => isActive(r) && !r.accountId)) {
+    const base = d.name.replace(/\s+\d+$/, '').trim() || d.name;
+    const key = nameKey(base);
+    if (!groups.has(key)) groups.set(key, { name: base, devices: [] });
+    groups.get(key).devices.push({ id: d.id, name: d.name, lastSeen: d.lastSeen ?? null });
+  }
+  return { accounts: [...groups.values()] };
+}
+
 const [command, ...rest] = process.argv.slice(2);
 
 switch (command) {
+  case 'account:list': {
+    const all = await accounts.list();
+    if (all.length === 0) {
+      console.log('No accounts yet. People sign up from the app.');
+      break;
+    }
+    console.table(
+      all.map((a) => ({
+        id: a.id,
+        email: a.email ?? '(unclaimed)',
+        name: a.name,
+        role: a.role,
+        status: a.status,
+        lastSeen: a.lastSeen ?? 'never',
+      })),
+    );
+    break;
+  }
+
+  case 'account:super': {
+    if (!rest[0]) fail('account:super needs the email of an account that has signed up');
+    const result = await accounts.setSuper(rest[0]);
+    if (!result.ok) fail(`no account with email "${rest[0]}" — sign up from the app first`);
+    console.log(`${result.account.name} (${result.account.id}) is now the super admin`);
+    for (const id of result.demoted) console.log(`${id} was super admin and is now an admin`);
+    break;
+  }
+
+  case 'account:reset': {
+    const id = rest[0];
+    if (!id) fail('account:reset needs an account id (see: keytool account:list)');
+    const { values } = parseArgs({
+      args: rest.slice(1),
+      options: { codes: { type: 'string' } },
+    });
+    if (!values.codes) fail('--codes <path> is required: the code is written to a file, not shown');
+    const account = await accounts.get(id);
+    if (!account) fail(`no account with id "${id}"`);
+    const kind = account.email ? 'reset' : 'claim';
+    const issued = await accounts.issueCode(id, kind, {
+      ...(kind === 'claim' ? { ttlMs: CLAIM_CODE_TTL_MS } : {}),
+    });
+    await writeSecretFile(values.codes, [{ name: account.name, ...issued }]);
+    console.log(`wrote a ${kind} code for ${account.name} to ${values.codes}`);
+    console.log(`it works once, until ${issued.expiresAt}`);
+    break;
+  }
+
+  case 'account:migrate': {
+    const { values } = parseArgs({
+      args: rest,
+      options: {
+        plan: { type: 'string' },
+        apply: { type: 'string' },
+        codes: { type: 'string' },
+      },
+    });
+
+    if (values.plan) {
+      const plan = migrationPlan(await devices.all());
+      await writeFile(values.plan, `${JSON.stringify(plan, null, 2)}\n`);
+      console.log(`wrote ${plan.accounts.length} accounts to ${values.plan}:`);
+      for (const a of plan.accounts) {
+        console.log(`  ${a.name}: ${a.devices.map((d) => d.name).join(', ')}`);
+      }
+      console.log('\nCorrect it if a guess is wrong, then run --apply with it.');
+      break;
+    }
+
+    if (!values.apply) fail('account:migrate needs --plan <path> or --apply <path>');
+    if (!values.codes) fail('--codes <path> is required: claim codes are written to a file');
+
+    const plan = JSON.parse(await readFile(values.apply, 'utf8'));
+    const live = new Map(
+      (await devices.all()).filter((r) => isActive(r) && !r.accountId).map((r) => [r.id, r]),
+    );
+    const issued = [];
+    for (const entry of plan.accounts ?? []) {
+      // Devices already migrated, revoked or unknown are left out, so a plan
+      // can be applied again after a partial run.
+      const own = (entry.devices ?? []).map((d) => live.get(d.id)).filter(Boolean);
+      if (own.length === 0) continue;
+
+      const account = await accounts.createClaimable({ name: entry.name });
+      // The newest picture among the person's devices becomes theirs.
+      const pictured = own
+        .filter((d) => d.avatar)
+        .sort((a, b) => Date.parse(b.avatarChangedAt ?? 0) - Date.parse(a.avatarChangedAt ?? 0));
+      const picture = pictured[0] ? await avatars.read(pictured[0].id) : null;
+      if (picture) {
+        await accounts.setAvatar(account.id, await avatars.save(account.id, picture.bytes));
+      }
+
+      await devices.assignAccount(
+        own.map((d) => d.id),
+        account.id,
+        { idleMs: deviceIdleMs },
+      );
+      const code = await accounts.issueCode(account.id, 'claim', { ttlMs: CLAIM_CODE_TTL_MS });
+      issued.push({ name: account.name, accountId: account.id, ...code });
+      console.log(`  ${account.name} (${account.id}): ${own.length} device(s)`);
+    }
+
+    await writeSecretFile(values.codes, issued);
+    console.log(`\ncreated ${issued.length} accounts; claim codes are in ${values.codes}`);
+    console.log('Send each person theirs. Their devices keep working until they claim it.');
+    break;
+  }
+
   case 'add': {
     const { values } = parseArgs({
       args: rest,

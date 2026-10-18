@@ -13,6 +13,7 @@ import { createWhipPublisher } from './whip.js';
 import { createReportStore } from './reports.js';
 import { createChannelStore } from './channels.js';
 import { createAvatarStore } from './avatars.js';
+import { createAccountStore } from './accounts.js';
 import { createApp } from './app.js';
 
 try {
@@ -27,6 +28,10 @@ const keyStore = createKeyStore({ file: config.keyStoreFile });
 const pairingStore = createPairingStore({ file: config.pairingStoreFile });
 const deviceStore = createDeviceStore({ file: config.deviceStoreFile });
 const avatarStore = createAvatarStore({ dir: config.avatarDir });
+const accountStore = createAccountStore({
+  file: config.accountStoreFile,
+  maxPending: config.accounts.maxPending,
+});
 // Names are unique per server; settle any shared from before they were.
 await deviceStore.dedupeNames();
 const tokenIssuer = createTokenIssuer({
@@ -75,6 +80,7 @@ const app = createApp({
   pairingStore,
   deviceStore,
   avatarStore,
+  accountStore,
 });
 
 app.listen(config.port, () => {
