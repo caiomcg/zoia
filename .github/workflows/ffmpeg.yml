@@ -1,0 +1,51 @@
+name: ffmpeg
+
+# The ffmpeg every Windows build ships, compiled from desktop/ffmpeg with the
+# patches there — the off-the-shelf build's WHIP muxer refuses every NACK
+# LiveKit sends (patches/0001). A mingw cross-compile in Docker that takes a
+# quarter of an hour, for a binary that almost never changes.
+#
+# It is cached on the build's own files, and the cache has to live on main.
+# GitHub scopes a cache to the ref that saved it: one saved by a release tag is
+# invisible to the next tag, which can only read main's. When this ran only
+# inside the release workflow, every release rebuilt ffmpeg from scratch. So it
+# also runs here, on main: whenever its files change, and twice a week, since a
+# cache nobody reads for seven days is evicted.
+
+on:
+  push:
+    branches: [main]
+    paths: ['desktop/ffmpeg/**', '.github/workflows/ffmpeg.yml']
+  schedule:
+    - cron: '17 5 * * 1,4'
+  workflow_dispatch:
+  # The release workflow calls this for the binary it ships.
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  ffmpeg:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Restore the built ffmpeg
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: desktop/ffmpeg/out/ffmpeg-gnutls.exe
+          key: ffmpeg-build-${{ hashFiles('desktop/ffmpeg/Dockerfile', 'desktop/ffmpeg/patches/**') }}
+
+      - name: Build ffmpeg
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: docker build --output type=local,dest=desktop/ffmpeg/out desktop/ffmpeg
+
+      # For the release workflow's build job; anyone else can let it expire.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ffmpeg
+          path: desktop/ffmpeg/out/ffmpeg-gnutls.exe
+          if-no-files-found: error
+          retention-days: 3

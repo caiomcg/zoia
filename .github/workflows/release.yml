@@ -30,31 +30,9 @@ concurrency:
 
 jobs:
   ffmpeg:
-    # The ffmpeg every Windows build ships, compiled from desktop/ffmpeg with
-    # the patches there — the off-the-shelf build's WHIP muxer refuses every
-    # NACK LiveKit sends (patches/0001). A mingw cross-compile in Docker, so
-    # Linux; cached on the build's own files, so a release that does not touch
-    # them reuses the last binary instead of spending half an hour on it.
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Restore the built ffmpeg
-        id: cache
-        uses: actions/cache@v4
-        with:
-          path: desktop/ffmpeg/out/ffmpeg-gnutls.exe
-          key: ffmpeg-build-${{ hashFiles('desktop/ffmpeg/Dockerfile', 'desktop/ffmpeg/patches/**') }}
-
-      - name: Build ffmpeg
-        if: steps.cache.outputs.cache-hit != 'true'
-        run: docker build --output type=local,dest=desktop/ffmpeg/out desktop/ffmpeg
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: ffmpeg
-          path: desktop/ffmpeg/out/ffmpeg-gnutls.exe
-          if-no-files-found: error
+    # Built, or restored from main's cache, by its own workflow; see ffmpeg.yml
+    # for why the cache has to live there rather than here.
+    uses: ./.github/workflows/ffmpeg.yml
 
   build:
     needs: [ffmpeg]
