@@ -40,6 +40,7 @@ record that supersedes it, so the history stays legible.
 | [0030](0030-amf-over-the-room-connection.md)             | AMF frames over the room connection, at an adaptive bitrate   | accepted                                                                           |
 | [0031](0031-accounts-with-admin-approval.md) | Accounts with an email and password, approved by an admin | proposed |
 | [0032](0032-sqlite-for-credentials.md) | Credentials and identities in SQLite | proposed |
+| [0033](0033-admins-move-people-between-channels.md) | Admins move people between channels | accepted |
 
 ## The two that explain the most
 
