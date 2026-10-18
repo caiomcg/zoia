@@ -21,14 +21,14 @@ publish grant from the old room's stage.
 In the sidebar, a person is dragged onto a channel. Anyone may drag themselves, which is
 the same as clicking that channel and asks nothing of the server. An admin may also drag
 anyone they could manage in Settings › Accounts (ADR 0031's rules: admins manage users, the
-super admin also manages admins, and nobody manages the super admin).
+super admin also manages admins, and nobody manages the super admin). So only someone
+strictly below you can be dragged: two admins are equals, and each moves themselves.
 
 Dragging someone else calls `POST /api/admin/devices/:id/move`, which moves one machine,
 the one dragged, not every machine of the account. The server checks the caller's role and
 the target as for every admin route. It then sends that participant a reliable LiveKit
 data message, topic `zoia.move`, from the server itself. The app switches channel the way a
-click would: sharing stops first, then the old room is left and the new one joined. The app
-names who moved it.
+click would: sharing stops first, then the old room is left and the new one joined.
 
 The app only acts on a `zoia.move` message with no sender. LiveKit always stamps a
 participant's own data messages with that participant, so another client cannot forge one.
