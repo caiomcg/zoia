@@ -2388,6 +2388,24 @@ button.danger {
   color: var(--muted);
 }
 
+/* A person dragged over a channel: the whole block lights up where they will land. */
+.channel-block {
+  border-radius: 6px;
+  transition:
+    background 0.12s ease,
+    box-shadow 0.12s ease;
+}
+
+.channel-block.drop-target {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.member[draggable='true'],
+.channel-people [draggable='true'] {
+  cursor: grab;
+}
+
 .channel-row {
   position: relative;
   display: flex;
@@ -3654,6 +3672,58 @@ button.danger:active:not(:disabled),
   opacity: 0.6;
 }
 
+/* Each person as they look in a channel: their picture, then the words. */
+.admin-who {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
+}
+
+.admin-who > span:last-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.admin-accounts li > .admin-who {
+  flex: 1;
+}
+
+.admin-actions.compact {
+  flex: none;
+  flex-wrap: nowrap;
+  gap: 4px;
+}
+
+.admin-icon {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.admin-icon:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--surface-2);
+}
+
+.admin-icon.pressed {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--border));
+}
+
+/* Revoking signs every machine out at once, so it reads as the risky one. */
+.admin-icon.danger:hover:not(:disabled) {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 12%, var(--surface));
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
+}
+
 .admin-actions {
   display: flex;
   flex-wrap: wrap;
@@ -3661,7 +3731,6 @@ button.danger:active:not(:disabled),
   justify-content: flex-end;
 }
 
-.admin-accounts .link-button,
 .account-devices .link-button {
   padding: 2px 0;
   font-size: 12px;

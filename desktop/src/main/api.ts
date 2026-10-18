@@ -167,11 +167,19 @@ export function adminAccounts() {
 }
 
 /** One admin action on one account. `reset` answers with the code to hand on. */
-export function adminAction(id: string, action: string, role?: AccountRole) {
+export function adminAction(id: string, action: string, options: { role?: AccountRole } = {}) {
   return call<{ account?: AdminAccount } & Partial<IssuedCode>>(
     `/api/admin/accounts/${encodeURIComponent(id)}/${encodeURIComponent(action)}`,
-    { method: 'POST', body: JSON.stringify(role ? { role } : {}) },
+    { method: 'POST', body: JSON.stringify(options) },
   );
+}
+
+/** Asks a machine in a channel to switch to another; what dragging someone does. */
+export function adminMoveDevice(id: string, channel: string) {
+  return call<{ moved: boolean }>(`/api/admin/devices/${encodeURIComponent(id)}/move`, {
+    method: 'POST',
+    body: JSON.stringify({ channel }),
+  });
 }
 
 /**

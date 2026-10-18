@@ -419,6 +419,18 @@ const DEFAULT_SEND_AUDIO: SendAudio = { volume: 1, muted: false };
 /** How long the watch list must hold still before it is announced. */
 const WATCHING_SETTLE_MS = 1500;
 
+/**
+ * An admin moving this machine to another channel arrives on this topic.
+ * Must match MOVE_TOPIC in server/src/app.js.
+ */
+export const MOVE_TOPIC = 'zoia.move';
+
+/** Where an admin asked this machine to go, and who asked. */
+export interface MoveRequest {
+  channel: string;
+  by: string;
+}
+
 export function useRoom() {
   const roomRef = useRef<Room | null>(null);
   const localTrackRef = useRef<LocalVideoTrack | null>(null);
@@ -463,6 +475,7 @@ export function useRoom() {
   const [error, setError] = useState<string | null>(null);
   const [isReconnecting, setIsReconnecting] = useState(false);
   const [roomNotice, setRoomNotice] = useState<string | null>(null);
+  const [moveRequest, setMoveRequest] = useState<MoveRequest | null>(null);
   const [remoteScreens, setRemoteScreens] = useState<RemoteScreen[]>([]);
   const selectedRemoteIdsRef = useRef<Set<string>>(new Set());
   const pausedRemoteIdsRef = useRef<ReadonlySet<string>>(new Set());
@@ -746,6 +759,17 @@ export function useRoom() {
         .on(RoomEvent.TrackSubscribed, () => refresh())
         .on(RoomEvent.TrackUnsubscribed, () => refresh())
         .on(RoomEvent.ParticipantConnected, () => refresh())
+        // A move is only taken from the server: anything another participant
+        // sends carries them as its sender, and is ignored here.
+        .on(RoomEvent.DataReceived, (payload, participant, _kind, topic) => {
+          if (participant || topic !== MOVE_TOPIC || roomRef.current !== room) return;
+          try {
+            const { channel, by } = JSON.parse(new TextDecoder().decode(payload)) as MoveRequest;
+            if (typeof channel === 'string') setMoveRequest({ channel, by: String(by ?? '') });
+          } catch {
+            // Not a message this version understands.
+          }
+        })
         .on(RoomEvent.ParticipantDisconnected, (participant) => {
           const ownIngress = `${room.localParticipant.identity}${WHIP_SUFFIX}`;
           if (participant.identity === ownIngress && ingressPreviewRef.current) {
@@ -1478,6 +1502,8 @@ export function useRoom() {
     isReconnecting,
     roomNotice,
     clearRoomNotice: useCallback(() => setRoomNotice(null), []),
+    moveRequest,
+    clearMoveRequest: useCallback(() => setMoveRequest(null), []),
     setRemotePaused,
     setRemoteFocus,
     participantCount,

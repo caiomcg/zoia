@@ -17,6 +17,7 @@ import type {
   AccountDevice,
   AdminAccount,
   AdminAction,
+  AdminActionOptions,
   IssuedCode,
 } from '../shared/ipc';
 
@@ -49,8 +50,10 @@ export interface ZoiaBridge {
     act(
       id: string,
       action: AdminAction,
-      role?: 'admin' | 'user',
+      options?: AdminActionOptions,
     ): Promise<ActionOutcome<{ account?: AdminAccount } & Partial<IssuedCode>>>;
+    /** Asks a machine (a participant identity) in a channel to switch to another. */
+    moveDevice(id: string, channel: string): Promise<ActionOutcome<{ moved: boolean }>>;
   };
   token: {
     /** A join token for a channel; the first channel when none is named. */

@@ -281,6 +281,37 @@ export default function App() {
     await room.disconnect();
   }
 
+  // An admin moved this machine: go, the way a click would, and say who did.
+  const [moveNotice, setMoveNotice] = useState<string | null>(null);
+  const { moveRequest, clearMoveRequest } = room;
+  useEffect(() => {
+    if (!moveRequest) return;
+    clearMoveRequest();
+    const target = channels.find((c) => c.id === moveRequest.channel);
+    setMoveNotice(
+      t('channel.moved', { channel: target?.name ?? moveRequest.channel, name: moveRequest.by }),
+    );
+    void switchChannel(moveRequest.channel);
+    // Only a new request moves; switchChannel and the list are read as they are now.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [moveRequest]);
+
+  /**
+   * Someone dropped on a channel in the sidebar. Yourself is a plain switch;
+   * anyone else is an admin asking the server to move that machine, which
+   * shows in the list once their app has switched.
+   */
+  async function moveMember(identity: string, id: string) {
+    if (identity === myIdentity) return switchChannel(id);
+    try {
+      const outcome = await window.zoia.admin.moveDevice(identity, id);
+      setChannelError(outcome.ok ? null : t('channel.error.moveFailed', { code: outcome.error }));
+    } catch {
+      setChannelError(t('channel.error.unreachable'));
+    }
+    setChannelsVersion((v) => v + 1);
+  }
+
   /** Leaves the channel for none, the way the app starts. Sharing stops first. */
   async function leaveChannel() {
     if (channel === null) return;
@@ -621,6 +652,7 @@ export default function App() {
   const audioWarning = show('audio', room.audioWarning);
   const stageMessage = show('stage', stageError);
   const channelMessage = show('channel', channelError);
+  const moveMessage = show('moved', moveNotice);
   const gpuWarning = gpuLive ? show('gpustatus', gpuCast.status?.error) : null;
   const activeRemoteIds = new Set(room.remoteScreens.map((screen) => screen.participantIdentity));
   const loadingBroadcasts: LoadingBroadcast[] = room.members
@@ -742,6 +774,11 @@ export default function App() {
       {channelMessage && (
         <Banner onDismiss={() => dismiss('channel', channelMessage)}>{channelMessage}</Banner>
       )}
+      {moveMessage && (
+        <Banner tone="warn" onDismiss={() => dismiss('moved', moveMessage)}>
+          {moveMessage}
+        </Banner>
+      )}
       {audioWarning && (
         <Banner tone="warn" onDismiss={() => dismiss('audio', audioWarning)}>
           {audioWarning}
@@ -844,6 +881,7 @@ export default function App() {
           onCreateChannel={(name) => void changeChannels(window.zoia.rooms.create(name))}
           onRenameChannel={(id, name) => void changeChannels(window.zoia.rooms.rename(id, name))}
           onRemoveChannel={(id) => void changeChannels(window.zoia.rooms.remove(id))}
+          onMoveMember={(identity, id) => void moveMember(identity, id)}
           stage={{
             watching: new Set(stage.watching),
             localWatched: stage.localWatched,

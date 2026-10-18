@@ -326,14 +326,17 @@ function registerIpc(): void {
     api.attempt(api.removeDevice(String(id))),
   );
   ipcMain.handle(IPC.adminAccounts, () => api.attempt(api.adminAccounts().then((r) => r.accounts)));
-  ipcMain.handle(IPC.adminAction, (_event, id: string, action: string, role?: string) =>
-    api.attempt(
-      api.adminAction(
-        String(id),
-        String(action),
-        role === 'admin' || role === 'user' ? role : undefined,
+  ipcMain.handle(
+    IPC.adminAction,
+    (_event, id: string, action: string, options?: { role?: unknown }) =>
+      api.attempt(
+        api.adminAction(String(id), String(action), {
+          ...(options?.role === 'admin' || options?.role === 'user' ? { role: options.role } : {}),
+        }),
       ),
-    ),
+  );
+  ipcMain.handle(IPC.adminMoveDevice, (_event, id: string, channel: string) =>
+    api.attempt(api.adminMoveDevice(String(id), String(channel))),
   );
 
   ipcMain.handle(IPC.getToken, (_event, room?: string) =>

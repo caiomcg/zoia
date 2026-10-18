@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type HTMLAttributes } from 'react';
 import type { RoomMember } from '../livekit/useRoom';
 import type { AccountRole, RoomInfo } from '../../shared/ipc';
 import type { GridTarget } from './RemoteGrid';
@@ -23,6 +23,9 @@ export interface StageMarks {
 }
 
 const COLLAPSED_KEY = 'zoia.sidebarCollapsed';
+
+/** What a person dragged onto a channel carries: their identity. */
+const DRAG_TYPE = 'application/x-zoia-member';
 
 /** "Room 3" → "R3", "Games" → "GA": what a collapsed sidebar shows. */
 function shortName(name: string): string {
@@ -153,6 +156,7 @@ export default function Sidebar({
   onCreateChannel,
   onRenameChannel,
   onRemoveChannel,
+  onMoveMember,
   stage,
   onHoverBroadcast,
   onWatchBroadcast,
@@ -179,6 +183,8 @@ export default function Sidebar({
   onCreateChannel: (name: string) => void;
   onRenameChannel: (id: string, name: string) => void;
   onRemoveChannel: (id: string) => void;
+  /** Someone dropped on a channel: yourself, or, for an admin, someone else. */
+  onMoveMember: (identity: string, channelId: string) => void;
   stage: StageMarks;
   onHoverBroadcast: (target: GridTarget | null, anchor?: DOMRect) => void;
   onWatchBroadcast: (target: GridTarget) => void;
@@ -199,6 +205,57 @@ export default function Sidebar({
     for (const p of c.participants) if (p.role) roles.set(p.identity, p.role);
   }
   const roleOf = (m: RoomMember) => (m.isLocal ? myRole : roles.get(m.identity));
+
+  // Dragging a person onto a channel moves them there. Anyone may drag
+  // themselves, which is the same as clicking the channel; an admin may drag
+  // whoever they could manage in Settings. The server checks that again.
+  const [dragging, setDragging] = useState<{ identity: string; from: string | null } | null>(null);
+  const [dropTarget, setDropTarget] = useState<string | null>(null);
+  const mayDrag = (identity: string, role?: AccountRole) =>
+    identity === myIdentity ||
+    (canManageChannels && role !== 'super_admin' && (role !== 'admin' || myRole === 'super_admin'));
+  const dragFrom = (
+    identity: string,
+    role: AccountRole | undefined,
+    from: string | null,
+  ): HTMLAttributes<HTMLElement> =>
+    mayDrag(identity, role)
+      ? {
+          draggable: true,
+          onDragStart: (event) => {
+            event.dataTransfer.setData(DRAG_TYPE, identity);
+            event.dataTransfer.effectAllowed = 'move';
+            setDragging({ identity, from });
+            onHoverBroadcast(null);
+          },
+          onDragEnd: () => {
+            setDragging(null);
+            setDropTarget(null);
+          },
+        }
+      : {};
+  const dropOn = (channelId: string): HTMLAttributes<HTMLElement> =>
+    dragging && dragging.from !== channelId
+      ? {
+          onDragOver: (event) => {
+            event.preventDefault();
+            event.dataTransfer.dropEffect = 'move';
+            setDropTarget(channelId);
+          },
+          onDragLeave: (event) => {
+            if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+            setDropTarget((previous) => (previous === channelId ? null : previous));
+          },
+          onDrop: (event) => {
+            event.preventDefault();
+            const identity = event.dataTransfer.getData(DRAG_TYPE);
+            setDragging(null);
+            setDropTarget(null);
+            if (identity) onMoveMember(identity, channelId);
+          },
+        }
+      : {};
+
   // Someone who leaves fades out rather than vanishing; see presence.ts.
   const shownMembers = useLeaving(liveMembers, (m) => m.identity, currentChannel ?? '');
 
@@ -331,7 +388,11 @@ export default function Sidebar({
                 );
               }
               return (
-                <div key={c.id} className="channel-block">
+                <div
+                  key={c.id}
+                  className={`channel-block${dropTarget === c.id ? ' drop-target' : ''}`}
+                  {...dropOn(c.id)}
+                >
                   <div className="channel-row">
                     <button
                       className={`channel${current ? ' current' : ''}`}
@@ -397,6 +458,7 @@ export default function Sidebar({
                           member={m}
                           role={roleOf(m)}
                           leaving={leaving}
+                          drag={leaving ? {} : dragFrom(m.identity, roleOf(m), c.id)}
                           {...rowProps}
                         />
                       ))}
@@ -409,6 +471,7 @@ export default function Sidebar({
                           <span
                             key={p.identity}
                             title={p.role ? `${p.name} · ${t(`account.role.${p.role}`)}` : p.name}
+                            {...dragFrom(p.identity, p.role, c.id)}
                           >
                             <Avatar
                               name={p.name}
@@ -514,6 +577,7 @@ function MemberRow({
   member: m,
   role,
   leaving,
+  drag,
   viewerIds,
   loadingRemoteIds,
   stage,
@@ -523,6 +587,8 @@ function MemberRow({
   member: RoomMember;
   role?: AccountRole;
   leaving: boolean;
+  /** Present when this person may be dragged onto another channel. */
+  drag?: HTMLAttributes<HTMLElement>;
   viewerIds: ReadonlySet<string>;
   loadingRemoteIds: Set<string>;
   stage: StageMarks;
@@ -559,6 +625,7 @@ function MemberRow({
       onMouseLeave={live ? () => onHover(null) : undefined}
       onFocus={live ? (event) => show(event.currentTarget) : undefined}
       onBlur={live ? () => onHover(null) : undefined}
+      {...drag}
     >
       <span className="avatar-wrap">
         <Avatar name={m.name} identity={m.identity} live={live} role={role} />

@@ -51,7 +51,8 @@ const bridge: ZoiaBridge = {
   },
   admin: {
     accounts: () => ipcRenderer.invoke(IPC.adminAccounts),
-    act: (id, action, role) => ipcRenderer.invoke(IPC.adminAction, id, action, role),
+    act: (id, action, options) => ipcRenderer.invoke(IPC.adminAction, id, action, options),
+    moveDevice: (id, channel) => ipcRenderer.invoke(IPC.adminMoveDevice, id, channel),
   },
   token: {
     get: (room) => ipcRenderer.invoke(IPC.getToken, room),

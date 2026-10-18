@@ -51,6 +51,9 @@ export interface AdminAccount {
   lastSeen: string | null;
   signupIp: string | null;
   devices: number;
+  /** Their picture's version, and a machine of theirs to fetch it by. */
+  avatar: string | null;
+  avatarIdentity: string | null;
 }
 
 /** One of your own signed-in machines. */
@@ -63,6 +66,11 @@ export interface AccountDevice {
 }
 
 export type AdminAction = 'approve' | 'reject' | 'disable' | 'enable' | 'reset' | 'role';
+
+/** What some admin actions need: `role` the new role. */
+export interface AdminActionOptions {
+  role?: 'admin' | 'user';
+}
 
 /** A one-time code an admin hands on, to set a forgotten password. */
 export interface IssuedCode {
@@ -328,6 +336,7 @@ export const IPC = {
   accountRemoveDevice: 'zoia:account:devices:remove',
   adminAccounts: 'zoia:admin:accounts',
   adminAction: 'zoia:admin:action',
+  adminMoveDevice: 'zoia:admin:moveDevice',
   getToken: 'zoia:token:get',
   roomsList: 'zoia:rooms:list',
   roomsCreate: 'zoia:rooms:create',
