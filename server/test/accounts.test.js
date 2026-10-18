@@ -19,6 +19,7 @@ import { createDeviceStore } from '../src/devices.js';
 import { createAccountStore, canManage, normalizeEmail } from '../src/accounts.js';
 import { createTokenIssuer, decodeTokenPayload } from '../src/token.js';
 import { createStage } from '../src/stage.js';
+import { fixedChannels } from '../src/channels.js';
 import { AVATAR_ATTRIBUTE, AVATAR_MAX_BYTES, createAvatarStore } from '../src/avatars.js';
 
 const PASSWORD = 'Correct-horse-1';
@@ -38,7 +39,7 @@ const quiet = () => {
   return { info: capture, warn: capture, error: capture };
 };
 
-function buildApp({ accounts: accountConfig, rateLimit } = {}) {
+function buildApp({ accounts: accountConfig, rateLimit, channels } = {}) {
   const logger = quiet();
   rooms = {
     participants: [],
@@ -75,6 +76,7 @@ function buildApp({ accounts: accountConfig, rateLimit } = {}) {
       logger,
     }),
     stage: createStage({ rooms, roomName: 'zoia', logger }),
+    channels: channels?.(logger),
     logger,
   });
 }
@@ -729,5 +731,101 @@ describe('access ending ends the connection too', () => {
     assert.equal((await login('alice@example.com', PASSWORD, 'Phone')).res.status, 200);
     assert.equal(await devices.getActive(alice.id), null);
     assert.deepEqual(inRoom(), []);
+  });
+});
+
+describe('admins move people between channels', () => {
+  /** Two channels, each its own fake room that records what the server sent. */
+  let lobby;
+  let lounge;
+  const fakeRoom = () => {
+    const room = {
+      participants: [],
+      sent: [],
+      listParticipants: async () => room.participants,
+      updateParticipant: async () => {},
+      removeParticipant: async () => {},
+      sendData: async (_name, data, _kind, options) => {
+        room.sent.push({
+          to: options.destinationIdentities,
+          topic: options.topic,
+          message: JSON.parse(new TextDecoder().decode(data)),
+        });
+      },
+    };
+    return room;
+  };
+  const enter = (room, ...ids) => {
+    for (const identity of ids) {
+      room.participants.push({ identity, name: identity, permission: {}, tracks: [] });
+    }
+  };
+
+  beforeEach(() => {
+    lobby = fakeRoom();
+    lounge = fakeRoom();
+    app = buildApp({
+      channels: (logger) =>
+        fixedChannels([
+          {
+            id: 'zoia',
+            name: 'Lobby',
+            stage: createStage({ rooms: lobby, roomName: 'zoia', logger }),
+          },
+          {
+            id: 'lounge',
+            name: 'Lounge',
+            stage: createStage({ rooms: lounge, roomName: 'lounge', logger }),
+          },
+        ]),
+    });
+  });
+
+  test('the list says how to show each picture', async () => {
+    const admin = await person('admin@example.com', 'admin');
+    const bob = await person('bob@example.com');
+
+    const list = (await admin.agent.get('/api/admin/accounts')).body.accounts;
+    assert.equal(list.find((a) => a.id === bob.account.id).avatarIdentity, bob.id);
+  });
+
+  test('the machine dragged is told to switch, by the server', async () => {
+    const admin = await person('admin@example.com', 'admin');
+    const bob = await person('bob@example.com');
+    const laptop = await login('bob@example.com', PASSWORD, 'Laptop');
+    enter(lobby, bob.id);
+    enter(lounge, laptop.id);
+    const move = (id, channel) =>
+      admin.agent.post(`/api/admin/devices/${id}/move`).send({ channel });
+
+    const res = await move(bob.id, 'lounge');
+    assert.equal(res.status, 200);
+    assert.equal(res.body.moved, true);
+    assert.deepEqual(lobby.sent, [
+      { to: [bob.id], topic: 'zoia.move', message: { channel: 'lounge', by: 'admin' } },
+    ]);
+    // Already there: nothing to send.
+    assert.equal((await move(laptop.id, 'lounge')).body.moved, false);
+    assert.deepEqual(lounge.sent, []);
+  });
+
+  test('moving follows the same rules as the rest of administration', async () => {
+    const owner = await person('owner@example.com', 'super_admin');
+    const admin = await person('admin@example.com', 'admin');
+    const other = await person('other@example.com', 'admin');
+    const bob = await person('bob@example.com');
+    enter(lobby, owner.id, other.id, bob.id);
+    const move = (who, target, channel = 'lounge') =>
+      who.agent.post(`/api/admin/devices/${target.id}/move`).send({ channel });
+
+    assert.equal((await move(bob, other)).status, 403);
+    assert.equal((await move(admin, other)).status, 403);
+    assert.equal((await move(admin, owner)).status, 403);
+    assert.equal((await move(owner, other)).status, 200);
+    assert.equal((await move(admin, bob, 'nowhere')).status, 404);
+    // Nobody to move: not in any channel, or no such machine.
+    const carol = await person('carol@example.com');
+    assert.equal((await move(admin, carol)).status, 409);
+    assert.equal((await move(admin, { id: 'nope' })).status, 404);
   });
 });

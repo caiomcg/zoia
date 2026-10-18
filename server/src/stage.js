@@ -39,6 +39,7 @@ const VIEW_PERMISSION = {
  */
 const STALE_CLAIM_MS = 20_000;
 
+import { DataPacket_Kind } from 'livekit-server-sdk';
 import { isWhipIdentity, ownerOf, WHIP_SUFFIX } from './whip.js';
 import { AVATAR_ATTRIBUTE } from './avatars.js';
 
@@ -138,6 +139,19 @@ export function createStage({ rooms, roomName, logger = console, now = () => Dat
           }
         }
       }
+    },
+
+    /**
+     * A message from the server to one participant, on a topic. Only the
+     * server can send one with no sender, which is how a client knows it is
+     * not from another participant.
+     */
+    async send(identity, topic, message) {
+      const data = new TextEncoder().encode(JSON.stringify(message));
+      await rooms.sendData(roomName, data, DataPacket_Kind.RELIABLE, {
+        destinationIdentities: [identity],
+        topic,
+      });
     },
 
     // Kept for integrations that have not migrated yet. New code should use

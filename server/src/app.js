@@ -24,6 +24,8 @@ const PUBLIC_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'public')
 const COOKIE_NAME = 'zoia_sid';
 const COOKIE_MAX_AGE = 30 * 24 * 60 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
+/** Must match MOVE_TOPIC in desktop/src/renderer/livekit/useRoom.ts. */
+const MOVE_TOPIC = 'zoia.move';
 
 export function createApp({
   config,
@@ -470,6 +472,8 @@ export function createApp({
     pending: 409,
     not_active: 409,
     invalid_role: 400,
+    unknown_room: 404,
+    not_connected: 409,
   };
   const adminRefuse = (res, reason) =>
     res.status(ADMIN_ERRORS[reason] ?? 400).json({ error: reason });
@@ -482,21 +486,39 @@ export function createApp({
     return target;
   }
 
+  /** Which channel each device is in right now, by device id. */
+  async function whereAll() {
+    const where = new Map();
+    for (const channel of await channelSet.list()) {
+      const participants = await channel.stage.participants().catch(() => []);
+      for (const p of participants) {
+        if (!p.identity.endsWith(WHIP_SUFFIX)) where.set(p.identity, channel);
+      }
+    }
+    return where;
+  }
+
   app.get('/api/admin/accounts', requireAdmin, async (_req, res, next) => {
     try {
       const accounts = await accountStore.list();
       const rows = await Promise.all(
-        accounts.map(async (a) => ({
-          id: a.id,
-          email: a.email,
-          name: a.name,
-          role: a.role,
-          status: a.status,
-          createdAt: a.createdAt,
-          lastSeen: a.lastSeen,
-          signupIp: a.signupIp ?? null,
-          devices: (await deviceStore.listByAccount(a.id)).length,
-        })),
+        accounts.map(async (a) => {
+          const devices = await deviceStore.listByAccount(a.id);
+          return {
+            id: a.id,
+            email: a.email,
+            name: a.name,
+            role: a.role,
+            status: a.status,
+            createdAt: a.createdAt,
+            lastSeen: a.lastSeen,
+            signupIp: a.signupIp ?? null,
+            devices: devices.length,
+            // The picture is fetched by a device of the account, as in a room.
+            avatar: a.avatar ?? null,
+            avatarIdentity: devices[0]?.id ?? null,
+          };
+        }),
       );
       res.json({ accounts: rows });
     } catch (err) {
@@ -540,6 +562,31 @@ export function createApp({
       }
     });
   }
+
+  // Asks one machine in a channel to switch to another: what dragging
+  // someone onto a channel does. The app does the switch itself, the way a
+  // click would, so a broadcast stops cleanly first; the message can only
+  // come from the server. Moving yourself needs none of this, and is a click.
+  app.post('/api/admin/devices/:id/move', requireAdmin, async (req, res, next) => {
+    try {
+      const device = await deviceStore.getActive(req.params.id);
+      const target = device?.accountId ? await accountStore.get(device.accountId) : null;
+      if (!target) return adminRefuse(res, 'unknown_account');
+      if (!canManage(req.user, target)) return adminRefuse(res, 'forbidden');
+      const destination = await channelSet.get(String(req.body?.channel ?? ''));
+      if (!destination) return adminRefuse(res, 'unknown_room');
+      const from = (await whereAll()).get(device.id);
+      if (!from) return adminRefuse(res, 'not_connected');
+      if (from.id === destination.id) return res.json({ moved: false });
+      await from.stage.send(device.id, MOVE_TOPIC, { channel: destination.id, by: req.user.name });
+      logger.info(
+        `[admin] ${req.user.accountId} moved ${device.id} (${target.id}) to ${destination.id}`,
+      );
+      res.json({ moved: true });
+    } catch (err) {
+      next(err);
+    }
+  });
 
   // The code is shown once, to the admin, who passes it on. It is never logged.
   app.post('/api/admin/accounts/:id/reset', requireAdmin, async (req, res, next) => {
