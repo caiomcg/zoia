@@ -37,6 +37,7 @@ record that supersedes it, so the history stays legible.
 | [0027](0027-profile-pictures.md)                         | Profile pictures kept by the app server                       | proposed                                                                           |
 | [0028](0028-updates-from-releases.md)                    | Updates found from the latest GitHub release                  | accepted                                                                           |
 | [0030](0030-amf-over-the-room-connection.md)             | AMF frames over the room connection, at an adaptive bitrate   | accepted                                                                           |
+| [0031](0031-accounts-with-admin-approval.md) | Accounts with an email and password, approved by an admin | proposed |
 
 ## The two that explain the most
 
