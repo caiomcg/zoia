@@ -211,9 +211,16 @@ export default function Sidebar({
   // whoever they could manage in Settings. The server checks that again.
   const [dragging, setDragging] = useState<{ identity: string; from: string | null } | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
+  // Only someone strictly below you: admins and the super admin are each
+  // other's equals or betters, and move themselves. Someone the server's list
+  // has not shown yet has no known role, so they wait until it has.
+  const listed = new Set(channels.flatMap((c) => c.participants.map((p) => p.identity)));
   const mayDrag = (identity: string, role?: AccountRole) =>
     identity === myIdentity ||
-    (canManageChannels && role !== 'super_admin' && (role !== 'admin' || myRole === 'super_admin'));
+    (canManageChannels &&
+      listed.has(identity) &&
+      role !== 'super_admin' &&
+      (role !== 'admin' || myRole === 'super_admin'));
   const dragFrom = (
     identity: string,
     role: AccountRole | undefined,

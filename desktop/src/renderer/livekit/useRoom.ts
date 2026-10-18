@@ -425,10 +425,9 @@ const WATCHING_SETTLE_MS = 1500;
  */
 export const MOVE_TOPIC = 'zoia.move';
 
-/** Where an admin asked this machine to go, and who asked. */
+/** Where an admin asked this machine to go. */
 export interface MoveRequest {
   channel: string;
-  by: string;
 }
 
 export function useRoom() {
@@ -764,8 +763,8 @@ export function useRoom() {
         .on(RoomEvent.DataReceived, (payload, participant, _kind, topic) => {
           if (participant || topic !== MOVE_TOPIC || roomRef.current !== room) return;
           try {
-            const { channel, by } = JSON.parse(new TextDecoder().decode(payload)) as MoveRequest;
-            if (typeof channel === 'string') setMoveRequest({ channel, by: String(by ?? '') });
+            const { channel } = JSON.parse(new TextDecoder().decode(payload)) as MoveRequest;
+            if (typeof channel === 'string') setMoveRequest({ channel });
           } catch {
             // Not a message this version understands.
           }

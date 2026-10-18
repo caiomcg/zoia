@@ -46,6 +46,10 @@ const ONBOARDING_STORAGE_KEY = 'zoia.onboardingDismissed';
 // 5s a move between channels showed up late: the mover needs about a second
 // to reach their new channel, after the immediate re-read had already run.
 const ROOMS_POLL_MS = 2_000;
+/** How long someone dragged is shown in their new channel before the server must agree. */
+const PENDING_MOVE_MS = 6_000;
+/** When to re-read the channels after a drag: about when the moved app has switched. */
+const MOVE_RECHECK_MS = 1_200;
 /**
  * How often a signed-in account asks the server who it is now: a rename, a
  * role change. Admins ask more often, since a sign-up is someone waiting.
@@ -281,20 +285,18 @@ export default function App() {
     await room.disconnect();
   }
 
-  // An admin moved this machine: go, the way a click would, and say who did.
-  const [moveNotice, setMoveNotice] = useState<string | null>(null);
+  // An admin moved this machine: go, the way a click would.
   const { moveRequest, clearMoveRequest } = room;
   useEffect(() => {
     if (!moveRequest) return;
     clearMoveRequest();
-    const target = channels.find((c) => c.id === moveRequest.channel);
-    setMoveNotice(
-      t('channel.moved', { channel: target?.name ?? moveRequest.channel, name: moveRequest.by }),
-    );
     void switchChannel(moveRequest.channel);
-    // Only a new request moves; switchChannel and the list are read as they are now.
+    // Only a new request moves; switchChannel is read as it is now.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [moveRequest]);
+
+  // Who was just dragged to which channel; see shownChannels.
+  const [pendingMoves, setPendingMoves] = useState<ReadonlyMap<string, string>>(new Map());
 
   /**
    * Someone dropped on a channel in the sidebar. Yourself is a plain switch;
@@ -303,14 +305,48 @@ export default function App() {
    */
   async function moveMember(identity: string, id: string) {
     if (identity === myIdentity) return switchChannel(id);
+    // Shown where they were dropped at once, rather than at the next poll;
+    // a quick re-read shortly after picks up where they really are.
+    setPendingMoves((previous) => new Map(previous).set(identity, id));
+    const settle = () =>
+      setPendingMoves((previous) => {
+        if (previous.get(identity) !== id) return previous;
+        const next = new Map(previous);
+        next.delete(identity);
+        return next;
+      });
+    setTimeout(settle, PENDING_MOVE_MS);
+    setTimeout(() => setChannelsVersion((v) => v + 1), MOVE_RECHECK_MS);
     try {
       const outcome = await window.zoia.admin.moveDevice(identity, id);
       setChannelError(outcome.ok ? null : t('channel.error.moveFailed', { code: outcome.error }));
+      if (!outcome.ok) settle();
     } catch {
       setChannelError(t('channel.error.unreachable'));
+      settle();
     }
-    setChannelsVersion((v) => v + 1);
   }
+
+  /**
+   * The channel list with anyone just dragged already shown where they were
+   * dropped, until the server's list catches up or the move is given up on.
+   */
+  const shownChannels =
+    pendingMoves.size === 0
+      ? channels
+      : channels.map((c) => {
+          const people = c.participants.filter((p) => !pendingMoves.has(p.identity));
+          for (const [identity, to] of pendingMoves) {
+            if (to !== c.id) continue;
+            const person =
+              channels
+                .flatMap((other) => other.participants)
+                .find((p) => p.identity === identity) ??
+              room.members.find((m) => m.identity === identity);
+            if (person) people.push({ identity, name: person.name });
+          }
+          return { ...c, participants: people };
+        });
 
   /** Leaves the channel for none, the way the app starts. Sharing stops first. */
   async function leaveChannel() {
@@ -652,7 +688,6 @@ export default function App() {
   const audioWarning = show('audio', room.audioWarning);
   const stageMessage = show('stage', stageError);
   const channelMessage = show('channel', channelError);
-  const moveMessage = show('moved', moveNotice);
   const gpuWarning = gpuLive ? show('gpustatus', gpuCast.status?.error) : null;
   const activeRemoteIds = new Set(room.remoteScreens.map((screen) => screen.participantIdentity));
   const loadingBroadcasts: LoadingBroadcast[] = room.members
@@ -774,11 +809,6 @@ export default function App() {
       {channelMessage && (
         <Banner onDismiss={() => dismiss('channel', channelMessage)}>{channelMessage}</Banner>
       )}
-      {moveMessage && (
-        <Banner tone="warn" onDismiss={() => dismiss('moved', moveMessage)}>
-          {moveMessage}
-        </Banner>
-      )}
       {audioWarning && (
         <Banner tone="warn" onDismiss={() => dismiss('audio', audioWarning)}>
           {audioWarning}
@@ -873,7 +903,7 @@ export default function App() {
           settingsBadge={pendingApprovals}
           myRole={account?.role}
           loadingRemoteIds={loadingRemoteIds}
-          channels={channels}
+          channels={shownChannels}
           currentChannel={channel}
           onJoinChannel={(id) => void switchChannel(id)}
           onLeaveChannel={() => void leaveChannel()}

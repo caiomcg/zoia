@@ -63,7 +63,6 @@ export const pt: Messages = {
   'channel.error.generic': 'Não foi possível alterar o canal.',
   'channel.error.unreachable': 'Não foi possível falar com o servidor.',
   'channel.error.moveFailed': 'Não foi possível mover essa pessoa ({code}).',
-  'channel.moved': '{name} moveu você para {channel}.',
   'sidebar.channels': 'Canais',
   'sidebar.expand': 'Expandir lista',
   'sidebar.collapse': 'Recolher lista',

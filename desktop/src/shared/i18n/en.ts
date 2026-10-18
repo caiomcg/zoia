@@ -69,7 +69,6 @@ export const en = {
   'channel.error.generic': 'Could not change the channel.',
   'channel.error.unreachable': 'Could not reach the server.',
   'channel.error.moveFailed': 'That person could not be moved ({code}).',
-  'channel.moved': '{name} moved you to {channel}.',
   'sidebar.channels': 'Channels',
   'sidebar.expand': 'Expand list',
   'sidebar.collapse': 'Collapse list',
