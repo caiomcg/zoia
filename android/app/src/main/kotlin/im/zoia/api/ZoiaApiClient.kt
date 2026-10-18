@@ -6,6 +6,8 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.Cookie
 import okhttp3.CookieJar
 import okhttp3.HttpUrl
@@ -17,16 +19,44 @@ import java.io.IOException
 import java.util.concurrent.TimeUnit
 
 @Serializable
-data class PairRequest(val pairingToken: String, val deviceName: String)
+data class SignupRequest(val email: String, val password: String)
 
 @Serializable
-data class PairResponse(val deviceCredential: String, val deviceId: String, val name: String)
+data class SignupResponse(val status: String)
+
+@Serializable
+data class LoginRequest(val email: String, val password: String, val deviceName: String)
+
+@Serializable
+data class ResetRequest(val code: String, val password: String)
+
+@Serializable
+data class ResetResponse(val ok: Boolean, val email: String)
 
 @Serializable
 data class DeviceSessionRequest(val deviceCredential: String)
 
+/**
+ * Who a session is, as a login, `/api/device/session` and `/api/session` all
+ * describe it: this machine (`id`) and the account it is signed in to. A
+ * login also carries the device credential, returned that once.
+ */
 @Serializable
-data class DeviceSessionResponse(val name: String, val id: String, val avatar: String? = null)
+data class SessionResponse(
+    val name: String,
+    val id: String,
+    val avatar: String? = null,
+    val accountId: String,
+    val email: String,
+    val role: String,
+    val status: String,
+    val pendingApprovals: Int? = null,
+    val deviceCredential: String? = null,
+    val deviceId: String? = null,
+)
+
+@Serializable
+data class OkResponse(val ok: Boolean = true)
 
 @Serializable
 data class TokenRequest(val room: String? = null)
@@ -46,7 +76,9 @@ data class TokenResponse(
 data class RoomParticipant(
     val identity: String,
     val name: String,
-    val avatar: String? = null
+    val avatar: String? = null,
+    /** "admin" or "super_admin" from the server's own records; absent for a user. */
+    val role: String? = null
 )
 
 @Serializable
@@ -64,8 +96,12 @@ data class RoomInfo(
     val broadcasters: List<RoomBroadcaster> = emptyList()
 )
 
+/** Who is asking, as the server sees them now: a role given or taken shows within a poll. */
 @Serializable
-data class RoomsResponse(val rooms: List<RoomInfo>, val max: Int = 5)
+data class RoomsYou(val role: String, val pendingApprovals: Int? = null)
+
+@Serializable
+data class RoomsResponse(val rooms: List<RoomInfo>, val max: Int = 5, val you: RoomsYou? = null)
 
 @Serializable
 data class RenameRequest(val name: String)
@@ -79,7 +115,14 @@ data class CreateRoomRequest(val name: String)
 @Serializable
 data class CreateRoomResponse(val room: RoomInfo)
 
-class ApiException(val statusCode: Int, message: String) : IOException("HTTP $statusCode: $message")
+class ApiException(val statusCode: Int, message: String) : IOException("HTTP $statusCode: $message") {
+    /** The server's refusal code, such as `invalid_login`, when it sent one. */
+    val code: String? = try {
+        Json.parseToJsonElement(message).jsonObject["error"]?.jsonPrimitive?.content
+    } catch (_: Exception) {
+        null
+    }
+}
 
 class ZoiaApiClient(private val credentialStore: CredentialStore) {
     private val json = Json { ignoreUnknownKeys = true }
@@ -108,18 +151,54 @@ class ZoiaApiClient(private val credentialStore: CredentialStore) {
         .readTimeout(15, TimeUnit.SECONDS)
         .build()
 
-    suspend fun pair(serverUrl: String, pairingToken: String, deviceName: String): PairResponse =
-        withContext(Dispatchers.IO) {
-            val body = json.encodeToString(PairRequest(pairingToken, deviceName))
-            val request = Request.Builder()
-                .url("$serverUrl/api/pair")
-                .post(body.toRequestBody(mediaTypeJson))
-                .build()
+    /** Forgets the session cookie, as signing out must. */
+    fun clearCookies() {
+        cookieStore.clear()
+    }
 
-            executeCall(request)
+    // ---- accounts (ADR 0031) ----
+    // These take the server explicitly: before a sign-in succeeds there is no
+    // stored one. The password goes to the server and nowhere else.
+
+    suspend fun signup(serverUrl: String, email: String, password: String): SignupResponse =
+        withContext(Dispatchers.IO) {
+            val body = json.encodeToString(SignupRequest(email, password))
+            executeCall(post("$serverUrl/api/signup", body))
         }
 
-    suspend fun deviceSession(deviceCredential: String): DeviceSessionResponse =
+    suspend fun login(serverUrl: String, email: String, password: String, deviceName: String): SessionResponse =
+        withContext(Dispatchers.IO) {
+            val body = json.encodeToString(LoginRequest(email, password, deviceName))
+            executeCall(post("$serverUrl/api/login", body))
+        }
+
+    /** Spends a reset code from an admin. Every machine of the account is signed out by it. */
+    suspend fun redeemCode(serverUrl: String, code: String, password: String): ResetResponse =
+        withContext(Dispatchers.IO) {
+            val body = json.encodeToString(ResetRequest(code, password))
+            executeCall(post("$serverUrl/api/reset", body))
+        }
+
+    /** Who this machine is now: approved yet, its role, still allowed in at all. */
+    suspend fun session(): SessionResponse =
+        withContext(Dispatchers.IO) {
+            val baseUrl = credentialStore.getServerUrl()
+                ?: throw IllegalStateException("Servidor não configurado.")
+            executeCall(Request.Builder().url("$baseUrl/api/session").get().build())
+        }
+
+    /** Signs this machine out for good, so it stops holding one of the account's seats. */
+    suspend fun forgetDevice(): OkResponse =
+        withContext(Dispatchers.IO) {
+            val baseUrl = credentialStore.getServerUrl()
+                ?: throw IllegalStateException("Servidor não configurado.")
+            executeCall(post("$baseUrl/api/device/forget", "{}"))
+        }
+
+    private fun post(url: String, body: String): Request =
+        Request.Builder().url(url).post(body.toRequestBody(mediaTypeJson)).build()
+
+    suspend fun deviceSession(deviceCredential: String): SessionResponse =
         withContext(Dispatchers.IO) {
             val baseUrl = credentialStore.getServerUrl()
                 ?: throw IllegalStateException("Servidor não configurado.")

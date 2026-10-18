@@ -63,6 +63,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import im.zoia.api.ApiException
 import im.zoia.api.RoomInfo
 import im.zoia.api.ZoiaApiClient
 import im.zoia.auth.SessionManager
@@ -96,11 +97,27 @@ fun RoomScreen(
     var showChannelsDialog by remember { mutableStateOf(false) }
     var showRenameDialog by remember { mutableStateOf(false) }
 
+    val authenticated = sessionState as? SessionState.Authenticated
+    val isAdmin = authenticated?.isAdmin == true
+
     fun refreshRooms() {
         scope.launch {
             try {
-                availableRooms = apiClient.getRooms().rooms
-            } catch (_: Exception) {}
+                val response = apiClient.getRooms()
+                availableRooms = response.rooms
+                // Made or unmade an admin since we last asked: take it in now.
+                val role = response.you?.role
+                if (role != null && authenticated != null && role != authenticated.role) {
+                    sessionManager.refresh()
+                }
+            } catch (e: Exception) {
+                if (e is kotlin.coroutines.cancellation.CancellationException) throw e
+                // Refused rather than unreachable: signed out or disabled
+                // from elsewhere. Asking who we are now signs out at once.
+                if (e is ApiException && (e.statusCode == 401 || e.statusCode == 403)) {
+                    sessionManager.refresh()
+                }
+            }
         }
     }
 
@@ -129,6 +146,7 @@ fun RoomScreen(
                     roomManager.connectToRoom(roomInfo.id)
                 }
             },
+            canCreate = isAdmin,
             onCreateRoom = { newName ->
                 scope.launch {
                     try {
@@ -160,7 +178,7 @@ fun RoomScreen(
             },
             onUnpair = {
                 roomManager.disconnect()
-                sessionManager.unpair()
+                scope.launch { sessionManager.signOut() }
             },
             onDismiss = { showRenameDialog = false }
         )
@@ -410,6 +428,8 @@ fun ChannelsDialog(
     currentRoomName: String,
     availableRooms: List<RoomInfo>,
     onSelectRoom: (RoomInfo) -> Unit,
+    /** Only admins add channels; the server refuses anyone else anyway. */
+    canCreate: Boolean,
     onCreateRoom: (String) -> Unit,
     onRefresh: () -> Unit,
     onDismiss: () -> Unit
@@ -536,9 +556,9 @@ fun ChannelsDialog(
                     }
                 }
 
+                // New room input, for admins only
+                if (canCreate) {
                 Spacer(modifier = Modifier.height(16.dp))
-
-                // New room input
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
@@ -576,6 +596,7 @@ fun ChannelsDialog(
                         Text("Criar", color = Color.White)
                     }
                 }
+                }
             }
         },
         confirmButton = {
@@ -605,14 +626,14 @@ fun RenameDialog(
             containerColor = Color(0xFF161920),
             title = {
                 Text(
-                    text = "Desparear este tablet?",
+                    text = "Sair desta conta?",
                     color = Color.White,
                     fontWeight = FontWeight.Bold
                 )
             },
             text = {
                 Text(
-                    text = "Seus dados de acesso serão removidos e você precisará importar o arquivo zoia-invite.json novamente.",
+                    text = "Este aparelho sai da sua conta. Para voltar, entre de novo com seu e-mail e senha.",
                     color = Color(0xFF8E95A5),
                     fontSize = 14.sp
                 )
@@ -627,7 +648,7 @@ fun RenameDialog(
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE53935)),
                     shape = RoundedCornerShape(8.dp)
                 ) {
-                    Text("Sim, desparear", color = Color.White)
+                    Text("Sim, sair", color = Color.White)
                 }
             },
             dismissButton = {
@@ -690,7 +711,7 @@ fun RenameDialog(
                 ) {
                     TextButton(onClick = { showUnpairConfirm = true }) {
                         Text(
-                            text = "Desparear este tablet (esquecer convite)",
+                            text = "Sair desta conta",
                             color = Color(0xFFE53935),
                             fontSize = 13.sp
                         )
