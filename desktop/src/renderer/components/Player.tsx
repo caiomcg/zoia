@@ -105,7 +105,6 @@ export default function Player({
   showPreview,
   onTogglePreview,
   localTrack,
-  cameraTrack = null,
   mirrored = false,
   gpuBroadcasting = false,
   sendAudio,
@@ -124,10 +123,12 @@ export default function Player({
    */
   showPreview: boolean;
   onTogglePreview: () => void;
-  /** The picture: your screen, or your camera when it is shared alone. */
+  /**
+   * The picture: your screen, or your camera when it is shared alone. Your
+   * camera beside a screen is not drawn over it here, unlike for viewers: it
+   * would only cover what you are sharing. It has its own overview tile.
+   */
   localTrack: LocalVideoTrack | null;
-  /** Your camera while it is shared over your screen, shown in its corner. */
-  cameraTrack?: LocalVideoTrack | null;
   /**
    * The picture is your camera. You see yourself as in a mirror, as the camera
    * dialog shows you; viewers get it the right way round.
@@ -157,7 +158,6 @@ export default function Player({
 }) {
   const t = useT();
   const videoRef = useRef<HTMLVideoElement>(null);
-  const cameraRef = useRef<HTMLVideoElement>(null);
   const stageRef = useRef<HTMLElement>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
@@ -170,15 +170,6 @@ export default function Player({
       el.srcObject = null;
     };
   }, [localTrack, showPreview]);
-
-  useEffect(() => {
-    const el = cameraRef.current;
-    if (!el) return undefined;
-    el.srcObject = cameraTrack ? new MediaStream([cameraTrack.mediaStreamTrack]) : null;
-    return () => {
-      el.srcObject = null;
-    };
-  }, [cameraTrack, showPreview]);
 
   useEffect(() => {
     const handler = () => setIsFullscreen(Boolean(document.fullscreenElement));
@@ -227,9 +218,6 @@ export default function Player({
         muted
         {...pictureClicks}
       />
-      {cameraTrack && showPreview && (
-        <video ref={cameraRef} className="camera-pip mirrored" playsInline autoPlay muted />
-      )}
 
       {!showPreview ? (
         <div className="overlay">
@@ -374,7 +362,7 @@ export function IconEye({ off = false }: { off?: boolean }) {
   );
 }
 
-function IconMic({ muted }: { muted: boolean }) {
+export function IconMic({ muted }: { muted: boolean }) {
   return (
     <svg
       viewBox="0 0 24 24"

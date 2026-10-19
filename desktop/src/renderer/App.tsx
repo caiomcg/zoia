@@ -875,7 +875,6 @@ export default function App() {
                           showPreview={showPreview}
                           onTogglePreview={togglePreview}
                           localTrack={screenLive ? room.localTrack : room.cameraTrack}
-                          cameraTrack={screenLive ? room.cameraTrack : null}
                           mirrored={!screenLive}
                           gpuBroadcasting={gpuLive}
                           sendAudio={
