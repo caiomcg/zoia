@@ -2,7 +2,8 @@
 
 ## Status
 
-accepted. Supersedes the single-holder stage of [ADR 0005](0005-one-tier-claimable-stage.md);
+accepted, amended by [ADR 0034](0034-camera-beside-the-screen.md) (a camera beside the screen).
+Supersedes the single-holder stage of [ADR 0005](0005-one-tier-claimable-stage.md);
 its one tier of user still stands.
 
 ## Context
