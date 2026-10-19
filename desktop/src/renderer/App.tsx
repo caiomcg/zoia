@@ -138,9 +138,22 @@ export default function App() {
     QUALITY_PRESETS.find((p) => p.id === DEFAULT_PRESET_ID) ??
     QUALITY_PRESETS[0]!;
 
-  const isLive = room.broadcastState === 'live' || gpuCast.state === 'live';
-  const isStarting = room.broadcastState === 'starting' || gpuCast.state === 'starting';
+  // A screen and a camera are shared independently, and either makes you live.
+  const screenLive = room.broadcastState === 'live' || gpuCast.state === 'live';
+  const cameraLive = room.cameraState === 'live';
+  const isLive = screenLive || cameraLive;
+  const isStarting =
+    room.broadcastState === 'starting' ||
+    gpuCast.state === 'starting' ||
+    room.cameraState === 'starting';
   useSoundCues(room.members, room.state === 'connected', channel, isLive);
+
+  // The camera gives the stage back on its own only when no screen is shared,
+  // and the hardware screen is shared from here rather than from useRoom.
+  const { setGpuScreen } = room;
+  useEffect(() => {
+    setGpuScreen(gpuCast.state !== 'idle');
+  }, [gpuCast.state, setGpuScreen]);
 
   useEffect(() => {
     window.zoia.pairing.status().then(setStatus);
@@ -520,10 +533,11 @@ export default function App() {
 
   async function handlePick(source: SourceInfo) {
     setPickerOpen(false);
-    // Already live means this is a source switch, and the stage is ours to
-    // keep — dropping and re-claiming it would put the viewer's picture out
-    // for no reason, and briefly offer the stage to someone else.
-    const switching = isLive;
+    // Already sharing a screen means this is a source switch, and the stage is
+    // ours to keep — dropping and re-claiming it would put the viewer's
+    // picture out for no reason, and briefly offer the stage to someone else.
+    // A camera alone is not switched away: the screen joins it.
+    const switching = screenLive;
 
     let target = source;
     if (isLeagueSource(source)) {
@@ -572,43 +586,56 @@ export default function App() {
     }
 
     setStageError(null);
+    room.setGpuScreen(true);
     const ok = await gpuCast.start(preset, target);
     if (!ok) {
       console.warn('[gpu] GPU broadcast failed, falling back to window broadcast');
+      room.setGpuScreen(false);
       try {
         const fallbackOk = await room.startBroadcast(target, preset, { keepStage: true });
-        if (!fallbackOk) {
-          await window.zoia.stage.release().catch(() => {});
-        }
+        if (!fallbackOk) await room.releaseStage();
       } catch (fallbackErr) {
-        await window.zoia.stage.release().catch(() => {});
+        await room.releaseStage();
         setStageError(fallbackErr instanceof Error ? fallbackErr.message : t('room.couldNotStart'));
       }
     }
   }
 
-  async function stopSharing() {
+  /** Stops the screen, leaving the camera on if it is. */
+  async function stopScreen() {
     if (gpuCast.state !== 'idle') {
       await gpuCast.stop();
-      await window.zoia.stage.release().catch(() => {});
+      // Told now rather than by the effect: stopCamera may run next.
+      room.setGpuScreen(false);
+      await room.releaseStage();
     }
     if (room.broadcastState !== 'idle') await room.stopBroadcast();
+  }
+
+  /** Stops everything this device shares. */
+  async function stopSharing() {
+    await stopScreen();
+    if (room.cameraState !== 'idle') await room.stopCamera();
+  }
+
+  /** The player's stop: the screen if there is one, otherwise the camera. */
+  async function stopMain() {
+    if (room.broadcastState !== 'idle' || gpuCast.state !== 'idle') await stopScreen();
+    else await room.stopCamera();
   }
 
   const stats = room.videoStats;
   const encodingLive = Boolean(stats && (stats.fps > 0 || stats.kbps > 0));
   const gpuLive = gpuCast.state === 'live';
-  const cameraLive = room.broadcastState === 'live' && room.sharingKind === 'camera';
-  const screenLive = isLive && !cameraLive;
 
   /**
    * The camera button stands on its own, but it does not turn a camera on by
    * itself: it opens a preview so the device and microphone can be checked
-   * before anything is published.
+   * before anything is published. It never touches the screen.
    */
   async function toggleCamera() {
     if (cameraLive) {
-      await stopSharing();
+      await room.stopCamera();
       return;
     }
     setCameraOpen(true);
@@ -847,7 +874,9 @@ export default function App() {
                           identity={myIdentity}
                           showPreview={showPreview}
                           onTogglePreview={togglePreview}
-                          localTrack={room.localTrack}
+                          localTrack={screenLive ? room.localTrack : room.cameraTrack}
+                          cameraTrack={screenLive ? room.cameraTrack : null}
+                          mirrored={!screenLive}
                           gpuBroadcasting={gpuLive}
                           sendAudio={
                             room.sendingAudio
@@ -858,15 +887,27 @@ export default function App() {
                                 }
                               : undefined
                           }
-                          onStop={() => void stopSharing()}
+                          mic={
+                            room.sendingMic
+                              ? {
+                                  muted: room.micMuted,
+                                  onToggle: () => void room.setMicMuted(!room.micMuted),
+                                }
+                              : undefined
+                          }
+                          onStop={() => void stopMain()}
                           onSwitch={() => setPickerOpen(true)}
                         />
                       ),
-                      // The strip's thumbnail follows the same choice.
-                      track: showPreview ? room.localTrack : null,
+                      // The strip's thumbnail and the overview follow the
+                      // same choice: you only see yourself if you asked to.
+                      track: showPreview ? (screenLive ? room.localTrack : room.cameraTrack) : null,
+                      // A camera alone is the picture, and is shown mirrored.
+                      mirrored: !screenLive,
                       showPreview,
                       onTogglePreview: togglePreview,
-                      onStop: () => void stopSharing(),
+                      cameraTrack: screenLive && showPreview ? room.cameraTrack : null,
+                      onStop: () => void stopMain(),
                       name: status.deviceName ?? t('common.you'),
                       identity: myIdentity,
                     }
@@ -941,11 +982,9 @@ export default function App() {
             setCameraOpen(false);
             // A camera always goes through the Chromium path: there is no
             // window for the hardware encoder to capture, and the frame is
-            // small enough that it does not need one.
-            void (async () => {
-              if (isLive) await stopSharing();
-              await room.startCamera(constraints, muteMicrophone);
-            })();
+            // small enough that it does not need one. Whatever screen is
+            // shared stays shared; the camera joins it.
+            void room.startCamera(constraints, muteMicrophone);
           }}
           onCancel={() => setCameraOpen(false)}
         />

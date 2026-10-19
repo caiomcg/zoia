@@ -98,7 +98,7 @@ export function PopoutPlayer({
   const t = useT();
   const videoRef = useRef<HTMLVideoElement>(null);
 
-  // Picture only, and muted: the sound keeps coming from the tile in the
+  // Picture only, and muted: the sound keeps coming from the grid in the
   // main window, which these controls drive, so it is never heard twice.
   useEffect(() => {
     const element = videoRef.current;

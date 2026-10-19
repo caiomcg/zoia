@@ -9,6 +9,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   type Participant,
+  type RemoteParticipant,
   AudioPresets,
   DisconnectReason,
   LocalAudioTrack,
@@ -17,6 +18,7 @@ import {
   RoomEvent,
   ScreenSharePresets,
   Track,
+  VideoPresets,
   VideoQuality,
   type RemoteTrack,
   type RemoteVideoTrack,
@@ -97,6 +99,42 @@ async function replacementWindow(
   return null;
 }
 
+/**
+ * A person sharing a screen and a camera offers two pictures, watched apart:
+ * the screen under their own identity, the camera under this one (ADR 0034).
+ * Pausing and quality are set per picture; subscription and sound per person.
+ */
+export const CAMERA_VIEW = '#camera';
+
+export function cameraView(owner: string): string {
+  return `${owner}${CAMERA_VIEW}`;
+}
+
+/** The person a picture belongs to. */
+export function viewOwner(view: string): string {
+  return view.endsWith(CAMERA_VIEW) ? view.slice(0, -CAMERA_VIEW.length) : view;
+}
+
+/**
+ * Whether this person is sharing a screen, from either path: their own
+ * participant (anything but the camera) or their hardware ingress. Their
+ * camera is then a picture of its own, beside the screen.
+ */
+function sharesScreen(room: Room, owner: string): boolean {
+  const ingress = room.remoteParticipants.get(`${owner}${WHIP_SUFFIX}`);
+  if (ingress && ingress.videoTrackPublications.size > 0) return true;
+  const human = room.remoteParticipants.get(owner);
+  return [...(human?.videoTrackPublications.values() ?? [])].some(
+    (pub) => pub.source !== Track.Source.Camera,
+  );
+}
+
+/** Whether this person's camera is a picture of its own, beside their screen. */
+function hasSeparateCamera(room: Room, owner: string): boolean {
+  const camera = room.remoteParticipants.get(owner)?.getTrackPublication(Track.Source.Camera);
+  return Boolean(camera) && sharesScreen(room, owner);
+}
+
 function applyRemoteMediaSettings(
   room: Room,
   selected: Set<string>,
@@ -132,12 +170,17 @@ function applyRemoteMediaSettings(
     }
     const identity = ownerIdentity(participant.identity);
     const subscribed = selected.has(identity);
-    const quality = focused && !focused.has(identity) ? VideoQuality.LOW : VideoQuality.HIGH;
+    const separateCamera = participant.identity === identity && sharesScreen(room, identity);
     for (const publication of participant.videoTrackPublications.values()) {
+      const view =
+        separateCamera && publication.source === Track.Source.Camera
+          ? cameraView(identity)
+          : identity;
+      const quality = focused && !focused.has(view) ? VideoQuality.LOW : VideoQuality.HIGH;
       try {
         publication.setSubscribed(subscribed);
         publication.setVideoQuality(quality);
-        if (subscribed) publication.setEnabled(!paused.has(identity));
+        if (subscribed) publication.setEnabled(!paused.has(view));
       } catch {
         // The participant may leave while settings are being applied.
       }
@@ -152,11 +195,20 @@ function applyRemoteMediaSettings(
   }
 }
 
+/**
+ * One person's broadcast. A screen and a camera shared together are still one
+ * broadcast: the screen is the picture and the camera sits over its corner
+ * (ADR 0034). A camera shared alone is the picture itself.
+ */
 export interface RemoteScreen {
   participantIdentity: string;
   participantName: string;
   videoTrack: RemoteTrack | null;
   audioTrack: RemoteTrack | null;
+  /** Their camera, only while it is shown over their screen. */
+  cameraTrack: RemoteTrack | null;
+  /** Their microphone, heard whenever their broadcast is. */
+  micTrack: RemoteTrack | null;
   sourceName: string | null;
   sourceKind: 'screen' | 'window' | 'camera' | null;
   /** False for a WHIP (hardware) broadcast: one layer, so quality cannot change. */
@@ -416,6 +468,9 @@ export interface SendAudio {
 
 const DEFAULT_SEND_AUDIO: SendAudio = { volume: 1, muted: false };
 
+/** The label a camera shared on its own carries. */
+const CAMERA_METADATA = JSON.stringify({ sourceName: null, sourceKind: 'camera' });
+
 /** How long the watch list must hold still before it is announced. */
 const WATCHING_SETTLE_MS = 1500;
 
@@ -504,7 +559,16 @@ export function useRoom() {
     announceTimerRef.current = setTimeout(() => {
       announceTimerRef.current = null;
       if (roomRef.current !== room) return;
-      const value = watchingValue(selectedRemoteIdsRef.current, pausedRemoteIdsRef.current);
+      // Someone is watched while any picture of theirs is flowing: the screen,
+      // or the camera beside it.
+      const paused = pausedRemoteIdsRef.current;
+      const pausedOwners = new Set(
+        [...selectedRemoteIdsRef.current].filter(
+          (owner) =>
+            paused.has(owner) && (!hasSeparateCamera(room, owner) || paused.has(cameraView(owner))),
+        ),
+      );
+      const value = watchingValue(selectedRemoteIdsRef.current, pausedOwners);
       if (value === announcedWatchingRef.current) return;
       announcedWatchingRef.current = value;
       room.localParticipant.setAttributes({ [WATCHING_ATTRIBUTE]: value }).catch(() => {
@@ -558,8 +622,24 @@ export function useRoom() {
   const statsTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const titleTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastSampleRef = useRef<{ bytes: number; at: number } | null>(null);
-  // Which of the two share controls is lit; they are independent.
-  const [sharingKind, setSharingKind] = useState<'screen' | 'camera' | null>(null);
+  // Whether a screen is being shared on the in-app path; broadcastState too.
+  const [sharingKind, setSharingKind] = useState<'screen' | null>(null);
+
+  // The camera is published beside the screen, not instead of it, so it keeps
+  // its own state (ADR 0034). Either may run alone, or both together; the
+  // stage is given back only once neither does.
+  const cameraRef = useRef<{ video: LocalVideoTrack | null; mic: LocalAudioTrack | null } | null>(
+    null,
+  );
+  const [cameraState, setCameraState] = useState<BroadcastState>('idle');
+  const [cameraTrack, setCameraTrack] = useState<LocalVideoTrack | null>(null);
+  const [sendingMic, setSendingMic] = useState(false);
+  const [micMuted, setMicMutedState] = useState(false);
+  // From the moment a screen share starts until it stops, on either path.
+  // The hardware path runs outside this hook, so App reports it (setGpuScreen).
+  const screenActiveRef = useRef(false);
+  const gpuScreenRef = useRef(false);
+  const screenActive = useCallback(() => screenActiveRef.current || gpuScreenRef.current, []);
 
   const findRemoteScreens = useCallback((room: Room): RemoteScreen[] => {
     // The hardware path publishes over WHIP, which joins as its own
@@ -569,47 +649,77 @@ export function useRoom() {
     // speakers, which is heard as an echo of whatever you are sharing.
     const ownIngress = `${room.localParticipant.identity}${WHIP_SUFFIX}`;
 
-    const screens: RemoteScreen[] = [];
+    // A person can publish from two participants at once: their own (the
+    // in-app screen, and their camera) and their WHIP ingress (the hardware
+    // screen). Both are one broadcast, so they are gathered by owner first.
+    const owners = new Map<string, { human?: RemoteParticipant; ingress?: RemoteParticipant }>();
     for (const participant of room.remoteParticipants.values()) {
       if (participant.identity === ownIngress) continue;
+      const owner = ownerIdentity(participant.identity);
+      const entry = owners.get(owner) ?? {};
+      if (owner === participant.identity) entry.human = participant;
+      else entry.ingress = participant;
+      owners.set(owner, entry);
+    }
+
+    const screens: RemoteScreen[] = [];
+    for (const [identity, { human, ingress }] of owners) {
       // Where the stream came from decides how it is labelled, and viewers
       // must not care. The in-app path publishes ScreenShare; the hardware
       // path publishes over WHIP, which may label its tracks CAMERA and
       // MICROPHONE because WHIP carries no notion of a screen share. Looking
       // only for ScreenShare meant the NVENC stream published perfectly and
-      // nobody could see it.
-      const videoPub =
-        participant.getTrackPublication(Track.Source.ScreenShare) ??
-        [...participant.videoTrackPublications.values()].find((pub) => pub.track);
-      const audioPub =
-        participant.getTrackPublication(Track.Source.ScreenShareAudio) ??
-        [...participant.audioTrackPublications.values()].find((pub) => pub.track);
+      // nobody could see it. So everything an ingress sends is the screen,
+      // and only a person's own Camera and Microphone are their camera.
+      const ingressVideo = [...(ingress?.videoTrackPublications.values() ?? [])].find(
+        (pub) => pub.track,
+      );
+      const ingressAudio = [...(ingress?.audioTrackPublications.values() ?? [])].find(
+        (pub) => pub.track,
+      );
+      const humanVideo = [...(human?.videoTrackPublications.values() ?? [])].find(
+        (pub) => pub.track && pub.source !== Track.Source.Camera,
+      );
+      const humanAudio = [...(human?.audioTrackPublications.values() ?? [])].find(
+        (pub) => pub.track && pub.source !== Track.Source.Microphone,
+      );
+      const camera = human?.getTrackPublication(Track.Source.Camera);
+      const mic = human?.getTrackPublication(Track.Source.Microphone);
 
-      if (videoPub?.track || audioPub?.track) {
-        // A WHIP publisher carries the name it joined with, so a later rename
-        // would leave viewers looking at a stale label. The human it belongs
-        // to is in the same room and always current.
-        const ingressOwnerId = ownerIdentity(participant.identity);
-        const owner =
-          ingressOwnerId === participant.identity
-            ? participant
-            : ([...room.remoteParticipants.values()].find((p) => p.identity === ingressOwnerId) ??
-              (room.localParticipant.identity === ingressOwnerId
-                ? room.localParticipant
-                : participant));
+      const screenPub = ingressVideo ?? humanVideo;
+      const videoPub = screenPub ?? (camera?.track ? camera : undefined);
+      const audioTrack = ingressAudio?.track ?? humanAudio?.track ?? null;
+      const micTrack = mic?.track ?? null;
+      if (!videoPub?.track && !audioTrack && !micTrack) continue;
 
-        screens.push({
-          participantIdentity: owner.identity,
-          participantName: owner.name || owner.identity,
-          videoTrack: videoPub?.track ?? null,
-          audioTrack: audioPub?.track ?? null,
-          sourceName:
-            broadcastMetadata(participant).sourceName ?? broadcastMetadata(owner).sourceName,
-          sourceKind:
-            broadcastMetadata(participant).sourceKind ?? broadcastMetadata(owner).sourceKind,
-          simulcast: Boolean(videoPub?.simulcasted),
-        });
-      }
+      // A WHIP publisher carries the name it joined with, so a later rename
+      // would leave viewers looking at a stale label. The human it belongs
+      // to is in the same room and always current.
+      const owner = human ?? ingress;
+      const labelled = ingressVideo ? ingress : owner;
+      const label = screenPub
+        ? {
+            sourceName:
+              (labelled && broadcastMetadata(labelled).sourceName) ??
+              (owner && broadcastMetadata(owner).sourceName) ??
+              null,
+            sourceKind:
+              (labelled && broadcastMetadata(labelled).sourceKind) ??
+              (owner && broadcastMetadata(owner).sourceKind) ??
+              null,
+          }
+        : { sourceName: null, sourceKind: 'camera' as const };
+
+      screens.push({
+        participantIdentity: identity,
+        participantName: owner?.name || identity,
+        videoTrack: videoPub?.track ?? null,
+        audioTrack,
+        cameraTrack: screenPub && camera?.track ? camera.track : null,
+        micTrack,
+        ...label,
+        simulcast: Boolean(videoPub?.simulcasted),
+      });
     }
     return screens;
   }, []);
@@ -821,6 +931,14 @@ export function useRoom() {
           ingressPreviewRef.current = null;
           localTrackRef.current = null;
           setLocalTrack(null);
+          screenActiveRef.current = false;
+          const camera = cameraRef.current;
+          cameraRef.current = null;
+          camera?.video?.mediaStreamTrack.stop();
+          camera?.mic?.mediaStreamTrack.stop();
+          setCameraState('idle');
+          setCameraTrack(null);
+          setSendingMic(false);
         });
 
       try {
@@ -935,7 +1053,13 @@ export function useRoom() {
       await room.localParticipant.unpublishTrack(track, true).catch(() => {});
     }
     ingressPreviewRef.current = null;
-    if (room) await room.localParticipant.setMetadata('').catch(() => {});
+    // A camera left running is what the broadcast is now, and an older viewer
+    // only knows that from the label.
+    if (room) {
+      await room.localParticipant
+        .setMetadata(cameraRef.current ? CAMERA_METADATA : '')
+        .catch(() => {});
+    }
     // Clear the identity before stopping the MediaStreamTrack. `stop()` can
     // synchronously emit `ended`; clearing first prevents an explicit Stop or
     // source switch from being mistaken for the LoL window handoff.
@@ -976,98 +1100,134 @@ export function useRoom() {
    * Ends the local publish and releases the stage, unconditionally — whether
    * the user clicked Stop, the OS ended capture, or the room disconnected.
    */
+  /**
+   * Gives the stage back once the screen has stopped, unless the camera is
+   * still using it: the release revokes publishing for the whole person.
+   */
+  const releaseStage = useCallback(async () => {
+    if (cameraRef.current) return;
+    await window.zoia.stage.release().catch(() => {});
+  }, []);
+
   const stopBroadcast = useCallback(async () => {
     leagueFollowRef.current = null;
+    screenActiveRef.current = false;
     await stopPublishing();
     sendAudioRef.current = DEFAULT_SEND_AUDIO;
     setSendAudioState(DEFAULT_SEND_AUDIO);
-    await window.zoia.stage.release().catch(() => {});
-  }, [stopPublishing]);
+    await releaseStage();
+  }, [stopPublishing, releaseStage]);
 
   /**
-   * Publishes a camera and microphone.
+   * Ends the camera and its microphone. The stage is given back only if no
+   * screen is being shared alongside.
+   */
+  const stopCamera = useCallback(async () => {
+    const camera = cameraRef.current;
+    cameraRef.current = null;
+    setCameraState('idle');
+    setCameraTrack(null);
+    setSendingMic(false);
+    setMicMutedState(false);
+    if (!camera) return;
+    const room = roomRef.current;
+    for (const track of [camera.video, camera.mic]) {
+      if (!track) continue;
+      if (room) await room.localParticipant.unpublishTrack(track, true).catch(() => {});
+      track.mediaStreamTrack.stop();
+    }
+    if (screenActive()) return;
+    if (room) await room.localParticipant.setMetadata('').catch(() => {});
+    await window.zoia.stage.release().catch(() => {});
+  }, [screenActive]);
+
+  /**
+   * Publishes a camera and microphone, beside whatever screen is shared.
    *
    * Kept separate from screen sharing on purpose: there is no window to
    * capture, the audio is a microphone rather than an application, and the
-   * frame is small enough that the hardware encoder buys nothing. The tracks
-   * still publish as ScreenShare so that every viewer renders them the same
-   * way, whatever the stage holder happens to be sharing.
+   * frame is small enough that the hardware encoder buys nothing. They
+   * publish as Camera and Microphone, which is how a viewer tells them from
+   * the screen and shows the camera over its corner (ADR 0034).
    */
   const startCamera = useCallback(
     async (constraints: MediaStreamConstraints, muteMicrophone = false) => {
       setBroadcastError(null);
-      setAudioWarning(null);
-      setBroadcastState('starting');
+      setCameraState('starting');
+      // Held from here, so a screen stopping meanwhile keeps the stage.
+      const camera: { video: LocalVideoTrack | null; mic: LocalAudioTrack | null } = {
+        video: null,
+        mic: null,
+      };
+      cameraRef.current = camera;
+      let stream: MediaStream | null = null;
 
-      const claim = await window.zoia.stage.claim();
-      if (!claim.ok) {
-        setBroadcastState('idle');
-        setBroadcastError(tNow('room.couldNotStart'));
-        return false;
-      }
       try {
-        setSharingKind('camera');
-        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        const claim = await window.zoia.stage.claim();
+        if (!claim.ok) throw new Error(tNow('room.couldNotStart'));
+        stream = await navigator.mediaDevices.getUserMedia(constraints);
         const [videoTrack] = stream.getVideoTracks();
         if (!videoTrack) throw new Error(tNow('room.cameraNoVideo'));
 
         const room = roomRef.current;
         if (!room) throw new Error(tNow('room.notConnected'));
-        await room.localParticipant.setMetadata(
-          JSON.stringify({ sourceName: null, sourceKind: 'camera' }),
-        );
+        if (cameraRef.current !== camera) throw new Error(tNow('room.couldNotStart'));
+        // A screen's label is the one viewers need; the camera is known by its
+        // source. Alone, it says so for viewers on an older version.
+        if (!screenActive()) await room.localParticipant.setMetadata(CAMERA_METADATA);
 
         // 'motion' rather than 'detail': a camera image is moving video, not
         // text, and the encoder should favour frame rate over sharpness.
         videoTrack.contentHint = 'motion';
         const local = new LocalVideoTrack(videoTrack, undefined, false);
-        local.source = Track.Source.ScreenShare;
+        local.source = Track.Source.Camera;
+        camera.video = local;
 
+        // The low layer is what a viewer takes while the camera sits small
+        // over a screen, and for thumbnails when it is shared alone.
         await room.localParticipant.publishTrack(local, {
-          source: Track.Source.ScreenShare,
+          source: Track.Source.Camera,
           simulcast: true,
-          screenShareSimulcastLayers: LOW_LAYER,
+          videoSimulcastLayers: [VideoPresets.h360],
           videoEncoding: { maxBitrate: 2_500_000, maxFramerate: 30 },
-          stream: 'screen',
+          stream: 'camera',
         });
 
-        ingressPreviewRef.current = null;
-        localTrackRef.current = local;
-        setLocalTrack(local);
-        setBroadcastState('live');
-
         videoTrack.addEventListener('ended', () => {
-          void stopBroadcast();
+          if (cameraRef.current === camera) void stopCamera();
         });
 
         const [micTrack] = stream.getAudioTracks();
         if (micTrack) {
           const audioTrack = new LocalAudioTrack(micTrack, undefined, false);
-          audioTrack.source = Track.Source.ScreenShareAudio;
+          audioTrack.source = Track.Source.Microphone;
+          camera.mic = audioTrack;
           // The camera dialog's choice is the footer's mute too, so the two
           // never disagree about what viewers hear.
-          sendAudioRef.current = { ...sendAudioRef.current, muted: muteMicrophone };
-          setSendAudioState(sendAudioRef.current);
           if (muteMicrophone) await audioTrack.mute();
           await room.localParticipant.publishTrack(audioTrack, {
-            source: Track.Source.ScreenShareAudio,
-            stream: 'screen',
+            source: Track.Source.Microphone,
+            stream: 'camera',
           });
-          localAudioRef.current = { track: audioTrack, capture: null };
-          setSendingAudio(true);
+          setMicMutedState(muteMicrophone);
+          setSendingMic(true);
         } else {
           setAudioWarning(tNow('room.noMicrophone'));
         }
 
+        setCameraTrack(local);
+        setCameraState('live');
         return true;
       } catch (err) {
-        await window.zoia.stage.release().catch(() => {});
-        setBroadcastState('idle');
+        stream?.getTracks().forEach((track) => track.stop());
+        // Stopped while starting is not a failure worth reporting.
+        if (cameraRef.current !== camera) return false;
+        await stopCamera();
         setBroadcastError(err instanceof Error ? err.message : String(err));
         return false;
       }
     },
-    [stopBroadcast],
+    [screenActive, stopCamera],
   );
 
   /**
@@ -1084,6 +1244,7 @@ export function useRoom() {
       setBroadcastError(null);
       setAudioWarning(null);
       setBroadcastState('starting');
+      screenActiveRef.current = true;
 
       if (!keepStage) {
         if (isLeagueSource(source)) {
@@ -1119,6 +1280,7 @@ export function useRoom() {
       } else {
         const claim = await window.zoia.stage.claim();
         if (!claim.ok) {
+          screenActiveRef.current = false;
           setBroadcastState('idle');
           setBroadcastError(tNow('room.couldNotStart'));
           return false;
@@ -1425,13 +1587,14 @@ export function useRoom() {
         const native = nativeVideoRef.current;
         nativeVideoRef.current = null;
         if (native) await native.stop();
-        if (!keepStage) await window.zoia.stage.release().catch(() => {});
+        screenActiveRef.current = false;
+        if (!keepStage) await releaseStage();
         setBroadcastState('idle');
         setBroadcastError(err instanceof Error ? err.message : String(err));
         return false;
       }
     },
-    [stopBroadcast, stopPublishing],
+    [stopBroadcast, stopPublishing, releaseStage],
   );
 
   // Keep this in a ref so the ended-track listener can restart through the
@@ -1486,10 +1649,11 @@ export function useRoom() {
 
   useEffect(
     () => () => {
+      void stopCamera();
       void stopBroadcast();
       void roomRef.current?.disconnect();
     },
-    [stopBroadcast],
+    [stopBroadcast, stopCamera],
   );
 
   return {
@@ -1522,9 +1686,8 @@ export function useRoom() {
     ingressStats,
     sendingAudio,
     /**
-     * Only the WASAPI path has a gain stage; a camera's microphone can only
-     * mute. Read at render: the ref is set before setSendingAudio(true), which
-     * is what re-renders.
+     * Only the WASAPI path has a gain stage. Read at render: the ref is set
+     * before setSendingAudio(true), which is what re-renders.
      */
     canSetSendVolume: sendingAudio && Boolean(localAudioRef.current?.capture),
     sendAudio,
@@ -1546,7 +1709,25 @@ export function useRoom() {
     localTrack,
     sharingKind,
     startBroadcast,
-    startCamera,
     stopBroadcast,
+    releaseStage,
+    /** The hardware path's screen, which runs outside this hook; see screenActive. */
+    setGpuScreen: useCallback((active: boolean) => {
+      gpuScreenRef.current = active;
+    }, []),
+    cameraState,
+    cameraTrack,
+    startCamera,
+    stopCamera,
+    /** Present while the camera sends a microphone. */
+    sendingMic,
+    micMuted,
+    /** Mutes the camera's microphone for viewers; it keeps capturing, so unmuting is instant. */
+    setMicMuted: useCallback(async (muted: boolean) => {
+      const mic = cameraRef.current?.mic;
+      if (!mic) return;
+      setMicMutedState(muted);
+      await (muted ? mic.mute() : mic.unmute());
+    }, []),
   };
 }
