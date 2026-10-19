@@ -5,7 +5,7 @@
 
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { isShareableWindow } from '../src/main/window-filter.ts';
+import { isParkedWindow, isShareableWindow } from '../src/main/window-filter.ts';
 
 describe('isShareableWindow', () => {
   test('an ordinary window on a monitor is shareable', () => {
@@ -29,5 +29,23 @@ describe('isShareableWindow', () => {
 
   test('no bounds at all is not', () => {
     assert.equal(isShareableWindow(null), false);
+  });
+});
+
+describe('isParkedWindow', () => {
+  test('a minimized window is parked off-screen', () => {
+    assert.equal(isParkedWindow({ x: -32000, y: -32000, width: 160, height: 28 }), true);
+    assert.equal(isParkedWindow({ x: -17920, y: -17920, width: 135, height: 22 }), true);
+  });
+
+  test('a window on a monitor, or a tiny helper on one, is not', () => {
+    assert.equal(isParkedWindow({ x: 640, y: 120, width: 1280, height: 720 }), false);
+    assert.equal(isParkedWindow({ x: -7, y: -7, width: 2575, height: 1407 }), false);
+    assert.equal(isParkedWindow({ x: 0, y: 0, width: 1, height: 1 }), false);
+    assert.equal(isParkedWindow({ x: 0, y: 0, width: 0, height: 0 }), false);
+  });
+
+  test('no bounds at all is not', () => {
+    assert.equal(isParkedWindow(null), false);
   });
 });

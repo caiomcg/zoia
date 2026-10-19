@@ -22,6 +22,17 @@ const PARKED = -10_000;
 /** Smaller than this in either direction is a helper, not something to show. */
 const MIN_SIZE = 50;
 
+/**
+ * Minimized: parked off-screen by Windows, and so worth restoring if it is a
+ * window someone wants to share. Unlike a hidden window or a tiny helper,
+ * which restoring would put on screen for the first time.
+ */
+export function isParkedWindow(bounds: Bounds | null | undefined): boolean {
+  if (!bounds) return false;
+  const { x = 0, y = 0 } = bounds;
+  return x <= PARKED || y <= PARKED;
+}
+
 export function isShareableWindow(bounds: Bounds | null | undefined): boolean {
   if (!bounds) return false;
   const { x = 0, y = 0, width = 0, height = 0 } = bounds;
