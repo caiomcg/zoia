@@ -12,10 +12,10 @@ import {
 } from 'react';
 import { createPortal } from 'react-dom';
 import type { LocalVideoTrack, RemoteTrack } from 'livekit-client';
-import type { RemoteScreen } from '../livekit/useRoom';
+import { cameraView, viewOwner, type RemoteScreen } from '../livekit/useRoom';
 import Avatar from './Avatar';
 import { PopoutPlayer, usePopout } from './Popout';
-import { IconEye, IconFullscreen, IconVolume } from './Player';
+import { IconEye, IconFullscreen, IconVolume, useClickOrDoubleClick } from './Player';
 import { useT, type T } from '../i18n';
 import {
   DOCK_DRAG_THRESHOLD_PX,
@@ -37,9 +37,12 @@ import { clampPairSplit, pairSplitLimits } from '../pair-split';
  *   that stops once a tile is too narrow for its controls; more form a grid.
  *
  * Both show the same thing, what the viewer chose to watch; switching layout
- * only changes how. Nothing opens by itself: someone joining sees a dark
- * stage, and chooses what to watch. Watching includes the sound; there is no
- * listening without watching.
+ * only changes how. Until something is chosen the stage is the overview:
+ * the cameras that are on, side by side, live and heard until muted, and a
+ * click watches one. Screens are chosen from the channel list. A screen and a camera
+ * shared together are two pictures, and watching the screen shows the camera
+ * over its corner (ADR 0034). Once something is watched, only what is watched
+ * is heard; there is no listening without watching.
  *
  * The broadcasts not on stage are found in the channel list: hovering someone
  * live there shows their thumbnail beside it (see GridControls), and clicking
@@ -198,6 +201,46 @@ interface AudioSetting {
   muted: boolean;
 }
 
+/** How a camera over its screen is shown. Large asks for its high layer. */
+type InsetMode = 'small' | 'large' | 'hidden';
+
+/**
+ * One picture on offer: a person's broadcast, or the camera they share beside
+ * their screen, which is watched on its own under its own id (ADR 0034).
+ */
+interface View {
+  id: string;
+  /** Whose it is: their sound and volume are shared by all their pictures. */
+  owner: string;
+  screen: RemoteScreen;
+  /** A camera, which plays live in the overview; a screen shows snapshots. */
+  camera: boolean;
+}
+
+function viewsOf(screens: RemoteScreen[]): View[] {
+  return screens.flatMap((screen) => {
+    const owner = screen.participantIdentity;
+    const main: View = { id: owner, owner, screen, camera: screen.sourceKind === 'camera' };
+    if (!screen.cameraTrack) return [main];
+    return [
+      main,
+      {
+        id: cameraView(owner),
+        owner,
+        camera: true,
+        screen: {
+          ...screen,
+          videoTrack: screen.cameraTrack,
+          cameraTrack: null,
+          sourceName: null,
+          sourceKind: 'camera',
+          simulcast: true,
+        },
+      },
+    ];
+  });
+}
+
 function readAudioSettings(): Record<string, AudioSetting> {
   try {
     const parsed = JSON.parse(localStorage.getItem(AUDIO_KEY) ?? '{}') as Record<string, unknown>;
@@ -307,6 +350,8 @@ function RemoteTile({
   isFullscreen,
   onToggleFullscreen,
   onClose,
+  inset = null,
+  onInsetChange,
 }: {
   screen: RemoteScreen;
   audio: AudioSetting;
@@ -318,31 +363,54 @@ function RemoteTile({
   onToggleFullscreen: () => void;
   /** Stop watching: the broadcast goes back to the thumbnails. */
   onClose: () => void;
+  /** The camera over this screen, and how it is shown; null when there is none. */
+  inset?: InsetMode | null;
+  onInsetChange?: (next: InsetMode) => void;
 }) {
   const t = useT();
   const videoRef = useRef<HTMLVideoElement>(null);
+  const cameraRef = useRef<HTMLVideoElement>(null);
   const { volume, muted } = audio;
-  useMediaStream(videoRef, screen.videoTrack, screen.audioTrack);
+  // Picture only: the sound is played once per person by the grid, however
+  // many of their pictures are on screen (see heardOwners).
+  useMediaStream(videoRef, screen.videoTrack, null);
+  const showCamera = Boolean(screen.cameraTrack) && inset !== null && inset !== 'hidden';
+  useMediaStream(cameraRef, showCamera ? screen.cameraTrack : null, null);
+  const hasAudio = Boolean(screen.audioTrack || screen.micTrack);
   const pip = usePopout();
-
-  useEffect(() => {
-    const element = videoRef.current;
-    if (!element) return;
-    element.muted = muted;
-    element.volume = volume;
-  }, [muted, volume]);
+  // A click leaves the large view, as clicking a tile opened it, which brings
+  // the overview back once nothing else is watched. A double click is
+  // fullscreen; in fullscreen a single click does nothing.
+  const pictureClicks = useClickOrDoubleClick(
+    isFullscreen ? undefined : onClose,
+    onToggleFullscreen,
+  );
 
   return (
     <article className="remote-tile">
-      {/* Hidden rather than removed while popped out: the sound still plays
-          from this element, and the player's volume controls drive it. */}
       <video
         ref={videoRef}
-        className={pip.active ? 'popped-out' : undefined}
+        className={pip.active ? 'popped-out' : isFullscreen ? undefined : 'closable'}
         playsInline
         autoPlay
-        onDoubleClick={onToggleFullscreen}
+        muted
+        {...pictureClicks}
       />
+      {/* Over a screen the camera can cover what matters in that corner (a
+          minimap, a chat): a click makes it larger or smaller again, and the
+          footer can tuck it away. */}
+      {showCamera && !pip.active && (
+        <video
+          ref={cameraRef}
+          className={`camera-pip${inset === 'large' ? ' large' : ''}`}
+          playsInline
+          autoPlay
+          muted
+          title={inset === 'large' ? t('grid.shrinkCamera') : t('grid.growCamera')}
+          onClick={() => onInsetChange?.(inset === 'large' ? 'small' : 'large')}
+          onDoubleClick={(event) => event.stopPropagation()}
+        />
+      )}
       {pip.active && (
         <div className="overlay">
           <h2>{t('grid.inPip')}</h2>
@@ -362,7 +430,7 @@ function RemoteTile({
           </span>
         </span>
         <div className="remote-audio-controls">
-          {screen.audioTrack && (
+          {hasAudio && (
             <>
               {/* Muting only drops the slider to zero; unmuting restores the
                   level it had, or full volume if it was already at zero. */}
@@ -401,6 +469,21 @@ function RemoteTile({
               title={hq ? t('grid.hqOn') : t('grid.hqOff')}
             >
               HQ
+            </button>
+          )}
+          {screen.cameraTrack && inset !== null && (
+            <button
+              className={`icon-button${showCamera ? ' active' : ''}`}
+              onClick={() => onInsetChange?.(showCamera ? 'hidden' : 'small')}
+              aria-pressed={showCamera}
+              title={showCamera ? t('grid.hideCamera') : t('grid.showCamera')}
+              aria-label={showCamera ? t('grid.hideCamera') : t('grid.showCamera')}
+            >
+              <Icon>
+                <rect x="2.5" y="6" width="13" height="12" rx="2" />
+                <path d="M15.5 11l6-3.5v9l-6-3.5z" />
+                {!showCamera && <path d="M3 3l18 18" />}
+              </Icon>
             </button>
           )}
           <button
@@ -442,7 +525,7 @@ function RemoteTile({
           target={pip.target}
           name={screen.participantName}
           videoTrack={screen.videoTrack}
-          hasAudio={screen.audioTrack !== null}
+          hasAudio={hasAudio}
           volume={volume}
           muted={muted}
           onAudioChange={onAudioChange}
@@ -550,6 +633,91 @@ function ListenAudio({ track, audio }: { track: RemoteTrack; audio: AudioSetting
   return <audio ref={ref} autoPlay />;
 }
 
+/**
+ * One picture in the overview, the stage shown while nothing is watched.
+ * Cameras play live; screens show their latest snapshot. Clicking watches it.
+ * Its sound is already playing (see heardOwners); the button only mutes it.
+ */
+function OverviewTile({
+  name,
+  identity,
+  label,
+  video = null,
+  snapshot = null,
+  loading = false,
+  audio,
+  onAudioChange,
+  onWatch,
+  mirrored = false,
+}: {
+  name: string;
+  identity?: string;
+  label: string;
+  video?: LocalVideoTrack | RemoteTrack | null;
+  snapshot?: string | null;
+  loading?: boolean;
+  audio?: AudioSetting;
+  onAudioChange?: (next: AudioSetting) => void;
+  onWatch?: () => void;
+  /** Your own camera, seen as in a mirror. */
+  mirrored?: boolean;
+}) {
+  const t = useT();
+  const videoRef = useRef<HTMLVideoElement>(null);
+  useMediaStream(videoRef, video, null);
+  const silent = Boolean(audio && (audio.muted || audio.volume === 0));
+
+  return (
+    <div className="overview-tile" title={`${name} — ${label}`}>
+      <button
+        className="overview-watch"
+        onClick={onWatch}
+        disabled={!onWatch}
+        aria-label={t('grid.watch', { name })}
+      >
+        {video ? (
+          <video
+            ref={videoRef}
+            className={mirrored ? 'mirrored' : undefined}
+            playsInline
+            autoPlay
+            muted
+          />
+        ) : snapshot ? (
+          <img src={snapshot} alt="" />
+        ) : (
+          <span className={`thumb-blank${loading ? ' loading' : ''}`} />
+        )}
+      </button>
+      <div className="overview-footer">
+        <span className="remote-tile-who">
+          <Avatar name={name} identity={identity} live />
+          <span className="remote-tile-label">
+            <span className="remote-tile-name">{name}</span>
+            <small className="stream-source">{label}</small>
+          </span>
+        </span>
+        {audio && onAudioChange && (
+          <button
+            className="icon-button"
+            onClick={() =>
+              onAudioChange({
+                volume: audio.muted && audio.volume === 0 ? 1 : audio.volume,
+                muted: !audio.muted,
+              })
+            }
+            aria-pressed={silent}
+            title={silent ? t('common.unmute') : t('common.mute')}
+            aria-label={silent ? t('grid.unmuteName', { name }) : t('grid.muteName', { name })}
+          >
+            <IconVolume muted={silent} />
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /** Takes one broadcast's snapshot, with no picture of its own on screen. */
 function SnapshotTaker({
   track,
@@ -576,6 +744,7 @@ function Thumbnail({
   peeking = false,
   onTogglePeek,
   loading = false,
+  mirrored = false,
 }: {
   name: string;
   /** Whose broadcast it is, for their profile picture. */
@@ -585,6 +754,8 @@ function Thumbnail({
   loading?: boolean;
   /** Your own preview, which costs no bandwidth, stays live and sharp. */
   liveVideo?: LocalVideoTrack | RemoteTrack | null;
+  /** Your own camera, seen as in a mirror. */
+  mirrored?: boolean;
   /** A remote broadcast shows its latest snapshot instead of live video. */
   snapshot?: string | null;
   audio?: AudioSetting;
@@ -618,7 +789,7 @@ function Thumbnail({
       >
         {liveVideo ? (
           <video
-            className="thumb-live"
+            className={`thumb-live${mirrored ? ' mirrored' : ''}`}
             ref={videoRef}
             playsInline
             autoPlay
@@ -736,6 +907,10 @@ export default function RemoteGrid({
       onClose: () => void;
     }) => ReactNode;
     track: LocalVideoTrack | null;
+    /** Your camera while it is shared beside your screen: its own overview tile. */
+    cameraTrack?: LocalVideoTrack | null;
+    /** `track` is your camera, which you see mirrored. */
+    mirrored?: boolean;
     name: string;
     /** Yours, for your profile picture on your own thumbnail. */
     identity?: string;
@@ -843,10 +1018,10 @@ export default function RemoteGrid({
   const [fullscreenId, setFullscreenId] = useState<string | null>(null);
 
   const hasLocal = Boolean(local);
-  const candidates = [
-    ...(hasLocal ? [LOCAL_SPOTLIGHT] : []),
-    ...screens.map((screen) => screen.participantIdentity),
-  ];
+  // Every picture on offer: a screen and a camera shared together are two.
+  const views = viewsOf(screens);
+  const viewById = new Map(views.map((view) => [view.id, view]));
+  const candidates = [...(hasLocal ? [LOCAL_SPOTLIGHT] : []), ...views.map((view) => view.id)];
   const livePinned = pinned.filter((id) => candidates.includes(id));
 
   // What the viewer chose to watch. Nothing, until they choose.
@@ -883,10 +1058,51 @@ export default function RemoteGrid({
   const remoteMains = mains.filter((id) => id !== LOCAL_SPOTLIGHT);
   // The spotlight's small windows: everything watched but the large one.
   const pipIds = pipStrip ? livePinned.slice(1) : [];
-  // Watched, but not large: heard from outside its tile.
-  const heardAside = livePinned.filter((id) => !mains.includes(id) && id !== LOCAL_SPOTLIGHT);
+  // Nothing watched: the stage offers every picture at once, cameras live and
+  // screens as snapshots, and everyone is heard until muted (ADR 0034).
+  const overview = mains.length === 0;
+  // The overview offers cameras only: someone's screen is on the stage only
+  // once it is chosen, from the channel list.
+  const overviewCameras = views.filter((view) => view.camera);
+  // What plays. In the overview, the cameras on it: their microphones, and all
+  // of a camera shared alone. Otherwise everything of the people being
+  // watched. Once per person, however many of their pictures are on screen.
+  // Your own is never here, so you never hear yourself.
+  const heardOwners = [
+    ...new Set(
+      (overview ? overviewCameras.map((view) => view.id) : [...livePinned, ...remoteMains])
+        .filter((id) => id !== LOCAL_SPOTLIGHT)
+        .map(viewOwner),
+    ),
+  ];
+  const heard = heardOwners.flatMap((owner) => {
+    const screen = viewById.get(owner)?.screen;
+    if (!screen) return [];
+    // A person on the overview by the camera beside their screen is heard,
+    // not the screen nobody chose.
+    const tracks =
+      overview && viewById.has(cameraView(owner))
+        ? [screen.micTrack]
+        : [screen.audioTrack, screen.micTrack];
+    return tracks.flatMap((track) => (track ? [{ owner, track }] : []));
+  });
   // Broadcasts this viewer turned HQ off for. Per broadcast, not room-wide.
   const [lowQuality, setLowQuality] = useState<Set<string>>(new Set());
+  // How each person's camera sits over their screen, kept per person so it
+  // survives the tile moving between layouts.
+  const [insets, setInsets] = useState<Record<string, InsetMode>>({});
+  // The camera over a watched screen, unless it is hidden, or is itself on
+  // the stage beside it.
+  const insetFor = (id: string): InsetMode | null => {
+    const view = viewById.get(id);
+    if (!view || view.camera || !view.screen.cameraTrack) return null;
+    if (mains.includes(cameraView(view.owner))) return null;
+    return insets[view.owner] ?? 'small';
+  };
+  const shownInsets = remoteMains.filter((id) => {
+    const inset = insetFor(id);
+    return inset !== null && inset !== 'hidden';
+  });
   // Latest thumbnail picture per broadcast, and which are being taken now.
   const [snapshots, setSnapshots] = useState<Record<string, { url: string | null; at: number }>>(
     {},
@@ -910,14 +1126,18 @@ export default function RemoteGrid({
     if (!fullscreen.isFullscreen) setFullscreenId(null);
   }, [fullscreen.isFullscreen]);
 
-  // Going live puts your own preview first.
-  useEffect(() => {
-    if (hasLocal) {
-      setPinned((current) => [LOCAL_SPOTLIGHT, ...current.filter((id) => id !== LOCAL_SPOTLIGHT)]);
-    }
-  }, [hasLocal]);
+  // Going live no longer puts your own preview on the stage: in the overview
+  // you appear among everyone else, as in a call, and whatever you were
+  // watching stays put.
 
-  const hqMains = remoteMains.filter((id) => !lowQuality.has(id));
+  // A camera made large over its screen is worth its high layer; small, its
+  // low one does.
+  const hqMains = [
+    ...remoteMains.filter((id) => !lowQuality.has(id)),
+    ...shownInsets
+      .filter((id) => insetFor(id) === 'large')
+      .map((id) => cameraView(viewById.get(id)!.owner)),
+  ];
   const focusKey = hqMains.length > MOSAIC_HIGH_LIMIT ? '' : hqMains.join('|');
   useEffect(() => {
     onFocusChange(focusKey ? focusKey.split('|') : []);
@@ -928,14 +1148,20 @@ export default function RemoteGrid({
   // its thumbnail is hovered in the channel list, where it plays live.
   // Snapshots are taken whether or not any thumbnail is on screen, so the one
   // shown on hover is current. Listening only brings the sound.
-  const remoteThumbKey = screens
-    .map((screen) => screen.participantIdentity)
+  const remoteThumbKey = views
+    .map((view) => view.id)
     .filter((id) => !mains.includes(id))
     .join('|');
-  // A small window on screen keeps its video coming, on the low layer.
+  // Flowing besides the large tiles: a small window on screen, on the low
+  // layer; the cameras in the overview; and a camera over its watched screen.
+  const flowing = new Set([
+    ...(pipShown ? pipIds : []),
+    ...(overview ? views.filter((view) => view.camera).map((view) => view.id) : []),
+    ...shownInsets.map((id) => cameraView(viewById.get(id)!.owner)),
+  ]);
   const pausedKey = (remoteThumbKey ? remoteThumbKey.split('|') : [])
     .filter((id) => id !== hovered?.id)
-    .filter((id) => !capturing.has(id) && !(pipShown && pipIds.includes(id)))
+    .filter((id) => !capturing.has(id) && !flowing.has(id))
     .join('|');
   useEffect(() => {
     onPausedChange(pausedKey ? pausedKey.split('|') : []);
@@ -1023,7 +1249,8 @@ export default function RemoteGrid({
   }
 
   /** Choosing to hear something means hearing it, whatever it was left at. */
-  function ensureAudible(id: string) {
+  function ensureAudible(view: string) {
+    const id = viewOwner(view);
     setAudio((current) => {
       const setting = current[id];
       if (!setting?.muted && (setting?.volume ?? DEFAULT_VOLUME) > 0) return current;
@@ -1040,7 +1267,9 @@ export default function RemoteGrid({
     setPinned((current) => current.filter((other) => other !== id));
   }
 
-  function updateAudio(id: string, nextSetting: AudioSetting) {
+  // Sound is per person: muting someone's camera mutes their screen too.
+  function updateAudio(view: string, nextSetting: AudioSetting) {
+    const id = viewOwner(view);
     setAudio((current) => {
       const next = { ...current, [id]: nextSetting };
       store(AUDIO_KEY, JSON.stringify(next));
@@ -1062,8 +1291,13 @@ export default function RemoteGrid({
     return id === LOCAL_SPOTLIGHT ? 1 : 2;
   }
 
-  function audioFor(id: string): AudioSetting {
-    return audio[id] ?? { volume: DEFAULT_VOLUME, muted: false };
+  function audioFor(view: string): AudioSetting {
+    return audio[viewOwner(view)] ?? { volume: DEFAULT_VOLUME, muted: false };
+  }
+
+  function setInset(id: string, next: InsetMode) {
+    const owner = viewOwner(id);
+    setInsets((current) => ({ ...current, [owner]: next }));
   }
 
   useImperativeHandle(controlRef, () => ({
@@ -1075,8 +1309,9 @@ export default function RemoteGrid({
     },
   }));
 
+  // The channel list marks people, not pictures.
   const stageKey = JSON.stringify([
-    livePinned.filter((id) => id !== LOCAL_SPOTLIGHT),
+    [...new Set(livePinned.filter((id) => id !== LOCAL_SPOTLIGHT).map(viewOwner))],
     livePinned.includes(LOCAL_SPOTLIGHT),
   ]);
   useEffect(() => {
@@ -1120,13 +1355,14 @@ export default function RemoteGrid({
           identity={local.identity}
           label={t('grid.yourBroadcast')}
           liveVideo={local.track}
+          mirrored={local.mirrored}
           onWatch={() => watch(id)}
           onStop={local.onStop}
           preview={{ on: local.showPreview, onToggle: local.onTogglePreview }}
         />,
       );
     }
-    const screen = screens.find((candidate) => candidate.participantIdentity === id);
+    const screen = viewById.get(id)?.screen;
     if (!screen) {
       const pending = loadingBroadcasts.find((broadcast) => broadcast.identity === id);
       return pending
@@ -1168,13 +1404,14 @@ export default function RemoteGrid({
           identity={local.identity}
           label={t('grid.yourBroadcast')}
           liveVideo={local.track}
+          mirrored={local.mirrored}
           onWatch={() => watch(id)}
           onStop={local.onStop}
           preview={{ on: local.showPreview, onToggle: local.onTogglePreview }}
         />
       );
     }
-    const screen = screens.find((candidate) => candidate.participantIdentity === id);
+    const screen = viewById.get(id)?.screen;
     if (!screen) {
       const pending = loadingBroadcasts.find((broadcast) => broadcast.identity === id);
       return pending ? (
@@ -1212,7 +1449,7 @@ export default function RemoteGrid({
   const snapshotTakers = [...capturing].map((id) => (
     <SnapshotTaker
       key={id}
-      track={screens.find((screen) => screen.participantIdentity === id)?.videoTrack ?? null}
+      track={viewById.get(id)?.screen.videoTrack ?? null}
       onCaptured={(url) => captured(id, url)}
     />
   ));
@@ -1264,7 +1501,6 @@ export default function RemoteGrid({
     );
   }
 
-  const screenById = new Map(screens.map((screen) => [screen.participantIdentity, screen]));
   // Everything not shown large is a thumbnail, in either layout.
   // Listened-to broadcasts lead the strip, then your own, then the rest. Your
   // own broadcast never leaves the strip, even while it is also large.
@@ -1292,11 +1528,13 @@ export default function RemoteGrid({
         </div>
       );
     }
-    const screen = screenById.get(id);
+    const screen = viewById.get(id)?.screen;
     if (!screen) return null;
     return (
       <RemoteTile
         screen={screen}
+        inset={insetFor(id)}
+        onInsetChange={(next) => setInset(id, next)}
         audio={audioFor(id)}
         onAudioChange={(next) => updateAudio(id, next)}
         hq={!lowQuality.has(id)}
@@ -1318,23 +1556,99 @@ export default function RemoteGrid({
   const [left, right] = mains;
   const splitLimits = pairSplitLimits(pairWidth);
 
+  // Nothing chosen yet: the cameras that are on, side by side, and yours.
+  // Someone's screen is not offered here; it is chosen from the channel list.
+  // Yours only while your preview is on: you see yourself only if you asked
+  // to (App passes no track otherwise). Your camera beside your screen is a
+  // tile of its own, as anyone else's is.
+  const localCamera = local?.cameraTrack ?? null;
+  const overviewIds = [
+    ...(local?.track ? [LOCAL_SPOTLIGHT] : []),
+    ...overviewCameras.map((view) => view.id),
+  ];
+  const overviewCount = overviewIds.length + (localCamera ? 1 : 0);
+  const overviewColumns =
+    overviewCount <= 1 ? 1 : overviewCount <= 4 ? 2 : overviewCount <= 9 ? 3 : 4;
+
+  function renderOverviewTile(id: string): ReactNode {
+    if (id === LOCAL_SPOTLIGHT) {
+      if (!local) return null;
+      return (
+        <OverviewTile
+          name={local.name}
+          identity={local.identity}
+          label={t('grid.yourBroadcast')}
+          video={local.track}
+          mirrored={local.mirrored}
+          onWatch={() => watch(id)}
+        />
+      );
+    }
+    const view = viewById.get(id);
+    if (!view) return null;
+    const { screen } = view;
+    return (
+      <OverviewTile
+        name={screen.participantName}
+        identity={screen.participantIdentity}
+        label={sourceText(t, screen.sourceName, screen.sourceKind)}
+        video={view.camera || hovered?.id === id ? screen.videoTrack : null}
+        snapshot={snapshots[id]?.url ?? null}
+        audio={screen.audioTrack || screen.micTrack ? audioFor(id) : undefined}
+        onAudioChange={(next) => updateAudio(id, next)}
+        onWatch={() => watch(id)}
+      />
+    );
+  }
+
   const mainsView =
-    mains.length === 0 ? (
-      // Nothing chosen yet: a dark stage, the way in to sharing, and the
-      // broadcasts waiting below.
+    mains.length === 0 && overviewCount === 0 ? (
+      // No camera on, and nothing chosen: the screens wait in the channel list.
       <section className="stage remote-empty">
         <div className="overlay">
-          <h2>{t('grid.pickTitle')}</h2>
-          <p className="muted">{t('grid.pickBody')}</p>
-          {!local && onStartSharing && (
-            <div className="onboarding-actions">
-              <button className="primary" onClick={onStartSharing}>
-                {t('common.shareScreen')}
-              </button>
-            </div>
+          {local ? (
+            <>
+              <h2>{t('player.youreLive')}</h2>
+              <p className="muted">{t('player.previewHidden')}</p>
+            </>
+          ) : (
+            <>
+              <h2>{t('grid.pickTitle')}</h2>
+              <p className="muted">{t('grid.pickBody')}</p>
+              {onStartSharing && (
+                <div className="onboarding-actions">
+                  <button className="primary" onClick={onStartSharing}>
+                    {t('common.shareScreen')}
+                  </button>
+                </div>
+              )}
+            </>
           )}
         </div>
       </section>
+    ) : mains.length === 0 ? (
+      <div
+        className="mains overview"
+        style={{ gridTemplateColumns: `repeat(${overviewColumns}, minmax(0, 1fr))` }}
+      >
+        {overviewIds.map((id) => (
+          <div className="tile-slot" key={id}>
+            {renderOverviewTile(id)}
+          </div>
+        ))}
+        {local && localCamera && (
+          <div className="tile-slot" key={cameraView(LOCAL_SPOTLIGHT)}>
+            <OverviewTile
+              name={local.name}
+              identity={local.identity}
+              label={t('grid.source.camera')}
+              video={localCamera}
+              mirrored
+              onWatch={() => watch(LOCAL_SPOTLIGHT)}
+            />
+          </div>
+        )}
+      </div>
     ) : paired ? (
       <div className="mains paired" ref={mainsRef}>
         <div className="tile-slot" key={left} style={{ flexBasis: `${split * 100}%` }}>
@@ -1475,10 +1789,16 @@ export default function RemoteGrid({
       >
         {mainsView}
 
-        {heardAside.map((id) => {
-          const track = screenById.get(id)?.audioTrack;
-          return track ? <ListenAudio key={id} track={track} audio={audioFor(id)} /> : null;
-        })}
+        {/* Every sound plays here, once per person: what they share and their
+            microphone, at their volume. Keyed by track so a tile moving
+            between layouts does not restart it. */}
+        {heard.map(({ owner, track }, index) => (
+          <ListenAudio
+            key={track.sid ?? `${owner}:${index}`}
+            track={track}
+            audio={audioFor(owner)}
+          />
+        ))}
 
         {candidates.length > 1 && !fullId && (
           <div className="layout-switch" role="group" aria-label={t('grid.layout')}>

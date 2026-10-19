@@ -956,6 +956,125 @@ button:disabled {
   visibility: hidden;
 }
 
+/* A camera shared with a screen sits small over its corner, above where the
+   footer's controls appear, as Discord does it. */
+.remote-tile video.camera-pip,
+.stage video.camera-pip {
+  position: absolute;
+  right: 12px;
+  bottom: 56px;
+  z-index: 1;
+  flex: none;
+  width: 22%;
+  min-width: 120px;
+  max-width: 320px;
+  height: auto;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  background: #000;
+  border: 1px solid rgb(255 255 255 / 0.2);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgb(0 0 0 / 0.5);
+  pointer-events: none;
+  transition: width 0.18s ease;
+}
+
+/* Your own camera, as you see it: mirrored, as the camera dialog shows it.
+   Only on your screen; viewers get it the right way round. */
+video.mirrored {
+  transform: scaleX(-1);
+}
+
+/* A large picture is clicked to leave the large view, back to the overview. */
+.remote-tile video.closable,
+.stage video.closable {
+  cursor: zoom-out;
+}
+
+/* A viewer's corner camera is clicked to grow or shrink. Your own preview's
+   is only a reminder, and stays out of the way of the clicks under it. */
+.remote-tile video.camera-pip {
+  pointer-events: auto;
+  cursor: zoom-in;
+}
+
+.remote-tile video.camera-pip.large {
+  width: 45%;
+  max-width: none;
+  cursor: zoom-out;
+}
+
+/* Nothing watched: every picture on offer, side by side. Columns are set
+   from the count, inline. */
+.mains.overview {
+  align-content: center;
+  grid-auto-rows: auto;
+}
+
+.overview-tile {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  max-height: 100%;
+  overflow: hidden;
+  background: #050608;
+  border: 1px solid #282c32;
+  border-radius: 8px;
+}
+
+.overview-tile:hover {
+  border-color: var(--accent);
+}
+
+.overview-watch {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  padding: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.overview-watch:disabled {
+  cursor: default;
+}
+
+.overview-watch > video,
+.overview-watch > img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  pointer-events: none;
+}
+
+/* A screen's snapshot is a hint, blurred as in the strip; cameras play. */
+.overview-watch > img {
+  filter: blur(6px) brightness(0.8);
+  transform: scale(1.08);
+}
+
+.overview-footer {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 18px 10px 8px;
+  color: #fff;
+  font-size: 12px;
+  background: linear-gradient(to top, rgb(0 0 0 / 0.75), transparent);
+  pointer-events: none;
+}
+
+.overview-footer button {
+  pointer-events: auto;
+}
+
 /* Over the picture, not under it, like the local player's controls. Shown
    while the pointer is on the tile or focus is inside it, so it never hides
    a control someone is using. */

@@ -13,6 +13,39 @@ import { useT } from '../i18n';
  * speakers: your own capture is never played back here.
  */
 
+/** Long enough to tell a double click from two single ones. */
+const DOUBLE_CLICK_MS = 250;
+
+/**
+ * A single click and a double click on the same picture, doing different
+ * things. The browser sends a click before every double click, so the single
+ * one waits a moment and is dropped if a second click follows.
+ */
+export function useClickOrDoubleClick(onClick?: () => void, onDoubleClick?: () => void) {
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (timer.current) clearTimeout(timer.current);
+    },
+    [],
+  );
+  return {
+    onClick: () => {
+      if (!onClick) return;
+      if (timer.current) clearTimeout(timer.current);
+      timer.current = setTimeout(() => {
+        timer.current = null;
+        onClick();
+      }, DOUBLE_CLICK_MS);
+    },
+    onDoubleClick: () => {
+      if (timer.current) clearTimeout(timer.current);
+      timer.current = null;
+      onDoubleClick?.();
+    },
+  };
+}
+
 export function IconVolume({ muted }: { muted: boolean }) {
   return (
     <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
@@ -72,8 +105,11 @@ export default function Player({
   showPreview,
   onTogglePreview,
   localTrack,
+  cameraTrack = null,
+  mirrored = false,
   gpuBroadcasting = false,
   sendAudio,
+  mic,
   onStop,
   onSwitch,
   onClose,
@@ -88,18 +124,27 @@ export default function Player({
    */
   showPreview: boolean;
   onTogglePreview: () => void;
+  /** The picture: your screen, or your camera when it is shared alone. */
   localTrack: LocalVideoTrack | null;
+  /** Your camera while it is shared over your screen, shown in its corner. */
+  cameraTrack?: LocalVideoTrack | null;
+  /**
+   * The picture is your camera. You see yourself as in a mirror, as the camera
+   * dialog shows you; viewers get it the right way round.
+   */
+  mirrored?: boolean;
   /**
    * Set when broadcasting via the WHIP / ffmpeg route (e.g. AMD AMF or Intel Quick Sync).
    */
   gpuBroadcasting?: boolean;
-  /** Present while this device is sending audio. */
+  /** Present while this device is sending the audio of what it shares. */
   sendAudio?: {
     value: SendAudio;
-    /** False for a camera's microphone, which can only be muted. */
     canSetVolume: boolean;
     onChange: (next: SendAudio) => void;
   };
+  /** Present while the camera sends a microphone, which can only be muted. */
+  mic?: { muted: boolean; onToggle: () => void };
   onStop: () => void;
   onSwitch: () => void;
   /** Leave the large view. Sits to the right of fullscreen, as on a watched tile. */
@@ -112,6 +157,7 @@ export default function Player({
 }) {
   const t = useT();
   const videoRef = useRef<HTMLVideoElement>(null);
+  const cameraRef = useRef<HTMLVideoElement>(null);
   const stageRef = useRef<HTMLElement>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
@@ -124,6 +170,15 @@ export default function Player({
       el.srcObject = null;
     };
   }, [localTrack, showPreview]);
+
+  useEffect(() => {
+    const el = cameraRef.current;
+    if (!el) return undefined;
+    el.srcObject = cameraTrack ? new MediaStream([cameraTrack.mediaStreamTrack]) : null;
+    return () => {
+      el.srcObject = null;
+    };
+  }, [cameraTrack, showPreview]);
 
   useEffect(() => {
     const handler = () => setIsFullscreen(Boolean(document.fullscreenElement));
@@ -145,12 +200,36 @@ export default function Player({
   }
 
   const fullscreenActive = fullscreen?.active ?? isFullscreen;
+  const pictureClicks = useClickOrDoubleClick(
+    onClose && !fullscreenActive ? onClose : undefined,
+    () => (fullscreen ? fullscreen.toggle() : void toggleFullscreen()),
+  );
   const audio = sendAudio?.value;
-  const silent = Boolean(audio && (audio.muted || audio.volume === 0));
+  // Viewers hear nothing only when every audio you send is off.
+  const silent =
+    Boolean(sendAudio || mic) &&
+    (!audio || audio.muted || audio.volume === 0) &&
+    (!mic || mic.muted);
 
   return (
     <section className="stage" ref={stageRef}>
-      <video ref={videoRef} playsInline autoPlay muted />
+      {/* A click leaves the large view, as clicking a tile opened it; a
+          double click is fullscreen. */}
+      <video
+        ref={videoRef}
+        className={
+          [onClose && !fullscreenActive && 'closable', mirrored && 'mirrored']
+            .filter(Boolean)
+            .join(' ') || undefined
+        }
+        playsInline
+        autoPlay
+        muted
+        {...pictureClicks}
+      />
+      {cameraTrack && showPreview && (
+        <video ref={cameraRef} className="camera-pip mirrored" playsInline autoPlay muted />
+      )}
 
       {!showPreview ? (
         <div className="overlay">
@@ -170,7 +249,7 @@ export default function Player({
           <span className="remote-tile-label">
             <span className="remote-tile-name">{name}</span>
             <small className="stream-source">
-              {!sendAudio
+              {!sendAudio && !mic
                 ? t('player.withoutAudio')
                 : silent
                   ? t('player.viewersHearNothing')
@@ -205,7 +284,7 @@ export default function Player({
                 title={audio.muted ? t('player.sendAudioAgain') : t('player.muteForViewers')}
                 aria-label={audio.muted ? t('player.unmuteAudio') : t('player.muteAudio')}
               >
-                <IconVolume muted={silent} />
+                <IconVolume muted={audio.muted || audio.volume === 0} />
               </button>
               {sendAudio.canSetVolume && (
                 <input
@@ -223,6 +302,17 @@ export default function Player({
                 />
               )}
             </>
+          )}
+          {mic && (
+            <button
+              className="icon-button"
+              onClick={mic.onToggle}
+              aria-pressed={mic.muted}
+              title={mic.muted ? t('player.unmuteMic') : t('player.muteMic')}
+              aria-label={mic.muted ? t('player.unmuteMic') : t('player.muteMic')}
+            >
+              <IconMic muted={mic.muted} />
+            </button>
           )}
           <button
             className="icon-button"
@@ -280,6 +370,26 @@ export function IconEye({ off = false }: { off?: boolean }) {
       <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" />
       <circle cx="12" cy="12" r="3" />
       {off && <path d="M3 3l18 18" />}
+    </svg>
+  );
+}
+
+function IconMic({ muted }: { muted: boolean }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="18"
+      height="18"
+      aria-hidden="true"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <rect x="9" y="3" width="6" height="11" rx="3" />
+      <path d="M5 11a7 7 0 0014 0M12 18v3" />
+      {muted && <path d="M4 4l16 16" />}
     </svg>
   );
 }
