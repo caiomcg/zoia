@@ -1,13 +1,19 @@
 name: Discord Changelog
 
-# Posts a release's changelog entry to Discord once the release is published.
-# Releases are tags on main, not merged pull requests, so it follows the
-# release rather than a merge. Run it by hand to post (or repost) a version.
+# Posts a release's changelog entry to Discord. The release workflow calls it
+# once the release is published: a release created with GITHUB_TOKEN raises no
+# `release` event for other workflows to follow. Run it by hand to post (or
+# repost) a version.
 
 on:
-  release:
-    types:
-      - published
+  workflow_call:
+    inputs:
+      tag:
+        type: string
+        required: true
+    secrets:
+      DISCORD_WEBHOOK_URL:
+        required: true
   workflow_dispatch:
     inputs:
       tag:
@@ -21,12 +27,12 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ github.event.release.tag_name || inputs.tag }}
+          ref: ${{ inputs.tag }}
 
       - name: Send changelog to Discord
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+          TAG: ${{ inputs.tag }}
           REPO_URL: ${{ github.server_url }}/${{ github.repository }}
         run: |
           python - <<'PY'

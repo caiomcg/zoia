@@ -368,3 +368,13 @@ jobs:
             --title "Zoia ${{ github.ref_name }}" \
             --verify-tag \
             --notes-file release-notes.md
+
+  # Tells Discord once the release exists, so the link in the post works.
+  discord:
+    needs: [publish]
+    if: github.event_name == 'push'
+    uses: ./.github/workflows/discord-changelog.yml
+    with:
+      tag: ${{ github.ref_name }}
+    secrets:
+      DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
