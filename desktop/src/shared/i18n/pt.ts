@@ -119,6 +119,8 @@ export const pt: Messages = {
   'grid.showCamera': 'Mostrar a câmera',
   'grid.growCamera': 'Aumentar a câmera',
   'grid.shrinkCamera': 'Diminuir a câmera',
+  'grid.unmuteMicOf': 'Ouvir o microfone de {name}',
+  'grid.muteMicOf': 'Silenciar o microfone de {name}',
   'grid.watch': 'Assistir {name}',
   'grid.watchOnStage': 'Assistir no palco',
   'grid.muteName': 'Silenciar {name}',

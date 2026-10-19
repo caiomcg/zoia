@@ -15,7 +15,7 @@ import type { LocalVideoTrack, RemoteTrack } from 'livekit-client';
 import { cameraView, viewOwner, type RemoteScreen } from '../livekit/useRoom';
 import Avatar from './Avatar';
 import { PopoutPlayer, usePopout } from './Popout';
-import { IconEye, IconFullscreen, IconVolume, useClickOrDoubleClick } from './Player';
+import { IconEye, IconFullscreen, IconMic, IconVolume, useClickOrDoubleClick } from './Player';
 import { useT, type T } from '../i18n';
 import {
   DOCK_DRAG_THRESHOLD_PX,
@@ -341,6 +341,23 @@ function useMediaStream(
   }, [ref, video, audio]);
 }
 
+/** Turns someone's microphone on or off for this viewer. */
+function MicButton({ name, on, onToggle }: { name: string; on: boolean; onToggle: () => void }) {
+  const t = useT();
+  const label = on ? t('grid.muteMicOf', { name }) : t('grid.unmuteMicOf', { name });
+  return (
+    <button
+      className={`icon-button${on ? ' active' : ''}`}
+      onClick={onToggle}
+      aria-pressed={on}
+      title={label}
+      aria-label={label}
+    >
+      <IconMic muted={!on} />
+    </button>
+  );
+}
+
 function RemoteTile({
   screen,
   audio,
@@ -352,10 +369,15 @@ function RemoteTile({
   onClose,
   inset = null,
   onInsetChange,
+  micOn = false,
+  onToggleMic,
 }: {
   screen: RemoteScreen;
   audio: AudioSetting;
   onAudioChange: (next: AudioSetting) => void;
+  /** Their microphone, off until this viewer turns it on. */
+  micOn?: boolean;
+  onToggleMic?: () => void;
   /** This broadcast's own quality: HQ on takes the high layer. */
   hq: boolean;
   onToggleHq: () => void;
@@ -458,6 +480,9 @@ function RemoteTile({
                 aria-label={t('grid.volumeFor', { name: screen.participantName })}
               />
             </>
+          )}
+          {screen.micTrack && onToggleMic && (
+            <MicButton name={screen.participantName} on={micOn} onToggle={onToggleMic} />
           )}
           {/* A hardware (WHIP) broadcast has one layer; offering a choice that
               changes nothing would be a lie. */}
@@ -649,6 +674,7 @@ function OverviewTile({
   onAudioChange,
   onWatch,
   mirrored = false,
+  mic,
 }: {
   name: string;
   identity?: string;
@@ -658,6 +684,8 @@ function OverviewTile({
   loading?: boolean;
   audio?: AudioSetting;
   onAudioChange?: (next: AudioSetting) => void;
+  /** Their microphone, off until turned on; shown instead of the volume. */
+  mic?: { on: boolean; onToggle: () => void };
   onWatch?: () => void;
   /** Your own camera, seen as in a mirror. */
   mirrored?: boolean;
@@ -697,21 +725,26 @@ function OverviewTile({
             <small className="stream-source">{label}</small>
           </span>
         </span>
-        {audio && onAudioChange && (
-          <button
-            className="icon-button"
-            onClick={() =>
-              onAudioChange({
-                volume: audio.muted && audio.volume === 0 ? 1 : audio.volume,
-                muted: !audio.muted,
-              })
-            }
-            aria-pressed={silent}
-            title={silent ? t('common.unmute') : t('common.mute')}
-            aria-label={silent ? t('grid.unmuteName', { name }) : t('grid.muteName', { name })}
-          >
-            <IconVolume muted={silent} />
-          </button>
+        {mic ? (
+          <MicButton name={name} on={mic.on} onToggle={mic.onToggle} />
+        ) : (
+          audio &&
+          onAudioChange && (
+            <button
+              className="icon-button"
+              onClick={() =>
+                onAudioChange({
+                  volume: audio.muted && audio.volume === 0 ? 1 : audio.volume,
+                  muted: !audio.muted,
+                })
+              }
+              aria-pressed={silent}
+              title={silent ? t('common.unmute') : t('common.mute')}
+              aria-label={silent ? t('grid.unmuteName', { name }) : t('grid.muteName', { name })}
+            >
+              <IconVolume muted={silent} />
+            </button>
+          )
         )}
       </div>
     </div>
@@ -1084,8 +1117,22 @@ export default function RemoteGrid({
       overview && viewById.has(cameraView(owner))
         ? [screen.micTrack]
         : [screen.audioTrack, screen.micTrack];
-    return tracks.flatMap((track) => (track ? [{ owner, track }] : []));
+    return tracks.flatMap((track) =>
+      track ? [{ owner, track, mic: track === screen.micTrack }] : [],
+    );
   });
+  // Whose microphone this viewer turned on. Everyone's starts off, each time:
+  // a room of open microphones playing at once is not something to walk
+  // into. Not remembered, so it is off again next time too.
+  const [micOn, setMicOn] = useState<Set<string>>(new Set());
+  const toggleMic = (view: string) =>
+    setMicOn((current) => {
+      const owner = viewOwner(view);
+      const next = new Set(current);
+      if (next.has(owner)) next.delete(owner);
+      else next.add(owner);
+      return next;
+    });
   // Broadcasts this viewer turned HQ off for. Per broadcast, not room-wide.
   const [lowQuality, setLowQuality] = useState<Set<string>>(new Set());
   // How each person's camera sits over their screen, kept per person so it
@@ -1534,6 +1581,8 @@ export default function RemoteGrid({
       <RemoteTile
         screen={screen}
         inset={insetFor(id)}
+        micOn={micOn.has(viewOwner(id))}
+        onToggleMic={() => toggleMic(id)}
         onInsetChange={(next) => setInset(id, next)}
         audio={audioFor(id)}
         onAudioChange={(next) => updateAudio(id, next)}
@@ -1596,6 +1645,9 @@ export default function RemoteGrid({
         snapshot={snapshots[id]?.url ?? null}
         audio={screen.audioTrack || screen.micTrack ? audioFor(id) : undefined}
         onAudioChange={(next) => updateAudio(id, next)}
+        mic={
+          screen.micTrack ? { on: micOn.has(view.owner), onToggle: () => toggleMic(id) } : undefined
+        }
         onWatch={() => watch(id)}
       />
     );
@@ -1790,15 +1842,19 @@ export default function RemoteGrid({
         {mainsView}
 
         {/* Every sound plays here, once per person: what they share and their
-            microphone, at their volume. Keyed by track so a tile moving
-            between layouts does not restart it. */}
-        {heard.map(({ owner, track }, index) => (
-          <ListenAudio
-            key={track.sid ?? `${owner}:${index}`}
-            track={track}
-            audio={audioFor(owner)}
-          />
-        ))}
+            microphone, at their volume; the microphone only once turned on.
+            Keyed by track so a tile moving between layouts does not restart
+            it. */}
+        {heard.map(({ owner, track, mic }, index) => {
+          const setting = audioFor(owner);
+          return (
+            <ListenAudio
+              key={track.sid ?? `${owner}:${index}`}
+              track={track}
+              audio={mic && !micOn.has(owner) ? { ...setting, muted: true } : setting}
+            />
+          );
+        })}
 
         {candidates.length > 1 && !fullId && (
           <div className="layout-switch" role="group" aria-label={t('grid.layout')}>

@@ -126,6 +126,8 @@ export const en = {
   'grid.showCamera': 'Show their camera',
   'grid.growCamera': 'Make their camera larger',
   'grid.shrinkCamera': 'Make their camera smaller',
+  'grid.unmuteMicOf': 'Hear {name}’s microphone',
+  'grid.muteMicOf': 'Mute {name}’s microphone',
   'grid.watch': 'Watch {name}',
   'grid.watchOnStage': 'Watch on stage',
   'grid.muteName': 'Mute {name}',

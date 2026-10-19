@@ -2,16 +2,6 @@ import { useEffect, useRef, useState } from 'react';
 import { useCameraDevices } from '../livekit/useCamera';
 import { useT } from '../i18n';
 
-const MUTE_MICROPHONE_KEY = 'zoia.cameraMuteMicrophone';
-
-function readMuteMicrophonePreference(): boolean {
-  try {
-    return localStorage.getItem(MUTE_MICROPHONE_KEY) === 'true';
-  } catch {
-    return false;
-  }
-}
-
 /**
  * Choosing a camera before sharing it.
  *
@@ -36,7 +26,10 @@ export default function CameraDialog({
   const streamRef = useRef<MediaStream | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [level, setLevel] = useState(0);
-  const [muteMicrophone, setMuteMicrophone] = useState(readMuteMicrophonePreference);
+  // Always starts muted, whatever was chosen last time: an open microphone
+  // nobody meant to share is the worse surprise. Unmuting is one click, here
+  // or on the player once live.
+  const [muteMicrophone, setMuteMicrophone] = useState(true);
 
   const { cameraId, microphoneId } = camera;
 
@@ -105,11 +98,6 @@ export default function CameraDialog({
     // released so the device is not held twice.
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
-    try {
-      localStorage.setItem(MUTE_MICROPHONE_KEY, String(muteMicrophone));
-    } catch {
-      // The preference is a convenience; it still applies for this start.
-    }
     onStart(camera.constraints(), muteMicrophone);
   }
 
