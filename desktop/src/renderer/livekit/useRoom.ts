@@ -346,8 +346,12 @@ export interface RoomMember {
   identity: string;
   name: string;
   isLocal: boolean;
-  /** True while this member is the one sharing their screen. */
+  /** True while this member shares anything: a screen, a camera, or both. */
   isBroadcasting: boolean;
+  /** Sharing a screen: what their row in the list opens. */
+  sharesScreen: boolean;
+  /** Camera on: opened apart, from the camera button on their row (ADR 0034). */
+  hasCamera: boolean;
   /**
    * The hardware-encoding path joins as its own WHIP participant, which
    * would otherwise show up as a second, duplicate person in the list.
@@ -808,6 +812,14 @@ export function useRoom() {
           // Any published video means sharing, for the same reason as above:
           // an ingress publishes CAMERA rather than ScreenShare.
           isBroadcasting: p.videoTrackPublications.size > 0,
+          // Everything an ingress sends is a screen; a person's own Camera is
+          // their camera, never their screen.
+          sharesScreen: [...p.videoTrackPublications.values()].some(
+            (pub) => p.identity.endsWith(WHIP_SUFFIX) || pub.source !== Track.Source.Camera,
+          ),
+          hasCamera:
+            !p.identity.endsWith(WHIP_SUFFIX) &&
+            Boolean(p.getTrackPublication(Track.Source.Camera)),
           // WHIP publishers join under their owner's identity plus "-gpu",
           // so they can be folded back into that person rather than listed
           // as someone else.
@@ -841,6 +853,7 @@ export function useRoom() {
               ? {
                   ...m,
                   isBroadcasting: true,
+                  sharesScreen: true,
                   broadcastSource: ingressSources.get(m.identity) ?? m.broadcastSource,
                 }
               : m,
@@ -862,6 +875,8 @@ export function useRoom() {
         // Permission changes are how losing the stage arrives: the server
         // revokes canPublish and LiveKit pushes it down live.
         .on(RoomEvent.ParticipantPermissionsChanged, () => refresh())
+        // Your own row learns your camera is on from these, like anyone else's.
+        .on(RoomEvent.LocalTrackPublished, () => refresh())
         .on(RoomEvent.LocalTrackUnpublished, () => refresh())
         .on(RoomEvent.TrackPublished, () => refresh())
         .on(RoomEvent.TrackUnpublished, () => refresh())

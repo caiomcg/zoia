@@ -112,6 +112,7 @@ export default function Player({
   onStop,
   onSwitch,
   onClose,
+  closeButton = true,
   fullscreen,
 }: {
   name: string;
@@ -150,6 +151,8 @@ export default function Player({
   onSwitch: () => void;
   /** Leave the large view. Sits to the right of fullscreen, as on a watched tile. */
   onClose?: () => void;
+  /** Whether the footer offers it too, or only a click on the picture. */
+  closeButton?: boolean;
   /**
    * The layout owns fullscreen, so the other broadcasts' thumbnails can come
    * along. Without it, the player goes fullscreen on its own.
@@ -326,7 +329,7 @@ export default function Player({
           >
             <IconFullscreen active={fullscreenActive} />
           </button>
-          {onClose && !fullscreenActive && (
+          {onClose && closeButton && !fullscreenActive && (
             <button
               className="icon-button"
               onClick={onClose}

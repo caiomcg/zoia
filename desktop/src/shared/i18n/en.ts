@@ -82,6 +82,8 @@ export const en = {
   'sidebar.newChannelTitle': 'New channel ({count} of {max})',
   'sidebar.inRoom': 'In room — {count}',
   'sidebar.watchingYou': 'Watching your screen',
+  'sidebar.showCamera': 'Show {name}’s camera',
+  'sidebar.hideCamera': 'Hide {name}’s camera',
   'sidebar.watchLive': 'Watch {name}. Hover to preview.',
   'sidebar.settings': 'Settings',
   'sidebar.leave': 'Leave channel',
