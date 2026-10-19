@@ -5,8 +5,11 @@ import im.zoia.api.ZoiaApiClient
 import io.livekit.android.LiveKit
 import io.livekit.android.events.RoomEvent
 import io.livekit.android.room.Room
+import io.livekit.android.room.participant.RemoteParticipant
 import io.livekit.android.room.track.AudioTrack
+import io.livekit.android.room.track.Track
 import io.livekit.android.room.track.VideoTrack
+import io.livekit.android.renderer.TextureViewRenderer
 import livekit.org.webrtc.SurfaceViewRenderer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -23,12 +26,53 @@ sealed class RoomConnectionState {
     data class Error(val message: String) : RoomConnectionState()
 }
 
+/**
+ * One person's broadcast. A screen and a camera shared together are still one
+ * broadcast: the screen is the picture and the camera sits over its corner
+ * (ADR 0034). A camera shared alone is the picture itself.
+ */
 data class StreamItem(
     val participantId: String,
     val participantName: String,
     val videoTrack: VideoTrack?,
+    /** The camera beside the screen; null when there is no screen or no camera. */
+    val cameraTrack: VideoTrack?,
     val isAudioActive: Boolean
 )
+
+/**
+ * WHIP publishers join under their owner's identity plus this, so they can be
+ * folded back into that person rather than shown as someone else.
+ */
+internal const val WHIP_SUFFIX = "-gpu"
+
+internal fun ownerIdentity(identity: String): String = identity.removeSuffix(WHIP_SUFFIX)
+
+/** A published track, with where it came from. */
+internal data class Feed<T>(val source: Track.Source, val track: T, val fromIngress: Boolean)
+
+internal data class PersonFeeds<V, A>(val screen: V?, val camera: V?, val audio: List<A>)
+
+/**
+ * Where a stream came from decides how it is labelled, and viewers must not
+ * care. WHIP carries no notion of a screen share, so an ingress may label its
+ * tracks CAMERA and MICROPHONE: everything an ingress sends is the screen, and
+ * only a person's own Camera and Microphone are their camera. Both the screen's
+ * sound and the microphone are heard.
+ */
+internal fun <V, A> pickFeeds(video: List<Feed<V>>, audio: List<Feed<A>>): PersonFeeds<V, A> {
+    val screen = video.firstOrNull { it.fromIngress }
+        ?: video.firstOrNull { !it.fromIngress && it.source != Track.Source.CAMERA }
+    val camera = video.firstOrNull { !it.fromIngress && it.source == Track.Source.CAMERA }
+    val screenAudio = audio.firstOrNull { it.fromIngress }
+        ?: audio.firstOrNull { !it.fromIngress && it.source != Track.Source.MICROPHONE }
+    val mic = audio.firstOrNull { !it.fromIngress && it.source == Track.Source.MICROPHONE }
+    return PersonFeeds(
+        screen = (screen ?: camera)?.track,
+        camera = if (screen != null) camera?.track else null,
+        audio = listOfNotNull(screenAudio?.track, mic?.track)
+    )
+}
 
 class LiveKitRoomManager(
     private val context: Context,
@@ -97,6 +141,7 @@ class LiveKitRoomManager(
         when (event) {
             is RoomEvent.ParticipantConnected,
             is RoomEvent.ParticipantDisconnected,
+            is RoomEvent.ParticipantNameChanged,
             is RoomEvent.TrackSubscribed,
             is RoomEvent.TrackUnsubscribed,
             is RoomEvent.TrackMuted,
@@ -119,31 +164,45 @@ class LiveKitRoomManager(
         val currentRoom = room ?: return
         val activeAudioId = _selectedAudioParticipantId.value
 
-        val items = currentRoom.remoteParticipants.values.mapNotNull { participant ->
-            val videoTrack = participant.videoTrackPublications.firstOrNull()?.second as? VideoTrack
-            val audioTrack = participant.audioTrackPublications.firstOrNull()?.second as? AudioTrack
+        val people = currentRoom.remoteParticipants.values
+            .filter { it.identity?.value != null }
+            .groupBy { ownerIdentity(it.identity!!.value) }
+
+        val items = people.mapNotNull { (owner, participants) ->
+            val human = participants.firstOrNull { it.identity?.value == owner }
+            val ingress = participants.firstOrNull { it.identity?.value != owner }
+
+            val feeds = pickFeeds(
+                video = feedsOf<VideoTrack>(human, ingress) { it.videoTrackPublications },
+                audio = feedsOf<AudioTrack>(human, ingress) { it.audioTrackPublications }
+            )
 
             // Only include participants who are actively broadcasting (skip passive viewers)
-            if (videoTrack == null && audioTrack == null) {
+            if (feeds.screen == null && feeds.audio.isEmpty()) {
                 return@mapNotNull null
             }
 
-            val isAudioActive = (participant.identity?.value == activeAudioId) || 
-                (activeAudioId == null && audioTrack != null)
+            val isAudioActive = (owner == activeAudioId) ||
+                (activeAudioId == null && feeds.audio.isNotEmpty())
 
-            // Apply audio muting according to selection
-            audioTrack?.let {
-                it.enabled = isAudioActive
+            // Apply audio muting according to selection. A second screen audio
+            // (from both paths at once) stays off so nothing is heard twice.
+            participants.forEach { participant ->
+                participant.audioTrackPublications.forEach { (_, track) ->
+                    (track as? AudioTrack)?.let { it.enabled = isAudioActive && it in feeds.audio }
+                }
             }
 
-            val displayName = participant.name?.takeIf { it.isNotBlank() }
-                ?: participant.identity?.value
-                ?: "Apresentador"
+            // A WHIP publisher carries the name it joined with, so a later
+            // rename would leave a stale label. The human is always current.
+            val displayName = (human ?: ingress)?.name?.takeIf { it.isNotBlank() }
+                ?: owner
 
             StreamItem(
-                participantId = participant.identity?.value ?: "",
+                participantId = owner,
                 participantName = displayName,
-                videoTrack = videoTrack,
+                videoTrack = feeds.screen,
+                cameraTrack = feeds.camera,
                 isAudioActive = isAudioActive
             )
         }
@@ -156,7 +215,23 @@ class LiveKitRoomManager(
         _streams.value = items
     }
 
+    private inline fun <reified T : Track> feedsOf(
+        human: RemoteParticipant?,
+        ingress: RemoteParticipant?,
+        publications: (RemoteParticipant) -> List<Pair<io.livekit.android.room.track.TrackPublication, Track?>>
+    ): List<Feed<T>> =
+        listOfNotNull(human?.let { it to false }, ingress?.let { it to true })
+            .flatMap { (participant, fromIngress) ->
+                publications(participant).mapNotNull { (publication, track) ->
+                    (track as? T)?.let { Feed(publication.source, it, fromIngress) }
+                }
+            }
+
     fun initVideoRenderer(renderer: SurfaceViewRenderer) {
+        room?.initVideoRenderer(renderer)
+    }
+
+    fun initVideoRenderer(renderer: TextureViewRenderer) {
         room?.initVideoRenderer(renderer)
     }
 

@@ -64,5 +64,10 @@ the shared audio's.
 - Older viewers pick the `ScreenShare` track first, so they see the screen and not the camera
   of someone sharing both, and they do not hear that person's microphone. A camera shared
   alone still reaches them: it keeps the `camera` label in the participant's metadata.
+- The Android viewer follows the same rules: a person's own participant and their ingress
+  are one tile, the screen is the picture with the camera over its corner (tap to enlarge),
+  and choosing someone's sound plays both their shared audio and their microphone. It has
+  no overview of cameras and no way to watch the camera apart; it shows every broadcast in
+  its grid already. Android versions before this still play only one of a person's tracks.
 - The sender's footer has one stop button: it stops the screen if there is one, otherwise
   the camera. Changing channel or signing out stops both.
