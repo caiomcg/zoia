@@ -34,33 +34,36 @@ the camera makes it larger (and asks for its high layer), clicking again makes i
 the footer hides it. Watching the camera itself shows it alone, and the corner is not drawn
 twice when both are on the stage.
 
-**The overview.** While nothing is watched, the stage is no longer dark: it shows every
-camera that is on, side by side, live on its 360p layer, with your own screen and camera
-while your preview is on. Someone else's screen is not offered there; it is chosen from the
-channel list, as before. You see your own camera mirrored, as the camera dialog shows it;
-viewers get it the right way round. Clicking a tile watches it, clicking the large picture
-again stops watching it, and once nothing is watched the overview is back. Going live no
-longer puts your own preview on the stage; you appear in the overview, as in a call. Your own
-screen preview does not carry your camera in its corner: it would only cover what you share,
-and your camera has its own overview tile.
+**Choosing.** Nothing of anyone else opens by itself, cameras included. Someone's row in the
+channel list opens their screen, as before, and only their screen: a camera shared alone
+does not make the row live. While their camera is on, a camera button sits at the end of
+their row; it puts the camera in the **grid**, never straight onto the large view, stays lit
+while it is there, and takes it out when clicked again. The grid is the stage while nothing is
+enlarged: your own screen (while your preview is on) and the cameras put there, side by side.
+A click on a tile enlarges it; a click on the large picture brings the grid back. Your own row
+has no camera button: your camera is in your grid for as long as it is on, whatever your
+preview setting. Enlarged, a click still brings the grid back, but its tile has no close. You
+see your own camera mirrored, as the camera dialog shows it; viewers get it the right way
+round. Going live no longer puts your own preview on the stage. Your own screen preview does
+not carry your camera in its corner: it would only cover what you share.
 
 **Sound.** A microphone starts muted on both ends. The camera dialog's "mute the microphone"
 box starts ticked every time, not remembered, and the sender unmutes from the dialog or the
 player. And each viewer hears nobody's microphone until they turn it on, per person, from
 the tile; that is not remembered either. Shared audio follows the person's volume and mute.
 
-In the overview the cameras on it are heard: their microphones, once turned on (and all of a
-camera shared alone, which may be an older client's). A screen nobody chose is not heard.
-Otherwise, as before, only the people being watched are heard. Sound is played once per person
-by the grid, not by a tile, so two pictures of one person on the stage never play it twice.
+Only what is watched is heard. Someone's microphone plays with any picture of theirs on the
+stage, once turned on; the sound of their screen only with their screen, not with their camera
+alone. Sound is played once per person by the grid, not by a tile, so two pictures of one
+person on the stage never play it twice.
 Your own sound, shared or microphone, is never played back to you.
 
 ## Consequences
 
 - Sharing both costs the sender about 2.5 Mbps more upload, plus the 360p layer.
-- This reverses ADR 0013's "nothing opens by itself" for cameras: the overview plays every
-  camera before anyone chooses. Screens still wait to be chosen, and microphones stay off
-  until turned on. With five cameras on, an idle viewer downloads about 2.5 Mbps.
+- ADR 0013's "nothing opens by itself" holds for cameras too: a camera costs a viewer nothing
+  until they choose it, and a camera shared alone is found only by its button, not by the
+  row, so someone looking for cameras has to look for that button.
 - Someone who wants to be heard has to unmute, and each viewer has to turn them on too.
   Two clicks to be heard is the price of nobody being heard by accident.
 - A camera's video stops flowing whenever it is on no screen: a hidden corner, or a screen
