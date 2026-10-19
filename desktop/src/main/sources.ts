@@ -27,7 +27,7 @@
 import { desktopCapturer, screen, systemPreferences, type NativeImage } from 'electron';
 import { t } from './language';
 import { Window, windowManager } from 'node-window-manager';
-import { isShareableWindow, type Bounds } from './window-filter';
+import { isParkedWindow, isShareableWindow, type Bounds } from './window-filter';
 import { perAppAudioSupported } from './audio';
 import type { SourceInfo } from '../shared/ipc';
 import { isLeagueClient, isLeagueGame, isLeagueSource } from '../shared/league';
@@ -97,6 +97,26 @@ async function getSourcesOfType(
   }
 }
 
+/**
+ * The League client minimizes itself while a match runs and stays parked
+ * after it, so the post-game lobby would capture as black. Restoring it puts
+ * it back in view, shareable at once.
+ *
+ * Only a visible window parked off-screen, though. The client also keeps
+ * dozens of hidden and tiny helper windows (its embedded browser's), and
+ * restoring those *shows* them: they piled up as blank "League of Legends"
+ * windows on the taskbar, and in the picker, every time either listed them.
+ */
+function restoreParkedLeagueClient(win: ReturnType<typeof windowManager.getWindows>[number]) {
+  try {
+    if (!/leagueclient(ux)?\.exe$/i.test(win.path || '')) return;
+    if (!win.isVisible() || !isParkedWindow(safeBounds(win))) return;
+    win.restore();
+  } catch {
+    // Closed or inaccessible meanwhile; it is simply not restored.
+  }
+}
+
 function toSourceInfo(
   sources: Electron.DesktopCapturerSource[],
   windowsById: Map<number, ReturnType<typeof windowManager.getWindows>[number]>,
@@ -116,18 +136,7 @@ function toSourceInfo(
       if (!nativeWindow || !nativeWindow.isVisible()) {
         return [];
       }
-      // If the League client window is parked/minimized after a match closes,
-      // restore it into view so the post-game lobby is immediately shareable.
-      if (
-        !isShareableWindow(safeBounds(nativeWindow)) &&
-        /leagueclient(ux)?\.exe$/i.test(nativeWindow.path || '')
-      ) {
-        try {
-          nativeWindow.restore();
-        } catch {
-          // Ignore failure to restore if the window closed or is inaccessible.
-        }
-      }
+      restoreParkedLeagueClient(nativeWindow);
       if (!isShareableWindow(safeBounds(nativeWindow))) {
         return [];
       }
@@ -435,11 +444,7 @@ export function findLeagueWindows(): {
     if (!isPotentialLeague) continue;
 
     try {
-      if (!win.isVisible() || !isShareableWindow(safeBounds(win))) {
-        if (/leagueclient(ux)?\.exe$/i.test(path)) {
-          win.restore();
-        }
-      }
+      restoreParkedLeagueClient(win);
       if (!win.isVisible() || !isShareableWindow(safeBounds(win))) {
         continue;
       }
