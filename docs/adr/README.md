@@ -41,6 +41,7 @@ record that supersedes it, so the history stays legible.
 | [0031](0031-accounts-with-admin-approval.md) | Accounts with an email and password, approved by an admin | proposed |
 | [0032](0032-sqlite-for-credentials.md) | Credentials and identities in SQLite | proposed |
 | [0033](0033-admins-move-people-between-channels.md) | Admins move people between channels | accepted |
+| [0034](0034-camera-beside-the-screen.md) | A camera beside the screen | accepted |
 
 ## The two that explain the most
 
