@@ -20,7 +20,7 @@
     "build:native": "cd native && npm ci && node-gyp rebuild --target=44.4.3 --dist-url=https://electronjs.org/headers --arch=x64"
   },
   "dependencies": {
-    "livekit-client": "^2.22.3",
+    "livekit-client": "^2.23.0",
     "node-window-manager": "^2.2.4",
     "react": "^19.3.0",
     "react-dom": "^19.3.0"
