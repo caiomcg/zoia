@@ -1,58 +1,83 @@
 name: Discord Changelog
 
+# Posts a release's changelog entry to Discord once the release is published.
+# Releases are tags on main, not merged pull requests, so it follows the
+# release rather than a merge. Run it by hand to post (or repost) a version.
+
 on:
-  pull_request:
+  release:
     types:
-      - closed
-    branches:
-      - master
+      - published
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to post, e.g. v0.7.3
+        required: true
 
 jobs:
   notify-discord:
-    if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
 
     steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.release.tag_name || inputs.tag }}
+
       - name: Send changelog to Discord
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          PR_TITLE: ${{ github.event.pull_request.title }}
-          PR_BODY: ${{ github.event.pull_request.body }}
-          PR_URL: ${{ github.event.pull_request.html_url }}
-          AUTHOR: ${{ github.event.pull_request.user.login }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+          REPO_URL: ${{ github.server_url }}/${{ github.repository }}
         run: |
           python - <<'PY'
           import json
           import os
+          import re
           import urllib.request
+
+          tag = os.environ["TAG"]
+          version = tag.removeprefix("v")
+          text = open(f"changelog/{version}.md", encoding="utf-8").read().replace("\r\n", "\n")
+
+          # The front matter holds the one-line summary; the rest is the notes.
+          summary = ""
+          match = re.match(r"^---\n(.*?)\n---\n", text, re.S)
+          if match:
+              text = text[match.end():]
+              found = re.search(r"^summary:\s*(.+)$", match.group(1), re.M)
+              summary = found.group(1).strip() if found else ""
+
+          # Entries are hard-wrapped; Discord shows every newline, so join a
+          # bullet's continuation lines back onto it.
+          lines = []
+          for line in text.strip().split("\n"):
+              if lines and line.startswith("  ") and line.strip() and lines[-1].strip():
+                  lines[-1] += " " + line.strip()
+              else:
+                  lines.append(line)
+          body = "\n".join(lines)
+          if summary:
+              body = f"*{summary}*\n\n{body}"
+          # An embed description holds at most 4096 characters.
+          if len(body) > 4000:
+              body = body[:4000].rsplit("\n", 1)[0] + "\n…"
 
           payload = {
               "embeds": [
                   {
-                      "title": f"🚀 {os.environ['PR_TITLE']}",
-                      "url": os.environ["PR_URL"],
-                      "description": os.environ["PR_BODY"] or "No changelog provided.",
+                      "title": f"🚀 Zoia {version}",
+                      "url": f"{os.environ['REPO_URL']}/releases/tag/{tag}",
+                      "description": body,
                       "color": 5814783,
-                      "fields": [
-                          {
-                              "name": "Author",
-                              "value": os.environ["AUTHOR"],
-                              "inline": True
-                          }
-                      ]
                   }
               ]
           }
 
-          data = json.dumps(payload).encode("utf-8")
-
           request = urllib.request.Request(
               os.environ["DISCORD_WEBHOOK_URL"],
-              data=data,
-              headers={
-                  "Content-Type": "application/json"
-              },
-              method="POST"
+              data=json.dumps(payload).encode("utf-8"),
+              headers={"Content-Type": "application/json", "User-Agent": "zoia-release"},
+              method="POST",
           )
 
           with urllib.request.urlopen(request) as response:
