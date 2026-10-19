@@ -49,6 +49,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -72,6 +73,7 @@ import im.zoia.livekit.LiveKitRoomManager
 import im.zoia.livekit.RoomConnectionState
 import im.zoia.livekit.StreamItem
 import io.livekit.android.room.track.VideoTrack
+import io.livekit.android.renderer.TextureViewRenderer
 import livekit.org.webrtc.SurfaceViewRenderer
 import kotlinx.coroutines.launch
 
@@ -332,7 +334,7 @@ fun RoomScreen(
                     is RoomConnectionState.Connected -> {
                         if (streams.isEmpty()) {
                             Text(
-                                text = "Nenhuma transmissão ativa neste canal.\nQuando alguém compartilhar tela, o vídeo aparecerá aqui.",
+                                text = "Nenhuma transmissão ativa neste canal.\nQuando alguém compartilhar a tela ou a câmera, o vídeo aparecerá aqui.",
                                 color = Color(0xFF6B7280),
                                 fontSize = 16.sp,
                                 textAlign = TextAlign.Center
@@ -792,6 +794,14 @@ fun StreamCard(
             }
         }
 
+        if (stream.cameraTrack != null) {
+            CameraCorner(
+                cameraTrack = stream.cameraTrack,
+                roomManager = roomManager,
+                modifier = Modifier.align(Alignment.TopEnd)
+            )
+        }
+
         // Overlay: Presenter name and audio toggle button
         Row(
             modifier = Modifier
@@ -830,9 +840,53 @@ fun StreamCard(
     }
 }
 
+/**
+ * The person's camera over the corner of their screen, as on the desktop (ADR
+ * 0034). Tapping it makes it larger, tapping again makes it small. Adaptive
+ * streaming asks for the camera's low layer while it is small.
+ */
+@Composable
+fun CameraCorner(
+    cameraTrack: VideoTrack,
+    roomManager: LiveKitRoomManager,
+    modifier: Modifier = Modifier
+) {
+    var large by remember { mutableStateOf(false) }
+    Box(
+        modifier = modifier
+            .padding(8.dp)
+            .fillMaxWidth(if (large) 0.45f else 0.25f)
+            .aspectRatio(16f / 9f)
+            .clip(RoundedCornerShape(8.dp))
+            .background(Color(0xFF000000))
+            .border(1.dp, Color(0xFF262A34), RoundedCornerShape(8.dp))
+            .clickable { large = !large }
+    ) {
+        // A TextureView, unlike a SurfaceView, draws in order with the screen
+        // beneath it and is clipped to the rounded corners.
+        key(cameraTrack) {
+            AndroidView(
+                factory = { ctx ->
+                    TextureViewRenderer(ctx).apply {
+                        roomManager.initVideoRenderer(this)
+                        cameraTrack.addRenderer(this)
+                    }
+                },
+                onRelease = { renderer ->
+                    cameraTrack.removeRenderer(renderer)
+                    renderer.release()
+                },
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+    }
+}
+
 @Composable
 fun VideoTrackSurface(videoTrack: VideoTrack, roomManager: LiveKitRoomManager) {
-    AndroidView(
+    // The picture can change track under the same card: a camera shared alone
+    // gives way to the screen when the screen starts.
+    key(videoTrack) { AndroidView(
         factory = { ctx ->
             SurfaceViewRenderer(ctx).apply {
                 setEnableHardwareScaler(true)
@@ -848,5 +902,5 @@ fun VideoTrackSurface(videoTrack: VideoTrack, roomManager: LiveKitRoomManager) {
             renderer.release()
         },
         modifier = Modifier.fillMaxSize()
-    )
+    ) }
 }
