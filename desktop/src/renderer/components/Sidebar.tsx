@@ -16,9 +16,10 @@ import { useLeaving } from '../presence';
  * avatar's ring turns from green to the accent. See GridControls in RemoteGrid.
  */
 
-/** Whose broadcast is on your stage. */
+/** Whose broadcast is on your stage, and whose camera. */
 export interface StageMarks {
   watching: ReadonlySet<string>;
+  cameras: ReadonlySet<string>;
   localWatched: boolean;
 }
 
@@ -160,6 +161,7 @@ export default function Sidebar({
   stage,
   onHoverBroadcast,
   onWatchBroadcast,
+  onToggleCamera,
 }: {
   members: RoomMember[];
   myName: string;
@@ -188,6 +190,8 @@ export default function Sidebar({
   stage: StageMarks;
   onHoverBroadcast: (target: GridTarget | null, anchor?: DOMRect) => void;
   onWatchBroadcast: (target: GridTarget) => void;
+  /** Puts someone's camera on stage, or takes it off again. */
+  onToggleCamera: (identity: string) => void;
 }) {
   const t = useT();
   const canManageChannels = myRole === 'admin' || myRole === 'super_admin';
@@ -286,6 +290,7 @@ export default function Sidebar({
     stage,
     onHover: onHoverBroadcast,
     onWatch: onWatchBroadcast,
+    onToggleCamera,
   };
   // Which channel is being renamed, or 'new' while one is being named.
   const [editing, setEditing] = useState<string | null>(null);
@@ -590,6 +595,7 @@ function MemberRow({
   stage,
   onHover,
   onWatch,
+  onToggleCamera,
 }: {
   member: RoomMember;
   role?: AccountRole;
@@ -601,9 +607,15 @@ function MemberRow({
   stage: StageMarks;
   onHover: (target: GridTarget | null, anchor?: DOMRect) => void;
   onWatch: (target: GridTarget) => void;
+  onToggleCamera: (identity: string) => void;
 }) {
   const t = useT();
-  const live = m.isBroadcasting;
+  // The row is the way to someone's screen. Their camera never opens by
+  // itself, nor from the row: it has its own button, beside their name.
+  const live = m.sharesScreen;
+  // Not on your own row: your camera is always in your grid while it is on.
+  const camera = m.hasCamera && !m.isLocal;
+  const cameraShown = camera && stage.cameras.has(m.identity);
   const target = { identity: m.identity, isLocal: m.isLocal };
   const loading = !m.isLocal && loadingRemoteIds.has(m.identity);
   const watching = live && (m.isLocal ? stage.localWatched : stage.watching.has(m.identity));
@@ -641,6 +653,42 @@ function MemberRow({
       <span className="member-name">{m.name}</span>
       {m.isLocal && <span className="you-tag">{t('common.youTag')}</span>}
       {loading && <span className="stream-state">{t('common.loading')}</span>}
+      {camera && (
+        <button
+          className={`member-camera${cameraShown ? ' active' : ''}`}
+          aria-pressed={cameraShown}
+          title={
+            cameraShown
+              ? t('sidebar.hideCamera', { name: m.name })
+              : t('sidebar.showCamera', { name: m.name })
+          }
+          aria-label={
+            cameraShown
+              ? t('sidebar.hideCamera', { name: m.name })
+              : t('sidebar.showCamera', { name: m.name })
+          }
+          // The row behind it opens their screen; this is the camera only.
+          onClick={(event) => {
+            event.stopPropagation();
+            onToggleCamera(m.identity);
+          }}
+          onKeyDown={(event) => event.stopPropagation()}
+        >
+          <svg
+            viewBox="0 0 24 24"
+            width="16"
+            height="16"
+            aria-hidden="true"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinejoin="round"
+          >
+            <rect x="2.5" y="6" width="13" height="12" rx="2" />
+            <path d="M15.5 11l6-3.5v9l-6-3.5z" />
+          </svg>
+        </button>
+      )}
     </div>
   );
 }

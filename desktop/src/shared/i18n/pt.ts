@@ -76,6 +76,8 @@ export const pt: Messages = {
   'sidebar.newChannelTitle': 'Novo canal ({count} de {max})',
   'sidebar.inRoom': 'Na sala — {count}',
   'sidebar.watchingYou': 'Está assistindo sua tela',
+  'sidebar.showCamera': 'Ver a câmera de {name}',
+  'sidebar.hideCamera': 'Esconder a câmera de {name}',
   'sidebar.watchLive': 'Assistir {name}. Passe o mouse para uma prévia.',
   'sidebar.settings': 'Configurações',
   'sidebar.leave': 'Sair do canal',

@@ -78,11 +78,25 @@ function hopMembers(
       name: p.name || p.identity,
       isLocal: false,
       isBroadcasting: broadcasting.has(p.identity),
+      // The poll cannot tell a screen from a camera; the room says, soon.
+      sharesScreen: broadcasting.has(p.identity),
+      hasCamera: false,
       isIngress: false,
       broadcastSource: null,
       avatar: p.avatar,
     }));
-  return me ? [{ ...me, isBroadcasting: false, broadcastSource: null }, ...others] : others;
+  return me
+    ? [
+        {
+          ...me,
+          isBroadcasting: false,
+          sharesScreen: false,
+          hasCamera: false,
+          broadcastSource: null,
+        },
+        ...others,
+      ]
+    : others;
 }
 
 export default function App() {
@@ -109,7 +123,11 @@ export default function App() {
   const connectingRef = useRef(false);
   // The channel list finds broadcasts; the grid owns what the stage shows.
   const gridRef = useRef<GridControls>(null);
-  const [stage, setStage] = useState<StageState>({ watching: [], localWatched: false });
+  const [stage, setStage] = useState<StageState>({
+    watching: [],
+    cameras: [],
+    localWatched: false,
+  });
   const [presetId, setPresetId] = useState(
     () => localStorage.getItem(PRESET_STORAGE_KEY) ?? DEFAULT_PRESET_ID,
   );
@@ -866,13 +884,16 @@ export default function App() {
               local={
                 isLive
                   ? {
-                      renderStage: ({ active, toggle, onClose }) => (
+                      renderStage: ({ active, toggle, onClose, closeButton }) => (
                         <Player
                           fullscreen={{ active, toggle }}
                           onClose={onClose}
+                          closeButton={closeButton}
                           name={status.deviceName ?? t('common.you')}
                           identity={myIdentity}
-                          showPreview={showPreview}
+                          // Your camera alone is shown whatever the preview:
+                          // it is always in your grid, to be seen.
+                          showPreview={showPreview || !screenLive}
                           onTogglePreview={togglePreview}
                           localTrack={screenLive ? room.localTrack : room.cameraTrack}
                           mirrored={!screenLive}
@@ -905,7 +926,9 @@ export default function App() {
                       mirrored: !screenLive,
                       showPreview,
                       onTogglePreview: togglePreview,
-                      cameraTrack: screenLive && showPreview ? room.cameraTrack : null,
+                      // Always in your grid while it is on, whatever the preview.
+                      camera: room.cameraState === 'live' ? room.cameraTrack : null,
+                      cameraIsMain: !screenLive,
                       onStop: () => void stopMain(),
                       name: status.deviceName ?? t('common.you'),
                       identity: myIdentity,
@@ -954,8 +977,10 @@ export default function App() {
           onMoveMember={(identity, id) => void moveMember(identity, id)}
           stage={{
             watching: new Set(stage.watching),
+            cameras: new Set(stage.cameras),
             localWatched: stage.localWatched,
           }}
+          onToggleCamera={(identity) => gridRef.current?.toggleCamera(identity)}
           onHoverBroadcast={(target, anchor) => gridRef.current?.hover(target, anchor)}
           onWatchBroadcast={(target) => gridRef.current?.watch(target)}
         />

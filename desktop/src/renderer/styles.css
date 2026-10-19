@@ -2751,6 +2751,34 @@ button.danger {
   outline-offset: -2px;
 }
 
+/* Someone's camera is on: a button at the end of their row puts it on stage,
+   and takes it off again. Lit while it is shown. */
+.member-camera {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 22px;
+  margin-left: auto;
+  padding: 0;
+  color: var(--muted, rgb(255 255 255 / 0.6));
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.member-camera:hover {
+  color: #fff;
+  background: rgb(255 255 255 / 0.1);
+}
+
+.member-camera.active {
+  color: #fff;
+  background: var(--accent);
+}
+
 /* On your stage: the live ring turns from green to the accent. */
 .member.watching .avatar.live {
   box-shadow:
