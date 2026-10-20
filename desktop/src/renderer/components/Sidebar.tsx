@@ -291,6 +291,7 @@ export default function Sidebar({
     onHover: onHoverBroadcast,
     onWatch: onWatchBroadcast,
     onToggleCamera,
+    collapsed,
   };
   // Which channel is being renamed, or 'new' while one is being named.
   const [editing, setEditing] = useState<string | null>(null);
@@ -596,6 +597,7 @@ function MemberRow({
   onHover,
   onWatch,
   onToggleCamera,
+  collapsed,
 }: {
   member: RoomMember;
   role?: AccountRole;
@@ -608,6 +610,8 @@ function MemberRow({
   onHover: (target: GridTarget | null, anchor?: DOMRect) => void;
   onWatch: (target: GridTarget) => void;
   onToggleCamera: (identity: string) => void;
+  /** The list is down to avatars, with no room for the camera button. */
+  collapsed: boolean;
 }) {
   const t = useT();
   // The row is the way to someone's screen. Their camera never opens by
@@ -620,6 +624,10 @@ function MemberRow({
   const loading = !m.isLocal && loadingRemoteIds.has(m.identity);
   const watching = live && (m.isLocal ? stage.localWatched : stage.watching.has(m.identity));
   const show = (element: HTMLElement) => onHover(target, element.getBoundingClientRect());
+  // Hovering shows their card: their screen's thumbnail, and, with a camera
+  // on, its button. Collapsed, that card is the only place the button is, so
+  // someone with just a camera on gets one too.
+  const hoverable = live || (collapsed && camera);
 
   return (
     <div
@@ -640,10 +648,10 @@ function MemberRow({
             }
           : undefined
       }
-      onMouseEnter={live ? (event) => show(event.currentTarget) : undefined}
-      onMouseLeave={live ? () => onHover(null) : undefined}
-      onFocus={live ? (event) => show(event.currentTarget) : undefined}
-      onBlur={live ? () => onHover(null) : undefined}
+      onMouseEnter={hoverable ? (event) => show(event.currentTarget) : undefined}
+      onMouseLeave={hoverable ? () => onHover(null) : undefined}
+      onFocus={hoverable ? (event) => show(event.currentTarget) : undefined}
+      onBlur={hoverable ? () => onHover(null) : undefined}
       {...drag}
     >
       <span className="avatar-wrap">
@@ -654,42 +662,62 @@ function MemberRow({
       {m.isLocal && <span className="you-tag">{t('common.youTag')}</span>}
       {loading && <span className="stream-state">{t('common.loading')}</span>}
       {camera && (
-        <button
-          className={`member-camera${cameraShown ? ' active' : ''}`}
-          aria-pressed={cameraShown}
-          title={
-            cameraShown
-              ? t('sidebar.hideCamera', { name: m.name })
-              : t('sidebar.showCamera', { name: m.name })
-          }
-          aria-label={
-            cameraShown
-              ? t('sidebar.hideCamera', { name: m.name })
-              : t('sidebar.showCamera', { name: m.name })
-          }
-          // The row behind it opens their screen; this is the camera only.
-          onClick={(event) => {
-            event.stopPropagation();
-            onToggleCamera(m.identity);
-          }}
-          onKeyDown={(event) => event.stopPropagation()}
-        >
-          <svg
-            viewBox="0 0 24 24"
-            width="16"
-            height="16"
-            aria-hidden="true"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinejoin="round"
-          >
-            <rect x="2.5" y="6" width="13" height="12" rx="2" />
-            <path d="M15.5 11l6-3.5v9l-6-3.5z" />
-          </svg>
-        </button>
+        <CameraToggle
+          className="member-camera"
+          name={m.name}
+          shown={cameraShown}
+          onToggle={() => onToggleCamera(m.identity)}
+        />
       )}
     </div>
+  );
+}
+
+/**
+ * Puts someone's camera on the stage, or takes it off. At the end of their
+ * row, in the open list only: the collapsed one has no room for it beside the
+ * avatar, so a camera is put on from the open list.
+ */
+function CameraToggle({
+  className,
+  name,
+  shown,
+  onToggle,
+}: {
+  className: string;
+  name: string;
+  shown: boolean;
+  onToggle: () => void;
+}) {
+  const t = useT();
+  const label = shown ? t('sidebar.hideCamera', { name }) : t('sidebar.showCamera', { name });
+  return (
+    <button
+      className={`${className}${shown ? ' active' : ''}`}
+      aria-pressed={shown}
+      title={label}
+      aria-label={label}
+      // The row behind it opens their screen; this is the camera only.
+      onClick={(event) => {
+        event.stopPropagation();
+        onToggle();
+      }}
+      onKeyDown={(event) => event.stopPropagation()}
+    >
+      <svg
+        viewBox="0 0 24 24"
+        width="16"
+        height="16"
+        aria-hidden="true"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.2"
+        strokeLinejoin="round"
+      >
+        <rect x="2.5" y="6" width="13" height="12" rx="2" />
+        <path d="M15.5 11l6-3.5v9l-6-3.5z" />
+      </svg>
+    </button>
   );
 }
 

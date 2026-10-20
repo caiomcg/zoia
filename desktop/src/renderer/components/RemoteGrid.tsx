@@ -98,6 +98,8 @@ export interface StageState {
 const HOVER_CLOSE_MS = 250;
 const PREVIEW_WIDTH = 320;
 const PREVIEW_HEIGHT = 180;
+/** The camera button under a hover card's picture, gap included. */
+const CAMERA_BAR_HEIGHT = 44;
 
 const LAYOUT_KEY = 'zoia.layout';
 const STRIP_HIDDEN_KEY = 'zoia.thumbnailsHidden';
@@ -1324,6 +1326,22 @@ export default function RemoteGrid({
   // A click on a large picture: in the mosaic it enlarges that tile, and on
   // the enlarged one it brings the mosaic back. The spotlight already shows
   // one large, so there it does nothing.
+  /**
+   * Puts someone's camera on the stage, or takes it off: from the camera
+   * button on their row, or from their hover card. Yours is always there.
+   */
+  function toggleCameraOf(identity: string) {
+    if (identity === local?.identity) return;
+    if (cameraOwners.includes(identity)) {
+      setCameraOwners((current) => current.filter((other) => other !== identity));
+      const id = cameraIdOf(identity);
+      if (id && focused === id) setFocusId(null);
+      return;
+    }
+    setCameraOwners((current) => (current.includes(identity) ? current : [...current, identity]));
+    ensureAudible(identity);
+  }
+
   function pictureActionFor(id: string): PictureAction {
     // The spotlight always shows one large; a click there changes nothing.
     if (focused === id) return mode === 'mosaic' ? 'shrink' : null;
@@ -1375,18 +1393,7 @@ export default function RemoteGrid({
     // Puts their camera in the grid, never straight onto the large view; the
     // grid shows once nothing is enlarged. Again, and it leaves the grid, and
     // the large view too if it was there.
-    toggleCamera: (identity) => {
-      // Yours is always there; your own row has no button for it.
-      if (identity === local?.identity) return;
-      if (cameraOwners.includes(identity)) {
-        setCameraOwners((current) => current.filter((other) => other !== identity));
-        const id = cameraIdOf(identity);
-        if (id && focused === id) setFocusId(null);
-        return;
-      }
-      setCameraOwners((current) => (current.includes(identity) ? current : [...current, identity]));
-      ensureAudible(identity);
-    },
+    toggleCamera: (identity) => toggleCameraOf(identity),
   }));
 
   // The channel list marks people, not pictures: whose screen is watched, and
@@ -1416,10 +1423,19 @@ export default function RemoteGrid({
   // the same as a thumbnail on the strip, and in the spotlight its eye opens
   // a small window without taking over the large one.
   function renderCard(id: string, anchor: DOMRect): ReactNode {
+    // Someone with a camera on gets its button under their picture: in the
+    // collapsed list this card is the only place it is.
+    const owner = viewOwner(id);
+    const hasCamera = !isLocalId(id) && cameraIdOf(owner) !== null;
+    const height = PREVIEW_HEIGHT + (hasCamera ? CAMERA_BAR_HEIGHT : 0);
     const top = Math.min(
-      Math.max(8, anchor.top + anchor.height / 2 - PREVIEW_HEIGHT / 2),
-      window.innerHeight - PREVIEW_HEIGHT - 8,
+      Math.max(8, anchor.top + anchor.height / 2 - height / 2),
+      window.innerHeight - height - 8,
     );
+    const cameraShown = cameraOwners.includes(owner);
+    const cameraLabel = cameraShown
+      ? t('sidebar.hideCamera', { name: viewById.get(id)?.screen.participantName ?? '' })
+      : t('sidebar.showCamera', { name: viewById.get(id)?.screen.participantName ?? '' });
     const frame = (children: ReactNode) => (
       <div
         className="member-preview"
@@ -1428,6 +1444,19 @@ export default function RemoteGrid({
         onMouseLeave={releaseHover}
       >
         {children}
+        {hasCamera && (
+          <button
+            className={`member-preview-camera${cameraShown ? ' active' : ''}`}
+            aria-pressed={cameraShown}
+            onClick={() => toggleCameraOf(owner)}
+          >
+            <Icon>
+              <rect x="2.5" y="6" width="13" height="12" rx="2" />
+              <path d="M15.5 11l6-3.5v9l-6-3.5z" />
+            </Icon>
+            <span>{cameraLabel}</span>
+          </button>
+        )}
       </div>
     );
     if (id === LOCAL_SPOTLIGHT) {
