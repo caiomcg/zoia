@@ -29,23 +29,33 @@ the person's own `Camera` and `Microphone` are their camera. Someone sharing bot
 `<identity>#camera`. A camera shared alone is their one picture. The viewer pauses and picks
 the quality of each picture on its own; subscription and sound stay per person.
 
-Watching a screen shows that person's camera small over its corner, as in Discord. Clicking
-the camera makes it larger (and asks for its high layer), clicking again makes it small, and
-the footer hides it. Watching the camera itself shows it alone, and the corner is not drawn
-twice when both are on the stage.
+A camera is never drawn over a screen. An earlier version put it in the screen's corner, as
+Discord does; in use it covered what was being shared and could not be watched apart, so each
+picture is now a tile of its own.
 
-**Choosing.** Nothing of anyone else opens by itself, cameras included. Someone's row in the
-channel list opens their screen, as before, and only their screen: a camera shared alone
-does not make the row live. While their camera is on, a camera button sits at the end of
-their row; it puts the camera in the **grid**, never straight onto the large view, stays lit
-while it is there, and takes it out when clicked again. The grid is the stage while nothing is
-enlarged: your own screen (while your preview is on) and the cameras put there, side by side.
-A click on a tile enlarges it; a click on the large picture brings the grid back. Your own row
-has no camera button: your camera is in your grid for as long as it is on, whatever your
-preview setting. Enlarged, a click still brings the grid back, but its tile has no close. You
-see your own camera mirrored, as the camera dialog shows it; viewers get it the right way
-round. Going live no longer puts your own preview on the stage. Your own screen preview does
-not carry your camera in its corner: it would only cover what you share.
+**The stage.** What is on the stage is shown all at once: the screens chosen from someone's
+row in the channel list, your own screen and camera, and the cameras put there by a camera
+button. Nothing of anyone else opens by itself, cameras included. Someone's row opens their
+screen, as before, and only their screen: a camera shared alone does not make the row live.
+While their camera is on, a camera button sits at the end of their row; it puts the camera on
+the stage, stays lit while it is there, and takes it off when clicked again. Your own row has
+no camera button: your screen and camera are on your stage for as long as they are on, and
+their tiles have no close.
+
+The two layouts show the same stage. The **mosaic** puts it side by side; a click on a tile
+enlarges it with the rest on the strip, and a click on the enlarged one brings the mosaic
+back. Your own screen is a tile in both, and with your preview off it says you are live and
+carries the eye that turns the picture on, rather than leaving the stage with no way to.
+
+Both layouts order the stage by one preference: your screen, your camera, the screens chosen
+from the list (in the order they were), then the cameras put on by their buttons. The
+**spotlight** shows the first of them large and the rest on the strip, until something is
+clicked to be large: a row in the list, or a small window. Switching layout goes back to the
+preference. The close on someone else's tile takes it off the stage, and a camera's button
+goes dark with it.
+
+You see your own camera mirrored, as the camera dialog shows it; viewers get it the right way
+round. Going live no longer puts your own preview on the stage by itself.
 
 **Sound.** A microphone starts muted on both ends. The camera dialog's "mute the microphone"
 box starts ticked every time, not remembered, and the sender unmutes from the dialog or the
@@ -66,18 +76,17 @@ Your own sound, shared or microphone, is never played back to you.
   row, so someone looking for cameras has to look for that button.
 - Someone who wants to be heard has to unmute, and each viewer has to turn them on too.
   Two clicks to be heard is the price of nobody being heard by accident.
-- A camera's video stops flowing whenever it is on no screen: a hidden corner, or a screen
-  watched without it. The low layer is used except when it is large.
-- The corner can cover part of the screen (a minimap, a chat), which is why it can be hidden
-  or made small. It is not movable yet.
-- Popping a broadcast out shows the screen without the camera; its sound still plays.
+- A camera's video flows only while its tile is on screen, large or small, like any
+  other picture; off the stage it is paused, though its microphone still plays.
+- Watching someone's screen and camera together takes two tiles of room; the mosaic and the
+  strip are where they fit.
 - Older viewers pick the `ScreenShare` track first, so they see the screen and not the camera
   of someone sharing both, and they do not hear that person's microphone. A camera shared
   alone still reaches them: it keeps the `camera` label in the participant's metadata.
-- The Android viewer follows the same rules: a person's own participant and their ingress
-  are one tile, the screen is the picture with the camera over its corner (tap to enlarge),
-  and choosing someone's sound plays both their shared audio and their microphone. It has
-  no overview of cameras and no way to watch the camera apart; it shows every broadcast in
-  its grid already. Android versions before this still play only one of a person's tracks.
+- The Android viewer, as released with 0.7.3, still follows the first version of this
+  decision: the camera over the screen's corner (tap to enlarge), and choosing someone's
+  sound plays their microphone at once. It has no camera button and no way to watch the
+  camera apart. It should follow the desktop's rules in a later change. Android versions
+  before 0.7.3 play only one of a person's tracks.
 - The sender's footer has one stop button: it stops the screen if there is one, otherwise
   the camera. Changing channel or signing out stops both.
