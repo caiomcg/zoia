@@ -963,15 +963,12 @@ video.mirrored {
 }
 
 /* In the mosaic a click enlarges a tile, and on the enlarged one brings the
-   mosaic back. */
+   mosaic back: an ordinary click, so the ordinary hand. */
 .remote-tile video.enlargeable,
-.stage video.enlargeable {
-  cursor: zoom-in;
-}
-
+.stage video.enlargeable,
 .remote-tile video.closable,
 .stage video.closable {
-  cursor: zoom-out;
+  cursor: pointer;
 }
 
 /* Over the picture, not under it, like the local player's controls. Shown
