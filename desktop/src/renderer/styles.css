@@ -2528,7 +2528,8 @@ button.danger {
 }
 
 /* Collapsed: avatars only. The live ring on an avatar still says who is
-   sharing; names are in each row's tooltip. */
+   sharing; names are in each row's tooltip. A camera is put on from the open
+   list: its button has no room beside the avatar here. */
 .sidebar.collapsed {
   width: 56px;
 }
@@ -2550,9 +2551,19 @@ button.danger {
   background: var(--border);
 }
 
+/* More room than the open list's rows: with no names beside them, the live
+   ring, the role crown and the watching eye of one avatar nearly met the
+   next one's. */
 .sidebar.collapsed .member {
   justify-content: center;
-  padding: 5px 0;
+  padding: 7px 0;
+}
+
+/* With no name beside it, the avatar can take the rail's width. */
+.sidebar.collapsed .channel-members .member .avatar {
+  width: 30px;
+  height: 30px;
+  font-size: 11px;
 }
 
 .sidebar.collapsed .channel-members {
@@ -2587,6 +2598,7 @@ button.danger {
 .sidebar.collapsed .member-name,
 .sidebar.collapsed .you-tag,
 .sidebar.collapsed .stream-state,
+.sidebar.collapsed .member-camera,
 .sidebar.collapsed .member-empty {
   display: none;
 }
@@ -2696,6 +2708,36 @@ button.danger {
   width: 100%;
   height: 180px;
   box-shadow: 0 8px 28px rgb(0 0 0 / 0.6);
+}
+
+/* Someone's camera, under their picture: the way to it from the collapsed
+   list, which has no room for the button on their row. CAMERA_BAR_HEIGHT in
+   RemoteGrid is this, margin included. */
+.member-preview-camera {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 36px;
+  margin-top: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+  background: var(--surface-2);
+  border: 1px solid rgb(255 255 255 / 0.12);
+  border-radius: 8px;
+  box-shadow: 0 8px 28px rgb(0 0 0 / 0.6);
+  cursor: pointer;
+}
+
+.member-preview-camera:hover {
+  background: #3a3c42;
+}
+
+.member-preview-camera.active {
+  background: var(--accent);
+  border-color: transparent;
 }
 
 @keyframes member-preview-in {
