@@ -36,14 +36,13 @@ import { clampPairSplit, pairSplitLimits } from '../pair-split';
  * - mosaic: all of them large. Two sit side by side with a draggable split
  *   that stops once a tile is too narrow for its controls; more form a grid.
  *
- * Both show the same thing, what the viewer chose to watch; switching layout
- * only changes how. Until something is chosen the stage shows only your own
- * tiles. Nothing of anyone else opens by itself: a screen is chosen from
- * their row in the channel list, and a camera from the camera button beside
- * their name, which takes it off again. A screen and a camera
- * shared together are two pictures, and watching the screen shows the camera
- * over its corner (ADR 0034). Once something is watched, only what is watched
- * is heard; there is no listening without watching.
+ * Both show the same thing, everything on the stage; switching layout only
+ * changes how. On the stage are your own screen and camera, the screens
+ * chosen from someone's row in the channel list, and the cameras put there by
+ * the camera button beside someone's name. Nothing of anyone else opens by
+ * itself. A screen and a camera shared together are two pictures, each a
+ * tile of its own (ADR 0034). What is on the stage is heard; there is no
+ * listening without watching.
  *
  * The broadcasts not on stage are found in the channel list: hovering someone
  * live there shows their thumbnail beside it (see GridControls), and clicking
@@ -211,8 +210,14 @@ interface AudioSetting {
   muted: boolean;
 }
 
-/** How a camera over its screen is shown. Large asks for its high layer. */
-type InsetMode = 'small' | 'large' | 'hidden';
+/** What a click on a large picture does: enlarge it, or go back to the mosaic. */
+type PictureAction = 'enlarge' | 'shrink' | null;
+
+function pictureCursor(action: PictureAction): string | undefined {
+  if (action === 'enlarge') return 'enlargeable';
+  if (action === 'shrink') return 'closable';
+  return undefined;
+}
 
 /**
  * One picture on offer: a person's broadcast, or the camera they share beside
@@ -362,20 +367,22 @@ function LocalCameraTile({
   track,
   isFullscreen,
   onToggleFullscreen,
-  onShrink,
+  pictureAction = null,
+  onPictureClick,
 }: {
   name: string;
   identity?: string;
   track: LocalVideoTrack;
   isFullscreen: boolean;
   onToggleFullscreen: () => void;
-  onShrink: () => void;
+  pictureAction?: PictureAction;
+  onPictureClick?: () => void;
 }) {
   const t = useT();
   const videoRef = useRef<HTMLVideoElement>(null);
   useMediaStream(videoRef, track, null);
   const pictureClicks = useClickOrDoubleClick(
-    isFullscreen ? undefined : onShrink,
+    !isFullscreen && pictureAction !== null ? onPictureClick : undefined,
     onToggleFullscreen,
   );
 
@@ -383,7 +390,9 @@ function LocalCameraTile({
     <article className="remote-tile">
       <video
         ref={videoRef}
-        className={isFullscreen ? 'mirrored' : 'mirrored closable'}
+        className={
+          isFullscreen || !pictureAction ? 'mirrored' : `mirrored ${pictureCursor(pictureAction)}`
+        }
         playsInline
         autoPlay
         muted
@@ -438,9 +447,9 @@ function RemoteTile({
   isFullscreen,
   onToggleFullscreen,
   onClose,
-  inset = null,
-  onInsetChange,
   micOn = false,
+  pictureAction = null,
+  onPictureClick,
   onToggleMic,
 }: {
   screen: RemoteScreen;
@@ -454,28 +463,26 @@ function RemoteTile({
   onToggleHq: () => void;
   isFullscreen: boolean;
   onToggleFullscreen: () => void;
-  /** Stop watching: the broadcast goes back to the thumbnails. */
+  /** Stop watching: off the stage. */
   onClose: () => void;
+  /** What a click on the picture does here, if anything. */
+  pictureAction?: PictureAction;
+  onPictureClick?: () => void;
   /** The camera over this screen, and how it is shown; null when there is none. */
-  inset?: InsetMode | null;
-  onInsetChange?: (next: InsetMode) => void;
 }) {
   const t = useT();
   const videoRef = useRef<HTMLVideoElement>(null);
-  const cameraRef = useRef<HTMLVideoElement>(null);
   const { volume, muted } = audio;
   // Picture only: the sound is played once per person by the grid, however
   // many of their pictures are on screen (see heardOwners).
   useMediaStream(videoRef, screen.videoTrack, null);
-  const showCamera = Boolean(screen.cameraTrack) && inset !== null && inset !== 'hidden';
-  useMediaStream(cameraRef, showCamera ? screen.cameraTrack : null, null);
   const hasAudio = Boolean(screen.audioTrack || screen.micTrack);
   const pip = usePopout();
-  // A click leaves the large view, as clicking a tile opened it, which brings
-  // the overview back once nothing else is watched. A double click is
-  // fullscreen; in fullscreen a single click does nothing.
+  // A click enlarges this tile out of the mosaic, or brings the mosaic back;
+  // a double click is fullscreen. In fullscreen a single click does nothing.
+  const clickable = !isFullscreen && pictureAction !== null;
   const pictureClicks = useClickOrDoubleClick(
-    isFullscreen ? undefined : onClose,
+    clickable ? onPictureClick : undefined,
     onToggleFullscreen,
   );
 
@@ -483,27 +490,12 @@ function RemoteTile({
     <article className="remote-tile">
       <video
         ref={videoRef}
-        className={pip.active ? 'popped-out' : isFullscreen ? undefined : 'closable'}
+        className={pip.active ? 'popped-out' : clickable ? pictureCursor(pictureAction) : undefined}
         playsInline
         autoPlay
         muted
         {...pictureClicks}
       />
-      {/* Over a screen the camera can cover what matters in that corner (a
-          minimap, a chat): a click makes it larger or smaller again, and the
-          footer can tuck it away. */}
-      {showCamera && !pip.active && (
-        <video
-          ref={cameraRef}
-          className={`camera-pip${inset === 'large' ? ' large' : ''}`}
-          playsInline
-          autoPlay
-          muted
-          title={inset === 'large' ? t('grid.shrinkCamera') : t('grid.growCamera')}
-          onClick={() => onInsetChange?.(inset === 'large' ? 'small' : 'large')}
-          onDoubleClick={(event) => event.stopPropagation()}
-        />
-      )}
       {pip.active && (
         <div className="overlay">
           <h2>{t('grid.inPip')}</h2>
@@ -565,21 +557,6 @@ function RemoteTile({
               title={hq ? t('grid.hqOn') : t('grid.hqOff')}
             >
               HQ
-            </button>
-          )}
-          {screen.cameraTrack && inset !== null && (
-            <button
-              className={`icon-button${showCamera ? ' active' : ''}`}
-              onClick={() => onInsetChange?.(showCamera ? 'hidden' : 'small')}
-              aria-pressed={showCamera}
-              title={showCamera ? t('grid.hideCamera') : t('grid.showCamera')}
-              aria-label={showCamera ? t('grid.hideCamera') : t('grid.showCamera')}
-            >
-              <Icon>
-                <rect x="2.5" y="6" width="13" height="12" rx="2" />
-                <path d="M15.5 11l6-3.5v9l-6-3.5z" />
-                {!showCamera && <path d="M3 3l18 18" />}
-              </Icon>
             </button>
           )}
           <button
@@ -727,99 +704,6 @@ function ListenAudio({ track, audio }: { track: RemoteTrack; audio: AudioSetting
   }, [audio.muted, audio.volume]);
 
   return <audio ref={ref} autoPlay />;
-}
-
-/**
- * One picture in the overview, the stage shown while nothing is watched.
- * Cameras play live; screens show their latest snapshot. Clicking watches it.
- * Its sound is already playing (see heardOwners); the button only mutes it.
- */
-function OverviewTile({
-  name,
-  identity,
-  label,
-  video = null,
-  snapshot = null,
-  loading = false,
-  audio,
-  onAudioChange,
-  onWatch,
-  mirrored = false,
-  mic,
-}: {
-  name: string;
-  identity?: string;
-  label: string;
-  video?: LocalVideoTrack | RemoteTrack | null;
-  snapshot?: string | null;
-  loading?: boolean;
-  audio?: AudioSetting;
-  onAudioChange?: (next: AudioSetting) => void;
-  /** Their microphone, off until turned on; shown instead of the volume. */
-  mic?: { on: boolean; onToggle: () => void };
-  onWatch?: () => void;
-  /** Your own camera, seen as in a mirror. */
-  mirrored?: boolean;
-}) {
-  const t = useT();
-  const videoRef = useRef<HTMLVideoElement>(null);
-  useMediaStream(videoRef, video, null);
-  const silent = Boolean(audio && (audio.muted || audio.volume === 0));
-
-  return (
-    <div className="overview-tile" title={`${name} — ${label}`}>
-      <button
-        className="overview-watch"
-        onClick={onWatch}
-        disabled={!onWatch}
-        aria-label={t('grid.watch', { name })}
-      >
-        {video ? (
-          <video
-            ref={videoRef}
-            className={mirrored ? 'mirrored' : undefined}
-            playsInline
-            autoPlay
-            muted
-          />
-        ) : snapshot ? (
-          <img src={snapshot} alt="" />
-        ) : (
-          <span className={`thumb-blank${loading ? ' loading' : ''}`} />
-        )}
-      </button>
-      <div className="overview-footer">
-        <span className="remote-tile-who">
-          <Avatar name={name} identity={identity} live />
-          <span className="remote-tile-label">
-            <span className="remote-tile-name">{name}</span>
-            <small className="stream-source">{label}</small>
-          </span>
-        </span>
-        {mic ? (
-          <MicButton name={name} on={mic.on} onToggle={mic.onToggle} />
-        ) : (
-          audio &&
-          onAudioChange && (
-            <button
-              className="icon-button"
-              onClick={() =>
-                onAudioChange({
-                  volume: audio.muted && audio.volume === 0 ? 1 : audio.volume,
-                  muted: !audio.muted,
-                })
-              }
-              aria-pressed={silent}
-              title={silent ? t('common.unmute') : t('common.mute')}
-              aria-label={silent ? t('grid.unmuteName', { name }) : t('grid.muteName', { name })}
-            >
-              <IconVolume muted={silent} />
-            </button>
-          )
-        )}
-      </div>
-    </div>
-  );
 }
 
 /** Takes one broadcast's snapshot, with no picture of its own on screen. */
@@ -1008,8 +892,8 @@ export default function RemoteGrid({
       active: boolean;
       toggle: () => void;
       /** Leave the large view. The player hides it while fullscreen. */
-      onClose: () => void;
-      /** False for your camera shared alone: it is in your grid while it is on. */
+      onClose?: () => void;
+      /** Whether the footer offers a close too; never for your own broadcast. */
       closeButton: boolean;
     }) => ReactNode;
     track: LocalVideoTrack | null;
@@ -1123,7 +1007,10 @@ export default function RemoteGrid({
   // hidden. In the spotlight it holds the small windows: the rest of what is
   // watched. The mosaic has none. Both tuck away with the same arrow.
   const stripShown = fullscreen.isFullscreen && !stripHidden;
-  const pipStrip = !fullscreen.isFullscreen && mode === 'spotlight';
+  // One tile of the mosaic clicked to see it large, the rest on the strip
+  // meanwhile. A click on the large picture brings the mosaic back.
+  const [focusId, setFocusId] = useState<string | null>(null);
+  const pipStrip = !fullscreen.isFullscreen && (mode === 'spotlight' || focusId !== null);
   const pipShown = pipStrip && !stripHidden;
   // Which broadcast fills the screen while fullscreen; null otherwise.
   const [fullscreenId, setFullscreenId] = useState<string | null>(null);
@@ -1146,8 +1033,44 @@ export default function RemoteGrid({
   ];
   const livePinned = pinned.filter((id) => candidates.includes(id));
 
-  // What the viewer chose to watch. Nothing, until they choose.
-  const spotlightId = livePinned[0] ?? null;
+  // What is on the stage, all at once: the screens chosen from someone's row
+  // in the channel list, your own screen and camera, and the cameras put
+  // there by the camera button beside someone's name. Nobody else's screen or
+  // camera opens by itself (ADR 0034); yours have no button, and are there
+  // for as long as they are on.
+  // Whose camera is on the stage, by person, never by picture: a camera
+  // shared alone is someone's main picture, and becomes `#camera` the moment
+  // they share a screen too. Kept by picture, their screen took the camera's
+  // place on the stage, and the button stayed lit for it.
+  const [cameraOwners, setCameraOwners] = useState<string[]>([]);
+  const cameraIdOf = (owner: string): string | null => {
+    if (viewById.has(cameraView(owner))) return cameraView(owner);
+    return viewById.get(owner)?.camera ? owner : null;
+  };
+  const liveGridCameras = [
+    ...(localCameraId ? [localCameraId] : []),
+    ...cameraOwners.flatMap((owner) => {
+      const id = cameraIdOf(owner);
+      return id ? [id] : [];
+    }),
+  ];
+  // In order of preference: your screen, your camera, the screens chosen (in
+  // the order they were), then the cameras put on. Your camera alone is your
+  // broadcast, so LOCAL_SPOTLIGHT is it then. The spotlight shows the first
+  // large unless something was clicked to be (focusId); the mosaic shows them
+  // all in this order. Your own screen is there with your preview off too:
+  // its tile says you are live, and carries the eye that turns it on.
+  const onStage = [
+    ...new Set([
+      ...(hasLocal ? [LOCAL_SPOTLIGHT] : []),
+      ...(localCameraId ? [localCameraId] : []),
+      ...livePinned,
+      ...liveGridCameras,
+    ]),
+  ];
+  const inMosaic = onStage;
+  const focused = focusId && candidates.includes(focusId) ? focusId : null;
+  const spotlightId = focused ?? onStage[0] ?? null;
   // The fullscreen broadcast ended: show whatever the layout would lead with.
   const fullId = fullscreen.isFullscreen
     ? fullscreenId && candidates.includes(fullscreenId)
@@ -1157,9 +1080,10 @@ export default function RemoteGrid({
 
   let mains: string[];
   if (fullId) mains = [fullId];
-  else if (mode === 'mosaic') mains = livePinned;
+  else if (focused) mains = [focused];
+  else if (mode === 'mosaic') mains = inMosaic;
   else mains = spotlightId ? [spotlightId] : [];
-  const paired = !fullId && mode === 'mosaic' && mains.length === 2;
+  const paired = !fullId && !focused && mode === 'mosaic' && mains.length === 2;
 
   // A stored or dragged fraction can leave a tile narrower than its footer
   // once the window shrinks. Pull it back whenever the row's width changes.
@@ -1178,29 +1102,14 @@ export default function RemoteGrid({
   }, [paired]);
 
   const remoteMains = mains.filter((id) => !isLocalId(id));
-  // The spotlight's small windows: everything watched but the large one.
-  const pipIds = pipStrip ? livePinned.slice(1) : [];
-  // Nothing watched, the stage is the grid: your own screen, your camera, and
-  // the cameras put there (see overviewIds). Nobody else's screen or camera
-  // opens by itself; a screen is chosen from someone's row in the channel
-  // list, and a camera is put in the grid, or taken out, by the camera button
-  // beside it (ADR 0034). Yours has no button: it is in your grid for as long
-  // as it is on. A click on a tile enlarges it; a click on the large picture
-  // brings the grid back.
-  const overview = mains.length === 0;
-  const [gridCameras, setGridCameras] = useState<string[]>([]);
-  const liveGridCameras = [
-    ...(localCameraId ? [localCameraId] : []),
-    ...gridCameras.filter((id) => candidates.includes(id)),
-  ];
-  //
-  // What plays: what is watched, and the cameras in the grid while it shows. Someone's microphone with any picture of
-  // theirs; the sound of their screen only with their screen, not their
-  // camera alone. Once per person, however many of their pictures are on
-  // screen. Your own is never here, so you never hear yourself.
-  const watchedIds = [...livePinned, ...remoteMains, ...(overview ? liveGridCameras : [])].filter(
-    (id) => !isLocalId(id),
-  );
+  // The small windows: everything on the stage but the large one.
+  const pipIds = pipStrip ? onStage.filter((id) => id !== mains[0]) : [];
+  // What plays: everything on the stage, large or small. Someone's
+  // microphone with any picture of theirs; the sound of their screen only
+  // with their screen, not their camera alone. Once per person, however many
+  // of their pictures are on screen. Your own is never here, so you never
+  // hear yourself.
+  const watchedIds = [...onStage, ...remoteMains].filter((id) => !isLocalId(id));
   const heardOwners = [...new Set(watchedIds.map(viewOwner))];
   const heard = heardOwners.flatMap((owner) => {
     const screen = viewById.get(owner)?.screen;
@@ -1226,25 +1135,10 @@ export default function RemoteGrid({
     });
   // Broadcasts this viewer turned HQ off for. Per broadcast, not room-wide.
   const [lowQuality, setLowQuality] = useState<Set<string>>(new Set());
-  // How each person's camera sits over their screen, kept per person so it
-  // survives the tile moving between layouts.
-  const [insets, setInsets] = useState<Record<string, InsetMode>>({});
-  // The camera over a watched screen, unless it is hidden, or is itself on
-  // the stage beside it.
-  const insetFor = (id: string): InsetMode | null => {
-    const view = viewById.get(id);
-    if (!view || view.camera || !view.screen.cameraTrack) return null;
-    if (mains.includes(cameraView(view.owner))) return null;
-    return insets[view.owner] ?? 'small';
-  };
-  const shownInsets = remoteMains.filter((id) => {
-    const inset = insetFor(id);
-    return inset !== null && inset !== 'hidden';
-  });
   // Latest thumbnail picture per broadcast, and which are being taken now.
-  const [snapshots, setSnapshots] = useState<Record<string, { url: string | null; at: number }>>(
-    {},
-  );
+  const [snapshots, setSnapshots] = useState<
+    Record<string, { url: string | null; at: number; video: string }>
+  >({});
   const [capturing, setCapturing] = useState<Set<string>>(new Set());
   // The broadcast whose thumbnail is showing beside the channel list.
   const [hovered, setHovered] = useState<{ id: string; anchor: DOMRect } | null>(null);
@@ -1268,14 +1162,7 @@ export default function RemoteGrid({
   // you appear among everyone else, as in a call, and whatever you were
   // watching stays put.
 
-  // A camera made large over its screen is worth its high layer; small, its
-  // low one does.
-  const hqMains = [
-    ...remoteMains.filter((id) => !lowQuality.has(id)),
-    ...shownInsets
-      .filter((id) => insetFor(id) === 'large')
-      .map((id) => cameraView(viewById.get(id)!.owner)),
-  ];
+  const hqMains = remoteMains.filter((id) => !lowQuality.has(id));
   const focusKey = hqMains.length > MOSAIC_HIGH_LIMIT ? '' : hqMains.join('|');
   useEffect(() => {
     onFocusChange(focusKey ? focusKey.split('|') : []);
@@ -1291,13 +1178,8 @@ export default function RemoteGrid({
     .filter((id) => !mains.includes(id))
     .join('|');
   // Flowing besides the large tiles: a small window on screen, on the low
-  // layer; the cameras in the grid while it shows; and a camera over its
-  // watched screen.
-  const flowing = new Set([
-    ...(pipShown ? pipIds : []),
-    ...(overview ? liveGridCameras : []),
-    ...shownInsets.map((id) => cameraView(viewById.get(id)!.owner)),
-  ]);
+  // layer.
+  const flowing = new Set([...(pipShown ? pipIds : [])]);
   const pausedKey = (remoteThumbKey ? remoteThumbKey.split('|') : [])
     .filter((id) => id !== hovered?.id)
     .filter((id) => !capturing.has(id) && !flowing.has(id))
@@ -1311,6 +1193,20 @@ export default function RemoteGrid({
     snapshotsRef.current = snapshots;
   }, [snapshots]);
 
+  // Which video each picture is of. Someone's broadcast changes what it shows
+  // — a camera alone becomes their screen once they share one too — and a
+  // snapshot of the old video kept standing in for the new one for up to a
+  // minute: their screen's thumbnail showed their camera. A snapshot only
+  // counts for the video it was taken of; a new video is pictured at once.
+  const videoOf = (id: string) => viewById.get(id)?.screen.videoTrack?.mediaStreamTrack.id ?? '';
+  const videoKey = views.map((view) => `${view.id}=${videoOf(view.id)}`).join('|');
+  const videoOfRef = useRef(videoOf);
+  videoOfRef.current = videoOf;
+  const snapshotFor = (id: string) => {
+    const shot = snapshots[id];
+    return shot && shot.video === videoOf(id) ? shot.url : null;
+  };
+
   useEffect(() => {
     const due = remoteThumbKey ? remoteThumbKey.split('|') : [];
     const tick = () => {
@@ -1318,7 +1214,8 @@ export default function RemoteGrid({
       setCapturing((current) => {
         const next = new Set([...current].filter((id) => due.includes(id)));
         for (const id of due) {
-          const last = snapshotsRef.current[id]?.at ?? 0;
+          const shot = snapshotsRef.current[id];
+          const last = shot && shot.video === videoOfRef.current(id) ? shot.at : 0;
           if (now - last >= SNAPSHOT_INTERVAL_MS) next.add(id);
         }
         const same = next.size === current.size && [...next].every((id) => current.has(id));
@@ -1328,14 +1225,19 @@ export default function RemoteGrid({
     tick();
     const timer = setInterval(tick, SNAPSHOT_CHECK_MS);
     return () => clearInterval(timer);
-  }, [remoteThumbKey]);
+  }, [remoteThumbKey, videoKey]);
 
   function captured(id: string, url: string | null) {
-    setSnapshots((current) => ({
-      ...current,
-      // A failed grab keeps the last picture, and waits a full interval.
-      [id]: { url: url ?? current[id]?.url ?? null, at: Date.now() },
-    }));
+    const video = videoOf(id);
+    setSnapshots((current) => {
+      const previous = current[id]?.video === video ? current[id]?.url : null;
+      return {
+        ...current,
+        // A failed grab keeps the last picture of the same video, and waits a
+        // full interval.
+        [id]: { url: url ?? previous ?? null, at: Date.now(), video },
+      };
+    });
     setCapturing((current) => {
       if (!current.has(id)) return current;
       const next = new Set(current);
@@ -1353,6 +1255,7 @@ export default function RemoteGrid({
 
   function chooseLayout(next: LayoutMode) {
     setMode(next);
+    setFocusId(null);
     store(LAYOUT_KEY, next);
   }
 
@@ -1369,10 +1272,14 @@ export default function RemoteGrid({
   function watch(id: string) {
     keepHover();
     setHovered(null);
-    if (fullId) setFullscreenId(id);
-    else if (mode === 'mosaic')
+    // On the stage, after what is already there.
+    if (!onStage.includes(id)) {
       setPinned((current) => (current.includes(id) ? current : [...current, id]));
-    else setPinned((current) => [id, ...current.filter((other) => other !== id)]);
+    }
+    // In the spotlight, or with something enlarged, what is chosen now is
+    // what is shown large; the mosaic just gains a tile.
+    if (fullId) setFullscreenId(id);
+    else if (focused || mode === 'spotlight') setFocusId(id);
     ensureAudible(id);
   }
 
@@ -1402,8 +1309,32 @@ export default function RemoteGrid({
     });
   }
 
+  /** Off the stage: no longer watched, nor enlarged, nor a camera on offer. */
   function stopWatching(id: string) {
     setPinned((current) => current.filter((other) => other !== id));
+    // Only their camera takes their camera button down; closing their screen
+    // leaves the camera where it is.
+    const owner = viewOwner(id);
+    if (cameraIdOf(owner) === id) {
+      setCameraOwners((current) => current.filter((other) => other !== owner));
+    }
+    if (focused === id) setFocusId(null);
+  }
+
+  // A click on a large picture: in the mosaic it enlarges that tile, and on
+  // the enlarged one it brings the mosaic back. The spotlight already shows
+  // one large, so there it does nothing.
+  function pictureActionFor(id: string): PictureAction {
+    // The spotlight always shows one large; a click there changes nothing.
+    if (focused === id) return mode === 'mosaic' ? 'shrink' : null;
+    if (!focused && !fullId && mode === 'mosaic' && mains.length > 1) return 'enlarge';
+    return null;
+  }
+
+  function clickPicture(id: string) {
+    const action = pictureActionFor(id);
+    if (action === 'shrink') setFocusId(null);
+    else if (action === 'enlarge') setFocusId(id);
   }
 
   // Sound is per person: muting someone's camera mutes their screen too.
@@ -1434,11 +1365,6 @@ export default function RemoteGrid({
     return audio[viewOwner(view)] ?? { volume: DEFAULT_VOLUME, muted: false };
   }
 
-  function setInset(id: string, next: InsetMode) {
-    const owner = viewOwner(id);
-    setInsets((current) => ({ ...current, [owner]: next }));
-  }
-
   useImperativeHandle(controlRef, () => ({
     watch: (target) => watch(idFor(target)),
     hover: (target, anchor) => {
@@ -1452,14 +1378,14 @@ export default function RemoteGrid({
     toggleCamera: (identity) => {
       // Yours is always there; your own row has no button for it.
       if (identity === local?.identity) return;
-      const id = viewById.has(cameraView(identity)) ? cameraView(identity) : identity;
-      if (gridCameras.includes(id)) {
-        setGridCameras((current) => current.filter((other) => other !== id));
-        stopWatching(id);
+      if (cameraOwners.includes(identity)) {
+        setCameraOwners((current) => current.filter((other) => other !== identity));
+        const id = cameraIdOf(identity);
+        if (id && focused === id) setFocusId(null);
         return;
       }
-      setGridCameras((current) => (current.includes(id) ? current : [...current, id]));
-      ensureAudible(id);
+      setCameraOwners((current) => (current.includes(identity) ? current : [...current, identity]));
+      ensureAudible(identity);
     },
   }));
 
@@ -1468,11 +1394,7 @@ export default function RemoteGrid({
   const remotePinned = livePinned.filter((id) => !isLocalId(id));
   const stageKey = JSON.stringify([
     [...new Set(remotePinned.filter((id) => !viewById.get(id)?.camera).map(viewOwner))],
-    [
-      ...new Set(
-        liveGridCameras.map((id) => (isLocalId(id) ? (local?.identity ?? '') : viewOwner(id))),
-      ),
-    ],
+    [...(localCameraId && local?.identity ? [local.identity] : []), ...cameraOwners],
     livePinned.includes(LOCAL_SPOTLIGHT),
   ]);
   useEffect(() => {
@@ -1543,7 +1465,7 @@ export default function RemoteGrid({
         identity={screen.participantIdentity}
         label={sourceText(t, screen.sourceName, screen.sourceKind)}
         liveVideo={screen.videoTrack}
-        snapshot={snapshots[id]?.url ?? null}
+        snapshot={snapshotFor(id)}
         onWatch={() => watch(id)}
         peeking={pipIds.includes(id)}
         // The mosaic has room for another tile, so clicking is the way to see
@@ -1608,7 +1530,7 @@ export default function RemoteGrid({
         name={screen.participantName}
         identity={screen.participantIdentity}
         label={sourceText(t, screen.sourceName, screen.sourceKind)}
-        snapshot={snapshots[id]?.url ?? null}
+        snapshot={snapshotFor(id)}
         audio={audioFor(id)}
         onAudioChange={small ? (next) => updateAudio(id, next) : undefined}
         peeking={small}
@@ -1700,21 +1622,21 @@ export default function RemoteGrid({
           track={local.camera}
           isFullscreen={fullscreen.isFullscreen}
           onToggleFullscreen={toggle}
-          onShrink={() => stopWatching(id)}
+          pictureAction={pictureActionFor(id)}
+          onPictureClick={() => clickPicture(id)}
         />
       );
     }
     if (id === LOCAL_SPOTLIGHT) {
-      // Your own broadcast can leave the large view, but not the strip.
+      // Your own broadcast is on your stage for as long as it is on, so it
+      // has no close: a click only enlarges it or brings the mosaic back.
       return (
         <div className="local-slot">
           {local?.renderStage({
             active: fullscreen.isFullscreen,
             toggle,
-            // Your camera alone stays in your grid while it is on: a click
-            // brings the grid back, but there is no close.
-            onClose: () => stopWatching(id),
-            closeButton: !local?.cameraIsMain,
+            onClose: pictureActionFor(id) ? () => clickPicture(id) : undefined,
+            closeButton: false,
           })}
         </div>
       );
@@ -1724,10 +1646,8 @@ export default function RemoteGrid({
     return (
       <RemoteTile
         screen={screen}
-        inset={insetFor(id)}
         micOn={micOn.has(viewOwner(id))}
         onToggleMic={() => toggleMic(id)}
-        onInsetChange={(next) => setInset(id, next)}
         audio={audioFor(id)}
         onAudioChange={(next) => updateAudio(id, next)}
         hq={!lowQuality.has(id)}
@@ -1742,6 +1662,8 @@ export default function RemoteGrid({
         isFullscreen={fullscreen.isFullscreen}
         onToggleFullscreen={toggle}
         onClose={() => stopWatching(id)}
+        pictureAction={pictureActionFor(id)}
+        onPictureClick={() => clickPicture(id)}
       />
     );
   }
@@ -1749,67 +1671,10 @@ export default function RemoteGrid({
   const [left, right] = mains;
   const splitLimits = pairSplitLimits(pairWidth);
 
-  // The grid: your own screen, while your preview is on (App passes no track
-  // otherwise), and the cameras put here from the camera buttons on the
-  // list's rows, yours included. No camera is here by itself.
-  const overviewIds = [
-    ...(local?.track && !local.cameraIsMain ? [LOCAL_SPOTLIGHT] : []),
-    ...liveGridCameras,
-  ];
-  const overviewCount = overviewIds.length;
-  const overviewColumns =
-    overviewCount <= 1 ? 1 : overviewCount <= 4 ? 2 : overviewCount <= 9 ? 3 : 4;
-
-  function renderOverviewTile(id: string): ReactNode {
-    // Your camera: beside your screen, or your broadcast itself when alone.
-    if (local?.camera && id === localCameraId) {
-      return (
-        <OverviewTile
-          name={local.name}
-          identity={local.identity}
-          label={t('grid.source.camera')}
-          video={local.camera}
-          mirrored
-          onWatch={() => watch(id)}
-        />
-      );
-    }
-    if (id === LOCAL_SPOTLIGHT) {
-      if (!local) return null;
-      return (
-        <OverviewTile
-          name={local.name}
-          identity={local.identity}
-          label={t('grid.yourBroadcast')}
-          video={local.track}
-          mirrored={local.mirrored}
-          onWatch={() => watch(id)}
-        />
-      );
-    }
-    const view = viewById.get(id);
-    if (!view) return null;
-    const { screen } = view;
-    return (
-      <OverviewTile
-        name={screen.participantName}
-        identity={screen.participantIdentity}
-        label={sourceText(t, screen.sourceName, screen.sourceKind)}
-        video={view.camera || hovered?.id === id ? screen.videoTrack : null}
-        snapshot={snapshots[id]?.url ?? null}
-        audio={screen.audioTrack || screen.micTrack ? audioFor(id) : undefined}
-        onAudioChange={(next) => updateAudio(id, next)}
-        mic={
-          screen.micTrack ? { on: micOn.has(view.owner), onToggle: () => toggleMic(id) } : undefined
-        }
-        onWatch={() => watch(id)}
-      />
-    );
-  }
-
   const mainsView =
-    mains.length === 0 && overviewCount === 0 ? (
-      // No camera on, and nothing chosen: the screens wait in the channel list.
+    mains.length === 0 ? (
+      // Nothing on the stage: screens wait in the channel list, cameras behind
+      // the camera buttons, and your own preview is off.
       <section className="stage remote-empty">
         <div className="overlay">
           {local ? (
@@ -1832,17 +1697,6 @@ export default function RemoteGrid({
           )}
         </div>
       </section>
-    ) : mains.length === 0 ? (
-      <div
-        className="mains overview"
-        style={{ gridTemplateColumns: `repeat(${overviewColumns}, minmax(0, 1fr))` }}
-      >
-        {overviewIds.map((id) => (
-          <div className="tile-slot" key={id}>
-            {renderOverviewTile(id)}
-          </div>
-        ))}
-      </div>
     ) : paired ? (
       <div className="mains paired" ref={mainsRef}>
         <div className="tile-slot" key={left} style={{ flexBasis: `${split * 100}%` }}>

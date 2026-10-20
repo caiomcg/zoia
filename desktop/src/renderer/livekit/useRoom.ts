@@ -196,16 +196,16 @@ function applyRemoteMediaSettings(
 }
 
 /**
- * One person's broadcast. A screen and a camera shared together are still one
- * broadcast: the screen is the picture and the camera sits over its corner
- * (ADR 0034). A camera shared alone is the picture itself.
+ * One person's broadcast. A screen and a camera shared together are one
+ * broadcast with two pictures, each watched on its own (ADR 0034); a camera
+ * shared alone is the picture itself.
  */
 export interface RemoteScreen {
   participantIdentity: string;
   participantName: string;
   videoTrack: RemoteTrack | null;
   audioTrack: RemoteTrack | null;
-  /** Their camera, only while it is shown over their screen. */
+  /** Their camera, while it is shared beside their screen. */
   cameraTrack: RemoteTrack | null;
   /** Their microphone, heard whenever their broadcast is. */
   micTrack: RemoteTrack | null;
@@ -1163,7 +1163,7 @@ export function useRoom() {
    * capture, the audio is a microphone rather than an application, and the
    * frame is small enough that the hardware encoder buys nothing. They
    * publish as Camera and Microphone, which is how a viewer tells them from
-   * the screen and shows the camera over its corner (ADR 0034).
+   * the screen and shows the camera as a picture of its own (ADR 0034).
    */
   const startCamera = useCallback(
     async (constraints: MediaStreamConstraints, muteMicrophone = false) => {
