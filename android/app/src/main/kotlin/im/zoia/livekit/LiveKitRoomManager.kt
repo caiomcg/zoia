@@ -27,17 +27,26 @@ sealed class RoomConnectionState {
 }
 
 /**
- * One person's broadcast. A screen and a camera shared together are still one
- * broadcast: the screen is the picture and the camera sits over its corner
- * (ADR 0034). A camera shared alone is the picture itself.
+ * One person's broadcast. Their screen and their camera are two pictures,
+ * each a tile of its own (ADR 0034): the screen is on the grid by itself, and
+ * the camera only once this viewer puts it there from the camera bar.
  */
 data class StreamItem(
     val participantId: String,
     val participantName: String,
-    val videoTrack: VideoTrack?,
-    /** The camera beside the screen; null when there is no screen or no camera. */
+    /** Their shared screen; null when they share only a camera, or only sound. */
+    val screenTrack: VideoTrack?,
+    /** Their camera, while it is on, whether or not it is on the grid. */
     val cameraTrack: VideoTrack?,
-    val isAudioActive: Boolean
+    /** The sound of their screen, separate from their microphone. */
+    val hasScreenAudio: Boolean,
+    val hasMic: Boolean,
+    /** Theirs is the sound this viewer is hearing. */
+    val isAudioActive: Boolean,
+    /** This viewer turned their microphone on; it starts off. */
+    val micOn: Boolean,
+    /** This viewer put their camera on the grid. */
+    val cameraShown: Boolean
 )
 
 /**
@@ -51,14 +60,19 @@ internal fun ownerIdentity(identity: String): String = identity.removeSuffix(WHI
 /** A published track, with where it came from. */
 internal data class Feed<T>(val source: Track.Source, val track: T, val fromIngress: Boolean)
 
-internal data class PersonFeeds<V, A>(val screen: V?, val camera: V?, val audio: List<A>)
+internal data class PersonFeeds<V, A>(
+    val screen: V?,
+    val camera: V?,
+    val screenAudio: A?,
+    val mic: A?
+)
 
 /**
  * Where a stream came from decides how it is labelled, and viewers must not
  * care. WHIP carries no notion of a screen share, so an ingress may label its
  * tracks CAMERA and MICROPHONE: everything an ingress sends is the screen, and
- * only a person's own Camera and Microphone are their camera. Both the screen's
- * sound and the microphone are heard.
+ * only a person's own Camera and Microphone are their camera. A camera is
+ * never the screen, even shared alone: it is opened from the camera bar.
  */
 internal fun <V, A> pickFeeds(video: List<Feed<V>>, audio: List<Feed<A>>): PersonFeeds<V, A> {
     val screen = video.firstOrNull { it.fromIngress }
@@ -68,9 +82,10 @@ internal fun <V, A> pickFeeds(video: List<Feed<V>>, audio: List<Feed<A>>): Perso
         ?: audio.firstOrNull { !it.fromIngress && it.source != Track.Source.MICROPHONE }
     val mic = audio.firstOrNull { !it.fromIngress && it.source == Track.Source.MICROPHONE }
     return PersonFeeds(
-        screen = (screen ?: camera)?.track,
-        camera = if (screen != null) camera?.track else null,
-        audio = listOfNotNull(screenAudio?.track, mic?.track)
+        screen = screen?.track,
+        camera = camera?.track,
+        screenAudio = screenAudio?.track,
+        mic = mic?.track
     )
 }
 
@@ -90,6 +105,12 @@ class LiveKitRoomManager(
 
     private val _selectedAudioParticipantId = MutableStateFlow<String?>(null)
     val selectedAudioParticipantId: StateFlow<String?> = _selectedAudioParticipantId.asStateFlow()
+
+    // Whose camera this viewer put on the grid, and whose microphone it turned
+    // on, by person. Both start empty in every channel, and neither is kept:
+    // nobody's camera opens and nobody's microphone plays by itself.
+    private var cameraShown: Set<String> = emptySet()
+    private var micOn: Set<String> = emptySet()
 
     var currentChannelId: String? = null
         private set
@@ -155,6 +176,8 @@ class LiveKitRoomManager(
                 _connectionState.value = RoomConnectionState.Disconnected
                 _streams.value = emptyList()
                 _selectedAudioParticipantId.value = null
+                cameraShown = emptySet()
+                micOn = emptySet()
             }
             else -> Unit
         }
@@ -178,18 +201,25 @@ class LiveKitRoomManager(
             )
 
             // Only include participants who are actively broadcasting (skip passive viewers)
-            if (feeds.screen == null && feeds.audio.isEmpty()) {
+            if (feeds.screen == null && feeds.camera == null &&
+                feeds.screenAudio == null && feeds.mic == null
+            ) {
                 return@mapNotNull null
             }
 
-            val isAudioActive = (owner == activeAudioId) ||
-                (activeAudioId == null && feeds.audio.isNotEmpty())
+            val hasAudio = feeds.screenAudio != null || feeds.mic != null
+            val isAudioActive = (owner == activeAudioId) || (activeAudioId == null && hasAudio)
+            val ownMicOn = owner in micOn
 
-            // Apply audio muting according to selection. A second screen audio
-            // (from both paths at once) stays off so nothing is heard twice.
+            // One person is heard at a time: the sound of their screen, and
+            // their microphone once turned on. A second screen audio (from both
+            // paths at once) stays off so nothing is heard twice.
             participants.forEach { participant ->
                 participant.audioTrackPublications.forEach { (_, track) ->
-                    (track as? AudioTrack)?.let { it.enabled = isAudioActive && it in feeds.audio }
+                    (track as? AudioTrack)?.let {
+                        it.enabled = isAudioActive &&
+                            (it == feeds.screenAudio || (it == feeds.mic && ownMicOn))
+                    }
                 }
             }
 
@@ -201,15 +231,21 @@ class LiveKitRoomManager(
             StreamItem(
                 participantId = owner,
                 participantName = displayName,
-                videoTrack = feeds.screen,
+                screenTrack = feeds.screen,
                 cameraTrack = feeds.camera,
-                isAudioActive = isAudioActive
+                hasScreenAudio = feeds.screenAudio != null,
+                hasMic = feeds.mic != null,
+                isAudioActive = isAudioActive,
+                micOn = ownMicOn,
+                cameraShown = owner in cameraShown && feeds.camera != null
             )
         }
 
-        // Set default active audio if not set yet
+        // Set default active audio if not set yet: someone sharing a screen
+        // first, since a camera is not on the grid until it is chosen.
         if (_selectedAudioParticipantId.value == null && items.isNotEmpty()) {
-            _selectedAudioParticipantId.value = items.first().participantId
+            _selectedAudioParticipantId.value =
+                (items.firstOrNull { it.screenTrack != null } ?: items.first()).participantId
         }
 
         _streams.value = items
@@ -240,6 +276,19 @@ class LiveKitRoomManager(
         updateStreamsList()
     }
 
+    /** Puts someone's camera on the grid as a tile of its own, or takes it off. */
+    fun toggleCamera(participantId: String) {
+        cameraShown = if (participantId in cameraShown) cameraShown - participantId
+        else cameraShown + participantId
+        updateStreamsList()
+    }
+
+    /** Turns someone's microphone on or off for this viewer. It starts off. */
+    fun toggleMic(participantId: String) {
+        micOn = if (participantId in micOn) micOn - participantId else micOn + participantId
+        updateStreamsList()
+    }
+
     fun disconnect() {
         try {
             BackgroundAudioService.stop(context)
@@ -257,5 +306,7 @@ class LiveKitRoomManager(
         _connectionState.value = RoomConnectionState.Disconnected
         _streams.value = emptyList()
         _selectedAudioParticipantId.value = null
+        cameraShown = emptySet()
+        micOn = emptySet()
     }
 }

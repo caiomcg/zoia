@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -31,9 +32,13 @@ import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Videocam
+import androidx.compose.material.icons.filled.VideocamOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -73,7 +78,6 @@ import im.zoia.livekit.LiveKitRoomManager
 import im.zoia.livekit.RoomConnectionState
 import im.zoia.livekit.StreamItem
 import io.livekit.android.room.track.VideoTrack
-import io.livekit.android.renderer.TextureViewRenderer
 import livekit.org.webrtc.SurfaceViewRenderer
 import kotlinx.coroutines.launch
 
@@ -332,31 +336,81 @@ fun RoomScreen(
                         }
                     }
                     is RoomConnectionState.Connected -> {
-                        if (streams.isEmpty()) {
-                            Text(
-                                text = "Nenhuma transmissão ativa neste canal.\nQuando alguém compartilhar a tela ou a câmera, o vídeo aparecerá aqui.",
-                                color = Color(0xFF6B7280),
-                                fontSize = 16.sp,
-                                textAlign = TextAlign.Center
+                        // Every screen is on the grid by itself; a camera only
+                        // once it is put there from the camera bar (ADR 0034).
+                        val tiles = streams.flatMap { stream ->
+                            listOfNotNull(
+                                if (stream.screenTrack != null || stream.hasScreenAudio) {
+                                    Tile("${stream.participantId}#screen", stream, stream.screenTrack, camera = false)
+                                } else {
+                                    null
+                                },
+                                if (stream.cameraShown) {
+                                    Tile("${stream.participantId}#camera", stream, stream.cameraTrack, camera = true)
+                                } else {
+                                    null
+                                }
                             )
-                        } else {
-                            val columns = if (streams.size == 1) 1 else 2
-                            LazyVerticalGrid(
-                                columns = GridCells.Fixed(columns),
-                                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                                verticalArrangement = Arrangement.spacedBy(12.dp),
-                                modifier = Modifier.fillMaxSize()
-                            ) {
-                                items(
-                                    items = streams,
-                                    key = { it.participantId }
-                                ) { stream ->
-                                    StreamCard(
-                                        stream = stream,
-                                        roomManager = roomManager,
-                                        isAudioSelected = stream.participantId == selectedAudioId,
-                                        onSelectAudio = { roomManager.selectAudio(stream.participantId) }
+                        }
+                        val withCamera = streams.filter { it.cameraTrack != null }
+
+                        Column(modifier = Modifier.fillMaxSize()) {
+                            if (withCamera.isNotEmpty()) {
+                                CameraBar(
+                                    people = withCamera,
+                                    onToggle = { roomManager.toggleCamera(it.participantId) }
+                                )
+                                Spacer(modifier = Modifier.height(12.dp))
+                            }
+
+                            if (tiles.isEmpty()) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .weight(1f),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = if (withCamera.isEmpty()) {
+                                            "Nenhuma transmissão ativa neste canal.\nQuando alguém compartilhar a tela ou a câmera, o vídeo aparecerá aqui."
+                                        } else {
+                                            "Ninguém está compartilhando a tela.\nToque numa câmera acima para vê-la aqui."
+                                        },
+                                        color = Color(0xFF6B7280),
+                                        fontSize = 16.sp,
+                                        textAlign = TextAlign.Center
                                     )
+                                }
+                            } else {
+                                val columns = if (tiles.size == 1) 1 else 2
+                                LazyVerticalGrid(
+                                    columns = GridCells.Fixed(columns),
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .weight(1f)
+                                ) {
+                                    items(
+                                        items = tiles,
+                                        key = { it.key }
+                                    ) { tile ->
+                                        val stream = tile.stream
+                                        StreamCard(
+                                            tile = tile,
+                                            roomManager = roomManager,
+                                            isAudioSelected = stream.participantId == selectedAudioId,
+                                            onSelectAudio = { roomManager.selectAudio(stream.participantId) },
+                                            onToggleMic = {
+                                                // Turning someone's microphone on is asking to
+                                                // hear them, and one person is heard at a time.
+                                                if (!stream.micOn && stream.participantId != selectedAudioId) {
+                                                    roomManager.selectAudio(stream.participantId)
+                                                }
+                                                roomManager.toggleMic(stream.participantId)
+                                            }
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -763,13 +817,61 @@ fun RenameDialog(
     )
 }
 
+/** One picture on the grid: someone's screen, or their camera beside it. */
+data class Tile(
+    val key: String,
+    val stream: StreamItem,
+    val track: VideoTrack?,
+    val camera: Boolean
+)
+
+/**
+ * Everyone with a camera on, one button each: tapping puts their camera on
+ * the grid as a tile of its own, and tapping again takes it off. Nobody's
+ * camera is on the grid until it is chosen here (ADR 0034).
+ */
+@Composable
+fun CameraBar(people: List<StreamItem>, onToggle: (StreamItem) -> Unit) {
+    LazyRow(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        items(items = people, key = { it.participantId }) { person ->
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(if (person.cameraShown) Color(0xFF2E5BFF) else Color(0xFF222630))
+                    .clickable { onToggle(person) }
+                    .padding(horizontal = 14.dp, vertical = 10.dp)
+            ) {
+                Icon(
+                    imageVector = if (person.cameraShown) Icons.Default.Videocam else Icons.Default.VideocamOff,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = person.participantName,
+                    color = Color.White,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+        }
+    }
+}
+
 @Composable
 fun StreamCard(
-    stream: StreamItem,
+    tile: Tile,
     roomManager: LiveKitRoomManager,
     isAudioSelected: Boolean,
-    onSelectAudio: () -> Unit
+    onSelectAudio: () -> Unit,
+    onToggleMic: () -> Unit
 ) {
+    val stream = tile.stream
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -783,8 +885,8 @@ fun StreamCard(
             )
             .clickable { onSelectAudio() }
     ) {
-        if (stream.videoTrack != null) {
-            VideoTrackSurface(videoTrack = stream.videoTrack, roomManager = roomManager)
+        if (tile.track != null) {
+            VideoTrackSurface(videoTrack = tile.track, roomManager = roomManager)
         } else {
             Box(
                 modifier = Modifier.fillMaxSize(),
@@ -792,14 +894,6 @@ fun StreamCard(
             ) {
                 Text(text = "Apenas Áudio", color = Color.Gray, fontSize = 14.sp)
             }
-        }
-
-        if (stream.cameraTrack != null) {
-            CameraCorner(
-                cameraTrack = stream.cameraTrack,
-                roomManager = roomManager,
-                modifier = Modifier.align(Alignment.TopEnd)
-            )
         }
 
         // Overlay: Presenter name and audio toggle button
@@ -812,14 +906,42 @@ fun StreamCard(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Text(
-                text = stream.participantName,
-                color = Color.White,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Medium
-            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stream.participantName,
+                    color = Color.White,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium
+                )
+                if (tile.camera) {
+                    Text(text = "Câmera", color = Color(0xFF9BA3AF), fontSize = 12.sp)
+                }
+            }
 
             Row(verticalAlignment = Alignment.CenterVertically) {
+                // Their microphone starts off, for everyone, every time.
+                if (stream.hasMic) {
+                    Box(
+                        modifier = Modifier
+                            .size(32.dp)
+                            .clip(CircleShape)
+                            .background(if (stream.micOn) Color(0xFF2E5BFF) else Color(0xFF333842))
+                            .clickable { onToggleMic() },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = if (stream.micOn) Icons.Default.Mic else Icons.Default.MicOff,
+                            contentDescription = if (stream.micOn) {
+                                "Silenciar o microfone de ${stream.participantName}"
+                            } else {
+                                "Ouvir o microfone de ${stream.participantName}"
+                            },
+                            tint = Color.White,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                }
                 Box(
                     modifier = Modifier
                         .size(32.dp)
@@ -840,52 +962,9 @@ fun StreamCard(
     }
 }
 
-/**
- * The person's camera over the corner of their screen, as on the desktop (ADR
- * 0034). Tapping it makes it larger, tapping again makes it small. Adaptive
- * streaming asks for the camera's low layer while it is small.
- */
-@Composable
-fun CameraCorner(
-    cameraTrack: VideoTrack,
-    roomManager: LiveKitRoomManager,
-    modifier: Modifier = Modifier
-) {
-    var large by remember { mutableStateOf(false) }
-    Box(
-        modifier = modifier
-            .padding(8.dp)
-            .fillMaxWidth(if (large) 0.45f else 0.25f)
-            .aspectRatio(16f / 9f)
-            .clip(RoundedCornerShape(8.dp))
-            .background(Color(0xFF000000))
-            .border(1.dp, Color(0xFF262A34), RoundedCornerShape(8.dp))
-            .clickable { large = !large }
-    ) {
-        // A TextureView, unlike a SurfaceView, draws in order with the screen
-        // beneath it and is clipped to the rounded corners.
-        key(cameraTrack) {
-            AndroidView(
-                factory = { ctx ->
-                    TextureViewRenderer(ctx).apply {
-                        roomManager.initVideoRenderer(this)
-                        cameraTrack.addRenderer(this)
-                    }
-                },
-                onRelease = { renderer ->
-                    cameraTrack.removeRenderer(renderer)
-                    renderer.release()
-                },
-                modifier = Modifier.fillMaxSize()
-            )
-        }
-    }
-}
-
 @Composable
 fun VideoTrackSurface(videoTrack: VideoTrack, roomManager: LiveKitRoomManager) {
-    // The picture can change track under the same card: a camera shared alone
-    // gives way to the screen when the screen starts.
+    // Keyed by track: a tile shows one picture, and a new track is a new view.
     key(videoTrack) { AndroidView(
         factory = { ctx ->
             SurfaceViewRenderer(ctx).apply {
