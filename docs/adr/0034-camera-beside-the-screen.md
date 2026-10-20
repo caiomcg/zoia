@@ -83,10 +83,12 @@ Your own sound, shared or microphone, is never played back to you.
 - Older viewers pick the `ScreenShare` track first, so they see the screen and not the camera
   of someone sharing both, and they do not hear that person's microphone. A camera shared
   alone still reaches them: it keeps the `camera` label in the participant's metadata.
-- The Android viewer, as released with 0.7.3, still follows the first version of this
-  decision: the camera over the screen's corner (tap to enlarge), and choosing someone's
-  sound plays their microphone at once. It has no camera button and no way to watch the
-  camera apart. It should follow the desktop's rules in a later change. Android versions
-  before 0.7.3 play only one of a person's tracks.
+- The Android viewer follows the same rules where its screen allows. It has no channel list
+  beside the grid, so every screen still appears there by itself; a camera is a tile of its
+  own, put on the grid from a bar of everyone with a camera on, and taken off from it again.
+  It still plays one person's sound at a time, the one tapped; their microphone starts off,
+  and a button on their tile turns it on. Android 0.7.3 drew the camera over the screen's
+  corner and played the microphone at once; versions before it play only one of a person's
+  tracks.
 - The sender's footer has one stop button: it stops the screen if there is one, otherwise
   the camera. Changing channel or signing out stops both.
