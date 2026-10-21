@@ -291,7 +291,27 @@ ssh zoia@<server-ip> 'rm /opt/zoia/server/data/backup.db'
 
 It holds password hashes and every email: keep it private, and out of git — `deploy.sh`
 already refuses to transfer `server/data` in either direction. Losing it means everyone
-signs up again. Profile pictures are beside it, in `server/data/avatars/`.
+signs up again. Profile pictures are beside it, in `server/data/avatars/`. The list of
+chats and their limit are in this file too.
+
+### Back up the chat messages
+
+Messages and read markers are in ScyllaDB, in the `scylla_data` volume
+([ADR 0035](adr/0035-text-chat-in-scylladb.md)), not in `server/data`. A snapshot is a set of
+hard links, consistent while Scylla runs; archive it, fetch it, then clear it:
+
+```bash
+ssh zoia@<server-ip> 'cd /opt/zoia && docker compose exec -T scylla \
+  sh -c "nodetool snapshot -t backup zoia && \
+         tar czf /tmp/chat.tgz -C /var/lib/scylla/data/zoia --wildcards \"*/snapshots/backup\" && \
+         nodetool clearsnapshot -t backup zoia" && \
+  docker compose cp scylla:/tmp/chat.tgz /tmp/chat.tgz'
+scp zoia@<server-ip>:/tmp/chat.tgz zoia-chat-$(date +%F).tgz
+ssh zoia@<server-ip> 'rm /tmp/chat.tgz'
+```
+
+Losing it loses the history and who has read what; the chats themselves, being in
+`zoia.db`, stay. `docker compose down -v` deletes the volume — never pass `-v` on the VM.
 
 ---
 

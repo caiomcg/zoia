@@ -92,6 +92,9 @@ source; match on "not `MICROPHONE`" instead.
 | `server/src/stage.js` | Who may broadcast right now — **the security boundary** |
 | `server/src/config.js` | Env parsing and validation, fail-fast on startup |
 | `server/src/devices.js` | One credential per machine signed in to an account |
+| `server/src/chats.js` | The text chats and how many there may be (ADR 0035), in SQLite |
+| `server/src/messages.js` | Chat messages and read markers, in ScyllaDB |
+| `server/src/scylla.js` | Connects to ScyllaDB, creates the keyspace, applies its schema |
 | `server/bin/keytool.js` | CLI on the server: the super admin, reset codes, devices, backups |
 | `server/public/` | The login page and viewer app (no build step, plain ESM) |
 | `server/data/zoia.db` | Every credential and identity (ADR 0032). Server-only, gitignored, never deployed over |

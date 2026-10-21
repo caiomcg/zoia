@@ -67,6 +67,18 @@ export const TABLES = {
       renamedAt: 'text',
     },
   },
+  // Text chats (ADR 0035). Their messages are in ScyllaDB; the list is here,
+  // beside the accounts that may change it.
+  chats: {
+    fields: {
+      id: 'text',
+      name: 'text',
+      isDefault: 'bool',
+      createdAt: 'text',
+      createdBy: 'text',
+      renamedAt: 'text',
+    },
+  },
 };
 
 /**
@@ -119,6 +131,26 @@ const MIGRATIONS = [
   ) STRICT;
 
   CREATE INDEX devices_by_account ON devices (account_id);
+  `,
+  `
+  CREATE TABLE chats (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    is_default INTEGER NOT NULL DEFAULT 0 CHECK (is_default IN (0, 1)),
+    created_at TEXT NOT NULL,
+    created_by TEXT,
+    renamed_at TEXT
+  ) STRICT;
+
+  -- At most one default chat.
+  CREATE UNIQUE INDEX one_default_chat ON chats (is_default) WHERE is_default = 1;
+
+  -- Settings the super admin changes at runtime, such as how many chats there
+  -- may be.
+  CREATE TABLE settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+  ) STRICT;
   `,
 ];
 

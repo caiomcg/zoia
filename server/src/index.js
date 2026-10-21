@@ -24,6 +24,7 @@ const config = loadConfig();
 const { devices: deviceStore, accounts: accountStore } = openStores({
   databaseFile: config.databaseFile,
   maxPending: config.accounts.maxPending,
+  defaultChatName: config.chat.defaultName,
 });
 const avatarStore = createAvatarStore({ dir: config.avatarDir });
 const tokenIssuer = createTokenIssuer({

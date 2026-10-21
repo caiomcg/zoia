@@ -1,6 +1,7 @@
 /** Environment parsing. Validates once at startup so misconfiguration fails loudly. */
 
 import { storePaths } from './stores.js';
+import { isKeyspaceName } from './scylla.js';
 
 const required = ['SESSION_SECRET', 'LIVEKIT_API_KEY', 'LIVEKIT_API_SECRET', 'LIVEKIT_WS_URL'];
 
@@ -15,6 +16,12 @@ export function loadConfig(env = process.env) {
 
   if (env.SESSION_SECRET.length < 16) {
     throw new Error('SESSION_SECRET is too short; generate one with: openssl rand -base64 48');
+  }
+
+  if (env.SCYLLA_KEYSPACE !== undefined && !isKeyspaceName(env.SCYLLA_KEYSPACE)) {
+    throw new Error(
+      'SCYLLA_KEYSPACE must be lowercase letters, digits and underscores, starting with a letter',
+    );
   }
 
   return {
@@ -50,6 +57,20 @@ export function loadConfig(env = process.env) {
       deviceCap: Number(env.ACCOUNT_DEVICE_CAP ?? 5),
       deviceIdleDays: Number(env.ACCOUNT_DEVICE_IDLE_DAYS ?? 60),
       maxPending: Number(env.ACCOUNT_MAX_PENDING ?? 20),
+    },
+    // Text chats (ADR 0035). The list is in the database above; messages are
+    // in ScyllaDB, and without SCYLLA_CONTACT_POINTS chat is off.
+    chat: {
+      defaultName: env.DEFAULT_CHAT_NAME ?? 'Geral',
+      scylla: env.SCYLLA_CONTACT_POINTS
+        ? {
+            contactPoints: env.SCYLLA_CONTACT_POINTS.split(',')
+              .map((p) => p.trim())
+              .filter(Boolean),
+            localDataCenter: env.SCYLLA_LOCAL_DC ?? 'datacenter1',
+            keyspace: env.SCYLLA_KEYSPACE ?? 'zoia',
+          }
+        : null,
     },
     // Profile pictures, one file per device. Under server/data so it shares the
     // store's volume and deploy.sh's exclude.
