@@ -925,7 +925,7 @@ export default function App() {
       )}
 
       <div className="body">
-        <main className="main">
+        <main className={`main${chatShown ? ' chat-full' : ''}`}>
           {chat.enabled && someoneLive && (
             <div className="main-tabs" role="tablist">
               <button

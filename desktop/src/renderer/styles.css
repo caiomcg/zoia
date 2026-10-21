@@ -4395,3 +4395,20 @@ button.danger:active:not(:disabled),
   color: var(--text);
   border-color: var(--border);
 }
+
+/* The chat in front fills the main area edge to edge, up to the sidebar;
+   only the stage sits inset, as a picture. */
+.main.chat-full {
+  gap: 0;
+  padding: 0;
+}
+
+.main.chat-full .main-tabs {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.main.chat-full .chat-view {
+  border: none;
+  border-radius: 0;
+}
