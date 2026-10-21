@@ -244,7 +244,8 @@ export function chatRoutes({
     res.json({
       messages: list,
       hasMore: page.length > limit,
-      authors: await authorsOf(list.map((m) => m.authorId)),
+      // Readers too, so "seen by" can name someone who has not written.
+      authors: await authorsOf([...list.map((m) => m.authorId), ...readers.keys()]),
       readers: Object.fromEntries(readers),
     });
   });
@@ -264,7 +265,7 @@ export function chatRoutes({
 
     const author = { name: req.user.name, avatar: req.user.avatar ?? null };
     hub.publish('message', { message, author });
-    hub.publish('read', { chatId: chat.id, accountId, messageId: message.id });
+    hub.publish('read', { chatId: chat.id, accountId, messageId: message.id, reader: author });
     res.status(201).json({ message, author });
   });
 
@@ -278,7 +279,9 @@ export function chatRoutes({
     if (!(await current.markRead({ chatId: chat.id, accountId, messageId }))) {
       return refuse(res, 'invalid_cursor');
     }
-    hub.publish('read', { chatId: chat.id, accountId, messageId });
+    // With who read it, so "seen by" can name someone the page never showed.
+    const reader = { name: req.user.name, avatar: req.user.avatar ?? null };
+    hub.publish('read', { chatId: chat.id, accountId, messageId, reader });
     res.json({ ok: true });
   });
 
