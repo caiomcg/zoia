@@ -52,10 +52,23 @@ compose network, with no published port.
 **Chat is optional.** Without `SCYLLA_CONTACT_POINTS` it is off, and the app does not wait
 for Scylla to start: if Scylla is down, chat is down and broadcasting carries on.
 
-**Photos and videos** up to 10 MB a file are kept on the app's disk under `server/data`,
-which `deploy.sh` already excludes, and validated by their bytes, as profile pictures are
-([ADR 0027](0027-profile-pictures.md)). Their design gets its own amendment when they are
-built.
+**Photos and videos** up to 10 MB a file are kept on the app's disk, in
+`server/data/chat-media/<chat>/`, which `deploy.sh` already excludes. Each is a message of
+its own, with an optional caption, and the message in Scylla carries only the file's id,
+type, size and name.
+
+- **What a file is comes from its bytes**, as for profile pictures
+  ([ADR 0027](0027-profile-pictures.md)), never from its name or what the client says:
+  PNG, JPEG, GIF and WebP images, and MP4 and WebM videos, the kinds Chromium shows inline.
+  Anything else is refused, SVG and HTML included. The type is judged again when the file
+  is served, with `nosniff` and a closed CSP.
+- **Served only to signed-in people**, by chat and id, with Range requests so a video can
+  be scrubbed. The desktop loads them from a scheme of its own, `zoia-media://`, which the
+  main process answers with the session cookie, since a page cannot send it and a data:
+  URL cannot seek.
+- **Not in Scylla**: blobs in a wide-column store bloat its compaction, and the disk the
+  rest of the data lives on already has room and backups.
+- **Removing a chat removes its folder.**
 
 ## Why not SQLite for messages too
 
@@ -79,5 +92,7 @@ credentials and identities.
 - **One replica.** A disk failure loses the history; there is no second node to recover
   from. A three-node cluster is the remedy, and is not worth it for this.
 - **Removing a chat deletes its messages** month by month, from its creation to now.
+- **Photos and videos use the VM's disk with no quota** beyond 10 MB a file and the send
+  rate limit. A busy chat can fill it; a cap per chat or an expiry is the remedy if it does.
 - Scylla 2025.1 is under ScyllaDB's source-available licence, free at this size.
 - The Android viewer does not show chat; it stays a viewer of broadcasts.

@@ -291,8 +291,9 @@ ssh zoia@<server-ip> 'rm /opt/zoia/server/data/backup.db'
 
 It holds password hashes and every email: keep it private, and out of git — `deploy.sh`
 already refuses to transfer `server/data` in either direction. Losing it means everyone
-signs up again. Profile pictures are beside it, in `server/data/avatars/`. The list of
-chats and their limit are in this file too.
+signs up again. Profile pictures are beside it, in `server/data/avatars/`, and photos and
+videos sent in chats in `server/data/chat-media/`; copy those folders as they are. The list
+of chats and their limit are in this file too.
 
 ### Back up the chat messages
 
