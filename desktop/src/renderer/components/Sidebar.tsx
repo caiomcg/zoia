@@ -1,4 +1,11 @@
-import { useEffect, useLayoutEffect, useRef, useState, type HTMLAttributes } from 'react';
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type HTMLAttributes,
+  type ReactNode,
+} from 'react';
 import type { RoomMember } from '../livekit/useRoom';
 import type { AccountRole, RoomInfo } from '../../shared/ipc';
 import type { GridTarget } from './RemoteGrid';
@@ -29,7 +36,7 @@ const COLLAPSED_KEY = 'zoia.sidebarCollapsed';
 const DRAG_TYPE = 'application/x-zoia-member';
 
 /** "Room 3" → "R3", "Games" → "GA": what a collapsed sidebar shows. */
-function shortName(name: string): string {
+export function shortName(name: string): string {
   const words = name.trim().split(/\s+/).filter(Boolean);
   if (words.length > 1) return (words[0]![0]! + words[words.length - 1]!.slice(0, 2)).toUpperCase();
   return name.slice(0, 2).toUpperCase();
@@ -62,7 +69,7 @@ function IconPanel({ collapsed }: { collapsed: boolean }) {
   );
 }
 
-function IconPencil() {
+export function IconPencil() {
   return (
     <svg
       viewBox="0 0 24 24"
@@ -80,7 +87,7 @@ function IconPencil() {
   );
 }
 
-function IconTrash() {
+export function IconTrash() {
   return (
     <svg
       viewBox="0 0 24 24"
@@ -99,14 +106,18 @@ function IconTrash() {
 }
 
 /** Naming a channel in place: Enter keeps it, Escape or an empty name drops it. */
-function ChannelNameField({
+export function ChannelNameField({
   initial,
   onDone,
+  label,
 }: {
   initial: string;
   onDone: (name: string | null) => void;
+  /** What the field names; a channel unless said otherwise. */
+  label?: string;
 }) {
   const t = useT();
+  const name = label ?? t('sidebar.channelName');
   const [value, setValue] = useState(initial);
   const inputRef = useRef<HTMLInputElement>(null);
   // Enter, then the blur that follows it, must not create the channel twice.
@@ -127,8 +138,8 @@ function ChannelNameField({
         ref={inputRef}
         value={value}
         maxLength={32}
-        placeholder={t('sidebar.channelName')}
-        aria-label={t('sidebar.channelName')}
+        placeholder={name}
+        aria-label={name}
         onChange={(event) => setValue(event.target.value)}
         onKeyDown={(event) => {
           if (event.key === 'Enter') finish(value.trim() || null);
@@ -162,6 +173,7 @@ export default function Sidebar({
   onHoverBroadcast,
   onWatchBroadcast,
   onToggleCamera,
+  chats,
 }: {
   members: RoomMember[];
   myName: string;
@@ -192,6 +204,8 @@ export default function Sidebar({
   onWatchBroadcast: (target: GridTarget) => void;
   /** Puts someone's camera on stage, or takes it off again. */
   onToggleCamera: (identity: string) => void;
+  /** The text chats (ADR 0035), listed under the channels. */
+  chats?: (collapsed: boolean) => ReactNode;
 }) {
   const t = useT();
   const canManageChannels = myRole === 'admin' || myRole === 'super_admin';
@@ -525,6 +539,8 @@ export default function Sidebar({
             )}
           </section>
         )}
+
+        {chats?.(collapsed)}
 
         {/* Before the first channel poll lands, or against a server without
             channels, the room's people still need a home. */}

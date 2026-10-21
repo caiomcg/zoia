@@ -18,6 +18,7 @@ import * as sources from './sources';
 import * as audioCapture from './audio';
 import * as encoder from './encoder';
 import * as capture from './capture';
+import { createChatStream } from './chat-stream';
 import { getCloseToTray, installTray, setCloseToTray, showWindow } from './tray';
 import { isDevToolsEnabled, openDevTools, setDevToolsEnabled } from './devtools';
 import * as language from './language';
@@ -417,6 +418,40 @@ function registerIpc(): void {
       ? api.fetchAvatar(identity, version)
       : null,
   );
+
+  // Text chat (ADR 0035). The stream runs while the window asks for it; it
+  // ends with the session, which signing out ends.
+  const chatStream = createChatStream((event) => {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(IPC.chatEvent, event);
+  });
+  ipcMain.handle(IPC.chatList, () => api.chatList());
+  ipcMain.handle(IPC.chatCreate, (_event, name: unknown) => api.chatCreate(String(name)));
+  ipcMain.handle(IPC.chatRename, (_event, id: unknown, name: unknown) =>
+    api.chatRename(String(id), String(name)),
+  );
+  ipcMain.handle(IPC.chatRemove, (_event, id: unknown) => api.chatRemove(String(id)));
+  ipcMain.handle(IPC.chatSetLimit, (_event, max: unknown) => api.chatSetLimit(Number(max)));
+  ipcMain.handle(IPC.chatMessages, (_event, chatId: unknown, before: unknown) =>
+    api.chatMessages(String(chatId), typeof before === 'string' ? before : undefined),
+  );
+  ipcMain.handle(IPC.chatSend, (_event, chatId: unknown, body: unknown) =>
+    api.chatSend(String(chatId), String(body)),
+  );
+  ipcMain.handle(IPC.chatRead, (_event, chatId: unknown, messageId: unknown) =>
+    api.chatRead(String(chatId), String(messageId)),
+  );
+  ipcMain.handle(IPC.chatListen, (_event, on: unknown) => {
+    if (on) chatStream.start();
+    else chatStream.stop();
+  });
+  ipcMain.handle(IPC.chatAvatar, (_event, accountId: unknown, version: unknown) =>
+    typeof accountId === 'string' && typeof version === 'string'
+      ? api.fetchAccountAvatar(accountId, version)
+      : null,
+  );
+  pairing.onStatusChange((status) => {
+    if (!status.paired) chatStream.stop();
+  });
 
   ipcMain.handle(
     IPC.encoderStart,

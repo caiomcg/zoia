@@ -19,6 +19,11 @@ import type {
   AdminAction,
   AdminActionOptions,
   IssuedCode,
+  ChatList,
+  ChatPage,
+  ChatMessage,
+  ChatAuthor,
+  ChatEvent,
 } from '../shared/ipc';
 
 export interface ZoiaBridge {
@@ -137,6 +142,27 @@ export interface ZoiaBridge {
   avatars: {
     /** Someone's picture as a data: URL, or null when they have none. */
     get(identity: string, version: string): Promise<string | null>;
+  };
+  /** Text chats (ADR 0035). Refusals come back as the server's error code. */
+  chat: {
+    list(): Promise<ActionOutcome<ChatList>>;
+    create(name: string): Promise<ActionOutcome>;
+    rename(id: string, name: string): Promise<ActionOutcome>;
+    remove(id: string): Promise<ActionOutcome>;
+    /** The super admin only. */
+    setLimit(max: number): Promise<ActionOutcome>;
+    /** Newest first; `before` is the oldest message already shown. */
+    messages(chatId: string, before?: string): Promise<ActionOutcome<ChatPage>>;
+    send(
+      chatId: string,
+      body: string,
+    ): Promise<ActionOutcome<{ message: ChatMessage; author: ChatAuthor }>>;
+    read(chatId: string, messageId: string): Promise<ActionOutcome>;
+    /** Starts or stops the live stream of changes, which arrive through onEvent. */
+    listen(on: boolean): Promise<void>;
+    onEvent(cb: (event: ChatEvent) => void): () => void;
+    /** An author's picture as a data: URL, or null when they have none. */
+    avatar(accountId: string, version: string): Promise<string | null>;
   };
   /** Sends a renderer-side failure to the server. */
   report(entry: { kind: string; message: string; stack?: string; context?: string }): void;

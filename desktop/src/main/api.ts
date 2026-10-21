@@ -23,6 +23,10 @@ import type {
   AccountState,
   AdminAccount,
   IssuedCode,
+  ChatList,
+  ChatPage,
+  ChatMessage,
+  ChatAuthor,
 } from '../shared/ipc';
 import { getServerUrl } from './config';
 
@@ -364,4 +368,80 @@ export function stageRelease() {
     method: 'POST',
     body: JSON.stringify({ room: currentRoom }),
   });
+}
+
+// ---- text chat (ADR 0035) -------------------------------------------------
+
+const chatPath = (id: string, rest = '') => `/api/chats/${encodeURIComponent(id)}${rest}`;
+
+export function chatList() {
+  return attempt(call<ChatList>('/api/chats'));
+}
+
+export function chatCreate(name: string) {
+  return attempt(
+    call('/api/chats', { method: 'POST', body: JSON.stringify({ name }) }).then(() => undefined),
+  );
+}
+
+export function chatRename(id: string, name: string) {
+  return attempt(
+    call(chatPath(id), { method: 'PATCH', body: JSON.stringify({ name }) }).then(() => undefined),
+  );
+}
+
+export function chatRemove(id: string) {
+  return attempt(call(chatPath(id), { method: 'DELETE' }).then(() => undefined));
+}
+
+export function chatSetLimit(max: number) {
+  return attempt(
+    call('/api/chats/limit', { method: 'PUT', body: JSON.stringify({ max }) }).then(
+      () => undefined,
+    ),
+  );
+}
+
+export function chatMessages(chatId: string, before?: string) {
+  const query = before ? `?before=${encodeURIComponent(before)}` : '';
+  return attempt(call<ChatPage>(chatPath(chatId, `/messages${query}`)));
+}
+
+export function chatSend(chatId: string, body: string) {
+  return attempt(
+    call<{ message: ChatMessage; author: ChatAuthor }>(chatPath(chatId, '/messages'), {
+      method: 'POST',
+      body: JSON.stringify({ body }),
+    }),
+  );
+}
+
+export function chatRead(chatId: string, messageId: string) {
+  return attempt(
+    call(chatPath(chatId, '/read'), {
+      method: 'POST',
+      body: JSON.stringify({ messageId }),
+    }).then(() => undefined),
+  );
+}
+
+/** An author's picture by account, as fetchAvatar does it by device. */
+export async function fetchAccountAvatar(
+  accountId: string,
+  version: string,
+): Promise<string | null> {
+  if (!AVATAR_ID.test(accountId) || !AVATAR_VERSION.test(version)) return null;
+  const base = getServerUrl();
+  if (!base) throw new NoServerError();
+
+  const res = await net.fetch(`${base}/api/avatar/account/${accountId}?v=${version}`, {
+    credentials: 'include',
+  });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new ApiError(res.status, null);
+
+  const type = res.headers.get('content-type') ?? '';
+  if (!/^image\/(webp|png|jpeg)$/.test(type)) return null;
+  const bytes = Buffer.from(await res.arrayBuffer());
+  return `data:${type};base64,${bytes.toString('base64')}`;
 }

@@ -10,6 +10,9 @@ import RemoteGrid, {
   type StageState,
 } from './components/RemoteGrid';
 import Sidebar from './components/Sidebar';
+import ChatList from './components/ChatList';
+import ChatView from './components/ChatView';
+import { useChat } from './chat/useChat';
 import SourcePicker from './components/SourcePicker';
 import SettingsDialog, { type Section as SettingsSection } from './components/SettingsDialog';
 import ReleaseNotesDialog from './components/ReleaseNotesDialog';
@@ -536,6 +539,39 @@ export default function App() {
     [room, myIdentity],
   );
 
+  // ---- text chat (ADR 0035) -----------------------------------------------
+  // The main area shows the broadcasts while you watch something, and the
+  // chat otherwise. Tabs switch between them; starting to watch brings the
+  // stage forward, and watching nothing any more brings the chat back.
+  const [view, setView] = useState<'stage' | 'chat'>('chat');
+  const [focused, setFocused] = useState(() => document.hasFocus());
+  useEffect(() => {
+    const onFocus = () => setFocused(true);
+    const onBlur = () => setFocused(false);
+    window.addEventListener('focus', onFocus);
+    window.addEventListener('blur', onBlur);
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      window.removeEventListener('blur', onBlur);
+    };
+  }, []);
+  const watchingSomething =
+    stage.watching.length > 0 || stage.cameras.length > 0 || stage.localWatched;
+  const wasWatching = useRef(watchingSomething);
+  useEffect(() => {
+    if (watchingSomething !== wasWatching.current) setView(watchingSomething ? 'stage' : 'chat');
+    wasWatching.current = watchingSomething;
+  }, [watchingSomething]);
+  const [chatError, setChatError] = useState<string | null>(null);
+  // Out of every channel there is no stage to show, only the chat.
+  const chatShownIfEnabled = channel === null || view === 'chat';
+  const chat = useChat({
+    usable,
+    me: accountId,
+    visible: chatShownIfEnabled && focused,
+  });
+  const chatShown = chat.enabled && chatShownIfEnabled;
+
   if (!status) return <Splash />;
   if (!status.paired) return <AuthScreen status={status} onSignedIn={setStatus} />;
   if (status.account?.status === 'pending') {
@@ -733,6 +769,7 @@ export default function App() {
   const audioWarning = show('audio', room.audioWarning);
   const stageMessage = show('stage', stageError);
   const channelMessage = show('channel', channelError);
+  const chatMessage = show('chat', chatError);
   const gpuWarning = gpuLive ? show('gpustatus', gpuCast.status?.error) : null;
   const activeRemoteIds = new Set(room.remoteScreens.map((screen) => screen.participantIdentity));
   const loadingBroadcasts: LoadingBroadcast[] = room.members
@@ -747,6 +784,24 @@ export default function App() {
   // Only while live: a stale list would say people are watching nothing.
   const viewerIds = new Set(isLive ? room.viewers.map((v) => v.identity) : []);
   const loadingRemoteIds = new Set(loadingBroadcasts.map((broadcast) => broadcast.identity));
+
+  /** What an admin is told when the server refuses a chat change. */
+  function chatErrorText(code: string): string {
+    switch (code) {
+      case 'chat_limit':
+        return t('chat.error.limit');
+      case 'invalid_name':
+        return t('chat.error.name');
+      case 'invalid_limit':
+        return t('chat.error.limitRange');
+      case 'forbidden':
+        return t('chat.error.forbidden');
+      case 'chat_unavailable':
+        return t('chat.unavailable');
+      default:
+        return t('chat.error.generic');
+    }
+  }
 
   function dismissOnboarding() {
     setShowOnboarding(false);
@@ -854,6 +909,7 @@ export default function App() {
       {channelMessage && (
         <Banner onDismiss={() => dismiss('channel', channelMessage)}>{channelMessage}</Banner>
       )}
+      {chatMessage && <Banner onDismiss={() => dismiss('chat', chatMessage)}>{chatMessage}</Banner>}
       {audioWarning && (
         <Banner tone="warn" onDismiss={() => dismiss('audio', audioWarning)}>
           {audioWarning}
@@ -867,86 +923,138 @@ export default function App() {
 
       <div className="body">
         <main className="main">
-          {/* Keyed by channel: what you watched or listened to in one channel
-              means nothing in the next. */}
-          {channel === null ? (
-            <section className="stage remote-empty">
-              <div className="overlay">
-                <h2>{t('grid.noChannelTitle')}</h2>
-                <p className="muted">{t('grid.noChannelBody')}</p>
-              </div>
-            </section>
-          ) : (
-            <RemoteGrid
-              key={channel ?? 'none'}
-              screens={room.remoteScreens}
-              onFocusChange={setRemoteFocus}
-              local={
-                isLive
-                  ? {
-                      renderStage: ({ active, toggle, onClose, closeButton }) => (
-                        <Player
-                          fullscreen={{ active, toggle }}
-                          onClose={onClose}
-                          closeButton={closeButton}
-                          name={status.deviceName ?? t('common.you')}
-                          identity={myIdentity}
-                          // Your camera alone is shown whatever the preview:
-                          // it is always in your grid, to be seen.
-                          showPreview={showPreview || !screenLive}
-                          onTogglePreview={togglePreview}
-                          localTrack={screenLive ? room.localTrack : room.cameraTrack}
-                          mirrored={!screenLive}
-                          gpuBroadcasting={gpuLive}
-                          sendAudio={
-                            room.sendingAudio
-                              ? {
-                                  value: room.sendAudio,
-                                  canSetVolume: room.canSetSendVolume,
-                                  onChange: (next) => void room.setSendAudio(next),
-                                }
-                              : undefined
-                          }
-                          mic={
-                            room.sendingMic
-                              ? {
-                                  muted: room.micMuted,
-                                  onToggle: () => void room.setMicMuted(!room.micMuted),
-                                }
-                              : undefined
-                          }
-                          onStop={() => void stopMain()}
-                          onSwitch={() => setPickerOpen(true)}
-                        />
-                      ),
-                      // The strip's thumbnail and the overview follow the
-                      // same choice: you only see yourself if you asked to.
-                      track: showPreview ? (screenLive ? room.localTrack : room.cameraTrack) : null,
-                      // A camera alone is the picture, and is shown mirrored.
-                      mirrored: !screenLive,
-                      showPreview,
-                      onTogglePreview: togglePreview,
-                      // Always in your grid while it is on, whatever the preview.
-                      camera: room.cameraState === 'live' ? room.cameraTrack : null,
-                      cameraIsMain: !screenLive,
-                      onStop: () => void stopMain(),
-                      name: status.deviceName ?? t('common.you'),
-                      identity: myIdentity,
-                    }
-                  : undefined
-              }
-              loadingBroadcasts={loadingBroadcasts}
-              showOnboarding={showOnboarding && (room.state === 'connected' || hopping)}
-              onStartSharing={() => {
-                dismissOnboarding();
-                setPickerOpen(true);
-              }}
-              onDismissOnboarding={dismissOnboarding}
-              onPausedChange={setRemotePaused}
-              controlRef={gridRef}
-              onStageChange={setStage}
-            />
+          {chat.enabled && channel !== null && (
+            <div className="main-tabs" role="tablist">
+              <button
+                role="tab"
+                aria-selected={!chatShown}
+                className={`main-tab${chatShown ? '' : ' current'}`}
+                onClick={() => setView('stage')}
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  width="16"
+                  height="16"
+                  aria-hidden="true"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
+                  <rect x="2.5" y="4" width="19" height="13" rx="2" />
+                  <path d="M8 20.5h8" strokeLinecap="round" />
+                </svg>
+                {t('chat.tabStage')}
+                {watchingSomething && <span className="share-live-dot" aria-hidden="true" />}
+              </button>
+              <button
+                role="tab"
+                aria-selected={chatShown}
+                className={`main-tab${chatShown ? ' current' : ''}`}
+                onClick={() => setView('chat')}
+              >
+                <span className="chat-hash" aria-hidden="true">
+                  #
+                </span>
+                {chat.openChat?.name ?? t('chat.title')}
+                {!chatShown && chat.totalUnread > 0 && (
+                  <span className="chat-unread">
+                    {chat.totalUnread >= 100 ? '99+' : chat.totalUnread}
+                  </span>
+                )}
+              </button>
+            </div>
           )}
+          <div className="main-panes">
+            {chatShown && <ChatView chat={chat} me={accountId} />}
+            {/* Behind the chat rather than unmounted: what you watch keeps
+              playing, and its sound with it, while you read. */}
+            <div className={`main-pane${chatShown ? ' behind' : ''}`}>
+              {/* Keyed by channel: what you watched or listened to in one channel
+              means nothing in the next. */}
+              {channel === null ? (
+                <section className="stage remote-empty">
+                  <div className="overlay">
+                    <h2>{t('grid.noChannelTitle')}</h2>
+                    <p className="muted">{t('grid.noChannelBody')}</p>
+                  </div>
+                </section>
+              ) : (
+                <RemoteGrid
+                  key={channel ?? 'none'}
+                  screens={room.remoteScreens}
+                  onFocusChange={setRemoteFocus}
+                  local={
+                    isLive
+                      ? {
+                          renderStage: ({ active, toggle, onClose, closeButton }) => (
+                            <Player
+                              fullscreen={{ active, toggle }}
+                              onClose={onClose}
+                              closeButton={closeButton}
+                              name={status.deviceName ?? t('common.you')}
+                              identity={myIdentity}
+                              // Your camera alone is shown whatever the preview:
+                              // it is always in your grid, to be seen.
+                              showPreview={showPreview || !screenLive}
+                              onTogglePreview={togglePreview}
+                              localTrack={screenLive ? room.localTrack : room.cameraTrack}
+                              mirrored={!screenLive}
+                              gpuBroadcasting={gpuLive}
+                              sendAudio={
+                                room.sendingAudio
+                                  ? {
+                                      value: room.sendAudio,
+                                      canSetVolume: room.canSetSendVolume,
+                                      onChange: (next) => void room.setSendAudio(next),
+                                    }
+                                  : undefined
+                              }
+                              mic={
+                                room.sendingMic
+                                  ? {
+                                      muted: room.micMuted,
+                                      onToggle: () => void room.setMicMuted(!room.micMuted),
+                                    }
+                                  : undefined
+                              }
+                              onStop={() => void stopMain()}
+                              onSwitch={() => setPickerOpen(true)}
+                            />
+                          ),
+                          // The strip's thumbnail and the overview follow the
+                          // same choice: you only see yourself if you asked to.
+                          track: showPreview
+                            ? screenLive
+                              ? room.localTrack
+                              : room.cameraTrack
+                            : null,
+                          // A camera alone is the picture, and is shown mirrored.
+                          mirrored: !screenLive,
+                          showPreview,
+                          onTogglePreview: togglePreview,
+                          // Always in your grid while it is on, whatever the preview.
+                          camera: room.cameraState === 'live' ? room.cameraTrack : null,
+                          cameraIsMain: !screenLive,
+                          onStop: () => void stopMain(),
+                          name: status.deviceName ?? t('common.you'),
+                          identity: myIdentity,
+                        }
+                      : undefined
+                  }
+                  loadingBroadcasts={loadingBroadcasts}
+                  showOnboarding={showOnboarding && (room.state === 'connected' || hopping)}
+                  onStartSharing={() => {
+                    dismissOnboarding();
+                    setPickerOpen(true);
+                  }}
+                  onDismissOnboarding={dismissOnboarding}
+                  onPausedChange={setRemotePaused}
+                  controlRef={gridRef}
+                  onStageChange={setStage}
+                />
+              )}
+            </div>
+          </div>
         </main>
 
         <Sidebar
@@ -983,6 +1091,23 @@ export default function App() {
           onToggleCamera={(identity) => gridRef.current?.toggleCamera(identity)}
           onHoverBroadcast={(target, anchor) => gridRef.current?.hover(target, anchor)}
           onWatchBroadcast={(target) => gridRef.current?.watch(target)}
+          chats={
+            chat.enabled
+              ? (collapsed) => (
+                  <ChatList
+                    chat={chat}
+                    collapsed={collapsed}
+                    showing={chatShown}
+                    myRole={account?.role}
+                    onOpen={(id) => {
+                      chat.open(id);
+                      setView('chat');
+                    }}
+                    onError={(code) => setChatError(chatErrorText(code))}
+                  />
+                )
+              : undefined
+          }
         />
       </div>
 

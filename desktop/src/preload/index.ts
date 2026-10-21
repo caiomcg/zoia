@@ -12,6 +12,7 @@ import type {
   UpdaterConfig,
   UpdaterCheckResult,
   ReleaseInfo,
+  ChatEvent,
 } from '../shared/ipc';
 import type { ZoiaBridge } from './index.d';
 
@@ -103,6 +104,23 @@ const bridge: ZoiaBridge = {
   },
   avatars: {
     get: (identity, version) => ipcRenderer.invoke(IPC.avatarGet, identity, version),
+  },
+  chat: {
+    list: () => ipcRenderer.invoke(IPC.chatList),
+    create: (name) => ipcRenderer.invoke(IPC.chatCreate, name),
+    rename: (id, name) => ipcRenderer.invoke(IPC.chatRename, id, name),
+    remove: (id) => ipcRenderer.invoke(IPC.chatRemove, id),
+    setLimit: (max) => ipcRenderer.invoke(IPC.chatSetLimit, max),
+    messages: (chatId, before) => ipcRenderer.invoke(IPC.chatMessages, chatId, before),
+    send: (chatId, body) => ipcRenderer.invoke(IPC.chatSend, chatId, body),
+    read: (chatId, messageId) => ipcRenderer.invoke(IPC.chatRead, chatId, messageId),
+    listen: (on) => ipcRenderer.invoke(IPC.chatListen, on),
+    onEvent: (cb) => {
+      const listener = (_event: Electron.IpcRendererEvent, event: ChatEvent) => cb(event);
+      ipcRenderer.on(IPC.chatEvent, listener);
+      return () => ipcRenderer.removeListener(IPC.chatEvent, listener);
+    },
+    avatar: (accountId, version) => ipcRenderer.invoke(IPC.chatAvatar, accountId, version),
   },
   report: (entry) => ipcRenderer.send(IPC.report, entry),
   gpu: {

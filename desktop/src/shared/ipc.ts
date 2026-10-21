@@ -114,6 +114,56 @@ export interface RoomsList {
 /** How a channel change went; `error` is the server's code when refused. */
 export type ChannelOutcome = { ok: true } | { ok: false; error: string };
 
+/** A text chat (ADR 0035). Not a room: everyone sees every chat. */
+export interface ChatInfo {
+  id: string;
+  name: string;
+  isDefault: boolean;
+  /** Messages others wrote that you have not read, up to 100; null when unknown. */
+  unread: number | null;
+}
+
+/** The chats, how many there may be, and whether messages can be reached. */
+export interface ChatList {
+  chats: ChatInfo[];
+  max: number;
+  /** The most the super admin may allow. */
+  ceiling: number;
+  /** False while the server's message database is not reachable. */
+  available: boolean;
+}
+
+export interface ChatMessage {
+  /** A time-based uuid: orders the messages and is the paging cursor. */
+  id: string;
+  chatId: string;
+  /** The author's account id. */
+  authorId: string;
+  body: string;
+  sentAt: string;
+}
+
+/** How an author is shown; null for an account that no longer exists. */
+export type ChatAuthor = { name: string; avatar: string | null } | null;
+
+/** A page of messages, newest first, with who wrote them and who read what. */
+export interface ChatPage {
+  messages: ChatMessage[];
+  hasMore: boolean;
+  /** Everyone the page mentions, as author or reader, by account id. */
+  authors: Record<string, ChatAuthor>;
+  /** Account id -> the last message id they have read. */
+  readers: Record<string, string>;
+}
+
+/** What the server pushes while the app is listening. */
+export type ChatEvent =
+  | { type: 'message'; message: ChatMessage; author: ChatAuthor }
+  | { type: 'read'; chatId: string; accountId: string; messageId: string; reader: ChatAuthor }
+  | { type: 'chats' }
+  /** The stream itself: connected, or lost and retrying. */
+  | { type: 'stream'; connected: boolean };
+
 export interface TokenResult {
   token: string;
   wsUrl: string;
@@ -342,6 +392,17 @@ export const IPC = {
   roomsCreate: 'zoia:rooms:create',
   roomsRename: 'zoia:rooms:rename',
   roomsRemove: 'zoia:rooms:remove',
+  chatList: 'zoia:chat:list',
+  chatCreate: 'zoia:chat:create',
+  chatRename: 'zoia:chat:rename',
+  chatRemove: 'zoia:chat:remove',
+  chatSetLimit: 'zoia:chat:limit',
+  chatMessages: 'zoia:chat:messages',
+  chatSend: 'zoia:chat:send',
+  chatRead: 'zoia:chat:read',
+  chatListen: 'zoia:chat:listen',
+  chatEvent: 'zoia:chat:event',
+  chatAvatar: 'zoia:chat:avatar',
   stageGet: 'zoia:stage:get',
   stageClaim: 'zoia:stage:claim',
   stageRelease: 'zoia:stage:release',
