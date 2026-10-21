@@ -4335,11 +4335,13 @@ button.danger:active:not(:disabled),
 .chat-composer textarea {
   flex: 1;
   max-height: 160px;
+  /* One line is exactly as tall as the buttons beside it: 18 + 2 × 9 + 2. */
   min-height: 38px;
   padding: 9px 12px;
   color: var(--text);
   font: inherit;
   font-size: 14px;
+  line-height: 18px;
   background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: 8px;
