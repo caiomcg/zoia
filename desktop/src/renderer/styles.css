@@ -4109,7 +4109,7 @@ button.danger:active:not(:disabled),
 
 .chat-message {
   display: grid;
-  grid-template-columns: 40px 1fr;
+  grid-template-columns: 48px 1fr;
   gap: 10px;
   padding: 6px 16px 2px;
 }
@@ -4133,6 +4133,7 @@ button.danger:active:not(:disabled),
   font-size: 10px;
   color: var(--muted);
   text-align: right;
+  white-space: nowrap;
   opacity: 0;
 }
 
@@ -4209,7 +4210,7 @@ button.danger:active:not(:disabled),
 }
 
 .chat-seen {
-  margin: 4px 16px 0 66px;
+  margin: 4px 16px 0 74px;
   font-size: 11px;
 }
 
