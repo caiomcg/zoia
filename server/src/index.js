@@ -11,6 +11,8 @@ import { createReportStore } from './reports.js';
 import { createChannelStore } from './channels.js';
 import { createAvatarStore } from './avatars.js';
 import { openStores } from './stores.js';
+import { connectInBackground } from './scylla.js';
+import { createMessageStore } from './messages.js';
 import { createApp } from './app.js';
 
 try {
@@ -21,7 +23,11 @@ try {
 
 const config = loadConfig();
 
-const { devices: deviceStore, accounts: accountStore } = openStores({
+const {
+  devices: deviceStore,
+  accounts: accountStore,
+  chats: chatStore,
+} = openStores({
   databaseFile: config.databaseFile,
   maxPending: config.accounts.maxPending,
   defaultChatName: config.chat.defaultName,
@@ -64,6 +70,19 @@ const channels = createChannelStore({
 
 const reports = createReportStore();
 
+// Chat messages live in ScyllaDB (ADR 0035), which may take a minute to start.
+// The app does not wait for it: until it answers, chat says it is unavailable
+// and everything else works.
+let messageStore = null;
+if (config.chat.scylla) {
+  connectInBackground({
+    ...config.chat.scylla,
+    onConnected: (client) => {
+      messageStore = createMessageStore({ client, keyspace: config.chat.scylla.keyspace });
+    },
+  });
+}
+
 const app = createApp({
   config,
   tokenIssuer,
@@ -72,6 +91,8 @@ const app = createApp({
   deviceStore,
   avatarStore,
   accountStore,
+  chatStore,
+  messageStore: () => messageStore,
 });
 
 app.listen(config.port, () => {
@@ -79,6 +100,10 @@ app.listen(config.port, () => {
   console.log(`[zoia] public host  ${config.publicHost}`);
   console.log(`[zoia] livekit ws   ${config.livekit.wsUrl}`);
   console.log(`[zoia] channels     default ${config.roomName}, up to ${config.channels.max}`);
+  const scylla = config.chat.scylla;
+  console.log(
+    `[zoia] chat         ${scylla ? `scylla at ${scylla.contactPoints.join(', ')}` : 'off (SCYLLA_CONTACT_POINTS not set)'}`,
+  );
   if (config.trustProxy === 0) {
     console.warn('[zoia] TRUST_PROXY is 0 — behind a reverse proxy this breaks rate limiting');
   }

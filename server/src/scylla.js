@@ -46,6 +46,48 @@ const MIGRATIONS = [
 ];
 
 /**
+ * Connects without holding up the caller, retrying with backoff until Scylla
+ * answers: it takes a minute to start, and the app must serve broadcasts
+ * meanwhile. `onConnected` gets the client once. After that the driver
+ * reconnects on its own.
+ */
+export function connectInBackground({
+  onConnected,
+  logger = console,
+  firstRetryMs = 2000,
+  maxRetryMs = 60_000,
+  connect = connectScylla,
+  ...options
+}) {
+  let client = null;
+  let stopped = false;
+  let timer = null;
+
+  async function attempt(delay) {
+    try {
+      client = await connect({ ...options, logger });
+      if (stopped) return client.shutdown().catch(() => {});
+      logger.info('[scylla] connected');
+      onConnected(client);
+    } catch (err) {
+      if (stopped) return;
+      logger.warn(`[scylla] not reachable (${err.message}); retrying in ${delay / 1000}s`);
+      timer = setTimeout(() => attempt(Math.min(delay * 2, maxRetryMs)), delay);
+      timer.unref?.();
+    }
+  }
+  attempt(firstRetryMs);
+
+  return {
+    async stop() {
+      stopped = true;
+      clearTimeout(timer);
+      await client?.shutdown().catch(() => {});
+    },
+  };
+}
+
+/**
  * Connects, creating the keyspace and applying any migrations not yet
  * applied. One replica: there is one node, on the same VM as the app.
  */

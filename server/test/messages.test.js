@@ -22,7 +22,7 @@ import {
   parseMessageId,
   previousBucket,
 } from '../src/messages.js';
-import { connectScylla, isKeyspaceName } from '../src/scylla.js';
+import { connectInBackground, connectScylla, isKeyspaceName } from '../src/scylla.js';
 
 const { TimeUuid } = cassandra.types;
 const quiet = { info() {}, warn() {}, error() {} };
@@ -75,6 +75,58 @@ describe('keyspace names', () => {
     assert.ok(!isKeyspaceName('Zoia'));
     assert.ok(!isKeyspaceName('zoia; DROP KEYSPACE system'));
     assert.ok(!isKeyspaceName(''));
+  });
+});
+
+describe('connecting in the background', () => {
+  // The retry timer is unref'd so it never holds the server open; this holds
+  // the test runner open while it fires.
+  let keepAlive;
+  before(() => (keepAlive = setInterval(() => {}, 1000)));
+  after(() => clearInterval(keepAlive));
+
+  test('retries with backoff until Scylla answers, then hands the client over', async () => {
+    const warnings = [];
+    const delays = [];
+    let calls = 0;
+    const client = { shutdown: async () => {} };
+    const connected = new Promise((resolve) => {
+      connectInBackground({
+        keyspace: 'zoia',
+        firstRetryMs: 5,
+        maxRetryMs: 8,
+        logger: { info() {}, warn: (line) => warnings.push(line) },
+        connect: async () => {
+          calls += 1;
+          if (calls < 4) throw new Error('connection refused');
+          return client;
+        },
+        onConnected: resolve,
+      });
+    });
+    assert.equal(await connected, client);
+    assert.equal(calls, 4);
+    for (const line of warnings) delays.push(Number(/in ([\d.]+)s/.exec(line)[1]) * 1000);
+    assert.deepEqual(delays, [5, 8, 8]);
+  });
+
+  test('stopped, it gives up and closes what it opened', async () => {
+    let closed = false;
+    let release;
+    const pending = new Promise((resolve) => (release = resolve));
+    const connection = connectInBackground({
+      keyspace: 'zoia',
+      logger: quiet,
+      connect: async () => {
+        await pending;
+        return { shutdown: async () => (closed = true) };
+      },
+      onConnected: () => assert.fail('must not hand over a client after stop'),
+    });
+    await connection.stop();
+    release();
+    await new Promise((r) => setTimeout(r, 10));
+    assert.equal(closed, true);
   });
 });
 

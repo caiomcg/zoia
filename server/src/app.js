@@ -17,6 +17,7 @@ import { NotStageHolderError, WHIP_SUFFIX } from './whip.js';
 import { fixedChannels } from './channels.js';
 import { AVATAR_MAX_BYTES, imageType, isAvatarId } from './avatars.js';
 import { canManage, isAdmin } from './accounts.js';
+import { chatRoutes } from './chat-routes.js';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -37,6 +38,8 @@ export function createApp({
   deviceStore = null,
   avatarStore = null,
   accountStore = null,
+  chatStore = null,
+  messageStore = () => null,
   logger = console,
 }) {
   const app = express();
@@ -125,13 +128,18 @@ export function createApp({
    * must not share it.
    */
   async function currentUser(req, res) {
+    const user = await sessionUser(req);
+    if (!user) clearSession(res);
+    return user;
+  }
+
+  /** The person the request's cookie names, as they stand now, or null. */
+  async function sessionUser(req) {
     const value = req.signedCookies?.[COOKIE_NAME];
     if (typeof value !== 'string' || !value.startsWith('device:')) return null;
 
     const record = await deviceStore?.getActive(value.slice('device:'.length));
-    const user = record ? await deviceUser(record) : null;
-    if (!user) clearSession(res);
-    return user;
+    return record ? deviceUser(record) : null;
   }
 
   /** The person a live device is, while its account is not disabled. */
@@ -897,22 +905,56 @@ export function createApp({
       if (!isAvatarId(id)) return res.status(404).json({ error: 'no_avatar' });
       const record = await deviceStore.getActive(id);
       const holder = record ? await accountStore.get(record.accountId) : null;
-      if (!holder?.avatar) return res.status(404).json({ error: 'no_avatar' });
-      const picture = await avatarStore.read(holder.id);
-      if (!picture) return res.status(404).json({ error: 'no_avatar' });
-
-      // The type is the one sniffed from the stored bytes, never one a client
-      // supplied, and nosniff keeps anything from reading it as something else.
-      res.set('Content-Type', picture.type);
-      res.set('X-Content-Type-Options', 'nosniff');
-      res.set('Content-Security-Policy', "default-src 'none'");
-      // Clients ask with ?v=<version>, so a new picture is a new URL.
-      res.set('Cache-Control', 'private, max-age=86400');
-      res.send(picture.bytes);
+      await sendAvatar(res, holder);
     } catch (err) {
       next(err);
     }
   });
+
+  // An account's picture, for chat messages, whose authors are accounts
+  // rather than machines in a room.
+  app.get('/api/avatar/account/:id', requireSession, requireAvatars, async (req, res, next) => {
+    try {
+      const { id } = req.params;
+      await sendAvatar(res, isAvatarId(id) ? await accountStore.get(id) : null);
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  async function sendAvatar(res, holder) {
+    const picture = holder?.avatar ? await avatarStore.read(holder.id) : null;
+    if (!picture) return res.status(404).json({ error: 'no_avatar' });
+
+    // The type is the one sniffed from the stored bytes, never one a client
+    // supplied, and nosniff keeps anything from reading it as something else.
+    res.set('Content-Type', picture.type);
+    res.set('X-Content-Type-Options', 'nosniff');
+    res.set('Content-Security-Policy', "default-src 'none'");
+    // Clients ask with ?v=<version>, so a new picture is a new URL.
+    res.set('Cache-Control', 'private, max-age=86400');
+    res.send(picture.bytes);
+  }
+
+  // ---- text chat (ADR 0035) ------------------------------------------------
+
+  if (chatStore) {
+    app.use(
+      '/api/chats',
+      chatRoutes({
+        chats: chatStore,
+        messages: messageStore,
+        accountStore,
+        requireSession,
+        requireAdmin,
+        recheck: sessionUser,
+        // Tests shorten these; undefined keeps the defaults.
+        sendLimit: config.chat?.sendLimit,
+        heartbeatMs: config.chat?.heartbeatMs,
+        logger,
+      }),
+    );
+  }
 
   // maxAge 0 with etags means the browser revalidates and gets a 304 when
   // nothing changed. An hour of caching meant a deploy did not reach anyone
