@@ -112,6 +112,16 @@ export const es: Messages = {
   'chat.error.limitRange': 'Ese límite está fuera de rango.',
   'chat.error.forbidden': 'No tienes permiso para hacer eso.',
   'chat.error.generic': 'Algo salió mal. Inténtalo de nuevo.',
+  'chat.attach': 'Enviar foto o video (hasta 10 MB)',
+  'chat.caption': 'Añade un texto (opcional)',
+  'chat.drop': 'Suelta para enviar',
+  'chat.removeAttachment': 'Quitar',
+  'chat.photo': 'Foto',
+  'chat.video': 'Video',
+  'chat.sending': 'Enviando…',
+  'chat.error.tooLarge': 'Ese archivo supera los 10 MB.',
+  'chat.error.unsupported':
+    'Solo se pueden enviar fotos (PNG, JPEG, GIF, WebP) y videos (MP4, WebM).',
 
   'player.youreLive': 'Estás en vivo',
   'player.previewHidden':

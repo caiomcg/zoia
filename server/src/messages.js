@@ -84,9 +84,19 @@ function toMessage(chatId, row) {
     id: row.id.toString(),
     chatId,
     authorId: row.author_id,
-    body: row.body,
+    body: row.body ?? '',
     sentAt: row.id.getDate().toISOString(),
+    attachment: parseAttachment(row.attachment),
   };
+}
+
+function parseAttachment(value) {
+  if (!value) return null;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -102,15 +112,20 @@ export function createMessageStore({ client, keyspace }) {
   };
 
   return {
-    /** Stores a message. The body must already have passed `cleanBody`. */
-    async send({ chatId, authorId, body }) {
+    /**
+     * Stores a message. The body must already have passed `cleanBody`, or be
+     * empty when an attachment — a photo or video — is the message.
+     */
+    async send({ chatId, authorId, body, attachment = null }) {
       const id = TimeUuid.now();
+      const stored = attachment ? JSON.stringify(attachment) : null;
       await client.execute(
-        `INSERT INTO ${t('messages')} (chat_id, bucket, id, author_id, body) VALUES (?, ?, ?, ?, ?)`,
-        [chatId, bucketOf(id.getDate()), id, authorId, body],
+        `INSERT INTO ${t('messages')} (chat_id, bucket, id, author_id, body, attachment)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [chatId, bucketOf(id.getDate()), id, authorId, body, stored],
         prepared,
       );
-      return toMessage(chatId, { id, author_id: authorId, body });
+      return toMessage(chatId, { id, author_id: authorId, body, attachment: stored });
     },
 
     /**
@@ -125,7 +140,7 @@ export function createMessageStore({ client, keyspace }) {
         const want = limit - messages.length;
         const bounded = cursor && bucket === newest;
         const result = await client.execute(
-          `SELECT id, author_id, body FROM ${t('messages')}
+          `SELECT id, author_id, body, attachment FROM ${t('messages')}
            WHERE chat_id = ? AND bucket = ?${bounded ? ' AND id < ?' : ''} LIMIT ?`,
           bounded ? [chatId, bucket, cursor, want] : [chatId, bucket, want],
           prepared,

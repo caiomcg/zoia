@@ -157,6 +157,13 @@ export interface ZoiaBridge {
       chatId: string,
       body: string,
     ): Promise<ActionOutcome<{ message: ChatMessage; author: ChatAuthor }>>;
+    /** A photo or video as a message of its own, up to 10 MB, with an optional caption. */
+    sendMedia(
+      chatId: string,
+      bytes: Uint8Array,
+      name: string,
+      caption: string,
+    ): Promise<ActionOutcome<{ message: ChatMessage; author: ChatAuthor }>>;
     read(chatId: string, messageId: string): Promise<ActionOutcome>;
     /** Starts or stops the live stream of changes, which arrive through onEvent. */
     listen(on: boolean): Promise<void>;

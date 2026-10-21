@@ -113,6 +113,8 @@ const bridge: ZoiaBridge = {
     setLimit: (max) => ipcRenderer.invoke(IPC.chatSetLimit, max),
     messages: (chatId, before) => ipcRenderer.invoke(IPC.chatMessages, chatId, before),
     send: (chatId, body) => ipcRenderer.invoke(IPC.chatSend, chatId, body),
+    sendMedia: (chatId, bytes, name, caption) =>
+      ipcRenderer.invoke(IPC.chatSendMedia, chatId, bytes, name, caption),
     read: (chatId, messageId) => ipcRenderer.invoke(IPC.chatRead, chatId, messageId),
     listen: (on) => ipcRenderer.invoke(IPC.chatListen, on),
     onEvent: (cb) => {

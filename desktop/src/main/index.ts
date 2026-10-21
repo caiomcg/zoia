@@ -19,11 +19,12 @@ import * as audioCapture from './audio';
 import * as encoder from './encoder';
 import * as capture from './capture';
 import { createChatStream } from './chat-stream';
+import { handleMediaScheme, registerMediaScheme } from './chat-media';
 import { getCloseToTray, installTray, setCloseToTray, showWindow } from './tray';
 import { isDevToolsEnabled, openDevTools, setDevToolsEnabled } from './devtools';
 import * as language from './language';
 import { isLanguagePreference } from '../shared/i18n';
-import { IPC } from '../shared/ipc';
+import { CHAT_MEDIA_MAX_BYTES, IPC } from '../shared/ipc';
 import type { GpuStatus } from '../shared/ipc';
 import {
   checkForUpdate,
@@ -42,6 +43,9 @@ import {
 // anything reads a path, and before the single-instance lock, which is per
 // profile: two profiles can run side by side, as an admin and a second user.
 if (process.env.ZOIA_USER_DATA) app.setPath('userData', process.env.ZOIA_USER_DATA);
+
+// Chat photos and videos load from a scheme of our own; see chat-media.ts.
+registerMediaScheme();
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -436,6 +440,20 @@ function registerIpc(): void {
   );
   ipcMain.handle(IPC.chatSend, (_event, chatId: unknown, body: unknown) =>
     api.chatSend(String(chatId), String(body)),
+  );
+  ipcMain.handle(
+    IPC.chatSendMedia,
+    (_event, chatId: unknown, bytes: unknown, name: unknown, caption: unknown) => {
+      if (!(bytes instanceof Uint8Array) || bytes.length > CHAT_MEDIA_MAX_BYTES) {
+        return { ok: false, error: 'media_too_large' };
+      }
+      return api.chatSendMedia(
+        String(chatId),
+        bytes,
+        typeof name === 'string' ? name : '',
+        typeof caption === 'string' ? caption : '',
+      );
+    },
   );
   ipcMain.handle(IPC.chatRead, (_event, chatId: unknown, messageId: unknown) =>
     api.chatRead(String(chatId), String(messageId)),
@@ -923,6 +941,7 @@ app.whenReady().then(async () => {
   // The second copy is on its way out; it must not open a window first.
   if (!isFirstInstance) return;
   installCrashReporting();
+  handleMediaScheme();
   // Created before the window, so its close handler is attached to it.
   installTray(() => mainWindow, join(__dirname, '../../build/tray.png'));
   // Removes the default menu outright, so Alt reveals nothing. macOS is the

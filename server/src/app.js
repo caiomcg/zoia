@@ -40,6 +40,7 @@ export function createApp({
   accountStore = null,
   chatStore = null,
   messageStore = () => null,
+  chatMediaStore = null,
   logger = console,
 }) {
   const app = express();
@@ -944,6 +945,7 @@ export function createApp({
       chatRoutes({
         chats: chatStore,
         messages: messageStore,
+        media: chatMediaStore,
         accountStore,
         requireSession,
         requireAdmin,

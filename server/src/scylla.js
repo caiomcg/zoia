@@ -43,6 +43,11 @@ const MIGRATIONS = [
        PRIMARY KEY (chat_id, account_id)
      )`,
   ],
+  [
+    // A photo or video sent with the message, as JSON: its id in the chat's
+    // media folder, type, size and name. The file is on the app's disk.
+    `ALTER TABLE {ks}.messages ADD attachment text`,
+  ],
 ];
 
 /**

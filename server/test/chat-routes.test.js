@@ -18,6 +18,7 @@ import cassandra from 'cassandra-driver';
 import { createApp } from '../src/app.js';
 import { createStage } from '../src/stage.js';
 import { PASSWORD, signIn, testStores } from './people.js';
+import { createMediaStore, MEDIA_MAX_BYTES } from '../src/chat-media.js';
 
 const { TimeUuid } = cassandra.types;
 const quiet = { info() {}, warn() {}, error() {} };
@@ -32,7 +33,7 @@ function memoryMessages() {
   const key = (chatId, accountId) => `${chatId}/${accountId}`;
   const place = (id) => sent.findIndex((m) => m.id === id);
   return {
-    async send({ chatId, authorId, body }) {
+    async send({ chatId, authorId, body, attachment = null }) {
       const id = TimeUuid.now();
       const message = {
         id: id.toString(),
@@ -40,6 +41,7 @@ function memoryMessages() {
         authorId,
         body,
         sentAt: id.getDate().toISOString(),
+        attachment,
       };
       sent.push(message);
       return message;
@@ -99,6 +101,7 @@ function buildApp(chat = {}) {
     deviceStore: stores.devices,
     chatStore: stores.chats,
     messageStore: () => (available ? messages : null),
+    chatMediaStore: createMediaStore({ dir: join(dir, 'chat-media') }),
     stage: createStage({
       rooms: { listParticipants: async () => [], updateParticipant: async () => {} },
       roomName: 'zoia',
@@ -274,6 +277,89 @@ describe('messages', () => {
     await send(ana).expect(201);
     await send(ana).expect(429);
     await send(bia).expect(201);
+  });
+});
+
+describe('photos and videos', () => {
+  const PNG = Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    Buffer.alloc(64, 1),
+  ]);
+  const upload = (who, chatId, bytes, query = '') =>
+    who.agent
+      .post(`/api/chats/${chatId}/media${query}`)
+      .set('content-type', 'application/octet-stream')
+      .send(bytes);
+
+  test('a photo is a message, with its caption, and comes back as it was sent', async () => {
+    const ana = await signIn(app, stores.accounts, 'Ana');
+    const bia = await signIn(app, stores.accounts, 'Bia');
+    const chat = await defaultChat();
+    const res = await upload(ana, chat.id, PNG, '?name=praia.png&caption=Olha%20s%C3%B3').expect(
+      201,
+    );
+    const { message } = res.body;
+    assert.equal(message.body, 'Olha só');
+    assert.equal(message.attachment.type, 'image/png');
+    assert.equal(message.attachment.kind, 'image');
+    assert.equal(message.attachment.size, PNG.length);
+    assert.equal(message.attachment.name, 'praia.png');
+
+    const file = await bia.agent
+      .get(`/api/chats/${chat.id}/media/${message.attachment.id}`)
+      .buffer(true)
+      .parse((r, done) => {
+        const parts = [];
+        r.on('data', (c) => parts.push(c));
+        r.on('end', () => done(null, Buffer.concat(parts)));
+      })
+      .expect(200);
+    assert.equal(file.headers['content-type'], 'image/png');
+    assert.equal(file.headers['x-content-type-options'], 'nosniff');
+    assert.ok(Buffer.from(file.body).equals(PNG));
+  });
+
+  test('a video can be fetched in ranges, for scrubbing', async () => {
+    const ana = await signIn(app, stores.accounts, 'Ana');
+    const chat = await defaultChat();
+    const webm = Buffer.concat([Buffer.from([0x1a, 0x45, 0xdf, 0xa3]), Buffer.alloc(100, 2)]);
+    const { body } = await upload(ana, chat.id, webm).expect(201);
+    const part = await ana.agent
+      .get(`/api/chats/${chat.id}/media/${body.message.attachment.id}`)
+      .set('Range', 'bytes=0-9')
+      .expect(206);
+    assert.equal(part.headers['content-type'], 'video/webm');
+    assert.equal(part.headers['content-range'], `bytes 0-9/${webm.length}`);
+  });
+
+  test('anything but an accepted image or video is refused, whatever it claims', async () => {
+    const ana = await signIn(app, stores.accounts, 'Ana');
+    const chat = await defaultChat();
+    const html = Buffer.from('<html><script>alert(1)</script></html>');
+    const res = await upload(ana, chat.id, html, '?name=photo.png').expect(415);
+    assert.equal(res.body.error, 'unsupported_media');
+    await upload(ana, chat.id, Buffer.alloc(0)).expect(415);
+    assert.equal((await ana.agent.get(`/api/chats/${chat.id}/messages`)).body.messages.length, 0);
+  });
+
+  test('more than 10 MB is refused as too large', async () => {
+    const ana = await signIn(app, stores.accounts, 'Ana');
+    const chat = await defaultChat();
+    const big = Buffer.concat([PNG, Buffer.alloc(MEDIA_MAX_BYTES)]);
+    const res = await upload(ana, chat.id, big).expect(413);
+    assert.equal(res.body.error, 'media_too_large');
+  });
+
+  test('a file is only found under its own chat, and never by a path', async () => {
+    const ana = await signIn(app, stores.accounts, 'Ana');
+    await stores.chats.setMax(2);
+    const chat = await defaultChat();
+    const other = (await stores.chats.add({ name: 'Outro' })).chat;
+    const { body } = await upload(ana, chat.id, PNG).expect(201);
+    const id = body.message.attachment.id;
+    await ana.agent.get(`/api/chats/${other.id}/media/${id}`).expect(404);
+    await ana.agent.get(`/api/chats/${chat.id}/media/..%2F..%2Fzoia.db`).expect(404);
+    await request(app).get(`/api/chats/${chat.id}/media/${id}`).expect(401);
   });
 });
 

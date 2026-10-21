@@ -246,11 +246,21 @@ export function useChat({
     setAuthors((known) => ({ ...known, ...page.authors }));
   }, []);
 
-  /** Sends to the open chat. Resolves to the server's refusal code, or null. */
-  const send = useCallback(async (body: string): Promise<string | null> => {
+  /**
+   * Sends to the open chat: text, or a photo or video with `body` as its
+   * caption. Resolves to the server's refusal code, or null.
+   */
+  const send = useCallback(async (body: string, file?: File): Promise<string | null> => {
     const chatId = openRef.current;
     if (!chatId) return 'not_found';
-    const result = await window.zoia.chat.send(chatId, body);
+    const result = file
+      ? await window.zoia.chat.sendMedia(
+          chatId,
+          new Uint8Array(await file.arrayBuffer()),
+          file.name,
+          body,
+        )
+      : await window.zoia.chat.send(chatId, body);
     if (!result.ok) return result.error;
     const { message, author } = result.value;
     if (author) setAuthors((known) => ({ ...known, [message.authorId]: author }));

@@ -62,6 +62,9 @@ export function loadConfig(env = process.env) {
     // in ScyllaDB, and without SCYLLA_CONTACT_POINTS chat is off.
     chat: {
       defaultName: env.DEFAULT_CHAT_NAME ?? 'Geral',
+      // Photos and videos sent in chats, up to 10 MB each. Under server/data
+      // so it shares the store's volume and deploy.sh's exclude.
+      mediaDir: env.CHAT_MEDIA_DIR ?? 'server/data/chat-media',
       scylla: env.SCYLLA_CONTACT_POINTS
         ? {
             contactPoints: env.SCYLLA_CONTACT_POINTS.split(',')

@@ -17,6 +17,7 @@ import rateLimit from 'express-rate-limit';
 
 import { CHAT_CEILING } from './chats.js';
 import { cleanBody } from './messages.js';
+import { MEDIA_MAX_BYTES, cleanFileName } from './chat-media.js';
 
 const PAGE_DEFAULT = 50;
 const PAGE_MAX = 100;
@@ -32,6 +33,8 @@ const ERRORS = {
   invalid_limit: 400,
   invalid_message: 400,
   invalid_cursor: 400,
+  unsupported_media: 415,
+  media_too_large: 413,
   forbidden: 403,
   not_found: 404,
   chat_limit: 409,
@@ -67,6 +70,8 @@ export function createChatHub() {
  * @param {ReturnType<import('./chats.js').createChatStore>} options.chats
  * @param {() => ReturnType<import('./messages.js').createMessageStore> | null} options.messages
  *   the message store, or null while ScyllaDB is not connected
+ * @param {ReturnType<import('./chat-media.js').createMediaStore> | null} [options.media]
+ *   where photos and videos are kept; without it, sending them is refused
  * @param {object} options.accountStore
  * @param {Function} options.requireSession
  * @param {Function} options.requireAdmin
@@ -76,6 +81,7 @@ export function createChatHub() {
 export function chatRoutes({
   chats,
   messages,
+  media = null,
   accountStore,
   requireSession,
   requireAdmin,
@@ -182,6 +188,9 @@ export function chatRoutes({
           logger.warn(`[chat] messages of ${result.chat.id} not deleted: ${err.message}`),
         );
     }
+    media
+      ?.removeChat(result.chat.id)
+      .catch((err) => logger.warn(`[chat] media of ${result.chat.id} not deleted: ${err.message}`));
   });
 
   // ---- live updates --------------------------------------------------------
@@ -267,6 +276,62 @@ export function chatRoutes({
     hub.publish('message', { message, author });
     hub.publish('read', { chatId: chat.id, accountId, messageId: message.id, reader: author });
     res.status(201).json({ message, author });
+  });
+
+  // ---- photos and videos ---------------------------------------------------
+  // A file is a message of its own, with an optional caption. The bytes come
+  // raw, under their own limit: the JSON parser's 32kb is for text. The name
+  // and caption ride in the query, encoded, since the body is the file.
+
+  const rawMedia = express.raw({ type: () => true, limit: MEDIA_MAX_BYTES });
+  const readMedia = (req, res, next) =>
+    rawMedia(req, res, (err) => {
+      if (!err) return next();
+      refuse(res, err.type === 'entity.too.large' ? 'media_too_large' : 'unsupported_media');
+    });
+
+  router.post('/:id/media', requireSession, sendLimiter, readMedia, async (req, res) => {
+    if (!media) return refuse(res, 'chat_unavailable');
+    const chat = await chatOf(req, res);
+    if (!chat) return;
+    const current = store(res);
+    if (!current) return;
+
+    const caption = typeof req.query.caption === 'string' ? req.query.caption : '';
+    const body = caption.trim() ? cleanBody(caption) : '';
+    if (body === null) return refuse(res, 'invalid_message');
+    const bytes = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
+    const saved = await media.save(chat.id, bytes);
+    if (!saved) return refuse(res, 'unsupported_media');
+
+    const { accountId } = req.user;
+    const attachment = { ...saved, name: cleanFileName(req.query.name) };
+    const message = await current.send({ chatId: chat.id, authorId: accountId, body, attachment });
+    await current.markRead({ chatId: chat.id, accountId, messageId: message.id });
+    logger.info(`[chat] ${accountId} sent ${saved.kind} ${saved.id} (${saved.size} bytes)`);
+
+    const author = { name: req.user.name, avatar: req.user.avatar ?? null };
+    hub.publish('message', { message, author });
+    hub.publish('read', { chatId: chat.id, accountId, messageId: message.id, reader: author });
+    res.status(201).json({ message, author });
+  });
+
+  // Anyone signed in may see what was sent, as they read the messages. The
+  // type is the one judged from the stored bytes, and nosniff and a closed
+  // CSP keep the browser from reading it as anything else. Range requests
+  // are answered, so a video can be scrubbed.
+  router.get('/:id/media/:mediaId', requireSession, async (req, res) => {
+    const file = media ? await media.find(req.params.id, req.params.mediaId) : null;
+    if (!file) return refuse(res, 'not_found');
+    res.sendFile(file.path, {
+      headers: {
+        'Content-Type': file.type,
+        'X-Content-Type-Options': 'nosniff',
+        'Content-Security-Policy': "default-src 'none'",
+        // A file never changes under its id.
+        'Cache-Control': 'private, max-age=31536000, immutable',
+      },
+    });
   });
 
   router.post('/:id/read', requireSession, async (req, res) => {

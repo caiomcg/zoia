@@ -445,3 +445,17 @@ export async function fetchAccountAvatar(
   const bytes = Buffer.from(await res.arrayBuffer());
   return `data:${type};base64,${bytes.toString('base64')}`;
 }
+
+/** Sends a photo or video as a message of its own, with an optional caption. */
+export function chatSendMedia(chatId: string, bytes: Uint8Array, name: string, caption: string) {
+  const query = new URLSearchParams();
+  if (name) query.set('name', name);
+  if (caption.trim()) query.set('caption', caption);
+  return attempt(
+    call<{ message: ChatMessage; author: ChatAuthor }>(chatPath(chatId, `/media?${query}`), {
+      method: 'POST',
+      body: Buffer.from(bytes),
+      headers: { 'content-type': 'application/octet-stream' },
+    }),
+  );
+}

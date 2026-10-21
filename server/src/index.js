@@ -13,6 +13,7 @@ import { createAvatarStore } from './avatars.js';
 import { openStores } from './stores.js';
 import { connectInBackground } from './scylla.js';
 import { createMessageStore } from './messages.js';
+import { createMediaStore } from './chat-media.js';
 import { createApp } from './app.js';
 
 try {
@@ -93,6 +94,7 @@ const app = createApp({
   accountStore,
   chatStore,
   messageStore: () => messageStore,
+  chatMediaStore: createMediaStore({ dir: config.chat.mediaDir }),
 });
 
 app.listen(config.port, () => {

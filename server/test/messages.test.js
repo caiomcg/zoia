@@ -165,10 +165,7 @@ describe(
         logger: quiet,
       });
       const { rows } = await again.execute(`SELECT version FROM ${keyspace}.schema_migrations`);
-      assert.deepEqual(
-        rows.map((r) => r.version),
-        [1],
-      );
+      assert.deepEqual(rows.map((r) => r.version).sort(), [1, 2]);
       await again.shutdown();
     });
 
@@ -229,6 +226,23 @@ describe(
         (await store.page({ chatId: 'c8', since })).map((m) => m.body),
         ['nova'],
       );
+    });
+
+    test('a photo or video travels with its message, and plain text carries none', async () => {
+      const attachment = {
+        id: 'aaaaaaaaaaaaaaaa',
+        type: 'image/png',
+        kind: 'image',
+        size: 3,
+        name: 'a.png',
+      };
+      const sent = await store.send({ chatId: 'c9', authorId: 'ana00000', body: '', attachment });
+      await store.send({ chatId: 'c9', authorId: 'ana00000', body: 'só texto' });
+      assert.deepEqual(sent.attachment, attachment);
+      const [text, photo] = await store.page({ chatId: 'c9', since });
+      assert.equal(text.attachment, null);
+      assert.deepEqual(photo.attachment, attachment);
+      assert.equal(photo.body, '');
     });
 
     test('chats do not see each other', async () => {

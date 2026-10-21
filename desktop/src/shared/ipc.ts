@@ -139,9 +139,29 @@ export interface ChatMessage {
   chatId: string;
   /** The author's account id. */
   authorId: string;
+  /** Empty when a photo or video is the whole message. */
   body: string;
   sentAt: string;
+  attachment?: ChatAttachment | null;
 }
+
+/** A photo or video sent in a chat, kept on the server's disk. */
+export interface ChatAttachment {
+  id: string;
+  type: string;
+  kind: 'image' | 'video';
+  size: number;
+  name: string | null;
+}
+
+/** The most a photo or video may be. Must match MEDIA_MAX_BYTES in server/src/chat-media.js. */
+export const CHAT_MEDIA_MAX_BYTES = 10 * 1024 * 1024;
+
+/** The scheme the window loads chat photos and videos from; see main/chat-media.ts. */
+export const CHAT_MEDIA_SCHEME = 'zoia-media';
+
+export const chatMediaUrl = (chatId: string, mediaId: string) =>
+  `${CHAT_MEDIA_SCHEME}://file/${chatId}/${mediaId}`;
 
 /** How an author is shown; null for an account that no longer exists. */
 export type ChatAuthor = { name: string; avatar: string | null } | null;
@@ -400,6 +420,7 @@ export const IPC = {
   chatMessages: 'zoia:chat:messages',
   chatSend: 'zoia:chat:send',
   chatRead: 'zoia:chat:read',
+  chatSendMedia: 'zoia:chat:media',
   chatListen: 'zoia:chat:listen',
   chatEvent: 'zoia:chat:event',
   chatAvatar: 'zoia:chat:avatar',

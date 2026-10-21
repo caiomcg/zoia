@@ -118,6 +118,16 @@ export const en = {
   'chat.error.limitRange': 'That limit is out of range.',
   'chat.error.forbidden': 'You are not allowed to do that.',
   'chat.error.generic': 'Something went wrong. Try again.',
+  'chat.attach': 'Send a photo or video (up to 10 MB)',
+  'chat.caption': 'Add a caption (optional)',
+  'chat.drop': 'Drop to send',
+  'chat.removeAttachment': 'Remove',
+  'chat.photo': 'Photo',
+  'chat.video': 'Video',
+  'chat.sending': 'Sending…',
+  'chat.error.tooLarge': 'That file is over 10 MB.',
+  'chat.error.unsupported':
+    'Only photos (PNG, JPEG, GIF, WebP) and videos (MP4, WebM) can be sent.',
 
   // ---- your own share
   'player.youreLive': 'You’re live',
