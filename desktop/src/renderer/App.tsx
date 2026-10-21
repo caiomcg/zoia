@@ -563,8 +563,11 @@ export default function App() {
     wasWatching.current = watchingSomething;
   }, [watchingSomething]);
   const [chatError, setChatError] = useState<string | null>(null);
-  // Out of every channel there is no stage to show, only the chat.
-  const chatShownIfEnabled = channel === null || view === 'chat';
+  // A stage only when there is something to put on it: someone in your
+  // channel, you included, sharing a screen or a camera. Otherwise — out of
+  // every channel, or in one where nobody is live — there is only the chat.
+  const someoneLive = channel !== null && room.members.some((m) => m.isBroadcasting);
+  const chatShownIfEnabled = !someoneLive || view === 'chat';
   const chat = useChat({
     usable,
     me: accountId,
@@ -923,7 +926,7 @@ export default function App() {
 
       <div className="body">
         <main className="main">
-          {chat.enabled && channel !== null && (
+          {chat.enabled && someoneLive && (
             <div className="main-tabs" role="tablist">
               <button
                 role="tab"
