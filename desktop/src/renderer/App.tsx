@@ -962,6 +962,31 @@ export default function App() {
                   </span>
                 )}
               </button>
+              {/* Someone else's broadcast in a small window on top, and the
+                  chat behind it: both at once. */}
+              {(stage.watching.length > 0 || stage.cameras.length > 0) && (
+                <button
+                  className="main-tab main-tab-pip"
+                  onClick={() => {
+                    if (gridRef.current?.popOut()) setView('chat');
+                  }}
+                  title={t('chat.popOutTitle')}
+                >
+                  <svg
+                    viewBox="0 0 24 24"
+                    width="16"
+                    height="16"
+                    aria-hidden="true"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                  >
+                    <rect x="2" y="4" width="20" height="16" rx="2" />
+                    <rect x="12" y="12" width="8" height="6" rx="1" />
+                  </svg>
+                  {t('chat.popOut')}
+                </button>
+              )}
             </div>
           )}
           <div className="main-panes">

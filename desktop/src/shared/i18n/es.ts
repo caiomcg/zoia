@@ -85,6 +85,8 @@ export const es: Messages = {
   // ---- chat de texto
   'chat.title': 'Chats',
   'chat.tabStage': 'Transmisión',
+  'chat.popOut': 'Ver y chatear',
+  'chat.popOutTitle': 'Abre la transmisión en una ventanita encima y muestra el chat',
   'chat.name': 'Nombre del chat',
   'chat.new': '+ Nuevo chat',
   'chat.rename': 'Renombrar {chat}',

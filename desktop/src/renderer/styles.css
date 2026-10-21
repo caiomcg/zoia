@@ -4387,3 +4387,9 @@ button.danger:active:not(:disabled),
   background: var(--danger);
   border-radius: 4px;
 }
+
+.main-tab-pip {
+  margin-left: auto;
+  color: var(--text);
+  border-color: var(--border);
+}

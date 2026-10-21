@@ -91,6 +91,8 @@ export const en = {
   // ---- text chat
   'chat.title': 'Chats',
   'chat.tabStage': 'Broadcast',
+  'chat.popOut': 'Watch while chatting',
+  'chat.popOutTitle': 'Open the broadcast in a small window on top, and show the chat',
   'chat.name': 'Chat name',
   'chat.new': '+ New chat',
   'chat.rename': 'Rename {chat}',
