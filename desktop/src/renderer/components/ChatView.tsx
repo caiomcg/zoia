@@ -99,7 +99,10 @@ export default function ChatView({ chat, me }: { chat: ChatController; me: strin
     return day.format(new Date(iso));
   };
 
-  const divider = me ? newMessagesIndex(messages, chat.readWhenOpened, me) : -1;
+  const divider =
+    me && chat.readWhenOpened !== undefined
+      ? newMessagesIndex(messages, chat.readWhenOpened, me)
+      : -1;
   const last = messages.at(-1);
   // Others only: that you have seen what is on your screen goes without saying.
   const seen = last ? seenBy(last, chat.readers).filter((id) => id !== me) : [];

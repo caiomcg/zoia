@@ -25,6 +25,9 @@ export interface ChatThread {
   error: string | null;
 }
 
+/** How long "new messages" stays once the chat is on screen. */
+const DIVIDER_SEEN_MS = 3_000;
+
 /** Codes a server without chat answers with: the route is not there. */
 const NO_CHAT = new Set(['http_404', 'http_501']);
 
@@ -46,8 +49,11 @@ export function useChat({
   const [thread, setThread] = useState<ChatThread | null>(null);
   const [authors, setAuthors] = useState<Record<string, ChatAuthor>>({});
   const [readers, setReaders] = useState<Record<string, string>>({});
-  // Your read marker when the chat was opened: where "new messages" begins.
+  // Your read marker when you last came to the chat: where "new messages"
+  // begins. The line shows until you have had the chat on screen for a
+  // moment, or have answered, and comes back for what arrives while away.
   const [readWhenOpened, setReadWhenOpened] = useState<string | null>(null);
+  const [showDivider, setShowDivider] = useState(true);
 
   const openRef = useRef(openId);
   openRef.current = openId;
@@ -95,6 +101,7 @@ export function useChat({
     setAuthors((known) => ({ ...known, ...page.authors }));
     setReaders(page.readers);
     setReadWhenOpened(meRef.current ? (page.readers[meRef.current] ?? null) : null);
+    setShowDivider(true);
   }, []);
 
   // The list, and the stream that keeps it current, while signed in.
@@ -198,6 +205,24 @@ export function useChat({
     void window.zoia.chat.read(openId, latest);
   }, [visible, openId, latest, me, myMarker, setUnread]);
 
+  // Leaving the chat, or the window, starts a new "new messages": whatever
+  // arrives from here on is past the line when you come back.
+  const markerRef = useRef(myMarker);
+  markerRef.current = myMarker;
+  useEffect(() => {
+    if (visible) return;
+    setReadWhenOpened(markerRef.current ?? null);
+    setShowDivider(true);
+  }, [visible]);
+
+  // Seen for a moment, the line has done its job.
+  const loaded = thread !== null && !thread.loading;
+  useEffect(() => {
+    if (!visible || !showDivider || !loaded) return undefined;
+    const timer = setTimeout(() => setShowDivider(false), DIVIDER_SEEN_MS);
+    return () => clearTimeout(timer);
+  }, [visible, showDivider, loaded, openId]);
+
   const loadOlder = useCallback(async () => {
     const t = threadRef.current;
     if (!t || !t.hasMore || t.loadingOlder || t.loading) return;
@@ -229,6 +254,8 @@ export function useChat({
     if (!result.ok) return result.error;
     const { message, author } = result.value;
     if (author) setAuthors((known) => ({ ...known, [message.authorId]: author }));
+    // Answering is the surest sign the new messages were read.
+    setShowDivider(false);
     setThread((t) =>
       t && t.chatId === chatId ? { ...t, messages: mergeMessages(t.messages, [message]) } : t,
     );
@@ -258,7 +285,8 @@ export function useChat({
     thread,
     authors,
     readers,
-    readWhenOpened,
+    /** Where "new messages" begins, or null for no line at all. */
+    readWhenOpened: showDivider ? readWhenOpened : undefined,
     send,
     loadOlder,
     create: (name: string) => change(window.zoia.chat.create(name)),
