@@ -2284,7 +2284,7 @@ button.danger {
   padding: 12px;
 }
 
-/* The stage and the chat share the main area (ADR 0035). */
+/* The stage and the chat share the main area (ADR 0036). */
 .main-panes {
   position: relative;
   display: flex;
@@ -3960,7 +3960,7 @@ button.danger:active:not(:disabled),
   color: var(--live);
 }
 
-/* ---- text chat (ADR 0035) ------------------------------------------------ */
+/* ---- text chat (ADR 0036) ------------------------------------------------ */
 
 .main-tabs {
   display: flex;

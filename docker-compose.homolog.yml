@@ -6,7 +6,7 @@
 #   ./deploy.sh --homolog
 
 services:
-  # Chat messages (docs/adr/0035-text-chat-in-scylladb.md), the homolog's own,
+  # Chat messages (docs/adr/0036-text-chat-in-scylladb.md), the homolog's own,
   # set up as production's is in docker-compose.yml. On the compose network
   # only, with no published ports.
   scylla:

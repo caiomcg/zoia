@@ -1,5 +1,5 @@
 /**
- * The chat's live stream (ADR 0035): the server's Server-Sent Events at
+ * The chat's live stream (ADR 0036): the server's Server-Sent Events at
  * /api/chats/events, read here because the session cookie lives in this
  * process, and handed to the window one event at a time.
  *

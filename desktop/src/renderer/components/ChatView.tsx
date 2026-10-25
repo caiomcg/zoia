@@ -37,7 +37,7 @@ function fileProblem(file: File): 'tooLarge' | 'unsupported' | null {
 }
 
 /**
- * The open chat (ADR 0035): its messages, newest at the bottom, and a box to
+ * The open chat (ADR 0036): its messages, newest at the bottom, and a box to
  * write in. Enter sends and Shift+Enter starts a new line. A photo or video
  * goes in by the clip button, by pasting or by dropping it on the chat, and is
  * sent with whatever is typed as its caption. Scrolling to the top loads

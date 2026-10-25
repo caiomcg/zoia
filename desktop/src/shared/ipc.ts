@@ -116,7 +116,7 @@ export interface RoomsList {
 /** How a channel change went; `error` is the server's code when refused. */
 export type ChannelOutcome = { ok: true } | { ok: false; error: string };
 
-/** A text chat (ADR 0035). Not a room: everyone sees every chat. */
+/** A text chat (ADR 0036). Not a room: everyone sees every chat. */
 export interface ChatInfo {
   id: string;
   name: string;

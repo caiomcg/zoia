@@ -1,5 +1,5 @@
 /**
- * Photos and videos sent in a chat (ADR 0035), kept as files on the app's
+ * Photos and videos sent in a chat (ADR 0036), kept as files on the app's
  * disk, one folder per chat, under server/data so they share its volume and
  * deploy.sh's exclude.
  *

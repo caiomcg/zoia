@@ -51,7 +51,7 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: npm
       - run: npm ci
-      # The message store's tests need a real ScyllaDB (ADR 0035); without
+      # The message store's tests need a real ScyllaDB (ADR 0036); without
       # SCYLLA_TEST_CONTACT_POINTS they skip, and so would its coverage.
       - name: Start ScyllaDB
         run: scripts/ci-scylla.sh

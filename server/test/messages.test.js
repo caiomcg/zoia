@@ -1,5 +1,5 @@
 /**
- * Chat messages (ADR 0035). The pure parts run everywhere. The store runs
+ * Chat messages (ADR 0036). The pure parts run everywhere. The store runs
  * against a real ScyllaDB when SCYLLA_TEST_CONTACT_POINTS is set — CI starts
  * one — in a keyspace of its own that is dropped afterwards:
  *

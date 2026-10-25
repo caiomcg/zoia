@@ -1,5 +1,5 @@
 /**
- * Photos and videos in chats (ADR 0035), as the window shows them.
+ * Photos and videos in chats (ADR 0036), as the window shows them.
  *
  * The files need the session cookie, which lives in this process, and a
  * video needs Range requests to be scrubbed, which a data: URL cannot do. So

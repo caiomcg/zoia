@@ -424,7 +424,7 @@ function registerIpc(): void {
       : null,
   );
 
-  // Text chat (ADR 0035). The stream runs while the window asks for it; it
+  // Text chat (ADR 0036). The stream runs while the window asks for it; it
   // ends with the session, which signing out ends.
   const chatStream = createChatStream((event) => {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(IPC.chatEvent, event);

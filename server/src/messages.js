@@ -1,5 +1,5 @@
 /**
- * Chat messages and who has read them, kept in ScyllaDB. See ADR 0035.
+ * Chat messages and who has read them, kept in ScyllaDB. See ADR 0036.
  *
  * A chat's messages are split into one partition per calendar month (UTC),
  * newest first, so reading the latest page is one partition and an old chat

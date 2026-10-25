@@ -7,7 +7,7 @@ Conventions and invariants for anyone — human or agent — working on this rep
 
 Zoia is a private one-to-many screen broadcast. Everyone with an approved account picks one of
 a **channel** (each its own LiveKit room; a permanent default plus any admins add, up to a
-limit admins change at runtime; see ADR 0015 and 0035) and watches
+limit admins change at runtime; see ADR 0015 and 0036) and watches
 there; **anyone may claim an independent broadcast slot** in their channel and share a screen,
 window or tab with audio. Multiple people may stream at the same time, and each viewer chooses
 which broadcasts to watch. Latency is ~200–500 ms. Access is by account: anyone may sign up
@@ -94,7 +94,7 @@ source; match on "not `MICROPHONE`" instead.
 | `server/src/stage.js` | Who may broadcast right now — **the security boundary** |
 | `server/src/config.js` | Env parsing and validation, fail-fast on startup |
 | `server/src/devices.js` | One credential per machine signed in to an account |
-| `server/src/chats.js` | The text chats and how many there may be (ADR 0035), in SQLite |
+| `server/src/chats.js` | The text chats and how many there may be (ADR 0036), in SQLite |
 | `server/src/messages.js` | Chat messages and read markers, in ScyllaDB |
 | `server/src/scylla.js` | Connects to ScyllaDB, creates the keyspace, applies its schema |
 | `server/bin/keytool.js` | CLI on the server: the super admin, reset codes, devices, backups |

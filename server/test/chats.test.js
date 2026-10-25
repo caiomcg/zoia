@@ -1,5 +1,5 @@
 /**
- * The chat list (ADR 0035): a default chat that always exists, others up to a
+ * The chat list (ADR 0036): a default chat that always exists, others up to a
  * limit that starts at one and that only grows when the super admin says so.
  */
 

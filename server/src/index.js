@@ -80,7 +80,7 @@ const channels = createChannelStore({
 
 const reports = createReportStore();
 
-// Chat messages live in ScyllaDB (ADR 0035), which may take a minute to start.
+// Chat messages live in ScyllaDB (ADR 0036), which may take a minute to start.
 // The app does not wait for it: until it answers, chat says it is unavailable
 // and everything else works.
 let messageStore = null;

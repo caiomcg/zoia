@@ -542,7 +542,7 @@ export default function App() {
     [room, myIdentity],
   );
 
-  // ---- text chat (ADR 0035) -----------------------------------------------
+  // ---- text chat (ADR 0036) -----------------------------------------------
   // The main area shows the broadcasts while you watch something, and the
   // chat otherwise. Tabs switch between them; starting to watch brings the
   // stage forward, and watching nothing any more brings the chat back.

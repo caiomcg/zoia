@@ -58,7 +58,7 @@ export function loadConfig(env = process.env) {
       deviceIdleDays: Number(env.ACCOUNT_DEVICE_IDLE_DAYS ?? 60),
       maxPending: Number(env.ACCOUNT_MAX_PENDING ?? 20),
     },
-    // Text chats (ADR 0035). The list is in the database above; messages are
+    // Text chats (ADR 0036). The list is in the database above; messages are
     // in ScyllaDB, and without SCYLLA_CONTACT_POINTS chat is off.
     chat: {
       defaultName: env.DEFAULT_CHAT_NAME ?? 'Geral',

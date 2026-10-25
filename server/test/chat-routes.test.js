@@ -1,5 +1,5 @@
 /**
- * The chat API (ADR 0035), over real sessions and a real chat list. Messages
+ * The chat API (ADR 0036), over real sessions and a real chat list. Messages
  * go to an in-memory stand-in for the ScyllaDB store, whose own behaviour
  * messages.test.js covers against Scylla itself: these are about who may do
  * what, what goes out on the stream, and what a client is told.

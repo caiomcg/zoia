@@ -1,5 +1,5 @@
 /**
- * Reading the chat's Server-Sent Events (ADR 0035). Kept apart from the
+ * Reading the chat's Server-Sent Events (ADR 0036). Kept apart from the
  * stream itself, which needs Electron, so it can be tested on its own.
  */
 

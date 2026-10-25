@@ -3,7 +3,7 @@
 ## Status
 
 accepted; amended by [ADR 0031](0031-accounts-with-admin-approval.md): only admins add, rename
-and remove channels; and by [ADR 0035](0035-text-chat-in-scylladb.md): admins change how many
+and remove channels; and by [ADR 0036](0036-text-chat-in-scylladb.md): admins change how many
 there may be at runtime, up to 20, and `MAX_CHANNELS` is only where that starts.
 
 ## Context

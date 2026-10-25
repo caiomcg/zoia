@@ -257,7 +257,7 @@ export default function Sidebar({
   onWatchBroadcast: (target: GridTarget) => void;
   /** Puts someone's camera on stage, or takes it off again. */
   onToggleCamera: (identity: string) => void;
-  /** The text chats (ADR 0035), listed under the channels. */
+  /** The text chats (ADR 0036), listed under the channels. */
   chats?: (collapsed: boolean) => ReactNode;
 }) {
   const t = useT();

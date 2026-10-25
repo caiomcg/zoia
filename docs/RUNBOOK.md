@@ -299,7 +299,7 @@ of chats and their limit are in this file too.
 ### Back up the chat messages
 
 Messages and read markers are in ScyllaDB, in the `scylla_data` volume
-([ADR 0035](adr/0035-text-chat-in-scylladb.md)), not in `server/data`. A snapshot is a set of
+([ADR 0036](adr/0036-text-chat-in-scylladb.md)), not in `server/data`. A snapshot is a set of
 hard links, consistent while Scylla runs; archive it, fetch it, then clear it:
 
 ```bash

@@ -949,7 +949,7 @@ export function createApp({
     res.send(picture.bytes);
   }
 
-  // ---- text chat (ADR 0035) ------------------------------------------------
+  // ---- text chat (ADR 0036) ------------------------------------------------
 
   if (chatStore) {
     app.use(

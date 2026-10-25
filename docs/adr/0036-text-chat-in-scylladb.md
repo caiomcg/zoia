@@ -1,4 +1,4 @@
-# 35. Text chat, with its messages in ScyllaDB
+# 36. Text chat, with its messages in ScyllaDB
 
 - **Status:** proposed
 - **Date:** 2026-10-21

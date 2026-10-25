@@ -5,7 +5,7 @@ import { ChannelNameField, IconPencil, IconTrash, LimitStepper, shortName } from
 import { useT } from '../i18n';
 
 /**
- * The text chats, under the channels in the sidebar (ADR 0035). Clicking one
+ * The text chats, under the channels in the sidebar (ADR 0036). Clicking one
  * opens it in the main area. Admins add, rename and remove chats as they do
  * channels, and set how many there may be. The server checks every one of
  * those again.

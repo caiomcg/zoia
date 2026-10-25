@@ -375,7 +375,7 @@ export function stageRelease() {
   });
 }
 
-// ---- text chat (ADR 0035) -------------------------------------------------
+// ---- text chat (ADR 0036) -------------------------------------------------
 
 const chatPath = (id: string, rest = '') => `/api/chats/${encodeURIComponent(id)}${rest}`;
 

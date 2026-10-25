@@ -145,7 +145,7 @@ export interface ZoiaBridge {
     /** Someone's picture as a data: URL, or null when they have none. */
     get(identity: string, version: string): Promise<string | null>;
   };
-  /** Text chats (ADR 0035). Refusals come back as the server's error code. */
+  /** Text chats (ADR 0036). Refusals come back as the server's error code. */
   chat: {
     list(): Promise<ActionOutcome<ChatList>>;
     create(name: string): Promise<ActionOutcome>;

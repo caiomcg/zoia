@@ -44,7 +44,7 @@ services:
     network_mode: host
     command: redis-server --bind 127.0.0.1 --port 6379 --save "" --appendonly no
 
-  # Chat messages (ADR 0035). On the compose network only, with no published
+  # Chat messages (ADR 0036). On the compose network only, with no published
   # ports: the app is the one thing that talks to it. One shard and 1G, so it
   # leaves the VM to LiveKit; developer mode skips the I/O tuning a shared VM
   # disk would fail.

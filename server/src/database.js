@@ -67,7 +67,7 @@ export const TABLES = {
       renamedAt: 'text',
     },
   },
-  // Text chats (ADR 0035). Their messages are in ScyllaDB; the list is here,
+  // Text chats (ADR 0036). Their messages are in ScyllaDB; the list is here,
   // beside the accounts that may change it.
   chats: {
     fields: {

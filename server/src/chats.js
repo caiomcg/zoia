@@ -1,5 +1,5 @@
 /**
- * Text chats: the list, and how long it may grow. See ADR 0035.
+ * Text chats: the list, and how long it may grow. See ADR 0036.
  *
  * There is always a default chat, which can be renamed but never removed.
  * Admins add, rename and remove the others, up to a limit that starts at one

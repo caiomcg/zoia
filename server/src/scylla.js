@@ -1,5 +1,5 @@
 /**
- * The connection to ScyllaDB, where chat messages live. See ADR 0035.
+ * The connection to ScyllaDB, where chat messages live. See ADR 0036.
  *
  * Scylla already writes in two steps: every write is appended to its commit
  * log, for durability, and applied to a memtable in memory, which is flushed

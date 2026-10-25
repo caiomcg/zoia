@@ -1,5 +1,5 @@
 /**
- * The text chats (ADR 0035), as the window sees them: the list with unread
+ * The text chats (ADR 0036), as the window sees them: the list with unread
  * counts, the open chat's messages, who has read what, and the live stream
  * that keeps all of it current.
  *

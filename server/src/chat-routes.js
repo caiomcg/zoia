@@ -1,5 +1,5 @@
 /**
- * The chat API (ADR 0035): the list of chats, their messages, who has read
+ * The chat API (ADR 0036): the list of chats, their messages, who has read
  * what, and a Server-Sent Events stream that pushes each change as it
  * happens. Mounted at /api/chats by app.js, which owns sessions.
  *

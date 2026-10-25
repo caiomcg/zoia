@@ -1,5 +1,5 @@
 /**
- * Photos and videos in chats (ADR 0035): what a file is comes from its bytes,
+ * Photos and videos in chats (ADR 0036): what a file is comes from its bytes,
  * files live under their chat, and removing a chat removes them.
  */
 
