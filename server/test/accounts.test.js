@@ -855,7 +855,7 @@ describe('admins move people between channels', () => {
     assert.equal(again.status, 409);
   });
 
-  test('disconnecting follows the same rules as the rest of administration', async () => {
+  test('any admin may disconnect anyone else, the super admin included; users none', async () => {
     const owner = await person('owner@example.com', 'super_admin');
     const admin = await person('admin@example.com', 'admin');
     const other = await person('other@example.com', 'admin');
@@ -865,16 +865,16 @@ describe('admins move people between channels', () => {
     const kick = (who, target) => who.agent.post(`/api/admin/devices/${target.id}/disconnect`);
 
     assert.equal((await kick(bob, carol)).status, 403);
-    assert.equal((await kick(admin, other)).status, 403);
-    assert.equal((await kick(admin, owner)).status, 403);
-    assert.equal((await kick(other, admin)).status, 403);
+    assert.equal((await kick(bob, admin)).status, 403);
     assert.equal((await kick(admin, admin)).status, 403);
     assert.equal((await kick(admin, bob)).status, 200);
-    assert.equal((await kick(owner, other)).status, 200);
+    assert.equal((await kick(admin, other)).status, 200);
+    assert.equal((await kick(admin, owner)).status, 200);
+    assert.equal((await kick(owner, carol)).status, 200);
     assert.equal((await kick(admin, { id: 'nope' })).status, 404);
     assert.deepEqual(
       lobby.removed.filter((id) => !id.endsWith('-gpu')),
-      [bob.id, other.id],
+      [bob.id, other.id, owner.id, carol.id],
     );
   });
 });

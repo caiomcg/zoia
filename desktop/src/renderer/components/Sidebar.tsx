@@ -295,10 +295,14 @@ export default function Sidebar({
       listed.has(identity) &&
       role !== 'super_admin' &&
       (role !== 'admin' || myRole === 'super_admin'));
-  // Disconnecting someone follows the same rule, but never yourself: leaving
-  // is the button in the footer.
-  const mayDisconnect = (identity: string, role?: AccountRole) =>
-    Boolean(onDisconnectMember) && identity !== myIdentity && mayDrag(identity, role);
+  // Any admin may disconnect anyone else, whatever their role: keeping order
+  // in a channel is not about rank. Never yourself: leaving is the button in
+  // the footer. The server checks it again.
+  const mayDisconnect = (identity: string) =>
+    Boolean(onDisconnectMember) &&
+    canManageChannels &&
+    identity !== myIdentity &&
+    listed.has(identity);
   const dragFrom = (
     identity: string,
     role: AccountRole | undefined,
@@ -558,7 +562,7 @@ export default function Sidebar({
                           leaving={leaving}
                           drag={leaving ? {} : dragFrom(m.identity, roleOf(m), c.id)}
                           onDisconnect={
-                            !leaving && mayDisconnect(m.identity, roleOf(m))
+                            !leaving && mayDisconnect(m.identity)
                               ? () => onDisconnectMember?.(m.identity, m.name)
                               : undefined
                           }
@@ -575,12 +579,10 @@ export default function Sidebar({
                             key={p.identity}
                             title={[
                               p.role ? `${p.name} · ${t(`account.role.${p.role}`)}` : p.name,
-                              ...(mayDisconnect(p.identity, p.role)
-                                ? [t('sidebar.disconnectHint')]
-                                : []),
+                              ...(mayDisconnect(p.identity) ? [t('sidebar.disconnectHint')] : []),
                             ].join('\n')}
                             onContextMenu={
-                              mayDisconnect(p.identity, p.role)
+                              mayDisconnect(p.identity)
                                 ? (event) => {
                                     event.preventDefault();
                                     onDisconnectMember?.(p.identity, p.name);

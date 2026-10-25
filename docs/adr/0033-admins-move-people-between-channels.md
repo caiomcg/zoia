@@ -47,10 +47,14 @@ participant's own data messages with that participant, so another client cannot 
 ## Amendment: disconnecting someone
 
 An admin may also take someone out of the channel they are in: the sidebar shows a button on
-the row of anyone they could drag, and a right-click on their face in another channel does
-the same, each after a confirmation. It calls `POST /api/admin/devices/:id/disconnect`,
-under the same rules as a move, and the server removes that machine, and its hardware
-broadcast, from its LiveKit room.
+the row of anyone else in their channel, and a right-click on their face in another channel
+does the same, each after a confirmation. It calls `POST /api/admin/devices/:id/disconnect`,
+and the server removes that machine, and its hardware broadcast, from its LiveKit room.
+
+Unlike moving, **any admin may disconnect anyone else, other admins and the super admin
+included**. Moving is administration of a person; disconnecting is keeping order in a
+channel, which any admin present may need to do whatever the other person's rank. Nobody
+disconnects themselves, which is what leaving is for, and plain users disconnect no one.
 
 Unlike a move, this does not rely on the app: LiveKit drops the connection whatever the app
 does. The app recognises the removal and leaves the channel, saying an admin disconnected
