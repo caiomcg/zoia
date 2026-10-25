@@ -600,6 +600,28 @@ export function createApp({
     }
   });
 
+  // Takes one machine out of the channel it is in. Unlike a move, this does
+  // not rely on the app: LiveKit drops the connection, and its broadcast with
+  // it. The same rules as every admin action decide who may be disconnected.
+  // It is not a ban: the person can join a channel again.
+  app.post('/api/admin/devices/:id/disconnect', requireAdmin, async (req, res, next) => {
+    try {
+      const device = await deviceStore.getActive(req.params.id);
+      const target = device?.accountId ? await accountStore.get(device.accountId) : null;
+      if (!target) return adminRefuse(res, 'unknown_account');
+      if (!canManage(req.user, target)) return adminRefuse(res, 'forbidden');
+      const from = (await whereAll()).get(device.id);
+      if (!from) return adminRefuse(res, 'not_connected');
+      await from.stage.disconnect([device.id]);
+      logger.info(
+        `[admin] ${req.user.accountId} disconnected ${device.id} (${target.id}) from ${from.id}`,
+      );
+      res.json({ disconnected: true });
+    } catch (err) {
+      next(err);
+    }
+  });
+
   // The code is shown once, to the admin, who passes it on. It is never logged.
   app.post('/api/admin/accounts/:id/reset', requireAdmin, async (req, res, next) => {
     try {
