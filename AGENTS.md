@@ -44,6 +44,8 @@ npm run keytool -- device:list [accountId]
 npm run keytool -- device:revoke <deviceId>
 npm run keytool -- db:backup <path>            # consistent copy while the server runs
 ./deploy.sh                  # rsync to the VM + docker compose up -d --build
+./deploy.sh --homolog        # the same, to the homolog VM (ADR 0035)
+./scripts/seed-homolog.sh    # copy production's accounts to the homolog
 ```
 
 ## Development environment
@@ -118,7 +120,8 @@ source; match on "not `MICROPHONE`" instead.
    `livekit.yaml` is committed deliberately *without* credentials — LiveKit reads them from
    `LIVEKIT_KEYS` in the environment.
 6. **`deploy.sh` must keep excluding `server/data`.** It runs `rsync --delete`; dropping that
-   exclude would wipe the database and lock out every user, including you.
+   exclude would wipe the database and lock out every user, including you. `caddy/sites` is
+   excluded for the same reason: it holds the server-local route to the homolog.
 7. **`app.set('trust proxy', ...)` must stay.** Behind Caddy every request otherwise appears to
    originate from the proxy, so rate limiting would throttle all users as a single client.
 
@@ -132,8 +135,13 @@ These each cost hours if forgotten, and all of them fail in ways that look like 
   defaults new records to Proxied and the zone apex is proxied, so this is the easiest
   mistake to make; the proxy does not carry WebRTC media. TLS uses the existing
   `*.example.com` wildcard — no new certificate is needed.
-- **Caddy serves only the two configured hostnames.** Adding a third would widen the public
+- **Caddy serves only the two configured hostnames**, plus whatever the operator puts in
+  `caddy/sites/` on the server, which is the homolog and nothing else
+  ([ADR 0035](docs/adr/0035-homolog-environment.md)). Adding another widens the public
   surface; that is a decision, not a config tweak.
+- **The homolog shares production's LiveKit.** Its `ROOM_NAME` (`zoia-homolog`) is all that
+  keeps its rooms apart from production's, and production's `LIVEKIT_KEYS` must be a
+  `{key: secret, key: secret}` map holding both keys. A comma-separated list does not parse.
 - **UDP 7882 and TCP 7881 must be forwarded** to the VM directly. No HTTP proxy can carry them.
 - **System/tab audio capture is Chrome/Edge desktop only**, and only for a tab or an entire
   screen — never a single window. No browser can capture one application's audio; that needs
