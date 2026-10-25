@@ -7,9 +7,9 @@
  * be starting or not configured at all; until it answers, routes that need it
  * say `chat_unavailable` and the list carries `available: false`.
  *
- * Every route needs an approved session. Adding, renaming and removing chats
- * needs an admin, and the limit needs the super admin, checked here on every
- * request rather than trusted from the app (AGENTS.md invariant 4).
+ * Every route needs an approved session. Adding, renaming and removing chats,
+ * and how many there may be, need an admin, checked here on every request
+ * rather than trusted from the app (AGENTS.md invariant 4).
  */
 
 import express from 'express';
@@ -156,9 +156,8 @@ export function chatRoutes({
     res.status(201).json({ chat: publicChat(result.chat) });
   });
 
-  // Only the super admin decides how many chats there may be.
+  // Admins decide how many chats there may be.
   router.put('/limit', requireAdmin, async (req, res) => {
-    if (req.user.role !== 'super_admin') return refuse(res, 'forbidden');
     const result = await chats.setMax(req.body?.max, { by: req.user.accountId });
     if (!result.ok) return refuse(res, result.reason);
     hub.publish('chats', {});

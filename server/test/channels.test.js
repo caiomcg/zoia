@@ -13,7 +13,13 @@ import { join } from 'node:path';
 import request from 'supertest';
 
 import { createApp } from '../src/app.js';
-import { createChannelStore, cleanChannelName, CHANNEL_NAME_MAX } from '../src/channels.js';
+import {
+  createChannelStore,
+  cleanChannelName,
+  CHANNEL_CEILING,
+  CHANNEL_NAME_MAX,
+} from '../src/channels.js';
+import { createLimitSetting } from '../src/settings.js';
 import { signIn, testStores } from './people.js';
 import { createTokenIssuer, decodeTokenPayload } from '../src/token.js';
 import { createStage } from '../src/stage.js';
@@ -126,6 +132,12 @@ describe('the channel store', () => {
     assert.deepEqual(await makeStore().remove('zoia'), { ok: false, reason: 'room_is_default' });
   });
 
+  test('a store without a stored limit keeps the one it was given', async () => {
+    const store = makeStore({ max: 2 });
+    assert.equal(store.max, 2);
+    assert.deepEqual(await store.setMax(4), { ok: false, reason: 'channels_fixed' });
+  });
+
   test('channels survive a restart', async () => {
     const { channel } = await makeStore().create('Jogos');
     const reopened = makeStore();
@@ -166,7 +178,14 @@ describe('the channel routes', () => {
         roomService: { createRoom: async () => {} },
         logger: quiet,
       }),
-      channels: makeStore(),
+      channels: makeStore({
+        limit: createLimitSetting({
+          db: stores.db,
+          key: 'channels.max',
+          fallback: 5,
+          max: CHANNEL_CEILING,
+        }),
+      }),
       logger: quiet,
     });
   });
@@ -229,6 +248,34 @@ describe('the channel routes', () => {
     const res = await agent.post('/api/rooms').send({ name: 'Sala 6' });
     assert.equal(res.status, 409);
     assert.equal(res.body.error, 'room_limit');
+  });
+
+  test('admins and the super admin change the limit; users cannot', async () => {
+    const user = await signedIn('Ana');
+    const admin = await signedIn('Bia', undefined, 'admin');
+    const boss = await signedIn('Caio', undefined, 'super_admin');
+
+    await user.agent.put('/api/rooms/limit').send({ max: 7 }).expect(403);
+    for (const max of [0, CHANNEL_CEILING + 1, '7', 2.5]) {
+      await admin.agent.put('/api/rooms/limit').send({ max }).expect(400);
+    }
+    assert.equal((await admin.agent.put('/api/rooms/limit').send({ max: 6 })).body.max, 6);
+    for (let i = 2; i <= 6; i += 1) await newChannel(admin.agent, `Sala ${i}`);
+    assert.equal((await admin.agent.post('/api/rooms').send({ name: 'Sala 7' })).status, 409);
+
+    await boss.agent.put('/api/rooms/limit').send({ max: 7 }).expect(200);
+    await newChannel(boss.agent, 'Sala 7');
+    const list = (await user.agent.get('/api/rooms')).body;
+    assert.equal(list.max, 7);
+    assert.equal(list.ceiling, CHANNEL_CEILING);
+  });
+
+  test('lowering the limit below how many there are removes none', async () => {
+    const { agent } = await signedIn('Bia', undefined, 'admin');
+    for (let i = 2; i <= 4; i += 1) await newChannel(agent, `Sala ${i}`);
+    await agent.put('/api/rooms/limit').send({ max: 2 }).expect(200);
+    assert.equal((await agent.get('/api/rooms')).body.rooms.length, 4);
+    assert.equal((await agent.post('/api/rooms').send({ name: 'Sala 5' })).status, 409);
   });
 
   test('a bad name is refused', async () => {

@@ -3,9 +3,9 @@
  *
  * There is always a default chat, which can be renamed but never removed.
  * Admins add, rename and remove the others, up to a limit that starts at one
- * — the default alone — and that only the super admin changes. The limit is
- * kept in the database rather than the environment so raising it needs no
- * redeploy, and is capped at CHAT_CEILING whatever is asked.
+ * — the default alone — and that admins change. The limit is kept in the
+ * database rather than the environment so raising it needs no redeploy, and
+ * is capped at CHAT_CEILING whatever is asked.
  *
  * The messages themselves are in ScyllaDB (messages.js). Removing a chat here
  * returns it, so the caller can delete its messages there.
@@ -18,20 +18,24 @@ import { randomBytes } from 'node:crypto';
 
 import { createTableStore } from './database.js';
 import { cleanChannelName } from './channels.js';
+import { createLimitSetting } from './settings.js';
 
-/** Chats that may exist before the super admin raises the limit. */
+/** Chats that may exist before an admin raises the limit. */
 export const DEFAULT_MAX_CHATS = 1;
 
-/** The most chats the super admin may allow. */
+/** The most chats an admin may allow. */
 export const CHAT_CEILING = 50;
-
-const MAX_KEY = 'chats.max';
 
 export const cleanChatName = cleanChannelName;
 
 export function createChatStore({ db, defaultName = 'Geral', logger = console }) {
   const table = createTableStore({ db, table: 'chats' });
-  const { sqlite } = db;
+  const limit = createLimitSetting({
+    db,
+    key: 'chats.max',
+    fallback: DEFAULT_MAX_CHATS,
+    max: CHAT_CEILING,
+  });
 
   // Created on open, so every later read finds it.
   const ready = table.mutate((chats) => {
@@ -46,14 +50,6 @@ export function createChatStore({ db, defaultName = 'Geral', logger = console })
     chats.push(chat);
     logger.info(`[chat] created default chat ${chat.id}`);
   });
-
-  function readMax() {
-    const row = sqlite.prepare('SELECT value FROM settings WHERE key = ?').get(MAX_KEY);
-    const value = row ? Number(row.value) : DEFAULT_MAX_CHATS;
-    return Number.isInteger(value) && value >= 1
-      ? Math.min(value, CHAT_CEILING)
-      : DEFAULT_MAX_CHATS;
-  }
 
   /** Chats, the default first, then in the order they were added. */
   async function list() {
@@ -73,7 +69,7 @@ export function createChatStore({ db, defaultName = 'Geral', logger = console })
 
     async max() {
       await ready;
-      return readMax();
+      return limit.get();
     },
 
     /**
@@ -81,17 +77,9 @@ export function createChatStore({ db, defaultName = 'Geral', logger = console })
      * removes none; it only stops new ones until enough are removed.
      */
     async setMax(value, { by } = {}) {
-      if (!Number.isInteger(value) || value < 1 || value > CHAT_CEILING) {
-        return { ok: false, reason: 'invalid_limit' };
-      }
       await ready;
-      await db.transaction(() => {
-        sqlite
-          .prepare(
-            'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value',
-          )
-          .run(MAX_KEY, String(value));
-      });
+      const result = await limit.set(value);
+      if (!result.ok) return result;
       logger.info(`[chat] limit set to ${value} by ${by ?? 'keytool'}`);
       return { ok: true, max: value };
     },
@@ -101,7 +89,7 @@ export function createChatStore({ db, defaultName = 'Geral', logger = console })
       if (!clean) return { ok: false, reason: 'invalid_name' };
       await ready;
       return table.mutate((chats) => {
-        if (chats.length >= readMax()) return { ok: false, reason: 'chat_limit' };
+        if (chats.length >= limit.get()) return { ok: false, reason: 'chat_limit' };
         const chat = {
           id: randomBytes(4).toString('hex'),
           name: clean,

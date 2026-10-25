@@ -70,6 +70,7 @@ export function createApp({
 
   const CHANNEL_ERRORS = {
     invalid_name: 400,
+    invalid_limit: 400,
     unknown_room: 404,
     room_limit: 409,
     room_is_default: 409,
@@ -684,7 +685,7 @@ export function createApp({
         role: req.user.role,
         ...(isAdmin(req.user) ? { pendingApprovals: await accountStore.countPending() } : {}),
       };
-      res.json({ rooms, max: channelSet.max, you });
+      res.json({ rooms, max: channelSet.max, ceiling: channelSet.ceiling, you });
     } catch (err) {
       next(err);
     }
@@ -697,6 +698,17 @@ export function createApp({
       const result = await channelSet.create(req.body?.name, req.user);
       if (!result.ok) return refuse(res, result.reason);
       res.status(201).json({ room: result.channel });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // How many channels there may be: admins change it while the app runs.
+  app.put('/api/rooms/limit', requireAdmin, async (req, res, next) => {
+    try {
+      const result = await channelSet.setMax(req.body?.max, req.user);
+      if (!result.ok) return refuse(res, result.reason);
+      res.json({ max: result.max });
     } catch (err) {
       next(err);
     }

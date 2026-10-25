@@ -163,16 +163,16 @@ describe('the list', () => {
 });
 
 describe('who may change the list', () => {
-  test('only the super admin raises the limit', async () => {
+  test('admins and the super admin change the limit; users cannot', async () => {
     const user = await signIn(app, stores.accounts, 'Ana');
     const admin = await signIn(app, stores.accounts, 'Bia', { role: 'admin' });
     const boss = await signIn(app, stores.accounts, 'Caio', { role: 'super_admin' });
 
     await user.agent.put('/api/chats/limit').send({ max: 3 }).expect(403);
-    await admin.agent.put('/api/chats/limit').send({ max: 3 }).expect(403);
-    await boss.agent.put('/api/chats/limit').send({ max: 0 }).expect(400);
-    const res = await boss.agent.put('/api/chats/limit').send({ max: 3 }).expect(200);
-    assert.equal(res.body.max, 3);
+    await admin.agent.put('/api/chats/limit').send({ max: 0 }).expect(400);
+    assert.equal((await admin.agent.put('/api/chats/limit').send({ max: 3 })).body.max, 3);
+    assert.equal((await boss.agent.put('/api/chats/limit').send({ max: 4 })).body.max, 4);
+    assert.equal((await user.agent.get('/api/chats')).body.max, 4);
   });
 
   test('admins add, rename and remove chats within the limit; users cannot', async () => {

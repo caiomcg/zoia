@@ -8,9 +8,10 @@ import { createTokenIssuer } from './token.js';
 import { createStage } from './stage.js';
 import { createWhipPublisher } from './whip.js';
 import { createReportStore } from './reports.js';
-import { createChannelStore } from './channels.js';
+import { CHANNEL_CEILING, createChannelStore } from './channels.js';
 import { createAvatarStore } from './avatars.js';
 import { openStores } from './stores.js';
+import { createLimitSetting } from './settings.js';
 import { connectInBackground } from './scylla.js';
 import { createMessageStore } from './messages.js';
 import { createMediaStore } from './chat-media.js';
@@ -25,6 +26,7 @@ try {
 const config = loadConfig();
 
 const {
+  db,
   devices: deviceStore,
   accounts: accountStore,
   chats: chatStore,
@@ -55,6 +57,13 @@ const channels = createChannelStore({
   defaultId: config.roomName,
   defaultName: config.channels.defaultName,
   max: config.channels.max,
+  // Admins raise or lower it while the app runs; MAX_CHANNELS is where it starts.
+  limit: createLimitSetting({
+    db,
+    key: 'channels.max',
+    fallback: config.channels.max,
+    max: CHANNEL_CEILING,
+  }),
   makeRuntime: (id) => {
     const stage = createStage({ rooms, roomName: id });
     const whip = createWhipPublisher({
@@ -101,7 +110,7 @@ app.listen(config.port, () => {
   console.log(`[zoia] listening on :${config.port}`);
   console.log(`[zoia] public host  ${config.publicHost}`);
   console.log(`[zoia] livekit ws   ${config.livekit.wsUrl}`);
-  console.log(`[zoia] channels     default ${config.roomName}, up to ${config.channels.max}`);
+  console.log(`[zoia] channels     default ${config.roomName}, up to ${channels.max}`);
   const scylla = config.chat.scylla;
   console.log(
     `[zoia] chat         ${scylla ? `scylla at ${scylla.contactPoints.join(', ')}` : 'off (SCYLLA_CONTACT_POINTS not set)'}`,
