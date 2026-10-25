@@ -22,9 +22,14 @@ rewritten every time someone looks.
 **Text chats, independent of channels.** A chat is not a LiveKit room and nobody joins one:
 every approved account sees every chat. There is a default chat that can be renamed but
 never removed. Admins add, rename and remove others, up to a limit that **starts at one** and
-that **only the super admin** changes, at runtime, up to a hard ceiling of 50. The limit is a
-row in the SQLite `settings` table, not an environment variable, so raising it needs no
+that **admins and the super admin** change, at runtime, up to a hard ceiling of 50. The limit
+is a row in the SQLite `settings` table, not an environment variable, so raising it needs no
 redeploy. Lowering it below how many chats exist removes none.
+
+**The channel limit works the same way**, amending [ADR 0015](0015-channels.md): admins raise
+or lower it at runtime, from the same `settings` table. `MAX_CHANNELS` is only where it
+starts. Its ceiling is 20, not 50, because every client's channel poll asks LiveKit about
+each channel every two seconds; a chat costs nothing while nobody writes in it.
 
 **The chat list stays in SQLite**, beside the accounts that may change it. It is small,
 read on every request, and needs the transactions and constraints ADR 0032 chose SQLite for
