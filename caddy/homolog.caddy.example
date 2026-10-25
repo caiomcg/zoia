@@ -1,0 +1,19 @@
+# A homolog (staging) environment, proxied to its own VM on the LAN. See
+# docs/adr/0035-homolog-environment.md.
+#
+# This file is a template. On the production server, copy it to
+# caddy/sites/homolog.caddy, put in the real hostname and the homolog VM's
+# address, and restart caddy:
+#
+#   docker compose restart caddy
+#
+# caddy/sites/ is gitignored and deploy.sh never transfers or deletes it, so the
+# site stays on this server and out of the public repository.
+
+zoia-homolog.example.com {
+	import zoia_app
+
+	# Plain HTTP across the LAN to the homolog VM's app. The public leg is TLS,
+	# terminated here like every other site.
+	reverse_proxy <homolog-vm-ip>:3000
+}
