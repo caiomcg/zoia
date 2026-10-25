@@ -4417,3 +4417,35 @@ button.danger:active:not(:disabled),
 .sidebar-header .chat-limit {
   margin: 0 4px 0 auto;
 }
+
+/* Admins: take someone out of the channel. On hover, at the row's end. */
+.member-disconnect {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  margin-left: auto;
+  padding: 0;
+  color: var(--muted);
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  opacity: 0;
+}
+
+.member:hover .member-disconnect,
+.member-disconnect:focus-visible {
+  opacity: 1;
+}
+
+.member-disconnect:hover {
+  color: #fff;
+  background: var(--danger);
+}
+
+.member-camera + .member-disconnect {
+  margin-left: 0;
+}

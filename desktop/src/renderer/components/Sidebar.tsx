@@ -223,6 +223,7 @@ export default function Sidebar({
   onWatchBroadcast,
   onToggleCamera,
   chats,
+  onDisconnectMember,
 }: {
   members: RoomMember[];
   myName: string;
@@ -259,6 +260,8 @@ export default function Sidebar({
   onToggleCamera: (identity: string) => void;
   /** The text chats (ADR 0036), listed under the channels. */
   chats?: (collapsed: boolean) => ReactNode;
+  /** Admins only: takes someone out of the channel they are in. */
+  onDisconnectMember?: (identity: string, name: string) => void;
 }) {
   const t = useT();
   const canManageChannels = myRole === 'admin' || myRole === 'super_admin';
@@ -292,6 +295,10 @@ export default function Sidebar({
       listed.has(identity) &&
       role !== 'super_admin' &&
       (role !== 'admin' || myRole === 'super_admin'));
+  // Disconnecting someone follows the same rule, but never yourself: leaving
+  // is the button in the footer.
+  const mayDisconnect = (identity: string, role?: AccountRole) =>
+    Boolean(onDisconnectMember) && identity !== myIdentity && mayDrag(identity, role);
   const dragFrom = (
     identity: string,
     role: AccountRole | undefined,
@@ -550,6 +557,11 @@ export default function Sidebar({
                           role={roleOf(m)}
                           leaving={leaving}
                           drag={leaving ? {} : dragFrom(m.identity, roleOf(m), c.id)}
+                          onDisconnect={
+                            !leaving && mayDisconnect(m.identity, roleOf(m))
+                              ? () => onDisconnectMember?.(m.identity, m.name)
+                              : undefined
+                          }
                           {...rowProps}
                         />
                       ))}
@@ -561,7 +573,20 @@ export default function Sidebar({
                         {othersInChannel(c, here).map((p) => (
                           <span
                             key={p.identity}
-                            title={p.role ? `${p.name} · ${t(`account.role.${p.role}`)}` : p.name}
+                            title={[
+                              p.role ? `${p.name} · ${t(`account.role.${p.role}`)}` : p.name,
+                              ...(mayDisconnect(p.identity, p.role)
+                                ? [t('sidebar.disconnectHint')]
+                                : []),
+                            ].join('\n')}
+                            onContextMenu={
+                              mayDisconnect(p.identity, p.role)
+                                ? (event) => {
+                                    event.preventDefault();
+                                    onDisconnectMember?.(p.identity, p.name);
+                                  }
+                                : undefined
+                            }
                             {...dragFrom(p.identity, p.role, c.id)}
                           >
                             <Avatar
@@ -678,7 +703,10 @@ function MemberRow({
   onWatch,
   onToggleCamera,
   collapsed,
+  onDisconnect,
 }: {
+  /** Admins only, for someone they may disconnect. */
+  onDisconnect?: () => void;
   member: RoomMember;
   role?: AccountRole;
   leaving: boolean;
@@ -748,6 +776,31 @@ function MemberRow({
           shown={cameraShown}
           onToggle={() => onToggleCamera(m.identity)}
         />
+      )}
+      {onDisconnect && !collapsed && (
+        <button
+          className="member-disconnect"
+          onClick={(event) => {
+            event.stopPropagation();
+            onDisconnect();
+          }}
+          title={t('sidebar.disconnect', { name: m.name })}
+          aria-label={t('sidebar.disconnect', { name: m.name })}
+        >
+          <svg
+            viewBox="0 0 24 24"
+            width="14"
+            height="14"
+            aria-hidden="true"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M15 4h4a1 1 0 011 1v14a1 1 0 01-1 1h-4M10 16l-4-4 4-4M6 12h10" />
+          </svg>
+        </button>
       )}
     </div>
   );

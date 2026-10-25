@@ -322,6 +322,34 @@ export default function App() {
     await room.disconnect();
   }
 
+  // An admin took this machine out of its channel: out of every channel, and
+  // say so, rather than a lost connection that would try again.
+  const { removed, clearRemoved } = room;
+  useEffect(() => {
+    if (!removed) return;
+    clearRemoved();
+    setHopping(false);
+    setChannel(null);
+    setChannelError(t('channel.error.removed'));
+    void room.disconnect();
+    // Only a new removal acts; room is read as it is now.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [removed]);
+
+  /** Admins: takes someone out of their channel, after asking. */
+  async function disconnectMember(identity: string, name: string) {
+    if (!window.confirm(t('sidebar.disconnectConfirm', { name }))) return;
+    try {
+      const outcome = await window.zoia.admin.disconnectDevice(identity);
+      setChannelError(
+        outcome.ok ? null : t('channel.error.disconnectFailed', { code: outcome.error }),
+      );
+    } catch {
+      setChannelError(t('channel.error.unreachable'));
+    }
+    setChannelsVersion((v) => v + 1);
+  }
+
   // An admin moved this machine: go, the way a click would.
   const { moveRequest, clearMoveRequest } = room;
   useEffect(() => {
@@ -1124,6 +1152,11 @@ export default function App() {
           onToggleCamera={(identity) => gridRef.current?.toggleCamera(identity)}
           onHoverBroadcast={(target, anchor) => gridRef.current?.hover(target, anchor)}
           onWatchBroadcast={(target) => gridRef.current?.watch(target)}
+          onDisconnectMember={
+            account?.role === 'admin' || account?.role === 'super_admin'
+              ? (identity, name) => void disconnectMember(identity, name)
+              : undefined
+          }
           chats={
             chat.enabled
               ? (collapsed) => (

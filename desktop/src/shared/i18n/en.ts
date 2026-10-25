@@ -63,6 +63,8 @@ export const en = {
   // ---- channels
   'channel.error.limit': 'The channel limit has been reached. An admin can raise it.',
   'channel.error.limitRange': 'That limit is out of range.',
+  'channel.error.removed': 'An admin disconnected you from the channel. You can join again.',
+  'channel.error.disconnectFailed': 'Could not disconnect them ({code}).',
   'channel.error.notEmpty': 'Only an empty channel can be deleted.',
   'channel.error.isDefault': 'The main channel cannot be deleted.',
   'channel.error.invalidName': 'Use a name of 1 to 32 characters.',
@@ -91,6 +93,9 @@ export const en = {
   'sidebar.watchLive': 'Watch {name}. Hover to preview.',
   'sidebar.settings': 'Settings',
   'sidebar.leave': 'Leave channel',
+  'sidebar.disconnect': 'Disconnect {name} from the channel',
+  'sidebar.disconnectHint': 'Right-click to disconnect',
+  'sidebar.disconnectConfirm': 'Disconnect {name} from the channel? They can join again.',
 
   // ---- text chat
   'chat.title': 'Chats',

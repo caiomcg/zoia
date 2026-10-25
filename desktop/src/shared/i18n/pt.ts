@@ -57,6 +57,8 @@ export const pt: Messages = {
 
   'channel.error.limit': 'O limite de canais foi atingido. Um admin pode aumentá-lo.',
   'channel.error.limitRange': 'Esse limite está fora do permitido.',
+  'channel.error.removed': 'Um admin desconectou você do canal. Você pode entrar de novo.',
+  'channel.error.disconnectFailed': 'Não foi possível desconectar ({code}).',
   'channel.error.notEmpty': 'Só é possível apagar um canal vazio.',
   'channel.error.isDefault': 'O canal principal não pode ser apagado.',
   'channel.error.invalidName': 'Use um nome de 1 a 32 caracteres.',
@@ -85,6 +87,9 @@ export const pt: Messages = {
   'sidebar.watchLive': 'Assistir {name}. Passe o mouse para uma prévia.',
   'sidebar.settings': 'Configurações',
   'sidebar.leave': 'Sair do canal',
+  'sidebar.disconnect': 'Desconectar {name} do canal',
+  'sidebar.disconnectHint': 'Clique com o botão direito para desconectar',
+  'sidebar.disconnectConfirm': 'Desconectar {name} do canal? A pessoa pode entrar de novo.',
 
   // ---- chat de texto
   'chat.title': 'Chats',

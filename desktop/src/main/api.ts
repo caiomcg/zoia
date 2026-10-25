@@ -179,6 +179,14 @@ export function adminAction(id: string, action: string, options: { role?: Accoun
 }
 
 /** Asks a machine in a channel to switch to another; what dragging someone does. */
+/** Takes one machine out of its channel; the server enforces it. Admins only. */
+export function adminDisconnectDevice(id: string) {
+  return call<{ disconnected: boolean }>(
+    `/api/admin/devices/${encodeURIComponent(id)}/disconnect`,
+    { method: 'POST' },
+  );
+}
+
 export function adminMoveDevice(id: string, channel: string) {
   return call<{ moved: boolean }>(`/api/admin/devices/${encodeURIComponent(id)}/move`, {
     method: 'POST',

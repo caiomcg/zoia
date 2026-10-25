@@ -534,6 +534,9 @@ export function useRoom() {
   const [isReconnecting, setIsReconnecting] = useState(false);
   const [roomNotice, setRoomNotice] = useState<string | null>(null);
   const [moveRequest, setMoveRequest] = useState<MoveRequest | null>(null);
+  // The server took this machine out of the room: an admin disconnected it,
+  // or its access was revoked. Not a lost connection, so nothing to retry.
+  const [removed, setRemoved] = useState(false);
   const [remoteScreens, setRemoteScreens] = useState<RemoteScreen[]>([]);
   const selectedRemoteIdsRef = useRef<Set<string>>(new Set());
   const pausedRemoteIdsRef = useRef<ReadonlySet<string>>(new Set());
@@ -941,7 +944,12 @@ export function useRoom() {
           if (reason === DisconnectReason.CLIENT_INITIATED) return;
           setIsReconnecting(false);
           setState('disconnected');
-          setError(reason ? tNow('room.closedReason', { reason }) : tNow('room.closed'));
+          if (reason === DisconnectReason.PARTICIPANT_REMOVED) {
+            setRemoved(true);
+            setError(null);
+          } else {
+            setError(reason ? tNow('room.closedReason', { reason }) : tNow('room.closed'));
+          }
           setBroadcastState('idle');
           ingressPreviewRef.current = null;
           localTrackRef.current = null;
@@ -1682,6 +1690,8 @@ export function useRoom() {
     clearRoomNotice: useCallback(() => setRoomNotice(null), []),
     moveRequest,
     clearMoveRequest: useCallback(() => setMoveRequest(null), []),
+    removed,
+    clearRemoved: useCallback(() => setRemoved(false), []),
     setRemotePaused,
     setRemoteFocus,
     participantCount,

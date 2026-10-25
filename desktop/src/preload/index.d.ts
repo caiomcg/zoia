@@ -59,6 +59,8 @@ export interface ZoiaBridge {
     ): Promise<ActionOutcome<{ account?: AdminAccount } & Partial<IssuedCode>>>;
     /** Asks a machine (a participant identity) in a channel to switch to another. */
     moveDevice(id: string, channel: string): Promise<ActionOutcome<{ moved: boolean }>>;
+    /** Takes one machine out of the channel it is in. Not a ban: it can join again. */
+    disconnectDevice(id: string): Promise<ActionOutcome<{ disconnected: boolean }>>;
   };
   token: {
     /** A join token for a channel; the first channel when none is named. */
