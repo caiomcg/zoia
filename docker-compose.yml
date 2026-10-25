@@ -14,6 +14,8 @@ services:
       SFU_HOSTNAME: ${SFU_HOST:?set SFU_HOST in .env}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Server-local extra sites, e.g. the homolog environment (ADR 0035).
+      - ./caddy/sites:/etc/caddy/sites:ro
       - caddy_data:/data # certificates — must persist across restarts
       - caddy_config:/config
     extra_hosts:

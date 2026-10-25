@@ -3,6 +3,8 @@
 #
 # This proxy deliberately serves these two hostnames and nothing else: any
 # other Host header gets a connection refused rather than reaching a service.
+# The one exception is a site the operator drops into caddy/sites/ on the
+# server, such as a homolog environment (docs/adr/0035-homolog-environment.md).
 
 # No global options block. An `email` directive here would be ideal for Let's
 # Encrypt expiry notices, but the Caddyfile has no way to omit a directive when
@@ -10,8 +12,9 @@
 # error and crash-loops the container. If you want expiry mail, hardcode it:
 #   { email you@example.com }
 
-# The web app.
-{$ZOIA_HOSTNAME} {
+# What every site serving the web app shares. Defined before the import below
+# so the server-local sites can use it too.
+(zoia_app) {
 	tls {
 		dns cloudflare {$CLOUDFLARE_API_TOKEN}
 	}
@@ -25,7 +28,11 @@
 		Referrer-Policy "same-origin"
 		-Server
 	}
+}
 
+# The web app.
+{$ZOIA_HOSTNAME} {
+	import zoia_app
 	reverse_proxy app:3000
 }
 
@@ -44,3 +51,9 @@
 	# everything else. See docs/adr/0011-hardware-encoding-over-the-internet.md.
 	reverse_proxy host.docker.internal:7880
 }
+
+# Sites that exist on this server only, never in git: caddy/sites/ is
+# gitignored and deploy.sh never transfers it. A glob that matches nothing is
+# not an error, so a server without any serves exactly the two hosts above.
+# See caddy/homolog.caddy.example.
+import /etc/caddy/sites/*.caddy

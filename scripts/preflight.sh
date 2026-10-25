@@ -45,8 +45,14 @@ else
 
   # The classic misconfiguration: the app and the SFU disagree about the
   # credentials, which surfaces only as an opaque failure at connect time.
+  # LIVEKIT_KEYS is the one pair, or a {key: secret, ...} map when a homolog
+  # shares the SFU (ADR 0035); the app's pair must be one of them.
   expected="${LIVEKIT_API_KEY}: ${LIVEKIT_API_SECRET}"
-  if [[ "${LIVEKIT_KEYS:-}" == "$expected" ]]; then
+  keys="${LIVEKIT_KEYS:-}"
+  if [[ "$keys" == "{"*"}" ]]; then
+    keys="${keys#\{}"; keys="${keys%\}}"
+  fi
+  if [[ ", ${keys}, " == *", ${expected}, "* ]]; then
     ok "LIVEKIT_KEYS matches LIVEKIT_API_KEY/SECRET"
   else
     bad "LIVEKIT_KEYS does not match the app's key/secret pair"

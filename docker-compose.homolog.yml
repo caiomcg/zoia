@@ -1,0 +1,22 @@
+# A homolog (staging) environment, on a VM of its own: only the app, with its
+# own database. The production VM's caddy routes the homolog hostname here, and
+# the app uses the production LiveKit, so this VM publishes nothing to the
+# internet. See docs/adr/0035-homolog-environment.md.
+#
+#   ./deploy.sh --homolog
+
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # The production SFU's API, over the LAN, e.g. http://<prod-vm-ip>:7880.
+      LIVEKIT_API_URL: ${LIVEKIT_API_URL:?set LIVEKIT_API_URL in .env to the production VM's LiveKit}
+    # Reached by the production caddy across the LAN, so unlike production
+    # this port is published.
+    ports:
+      - '3000:3000'
+    volumes:
+      # This environment's own database, separate from production's.
+      - ./server/data:/app/server/data

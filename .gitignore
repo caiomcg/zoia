@@ -34,3 +34,6 @@ android/.kotlin/
 android/app/build/
 android/build/
 android/local.properties
+
+# server-local caddy sites (ADR 0035)
+caddy/sites/

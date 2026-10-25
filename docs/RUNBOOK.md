@@ -44,7 +44,8 @@ caddy, livekit, ingress, redis).
 | `scripts/bootstrap-vm.sh` | on the VM, once | Installs Docker, guest agent, creates `/opt/zoia` |
 | `scripts/gen-env.sh` | on the VM | Generates `.env` with consistent secrets |
 | `scripts/preflight.sh` | on the VM, after deploying | Checks every failure mode that looks like an app bug |
-| `deploy.sh` | from the workstation | rsync + `docker compose up -d --build` |
+| `deploy.sh` | from the workstation | rsync + `docker compose up -d --build`; `--homolog` targets the homolog VM |
+| `scripts/seed-homolog.sh` | from the workstation | Copies production's accounts to the homolog |
 
 ---
 
@@ -292,6 +293,124 @@ ssh zoia@<server-ip> 'rm /opt/zoia/server/data/backup.db'
 It holds password hashes and every email: keep it private, and out of git — `deploy.sh`
 already refuses to transfer `server/data` in either direction. Losing it means everyone
 signs up again. Profile pictures are beside it, in `server/data/avatars/`.
+
+---
+
+## Homolog environment
+
+A second server for testing builds before production
+([ADR 0035](adr/0035-homolog-environment.md)): its own VM, app, web front and database, at
+`zoia-homolog.<domain>`. The production Caddy routes that hostname to it, and it uses the
+production LiveKit, so it needs no router rules and no SFU of its own.
+
+```
+internet ─443─► prod VM caddy ─┬─ zoia.<domain>          → app (prod)
+                               ├─ sfu.<domain>           → livekit (shared)
+                               └─ zoia-homolog.<domain>  → http://<homolog-ip>:3000
+homolog VM: app only ── LiveKit API over the LAN ──► http://<server-ip>:7880
+```
+
+### 1. DNS
+
+An A record `zoia-homolog` → `<public-ip>`, **DNS only** (grey), like the other two.
+
+### 2. The VM
+
+The same steps as [the production VM](#2-the-vm), with a new id, name and address. It needs
+less: no SFU runs on it.
+
+```bash
+qm create 121 --name zoia-homolog \
+  --memory 2048 --cores 2 --cpu host \
+  --net0 virtio,bridge=vmbr0 \
+  --scsihw virtio-scsi-pci --ostype l26 \
+  --agent enabled=1 --serial0 socket --vga serial0
+qm set 121 --scsi0 local-lvm:0,import-from=/var/lib/vz/template/iso/debian-12-generic-amd64.qcow2
+qm set 121 --boot order=scsi0
+qm disk resize 121 scsi0 16G
+qm set 121 --ide2 local-lvm:cloudinit
+qm set 121 --ciuser zoia --sshkeys /root/zoia-key.pub
+qm set 121 --ipconfig0 ip=<homolog-ip>/24,gw=<lan-prefix>.1
+qm set 121 --nameserver <lan-prefix>.3 --searchdomain example.com
+qm start 121
+qm snapshot 121 clean-debian --description "fresh cloud-init, pre-docker"
+```
+
+Then bootstrap it, and from the homolog VM check that it can reach the production SFU's API:
+
+```bash
+ssh zoia@<homolog-ip> 'bash -s' < scripts/bootstrap-vm.sh
+ssh zoia@<homolog-ip> 'curl -fsS http://<server-ip>:7880'   # prints OK
+```
+
+### 3. Its `.env`, and its key on the shared SFU
+
+Deploy once so the scripts are on the VM. It stops at the missing `.env`, which is expected:
+
+```bash
+export ZOIA_HOMOLOG_HOST=zoia@<homolog-ip>
+./deploy.sh --homolog
+```
+
+Generate the homolog's `.env` on the homolog VM:
+
+```bash
+ssh zoia@<homolog-ip>
+cd /opt/zoia
+./scripts/gen-env.sh --homolog zoia-homolog.<domain> sfu.<domain> <server-ip> > .env
+chmod 600 .env
+```
+
+It prints a `LIVEKIT_KEYS` line on the terminal. On the **production** VM, put that in
+`/opt/zoia/.env` in place of the existing line, with production's own key and secret first,
+then restart LiveKit:
+
+```bash
+LIVEKIT_KEYS="{<prod key>: <prod secret>, <homolog key>: <homolog secret>}"
+```
+
+```bash
+docker compose up -d livekit
+bash scripts/preflight.sh     # "LIVEKIT_KEYS matches" must still pass
+```
+
+It has to be the `{…}` map; a comma-separated list stops LiveKit from starting.
+
+### 4. The route on the production Caddy
+
+On the production VM:
+
+```bash
+cd /opt/zoia
+cp caddy/homolog.caddy.example caddy/sites/homolog.caddy
+# set the real hostname and <homolog-ip> in it
+docker compose restart caddy
+docker compose logs -f caddy   # watch the certificate for zoia-homolog arrive
+```
+
+This file exists on the production server only. `deploy.sh` never transfers or deletes it.
+
+### 5. Deploy and use it
+
+```bash
+git switch <branch-to-test>
+./deploy.sh --homolog
+```
+
+Then give it production's people. This replaces the homolog's database and profile pictures
+with a consistent copy of production's, so everyone signs in with the account they already
+have, super admin included. Channels are not copied:
+
+```bash
+export ZOIA_HOST=zoia@<server-ip>
+./scripts/seed-homolog.sh
+```
+
+Re-run it whenever the homolog should catch up with production. It discards whatever changed
+on the homolog since. Point a desktop build at `https://zoia-homolog.<domain>` to use it.
+
+Every `docker compose` command on the homolog VM needs `-f docker-compose.homolog.yml`.
+`scripts/preflight.sh` is for the production VM only.
 
 ---
 
