@@ -43,3 +43,16 @@ participant's own data messages with that participant, so another client cannot 
   every machine.
 - The move happens as a click would, so a broadcast is stopped rather than carried over.
   Someone moved mid-share has to share again in the new channel.
+
+## Amendment: disconnecting someone
+
+An admin may also take someone out of the channel they are in: the sidebar shows a button on
+the row of anyone they could drag, and a right-click on their face in another channel does
+the same, each after a confirmation. It calls `POST /api/admin/devices/:id/disconnect`,
+under the same rules as a move, and the server removes that machine, and its hardware
+broadcast, from its LiveKit room.
+
+Unlike a move, this does not rely on the app: LiveKit drops the connection whatever the app
+does. The app recognises the removal and leaves the channel, saying an admin disconnected
+it, instead of treating it as a lost connection and trying again. It is not a ban: the
+person can join a channel again at once, and keeping someone out is still Revoke access.
