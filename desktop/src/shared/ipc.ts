@@ -108,6 +108,8 @@ export interface RoomInfo {
 export interface RoomsList {
   rooms: RoomInfo[];
   max: number;
+  /** The most channels an admin may allow; older servers do not say. */
+  ceiling?: number;
   you?: { role: AccountRole; pendingApprovals?: number };
 }
 
@@ -412,6 +414,7 @@ export const IPC = {
   roomsCreate: 'zoia:rooms:create',
   roomsRename: 'zoia:rooms:rename',
   roomsRemove: 'zoia:rooms:remove',
+  roomsSetLimit: 'zoia:rooms:limit',
   chatList: 'zoia:chat:list',
   chatCreate: 'zoia:chat:create',
   chatRename: 'zoia:chat:rename',

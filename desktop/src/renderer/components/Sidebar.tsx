@@ -105,6 +105,53 @@ export function IconTrash() {
   );
 }
 
+/**
+ * How many channels or chats there may be, for an admin to change: "3 of 5"
+ * between a minus and a plus. The server checks the role and the range again.
+ */
+export function LimitStepper({
+  count,
+  max,
+  ceiling,
+  onChange,
+  title,
+  less,
+  more,
+}: {
+  count: number;
+  max: number;
+  ceiling: number;
+  onChange: (max: number) => void;
+  title: string;
+  less: string;
+  more: string;
+}) {
+  const t = useT();
+  return (
+    <span className="chat-limit" title={title}>
+      <button
+        className="channel-action"
+        disabled={max <= 1}
+        onClick={() => onChange(max - 1)}
+        aria-label={less}
+        title={less}
+      >
+        −
+      </button>
+      <span className="chat-limit-value">{t('chat.limitValue', { count, max })}</span>
+      <button
+        className="channel-action"
+        disabled={max >= ceiling}
+        onClick={() => onChange(max + 1)}
+        aria-label={more}
+        title={more}
+      >
+        +
+      </button>
+    </span>
+  );
+}
+
 /** Naming a channel in place: Enter keeps it, Escape or an empty name drops it. */
 export function ChannelNameField({
   initial,
@@ -165,6 +212,8 @@ export default function Sidebar({
   onJoinChannel,
   onLeaveChannel,
   maxChannels,
+  channelCeiling = maxChannels,
+  onSetChannelLimit,
   onCreateChannel,
   onRenameChannel,
   onRemoveChannel,
@@ -194,6 +243,10 @@ export default function Sidebar({
   onLeaveChannel: () => void;
   /** The most channels the server holds, the default included. */
   maxChannels: number;
+  /** The most channels an admin may allow. */
+  channelCeiling?: number;
+  /** Admins only: how many channels there may be. */
+  onSetChannelLimit?: (max: number) => void;
   onCreateChannel: (name: string) => void;
   onRenameChannel: (id: string, name: string) => void;
   onRemoveChannel: (id: string) => void;
@@ -381,6 +434,17 @@ export default function Sidebar({
         {/* On the arrow's line rather than a row of its own below it. */}
         {!collapsed && channels.length > 0 && (
           <h2 className="sidebar-title">{t('sidebar.channels')}</h2>
+        )}
+        {!collapsed && channels.length > 0 && canManageChannels && onSetChannelLimit && (
+          <LimitStepper
+            count={channels.length}
+            max={maxChannels}
+            ceiling={channelCeiling}
+            onChange={onSetChannelLimit}
+            title={t('sidebar.limitTitle')}
+            less={t('sidebar.limitLess')}
+            more={t('sidebar.limitMore')}
+          />
         )}
       </div>
       <div className="sidebar-scroll">

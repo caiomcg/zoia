@@ -71,6 +71,8 @@ export interface ZoiaBridge {
     rename(id: string, name: string): Promise<ChannelOutcome>;
     /** Only an empty channel that is not the default. */
     remove(id: string): Promise<ChannelOutcome>;
+    /** How many channels there may be, the default included. Admins only. */
+    setLimit(max: number): Promise<ChannelOutcome>;
   };
   stage: {
     get(): Promise<StageState>;

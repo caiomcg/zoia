@@ -120,6 +120,7 @@ export default function App() {
   const [channel, setChannel] = useState<string | null>(null);
   const [channels, setChannels] = useState<RoomInfo[]>([]);
   const [maxChannels, setMaxChannels] = useState(0);
+  const [channelCeiling, setChannelCeiling] = useState(0);
   const [channelError, setChannelError] = useState<string | null>(null);
   // Bumped to refetch the channel list right after a change, not at the next poll.
   const [channelsVersion, setChannelsVersion] = useState(0);
@@ -237,10 +238,11 @@ export default function App() {
     const load = () =>
       window.zoia.rooms
         .list()
-        .then(({ rooms, max, you }) => {
+        .then(({ rooms, max, ceiling, you }) => {
           if (cancelled) return;
           setChannels(rooms);
           setMaxChannels(max);
+          setChannelCeiling(ceiling ?? max);
           setBooted(true);
           // Made or unmade an admin, or new sign-ups waiting: take it in now.
           const known = accountRef.current;
@@ -281,6 +283,7 @@ export default function App() {
 
   const CHANNEL_ERRORS: Record<string, MessageKey> = {
     room_limit: 'channel.error.limit',
+    invalid_limit: 'channel.error.limitRange',
     room_not_empty: 'channel.error.notEmpty',
     room_is_default: 'channel.error.isDefault',
     invalid_name: 'channel.error.invalidName',
@@ -1107,6 +1110,8 @@ export default function App() {
           onJoinChannel={(id) => void switchChannel(id)}
           onLeaveChannel={() => void leaveChannel()}
           maxChannels={maxChannels}
+          channelCeiling={channelCeiling}
+          onSetChannelLimit={(max) => void changeChannels(window.zoia.rooms.setLimit(max))}
           onCreateChannel={(name) => void changeChannels(window.zoia.rooms.create(name))}
           onRenameChannel={(id, name) => void changeChannels(window.zoia.rooms.rename(id, name))}
           onRemoveChannel={(id) => void changeChannels(window.zoia.rooms.remove(id))}

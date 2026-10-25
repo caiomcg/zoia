@@ -61,7 +61,8 @@ export const en = {
   'stats.theGpu': 'the GPU',
 
   // ---- channels
-  'channel.error.limit': 'The server already has the most channels it allows.',
+  'channel.error.limit': 'The channel limit has been reached. An admin can raise it.',
+  'channel.error.limitRange': 'That limit is out of range.',
   'channel.error.notEmpty': 'Only an empty channel can be deleted.',
   'channel.error.isDefault': 'The main channel cannot be deleted.',
   'channel.error.invalidName': 'Use a name of 1 to 32 characters.',
@@ -80,6 +81,9 @@ export const en = {
   'sidebar.delete': 'Delete {channel}',
   'sidebar.newChannel': '+ New channel',
   'sidebar.newChannelTitle': 'New channel ({count} of {max})',
+  'sidebar.limitTitle': 'How many channels there may be',
+  'sidebar.limitLess': 'Allow one channel fewer',
+  'sidebar.limitMore': 'Allow one channel more',
   'sidebar.inRoom': 'In room — {count}',
   'sidebar.watchingYou': 'Watching your screen',
   'sidebar.showCamera': 'Show {name}’s camera',
@@ -115,7 +119,7 @@ export const en = {
   'chat.error.tooMany': 'You are sending too fast. Wait a moment.',
   'chat.error.invalid': 'That message is empty or too long.',
   'chat.error.load': 'Could not load the messages.',
-  'chat.error.limit': 'The chat limit has been reached. The super admin can raise it.',
+  'chat.error.limit': 'The chat limit has been reached. An admin can raise it.',
   'chat.error.name': 'A chat name must be 1 to 32 characters.',
   'chat.error.limitRange': 'That limit is out of range.',
   'chat.error.forbidden': 'You are not allowed to do that.',

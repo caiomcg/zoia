@@ -1,14 +1,14 @@
 import { useState } from 'react';
 import type { AccountRole } from '../../shared/ipc';
 import type { ChatController } from '../chat/useChat';
-import { ChannelNameField, IconPencil, IconTrash, shortName } from './Sidebar';
+import { ChannelNameField, IconPencil, IconTrash, LimitStepper, shortName } from './Sidebar';
 import { useT } from '../i18n';
 
 /**
  * The text chats, under the channels in the sidebar (ADR 0035). Clicking one
  * opens it in the main area. Admins add, rename and remove chats as they do
- * channels; the super admin also sets how many there may be. The server
- * checks every one of those again.
+ * channels, and set how many there may be. The server checks every one of
+ * those again.
  */
 export default function ChatList({
   chat,
@@ -30,7 +30,6 @@ export default function ChatList({
   const t = useT();
   const [editing, setEditing] = useState<string | null>(null);
   const canManage = myRole === 'admin' || myRole === 'super_admin';
-  const isSuper = myRole === 'super_admin';
 
   const report = (pending: Promise<string | null>) =>
     void pending.then((code) => {
@@ -42,30 +41,16 @@ export default function ChatList({
       {!collapsed && (
         <div className="chat-heading">
           <h2 className="member-heading">{t('chat.title')}</h2>
-          {isSuper && (
-            <span className="chat-limit" title={t('chat.limitTitle')}>
-              <button
-                className="channel-action"
-                disabled={chat.max <= 1}
-                onClick={() => report(chat.setLimit(chat.max - 1))}
-                aria-label={t('chat.limitLess')}
-                title={t('chat.limitLess')}
-              >
-                −
-              </button>
-              <span className="chat-limit-value">
-                {t('chat.limitValue', { count: chat.chats.length, max: chat.max })}
-              </span>
-              <button
-                className="channel-action"
-                disabled={chat.max >= chat.ceiling}
-                onClick={() => report(chat.setLimit(chat.max + 1))}
-                aria-label={t('chat.limitMore')}
-                title={t('chat.limitMore')}
-              >
-                +
-              </button>
-            </span>
+          {canManage && (
+            <LimitStepper
+              count={chat.chats.length}
+              max={chat.max}
+              ceiling={chat.ceiling}
+              onChange={(max) => report(chat.setLimit(max))}
+              title={t('chat.limitTitle')}
+              less={t('chat.limitLess')}
+              more={t('chat.limitMore')}
+            />
           )}
         </div>
       )}

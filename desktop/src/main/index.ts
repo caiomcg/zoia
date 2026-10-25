@@ -353,6 +353,7 @@ function registerIpc(): void {
     api.roomsRename(String(id), String(name)),
   );
   ipcMain.handle(IPC.roomsRemove, (_event, id: string) => api.roomsRemove(String(id)));
+  ipcMain.handle(IPC.roomsSetLimit, (_event, max: unknown) => api.roomsSetLimit(Number(max)));
 
   ipcMain.handle(IPC.gpuStatus, () => gpuStatus);
 

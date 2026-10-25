@@ -237,6 +237,11 @@ export function roomsRename(id: string, name: string) {
   );
 }
 
+/** How many channels there may be; admins only, which the server checks. */
+export function roomsSetLimit(max: number) {
+  return outcome(call('/api/rooms/limit', { method: 'PUT', body: JSON.stringify({ max }) }));
+}
+
 export function roomsRemove(id: string) {
   return outcome(call(`/api/rooms/${encodeURIComponent(id)}`, { method: 'DELETE' }));
 }
