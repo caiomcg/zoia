@@ -60,3 +60,6 @@ Unlike a move, this does not rely on the app: LiveKit drops the connection whate
 does. The app recognises the removal and leaves the channel, saying an admin disconnected
 it, instead of treating it as a lost connection and trying again. It is not a ban: the
 person can join a channel again at once, and keeping someone out is still Revoke access.
+
+Since [ADR 0037](0037-kicks-and-idle-removal.md) the app no longer offers this: a right-click
+kicks someone off the server instead. The route stays on the server.
