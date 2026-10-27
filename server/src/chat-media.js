@@ -10,7 +10,7 @@
 
 import { randomBytes } from 'node:crypto';
 import { mkdir, open, rm, stat, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 
 /** The most a single file may be. */
 export const MEDIA_MAX_BYTES = 10 * 1024 * 1024;
@@ -68,9 +68,12 @@ export function cleanFileName(name) {
 }
 
 export function createMediaStore({ dir }) {
+  // Absolute, whatever CHAT_MEDIA_DIR says: res.sendFile refuses a relative
+  // path, and the default is relative to the working directory.
+  const root = resolve(dir);
   const folder = (chatId) => {
     if (!CHAT_ID.test(chatId)) throw new Error('not a chat id');
-    return join(dir, chatId);
+    return join(root, chatId);
   };
 
   return {

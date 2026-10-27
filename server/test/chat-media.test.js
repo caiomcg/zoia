@@ -7,7 +7,7 @@ import { test, describe, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { isAbsolute, join, relative } from 'node:path';
 
 import { cleanFileName, createMediaStore, mediaType, MEDIA_MAX_BYTES } from '../src/chat-media.js';
 
@@ -77,6 +77,14 @@ describe('the store', () => {
     assert.equal(found.type, 'image/png');
     assert.equal(found.size, PNG.length);
     assert.equal(await store.find('bbbb0000', saved.id), null);
+  });
+
+  test('finds a file by an absolute path, even from a relative folder', async () => {
+    const fromCwd = createMediaStore({ dir: relative(process.cwd(), dir) });
+    const saved = await fromCwd.save('aaaa0000', PNG);
+    const found = await fromCwd.find('aaaa0000', saved.id);
+    assert.ok(isAbsolute(found.path), found.path);
+    assert.equal(found.path, join(dir, 'aaaa0000', saved.id));
   });
 
   test('refuses what is not media, and what is too large', async () => {
