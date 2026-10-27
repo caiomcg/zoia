@@ -61,5 +61,16 @@ export function toChatEvent(event: string, data: string): ChatEvent | null {
   if (event === 'deleted' && typeof payload.chatId === 'string') {
     return { type: 'deleted', chatId: payload.chatId, messageId: String(payload.messageId) };
   }
+  if (event === 'reaction' && typeof payload.chatId === 'string') {
+    return {
+      type: 'reaction',
+      chatId: payload.chatId,
+      messageId: String(payload.messageId),
+      emoji: String(payload.emoji),
+      accountId: String(payload.accountId),
+      on: payload.on !== false,
+      reactor: (payload.reactor ?? null) as Extract<ChatEvent, { type: 'reaction' }>['reactor'],
+    };
+  }
   return null;
 }

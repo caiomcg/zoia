@@ -7,6 +7,7 @@ import {
   type DragEvent,
   type KeyboardEvent,
 } from 'react';
+import { createPortal } from 'react-dom';
 import {
   CHAT_MEDIA_MAX_BYTES,
   chatMediaUrl,
@@ -15,6 +16,7 @@ import {
   type ChatMention,
   type ChatMessage,
   type ChatPerson,
+  type ChatReaction,
   type ChatReply,
 } from '../../shared/ipc';
 import type { ChatController } from '../chat/useChat';
@@ -39,6 +41,12 @@ const MESSAGE_MAX = 4000;
 /** Within this many pixels of the bottom counts as reading the latest. */
 const STICK_PX = 80;
 
+/** Offered by a message's react button; anyone may also add to one already there. */
+const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🎉', '🔥', '👀'];
+
+/** How long a failed reaction says so. */
+const REACT_ERROR_MS = 4_000;
+
 /** What the server accepts; it checks the bytes again whatever this says. */
 const ACCEPT = 'image/png,image/jpeg,image/gif,image/webp,video/mp4,video/webm';
 
@@ -54,7 +62,9 @@ function fileProblem(file: File): 'tooLarge' | 'unsupported' | null {
  * write in. Enter sends and Shift+Enter starts a new line. A photo or video
  * goes in by the clip button, by pasting or by dropping it on the chat, and is
  * sent with whatever is typed as its caption. A message is answered from
- * its Reply button, and typing @ offers people to mention, by name. Scrolling to the top loads
+ * its Reply button, and typing @ offers people to mention, by name. The smiley beside it
+ * reacts with an emoji, and a reaction under a message is added to or taken back by
+ * clicking it. Scrolling to the top loads
  * older messages; a new one scrolls into view only when you were already at
  * the bottom, so reading back is not interrupted.
  */
@@ -87,6 +97,9 @@ export default function ChatView({
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const stickRef = useRef(true);
+  // Clears a failed reaction's message; set while one is showing.
+  const reactErrorRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(reactErrorRef.current), []);
   // The scroll height before older messages were added above, to keep your place.
   const anchorRef = useRef<number | null>(null);
 
@@ -209,6 +222,29 @@ export default function ChatView({
     const refused = await chat.deleteMessage(message.id);
     if (refused) setError(t('chat.error.deleteFailed'));
     else if (replyingTo?.id === message.id) setReplyingTo(null);
+  }
+
+  /**
+   * Adds your emoji to a message, or takes it back. A refusal says so for a
+   * moment and goes: nothing typed is waiting on it, unlike a failed send.
+   */
+  async function react(message: ChatMessage, emoji: string, on: boolean) {
+    const refused = await chat.react(message.id, emoji, on);
+    clearTimeout(reactErrorRef.current);
+    if (!refused) {
+      if (reactErrorRef.current !== undefined) setError(null);
+      reactErrorRef.current = undefined;
+      return;
+    }
+    const text =
+      refused === 'too_many_reactions'
+        ? t('chat.error.tooManyReactions')
+        : t('chat.error.reactFailed');
+    setError(text);
+    reactErrorRef.current = setTimeout(() => {
+      setError((current) => (current === text ? null : current));
+      reactErrorRef.current = undefined;
+    }, REACT_ERROR_MS);
   }
 
   /** Answers a message: shown above the box until sent or cancelled. */
@@ -354,6 +390,10 @@ export default function ChatView({
                   onMediaLoad={onMediaLoad}
                   onView={setViewing}
                   onReply={chat.available ? () => reply(m) : undefined}
+                  onReact={
+                    chat.available && me ? (emoji, on) => void react(m, emoji, on) : undefined
+                  }
+                  nameOf={nameOf}
                   onDelete={
                     chat.available && (m.authorId === me || canModerate)
                       ? () => void remove(m)
@@ -547,6 +587,8 @@ function MessageRow({
   onMediaLoad,
   onView,
   onReply,
+  onReact,
+  nameOf,
   onDelete,
   onJump,
 }: {
@@ -564,6 +606,10 @@ function MessageRow({
   onView: (url: string) => void;
   /** Absent while messages cannot be sent. */
   onReply?: () => void;
+  /** Adds your emoji, or takes it back with `on` false; absent while chat is down. */
+  onReact?: (emoji: string, on: boolean) => void;
+  /** Who an account is, for saying who reacted. */
+  nameOf: (id: string) => string;
   /** Yours, or anyone's for an admin; absent otherwise. */
   onDelete?: () => void;
   /** Scrolls to the message a reply answers. */
@@ -572,6 +618,24 @@ function MessageRow({
   const t = useT();
   const name = author?.name ?? t('chat.someone');
   const image = useAccountAvatar(message.authorId, author?.avatar);
+  const [picking, setPicking] = useState(false);
+  const actionsRef = useRef<HTMLSpanElement>(null);
+  // A click anywhere else, or Escape, puts the emoji away again.
+  useEffect(() => {
+    if (!picking) return undefined;
+    const away = (event: MouseEvent) => {
+      if (!actionsRef.current?.contains(event.target as Node)) setPicking(false);
+    };
+    const escape = (event: globalThis.KeyboardEvent) => event.key === 'Escape' && setPicking(false);
+    document.addEventListener('mousedown', away);
+    document.addEventListener('keydown', escape);
+    return () => {
+      document.removeEventListener('mousedown', away);
+      document.removeEventListener('keydown', escape);
+    };
+  }, [picking]);
+  const reactions = message.reactions ?? [];
+  const mineOn = (r: ChatReaction) => Boolean(me && r.accountIds.includes(me));
   return (
     <>
       {dayLabel && (
@@ -588,8 +652,41 @@ function MessageRow({
         className={`chat-message${grouped && !message.replyTo ? ' grouped' : ''}${mine ? ' mine' : ''}${mentionsMe ? ' mentions-me' : ''}`}
         data-message-id={message.id}
       >
-        {(onReply || onDelete) && (
-          <span className="chat-actions">
+        {(onReply || onReact || onDelete) && (
+          <span className={`chat-actions${picking ? ' open' : ''}`} ref={actionsRef}>
+            {picking && onReact && (
+              <span className="chat-react-pick" role="menu" aria-label={t('chat.react')}>
+                {QUICK_REACTIONS.map((emoji) => {
+                  const on = reactions.some((r) => r.emoji === emoji && mineOn(r));
+                  return (
+                    <button
+                      key={emoji}
+                      type="button"
+                      role="menuitemcheckbox"
+                      aria-checked={on}
+                      className={on ? 'on' : undefined}
+                      onClick={() => {
+                        setPicking(false);
+                        onReact(emoji, !on);
+                      }}
+                    >
+                      {emoji}
+                    </button>
+                  );
+                })}
+              </span>
+            )}
+            {onReact && (
+              <button
+                type="button"
+                onClick={() => setPicking((p) => !p)}
+                aria-label={t('chat.react')}
+                aria-expanded={picking}
+                title={t('chat.react')}
+              >
+                <IconSmile />
+              </button>
+            )}
             {onReply && (
               <button
                 type="button"
@@ -656,6 +753,28 @@ function MessageRow({
                 ),
               )}
             </p>
+          )}
+          {reactions.length > 0 && (
+            <div className="chat-reactions">
+              {reactions.map((r) => {
+                const on = mineOn(r);
+                const who = t('chat.reactedWith', {
+                  names: r.accountIds.map(nameOf).join(', '),
+                  emoji: r.emoji,
+                });
+                return (
+                  <ReactionChip
+                    key={r.emoji}
+                    reaction={r}
+                    on={on}
+                    label={who}
+                    me={me}
+                    nameOf={nameOf}
+                    onToggle={onReact ? () => onReact(r.emoji, !on) : undefined}
+                  />
+                );
+              })}
+            </div>
           )}
         </div>
       </li>
@@ -762,6 +881,112 @@ function Suggestion({
       <Avatar name={person.name} live={false} image={image} />
       <span>{person.name}</span>
     </li>
+  );
+}
+
+/** Names past this in a reaction's card are counted, not listed. */
+const REACTORS_SHOWN = 8;
+
+/** Room the card needs above its reaction; with less, it opens below. */
+const CARD_ROOM_PX = 96;
+
+/**
+ * One emoji under a message, and how many reacted with it. Hovering or
+ * focusing it shows a card with the emoji large and who reacted, you first
+ * named as such. The card is put on the body, so the chat's scrolling never
+ * cuts it off, and goes when the chat scrolls under it.
+ */
+function ReactionChip({
+  reaction,
+  on,
+  label,
+  me,
+  nameOf,
+  onToggle,
+}: {
+  reaction: ChatReaction;
+  on: boolean;
+  label: string;
+  me: string | null;
+  nameOf: (id: string) => string;
+  /** Absent while chat is down. */
+  onToggle?: () => void;
+}) {
+  const t = useT();
+  const { language } = useLanguage();
+  const [at, setAt] = useState<DOMRect | null>(null);
+  useEffect(() => {
+    if (!at) return undefined;
+    const hide = () => setAt(null);
+    document.addEventListener('scroll', hide, true);
+    return () => document.removeEventListener('scroll', hide, true);
+  }, [at]);
+
+  const show = (element: HTMLElement) => setAt(element.getBoundingClientRect());
+  const names = reaction.accountIds.map((id) => (id === me ? t('common.youTag') : nameOf(id)));
+  const shown = names.slice(0, REACTORS_SHOWN);
+  const more = names.length - shown.length;
+  const list = new Intl.ListFormat(language, { type: 'conjunction' }).format(
+    more > 0 ? [...shown, t('chat.reactorsMore', { count: more })] : shown,
+  );
+  const below = at !== null && at.top < CARD_ROOM_PX;
+
+  return (
+    <>
+      <button
+        type="button"
+        className={`chat-reaction${on ? ' on' : ''}`}
+        aria-pressed={on}
+        disabled={!onToggle}
+        onClick={onToggle}
+        aria-label={label}
+        onMouseEnter={(event) => show(event.currentTarget)}
+        onMouseLeave={() => setAt(null)}
+        onFocus={(event) => show(event.currentTarget)}
+        onBlur={() => setAt(null)}
+      >
+        <span className="chat-reaction-emoji">{reaction.emoji}</span>
+        <span className="chat-reaction-count">{reaction.accountIds.length}</span>
+      </button>
+      {at &&
+        createPortal(
+          <div
+            className={`chat-reaction-card${below ? ' below' : ''}`}
+            role="tooltip"
+            style={{
+              left: at.left + at.width / 2,
+              top: below ? at.bottom + 8 : at.top - 8,
+            }}
+          >
+            <span className="chat-reaction-card-emoji" aria-hidden="true">
+              {reaction.emoji}
+            </span>
+            <span className="chat-reaction-card-names">{list}</span>
+          </div>,
+          document.body,
+        )}
+    </>
+  );
+}
+
+/** A smiling face: react to this. */
+function IconSmile() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="16"
+      height="16"
+      aria-hidden="true"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <circle cx="12" cy="12" r="9" />
+      <path d="M8.5 14.5a4.5 4.5 0 007 0" />
+      <path d="M9 9.5h.01M15 9.5h.01" />
+    </svg>
   );
 }
 

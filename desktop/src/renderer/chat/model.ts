@@ -1,14 +1,14 @@
 /**
  * The chat's bookkeeping, kept free of React so it can be tested: ordering
  * message ids, merging pages and live messages, where the "new messages"
- * line goes, and who has seen a message.
+ * line goes, who has seen a message, and its reactions.
  *
  * Message ids are version 1 (time-based) uuids from the server. Their text
  * form puts the time's low bits first, so they do not sort as strings; the
  * time is pulled out and compared instead.
  */
 
-import type { ChatMessage } from '../../shared/ipc';
+import type { ChatMessage, ChatReaction } from '../../shared/ipc';
 
 const UUID = /^([0-9a-f]{8})-([0-9a-f]{4})-1([0-9a-f]{3})-([0-9a-f]{4})-([0-9a-f]{12})$/i;
 
@@ -82,4 +82,34 @@ export function sameDay(a: string, b: string): boolean {
 export function continues(previous: ChatMessage | undefined, next: ChatMessage): boolean {
   if (!previous || previous.authorId !== next.authorId) return false;
   return Date.parse(next.sentAt) - Date.parse(previous.sentAt) < 5 * 60_000;
+}
+
+/**
+ * A message's reactions with `accountId`'s `emoji` added, or taken off with
+ * `on` false. Either is harmless to repeat, as it is on the server, so your
+ * own change and its echo on the stream land once. An emoji nobody is left
+ * on goes; a new one goes last.
+ */
+export function applyReaction(
+  reactions: ChatReaction[] | undefined,
+  emoji: string,
+  accountId: string,
+  on: boolean,
+): ChatReaction[] {
+  const list = reactions ?? [];
+  const group = list.find((r) => r.emoji === emoji);
+  if (Boolean(group?.accountIds.includes(accountId)) === on) return list;
+  if (!group) return [...list, { emoji, accountIds: [accountId] }];
+  return list
+    .map((r) =>
+      r.emoji !== emoji
+        ? r
+        : {
+            emoji,
+            accountIds: on
+              ? [...r.accountIds, accountId]
+              : r.accountIds.filter((id) => id !== accountId),
+          },
+    )
+    .filter((r) => r.accountIds.length > 0);
 }

@@ -439,6 +439,19 @@ export function chatDeleteMessage(chatId: string, messageId: string) {
   );
 }
 
+/** Adds your `emoji` to a message, or takes it off with `on` false. */
+export function chatReact(chatId: string, messageId: string, emoji: string, on: boolean) {
+  return attempt(
+    call(
+      chatPath(
+        chatId,
+        `/messages/${encodeURIComponent(messageId)}/reactions/${encodeURIComponent(emoji)}`,
+      ),
+      { method: on ? 'PUT' : 'DELETE' },
+    ).then(() => undefined),
+  );
+}
+
 /** Everyone who can be @mentioned: name and picture, never email. */
 export function chatPeople() {
   return attempt(call<{ people: ChatPerson[] }>('/api/chats/people').then((r) => r.people));

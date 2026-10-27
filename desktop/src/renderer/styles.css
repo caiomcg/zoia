@@ -4743,8 +4743,139 @@ button.danger:active:not(:disabled),
 }
 
 .chat-message:hover .chat-actions,
-.chat-message .chat-actions:focus-within {
+.chat-message .chat-actions:focus-within,
+.chat-message .chat-actions.open {
   opacity: 1;
+}
+
+/* The emoji a message's smiley offers, beside the bar so they are never cut off. */
+.chat-message .chat-actions.open {
+  overflow: visible;
+  z-index: 2;
+}
+
+.chat-react-pick {
+  position: absolute;
+  top: -1px;
+  right: calc(100% + 4px);
+  display: inline-flex;
+  padding: 0 2px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.chat-message .chat-react-pick button {
+  width: 28px;
+  font-size: 16px;
+  border-radius: 4px;
+}
+
+.chat-message .chat-react-pick button.on {
+  background: var(--raised);
+}
+
+/* Reactions under a message: the emoji and how many, yours outlined. */
+.chat-reactions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.chat-reaction {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  height: 24px;
+  padding: 0 8px;
+  font-size: 12px;
+  color: var(--muted);
+  background: var(--surface-2);
+  border: 1px solid transparent;
+  border-radius: 12px;
+}
+
+.chat-reaction:hover:not(:disabled) {
+  border-color: var(--border);
+}
+
+.chat-reaction.on {
+  color: var(--text);
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  border-color: var(--accent);
+}
+
+.chat-reaction-emoji {
+  font-size: 14px;
+  line-height: 1;
+}
+
+.chat-reaction-count {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+/* Who reacted, over the reaction: the emoji large, the names under it. */
+.chat-reaction-card {
+  position: fixed;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: center;
+  max-width: 240px;
+  padding: 8px 12px;
+  text-align: center;
+  pointer-events: none;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  transform: translate(-50%, -100%);
+  animation: chat-reaction-card-in 0.12s ease-out;
+}
+
+.chat-reaction-card.below {
+  transform: translate(-50%, 0);
+}
+
+/* A small point toward the reaction it belongs to. */
+.chat-reaction-card::after {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  width: 8px;
+  height: 8px;
+  content: '';
+  background: var(--surface-2);
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  transform: translate(-50%, -4px) rotate(45deg);
+}
+
+.chat-reaction-card.below::after {
+  top: auto;
+  bottom: 100%;
+  transform: translate(-50%, 4px) rotate(225deg);
+}
+
+.chat-reaction-card-emoji {
+  font-size: 28px;
+  line-height: 1.1;
+}
+
+.chat-reaction-card-names {
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+@keyframes chat-reaction-card-in {
+  from {
+    opacity: 0;
+  }
 }
 
 .chat-message .chat-actions button {

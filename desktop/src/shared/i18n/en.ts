@@ -136,6 +136,11 @@ export const en = {
   'chat.error.unsupported':
     'Only photos (PNG, JPEG, GIF, WebP) and videos (MP4, WebM) can be sent.',
   'chat.reply': 'Reply',
+  'chat.react': 'Add reaction',
+  'chat.reactorsMore': '{count} more',
+  'chat.reactedWith': '{emoji} from {names}',
+  'chat.error.reactFailed': 'Could not add that reaction.',
+  'chat.error.tooManyReactions': 'That message has all the different reactions it can take.',
   'chat.deleteMessage': 'Delete message',
   'chat.deleteMine': 'Delete this message? Everyone stops seeing it.',
   'chat.deleteTheirs': "Delete {name}'s message? Everyone stops seeing it.",

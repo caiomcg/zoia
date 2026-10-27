@@ -39,6 +39,21 @@ describe('toChatEvent', () => {
       chatId: 'c1',
       messageId: 'm1',
     });
+    assert.deepEqual(
+      toChatEvent(
+        'reaction',
+        '{"chatId":"c1","messageId":"m1","emoji":"👍","accountId":"a","on":false,"reactor":{"name":"Ana","avatar":null}}',
+      ),
+      {
+        type: 'reaction',
+        chatId: 'c1',
+        messageId: 'm1',
+        emoji: '👍',
+        accountId: 'a',
+        on: false,
+        reactor: { name: 'Ana', avatar: null },
+      },
+    );
   });
 
   test('ignores what it does not know, and what is not JSON', () => {

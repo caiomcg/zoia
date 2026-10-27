@@ -20,7 +20,7 @@ import type {
   ChatPerson,
   ChatSendExtras,
 } from '../../shared/ipc';
-import { atOrAfter, laterMarker, mergeMessages } from './model';
+import { applyReaction, atOrAfter, laterMarker, mergeMessages } from './model';
 
 export interface ChatThread {
   chatId: string;
@@ -164,6 +164,24 @@ export function useChat({
     );
   }, []);
 
+  /** Adds or takes off someone's emoji on a message in the open chat. */
+  const applyToMessage = useCallback(
+    (id: string, emoji: string, accountId: string, on: boolean) => {
+      setThread(
+        (t) =>
+          t && {
+            ...t,
+            messages: t.messages.map((m) =>
+              m.id === id
+                ? { ...m, reactions: applyReaction(m.reactions, emoji, accountId, on) }
+                : m,
+            ),
+          },
+      );
+    },
+    [],
+  );
+
   const setUnread = useCallback((chatId: string, next: (n: number) => number) => {
     setList(
       (l) =>
@@ -209,6 +227,15 @@ export function useChat({
           case 'deleted':
             if (event.chatId === openRef.current) dropMessage(event.messageId);
             break;
+          case 'reaction':
+            if (event.reactor) {
+              const { reactor } = event;
+              setAuthors((known) => ({ ...known, [event.accountId]: reactor }));
+            }
+            if (event.chatId === openRef.current) {
+              applyToMessage(event.messageId, event.emoji, event.accountId, event.on);
+            }
+            break;
           case 'read':
             if (event.reader) {
               const { reader } = event;
@@ -227,7 +254,7 @@ export function useChat({
             break;
         }
       }),
-    [refresh, loadThread, setUnread, dropMessage],
+    [refresh, loadThread, setUnread, dropMessage, applyToMessage],
   );
 
   // On screen means read, up to the newest message.
@@ -325,6 +352,23 @@ export function useChat({
     [dropMessage],
   );
 
+  /**
+   * Adds your emoji to a message in the open chat, or takes it off with `on`
+   * false. Resolves to the server's refusal code, or null.
+   */
+  const react = useCallback(
+    async (id: string, emoji: string, on: boolean): Promise<string | null> => {
+      const chatId = openRef.current;
+      const self = meRef.current;
+      if (!chatId || !self) return 'not_found';
+      const result = await window.zoia.chat.react(chatId, id, emoji, on);
+      if (!result.ok) return result.error;
+      if (openRef.current === chatId) applyToMessage(id, emoji, self, on);
+      return null;
+    },
+    [applyToMessage],
+  );
+
   /** Runs an admin change, then re-reads the list. Resolves to a refusal code, or null. */
   const change = useCallback(
     async (request: Promise<{ ok: true } | { ok: false; error: string }>) => {
@@ -353,6 +397,7 @@ export function useChat({
     readWhenOpened: showDivider ? readWhenOpened : undefined,
     send,
     deleteMessage,
+    react,
     loadOlder,
     create: (name: string) => change(window.zoia.chat.create(name)),
     rename: (id: string, name: string) => change(window.zoia.chat.rename(id, name)),

@@ -120,6 +120,8 @@ const bridge: ZoiaBridge = {
     people: () => ipcRenderer.invoke(IPC.chatPeople),
     deleteMessage: (chatId, messageId) =>
       ipcRenderer.invoke(IPC.chatDeleteMessage, chatId, messageId),
+    react: (chatId, messageId, emoji, on) =>
+      ipcRenderer.invoke(IPC.chatReact, chatId, messageId, emoji, on),
     read: (chatId, messageId) => ipcRenderer.invoke(IPC.chatRead, chatId, messageId),
     listen: (on) => ipcRenderer.invoke(IPC.chatListen, on),
     onEvent: (cb) => {

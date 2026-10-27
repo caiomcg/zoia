@@ -149,6 +149,14 @@ export interface ChatMessage {
   replyTo?: ChatReply | null;
   /** Who it @mentions, by the names written in it. */
   mentions?: ChatMention[];
+  /** Emoji people reacted with, in the order first used. */
+  reactions?: ChatReaction[];
+}
+
+/** One emoji on a message, and who reacted with it, in the order they did. */
+export interface ChatReaction {
+  emoji: string;
+  accountIds: string[];
 }
 
 /** The message a reply answers, kept with the reply. */
@@ -222,6 +230,16 @@ export type ChatEvent =
   | { type: 'chats' }
   /** A message deleted by its author or an admin. */
   | { type: 'deleted'; chatId: string; messageId: string }
+  /** Someone's emoji added to a message, or taken off. */
+  | {
+      type: 'reaction';
+      chatId: string;
+      messageId: string;
+      emoji: string;
+      accountId: string;
+      on: boolean;
+      reactor: ChatAuthor;
+    }
   /** The stream itself: connected, or lost and retrying. */
   | { type: 'stream'; connected: boolean };
 
@@ -469,6 +487,7 @@ export const IPC = {
   chatAvatar: 'zoia:chat:avatar',
   chatPeople: 'zoia:chat:people',
   chatDeleteMessage: 'zoia:chat:deleteMessage',
+  chatReact: 'zoia:chat:react',
   stageGet: 'zoia:stage:get',
   stageClaim: 'zoia:stage:claim',
   stageRelease: 'zoia:stage:release',

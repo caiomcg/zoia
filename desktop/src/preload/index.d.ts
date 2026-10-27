@@ -176,6 +176,8 @@ export interface ZoiaBridge {
     people(): Promise<ActionOutcome<ChatPerson[]>>;
     /** Deletes a message: your own, or anyone's as an admin. */
     deleteMessage(chatId: string, messageId: string): Promise<ActionOutcome>;
+    /** Adds your emoji to a message, or takes it off with `on` false. */
+    react(chatId: string, messageId: string, emoji: string, on: boolean): Promise<ActionOutcome>;
     read(chatId: string, messageId: string): Promise<ActionOutcome>;
     /** Starts or stops the live stream of changes, which arrive through onEvent. */
     listen(on: boolean): Promise<void>;

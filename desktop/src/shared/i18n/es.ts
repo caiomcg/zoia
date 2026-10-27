@@ -130,6 +130,11 @@ export const es: Messages = {
   'chat.error.unsupported':
     'Solo se pueden enviar fotos (PNG, JPEG, GIF, WebP) y videos (MP4, WebM).',
   'chat.reply': 'Responder',
+  'chat.react': 'Reaccionar',
+  'chat.reactorsMore': '{count} más',
+  'chat.reactedWith': '{emoji} de {names}',
+  'chat.error.reactFailed': 'No se pudo agregar esa reacción.',
+  'chat.error.tooManyReactions': 'Ese mensaje ya tiene todas las reacciones distintas que admite.',
   'chat.deleteMessage': 'Eliminar mensaje',
   'chat.deleteMine': '¿Eliminar este mensaje? Nadie lo verá más.',
   'chat.deleteTheirs': '¿Eliminar el mensaje de {name}? Nadie lo verá más.',

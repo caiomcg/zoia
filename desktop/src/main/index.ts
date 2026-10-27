@@ -465,6 +465,11 @@ function registerIpc(): void {
     api.chatDeleteMessage(String(chatId), String(messageId)),
   );
   ipcMain.handle(
+    IPC.chatReact,
+    (_event, chatId: unknown, messageId: unknown, emoji: unknown, on: unknown) =>
+      api.chatReact(String(chatId), String(messageId), String(emoji), on !== false),
+  );
+  ipcMain.handle(
     IPC.chatSendMedia,
     (_event, chatId: unknown, bytes: unknown, name: unknown, caption: unknown, extras: unknown) => {
       if (!(bytes instanceof Uint8Array) || bytes.length > CHAT_MEDIA_MAX_BYTES) {

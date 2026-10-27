@@ -6,6 +6,7 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  applyReaction,
   compareIds,
   continues,
   laterMarker,
@@ -99,5 +100,28 @@ describe('grouping', () => {
     assert.equal(continues(a, message(2n, 'ana', '2026-10-21T12:05:00Z')), false);
     assert.equal(continues(a, message(2n, 'bia', '2026-10-21T12:01:00Z')), false);
     assert.equal(continues(undefined, a), false);
+  });
+});
+
+describe('reactions', () => {
+  test('add and take off, each harmless twice, an emptied emoji going', () => {
+    let r = applyReaction(undefined, '👍', 'ana', true);
+    r = applyReaction(r, '👍', 'ana', true);
+    r = applyReaction(r, '🎉', 'bia', true);
+    r = applyReaction(r, '👍', 'bia', true);
+    assert.deepEqual(r, [
+      { emoji: '👍', accountIds: ['ana', 'bia'] },
+      { emoji: '🎉', accountIds: ['bia'] },
+    ]);
+    r = applyReaction(r, '🎉', 'bia', false);
+    r = applyReaction(r, '🎉', 'bia', false);
+    r = applyReaction(r, '👍', 'ana', false);
+    assert.deepEqual(r, [{ emoji: '👍', accountIds: ['bia'] }]);
+  });
+
+  test('an unchanged list is the same list', () => {
+    const r = [{ emoji: '👍', accountIds: ['ana'] }];
+    assert.equal(applyReaction(r, '👍', 'ana', true), r);
+    assert.equal(applyReaction(r, '🎉', 'ana', false), r);
   });
 });
