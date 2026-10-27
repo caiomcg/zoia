@@ -60,6 +60,9 @@ const MOVE_RECHECK_MS = 1_200;
 const ACCOUNT_POLL_MS = 30_000;
 const ADMIN_POLL_MS = 10_000;
 
+/** How long "you were disconnected" stays: long enough to be read on coming back. */
+const DISCONNECT_NOTICE_MS = 60_000;
+
 /**
  * Who to list in a channel being hopped to, before its room has connected:
  * the people the channel poll last saw there, plus this device. The old
@@ -122,6 +125,8 @@ export default function App() {
   const [maxChannels, setMaxChannels] = useState(0);
   const [channelCeiling, setChannelCeiling] = useState(0);
   const [channelError, setChannelError] = useState<string | null>(null);
+  // Being disconnected from the channel: told, in yellow, and gone after a while.
+  const [channelNotice, setChannelNotice] = useState<string | null>(null);
   // Bumped to refetch the channel list right after a change, not at the next poll.
   const [channelsVersion, setChannelsVersion] = useState(0);
   const connectingRef = useRef(false);
@@ -331,7 +336,7 @@ export default function App() {
     clearRemoved();
     setHopping(false);
     setChannel(null);
-    setChannelError(t('channel.error.removed'));
+    setChannelNotice(t('channel.error.removed'));
     void room.disconnect();
     // Only a new removal acts; room is read as it is now.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -345,7 +350,7 @@ export default function App() {
     if (!kicked) return;
     clearKicked();
     void leaveChannel().then(() =>
-      setChannelError(t(kicked === 'idle' ? 'channel.error.idle' : 'channel.error.removed')),
+      setChannelNotice(t(kicked === 'idle' ? 'channel.error.idle' : 'channel.error.removed')),
     );
     // Only a new disconnect acts; leaveChannel is read as it is now.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -960,6 +965,17 @@ export default function App() {
       )}
       {channelMessage && (
         <Banner onDismiss={() => dismiss('channel', channelMessage)}>{channelMessage}</Banner>
+      )}
+      {/* Cleared rather than remembered as dismissed: the next disconnect,
+        with the same words, must show again. */}
+      {channelNotice && (
+        <Banner
+          tone="warn"
+          autoDismissMs={DISCONNECT_NOTICE_MS}
+          onDismiss={() => setChannelNotice(null)}
+        >
+          {channelNotice}
+        </Banner>
       )}
       {chatMessage && <Banner onDismiss={() => dismiss('chat', chatMessage)}>{chatMessage}</Banner>}
       {audioWarning && (

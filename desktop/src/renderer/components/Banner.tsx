@@ -6,16 +6,20 @@ import { LEAVE_MS } from '../presence';
  *
  * Every banner used to sit there until whatever caused it happened to change,
  * so a single failed broadcast left a red bar across the app indefinitely.
- * Dismissing it fades it out first, then tells the parent to drop it.
+ * Dismissing it fades it out first, then tells the parent to drop it. A
+ * notice that only says what happened can go by itself after `autoDismissMs`.
  */
 export default function Banner({
   tone = 'error',
   children,
   onDismiss,
+  autoDismissMs,
 }: {
   tone?: 'error' | 'warn';
   children: React.ReactNode;
   onDismiss: () => void;
+  /** Goes by itself after this long; absent, it stays until dismissed. */
+  autoDismissMs?: number;
 }) {
   const t = useT();
   const [leaving, setLeaving] = useState(false);
@@ -32,6 +36,15 @@ export default function Banner({
     setLeaving(true);
     timer.current = setTimeout(onDismiss, LEAVE_MS);
   }
+
+  // Restarted when the message changes: a new one gets its full time.
+  const dismissRef = useRef(dismiss);
+  dismissRef.current = dismiss;
+  useEffect(() => {
+    if (!autoDismissMs) return undefined;
+    const auto = setTimeout(() => dismissRef.current(), autoDismissMs);
+    return () => clearTimeout(auto);
+  }, [autoDismissMs, children]);
 
   return (
     <p
