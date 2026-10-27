@@ -1,10 +1,12 @@
 import {
+  useCallback,
   useEffect,
   useLayoutEffect,
   useRef,
   useState,
   type HTMLAttributes,
   type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from 'react';
 import { createPortal } from 'react-dom';
@@ -52,24 +54,30 @@ function readCollapsed(): boolean {
   }
 }
 
-function IconPanel({ collapsed }: { collapsed: boolean }) {
-  // Points the way the panel will move: out when collapsed, in when open.
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      width="16"
-      height="16"
-      aria-hidden="true"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d={collapsed ? 'M15 6l-6 6 6 6' : 'M9 6l6 6-6 6'} />
-    </svg>
-  );
+/**
+ * Whether the sidebar is down to avatars, remembered. Held by the app, which
+ * lays the sidebar out; it is changed by dragging the sidebar's edge.
+ */
+export function useSidebarCollapsed(): [boolean, (collapsed: boolean) => void] {
+  const [collapsed, setCollapsed] = useState(readCollapsed);
+  const set = useCallback((next: boolean) => {
+    setCollapsed((current) => {
+      if (current === next) return current;
+      try {
+        localStorage.setItem(COLLAPSED_KEY, String(next));
+      } catch {
+        // Remembering is a convenience; the sidebar still changes.
+      }
+      return next;
+    });
+  }, []);
+  return [collapsed, set];
 }
+
+/** The sidebar's two widths; a drag snaps to the nearer when let go. */
+const OPEN_WIDTH = 240;
+const COLLAPSED_WIDTH = 56;
+const SNAP_WIDTH = (OPEN_WIDTH + COLLAPSED_WIDTH) / 2;
 
 export function IconPencil() {
   return (
@@ -107,52 +115,104 @@ export function IconTrash() {
   );
 }
 
+/** Faces shown under a channel you are not in, before the rest become "+N". */
+const MAX_FACES = 5;
+
 /**
- * How many channels or chats there may be, for an admin to change: "3 of 5"
- * between a minus and a plus. The server checks the role and the range again.
+ * Whether a section of the sidebar (channels, chats) is unfolded, remembered
+ * per section. Unfolded unless someone folded it.
  */
-export function LimitStepper({
-  count,
-  max,
-  ceiling,
-  onChange,
+export function useFolded(key: string): [boolean, () => void, () => void] {
+  const storageKey = `zoia.sidebar.${key}Folded`;
+  const [folded, setFolded] = useState(() => {
+    try {
+      return localStorage.getItem(storageKey) === 'true';
+    } catch {
+      return false;
+    }
+  });
+  const save = (value: boolean) => {
+    setFolded(value);
+    try {
+      localStorage.setItem(storageKey, String(value));
+    } catch {
+      // Remembering is a convenience; folding still works.
+    }
+  };
+  return [folded, () => save(!folded), () => save(false)];
+}
+
+/**
+ * A section's title, which folds it, with how many it holds; and for an
+ * admin, a + that shows on hover to add one. At the limit the + stays, and
+ * says where the limit is changed rather than doing nothing silently.
+ */
+export function SectionHeading({
   title,
-  less,
-  more,
+  count,
+  folded,
+  onToggle,
+  add,
 }: {
-  count: number;
-  max: number;
-  ceiling: number;
-  onChange: (max: number) => void;
   title: string;
-  less: string;
-  more: string;
+  count: number;
+  folded: boolean;
+  onToggle: () => void;
+  add?: { label: string; full: string | null; onClick: () => void };
 }) {
-  const t = useT();
   return (
-    <span className="chat-limit" title={title}>
-      <button
-        className="channel-action"
-        disabled={max <= 1}
-        onClick={() => onChange(max - 1)}
-        aria-label={less}
-        title={less}
-      >
-        −
+    <div className="section-heading">
+      <button className="section-toggle" onClick={onToggle} aria-expanded={!folded}>
+        <svg
+          className={`section-chevron${folded ? ' folded' : ''}`}
+          viewBox="0 0 24 24"
+          width="12"
+          height="12"
+          aria-hidden="true"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d="M6 9l6 6 6-6" />
+        </svg>
+        <span className="section-title">{title}</span>
+        <span className="section-count">{count}</span>
       </button>
-      <span className="chat-limit-value">{t('chat.limitValue', { count, max })}</span>
-      <button
-        className="channel-action"
-        disabled={max >= ceiling}
-        onClick={() => onChange(max + 1)}
-        aria-label={more}
-        title={more}
-      >
-        +
-      </button>
-    </span>
+      {add && (
+        <button
+          className="section-add"
+          onClick={add.full ? undefined : add.onClick}
+          aria-disabled={add.full ? 'true' : undefined}
+          title={add.full ?? add.label}
+          aria-label={add.full ?? add.label}
+        >
+          <svg
+            viewBox="0 0 24 24"
+            width="14"
+            height="14"
+            aria-hidden="true"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.5"
+            strokeLinecap="round"
+          >
+            <path d="M12 5v14M5 12h14" />
+          </svg>
+        </button>
+      )}
+    </div>
   );
 }
+
+/** What a channel or chat name may start with, offered beside the name field. */
+const NAME_EMOJI = (
+  '🎮 🕹️ 👾 🎲 🧩 🏆 ⚽ 🏀 🎬 📺 🍿 🎵 🎧 🎤 📢 💬 🗣️ 💻 🛠️ 📚 ' +
+  '🎨 📷 ☕ 🍕 🍺 🔥 ⭐ 🎉 🚀 🌙 🌎 ❤️ 😂 😎 🤖 🐱 🐶 💤 🔒 ✨'
+).split(' ');
+/** As the server counts it: UTF-16 units, so an emoji takes two or more. */
+const NAME_MAX = 32;
 
 /** Naming a channel in place: Enter keeps it, Escape or an empty name drops it. */
 export function ChannelNameField({
@@ -168,6 +228,7 @@ export function ChannelNameField({
   const t = useT();
   const name = label ?? t('sidebar.channelName');
   const [value, setValue] = useState(initial);
+  const [picking, setPicking] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   // Enter, then the blur that follows it, must not create the channel twice.
   const doneRef = useRef(false);
@@ -181,21 +242,64 @@ export function ChannelNameField({
     inputRef.current?.select();
   }, []);
 
+  /** Puts an emoji where the caret is, replacing any selection, if it fits. */
+  const insert = (emoji: string) => {
+    const input = inputRef.current;
+    const start = input?.selectionStart ?? value.length;
+    const end = input?.selectionEnd ?? value.length;
+    const next = value.slice(0, start) + emoji + value.slice(end);
+    if (next.length > NAME_MAX) return;
+    setValue(next);
+    requestAnimationFrame(() =>
+      input?.setSelectionRange(start + emoji.length, start + emoji.length),
+    );
+  };
+  // The field finishes on blur, so nothing here may take the focus from it.
+  const keepFocus = (event: ReactMouseEvent) => event.preventDefault();
+
   return (
     <div className="channel-edit">
-      <input
-        ref={inputRef}
-        value={value}
-        maxLength={32}
-        placeholder={name}
-        aria-label={name}
-        onChange={(event) => setValue(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter') finish(value.trim() || null);
-          if (event.key === 'Escape') finish(null);
-        }}
-        onBlur={() => finish(value.trim() || null)}
-      />
+      <div className="channel-edit-row">
+        <input
+          ref={inputRef}
+          value={value}
+          maxLength={NAME_MAX}
+          placeholder={name}
+          aria-label={name}
+          onChange={(event) => setValue(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') finish(value.trim() || null);
+            if (event.key === 'Escape') finish(null);
+          }}
+          onBlur={() => finish(value.trim() || null)}
+        />
+        <button
+          type="button"
+          className={`channel-edit-emoji${picking ? ' active' : ''}`}
+          onMouseDown={keepFocus}
+          onClick={() => setPicking((open) => !open)}
+          aria-expanded={picking}
+          title={t('sidebar.addEmoji')}
+          aria-label={t('sidebar.addEmoji')}
+        >
+          🙂
+        </button>
+      </div>
+      {picking && (
+        <div className="emoji-grid" role="group" aria-label={t('sidebar.addEmoji')}>
+          {NAME_EMOJI.map((emoji) => (
+            <button
+              key={emoji}
+              type="button"
+              onMouseDown={keepFocus}
+              onClick={() => insert(emoji)}
+              aria-label={emoji}
+            >
+              {emoji}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -214,8 +318,6 @@ export default function Sidebar({
   onJoinChannel,
   onLeaveChannel,
   maxChannels,
-  channelCeiling = maxChannels,
-  onSetChannelLimit,
   onCreateChannel,
   onRenameChannel,
   onRemoveChannel,
@@ -226,6 +328,8 @@ export default function Sidebar({
   onToggleCamera,
   chats,
   onKickMember,
+  collapsed,
+  onCollapsedChange,
 }: {
   members: RoomMember[];
   myName: string;
@@ -246,10 +350,6 @@ export default function Sidebar({
   onLeaveChannel: () => void;
   /** The most channels the server holds, the default included. */
   maxChannels: number;
-  /** The most channels an admin may allow. */
-  channelCeiling?: number;
-  /** Admins only: how many channels there may be. */
-  onSetChannelLimit?: (max: number) => void;
   onCreateChannel: (name: string) => void;
   onRenameChannel: (id: string, name: string) => void;
   onRemoveChannel: (id: string) => void;
@@ -264,6 +364,10 @@ export default function Sidebar({
   chats?: (collapsed: boolean) => ReactNode;
   /** Admins only: takes someone off the server, chat and all (ADR 0037). */
   onKickMember?: (identity: string, name: string) => void;
+  /** Down to avatars, names in tooltips. */
+  collapsed: boolean;
+  /** Dragging the edge past halfway, a double-click on it, or the keyboard. */
+  onCollapsedChange: (collapsed: boolean) => void;
 }) {
   const t = useT();
   const canManageChannels = myRole === 'admin' || myRole === 'super_admin';
@@ -347,19 +451,36 @@ export default function Sidebar({
   // Someone who leaves fades out rather than vanishing; see presence.ts.
   const shownMembers = useLeaving(liveMembers, (m) => m.identity, currentChannel ?? '');
 
-  // Collapsed keeps only the avatars; names move into tooltips.
-  const [collapsed, setCollapsed] = useState(readCollapsed);
+  // The width while the edge is being dragged; null otherwise.
+  const [dragWidth, setDragWidth] = useState<number | null>(null);
+  const startResize = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    const handle = event.currentTarget;
+    handle.setPointerCapture(event.pointerId);
+    const right = handle.parentElement!.getBoundingClientRect().right;
+    const widthAt = (x: number) => Math.min(OPEN_WIDTH, Math.max(COLLAPSED_WIDTH, right - x));
+    const move = (e: PointerEvent) => {
+      const width = widthAt(e.clientX);
+      setDragWidth(width);
+      onCollapsedChange(width < SNAP_WIDTH);
+    };
+    const end = (e: PointerEvent) => {
+      handle.removeEventListener('pointermove', move);
+      handle.removeEventListener('pointerup', end);
+      handle.removeEventListener('pointercancel', end);
+      setDragWidth(null);
+      onCollapsedChange(widthAt(e.clientX) < SNAP_WIDTH);
+    };
+    handle.addEventListener('pointermove', move);
+    handle.addEventListener('pointerup', end);
+    handle.addEventListener('pointercancel', end);
+  };
 
-  function toggleCollapsed() {
-    setCollapsed((current) => {
-      try {
-        localStorage.setItem(COLLAPSED_KEY, String(!current));
-      } catch {
-        // Remembering is a convenience; the toggle still works.
-      }
-      return !current;
-    });
-  }
+  // Folded, the channels list keeps only the one you are in.
+  const [channelsFolded, toggleChannelsFolded, unfoldChannels] = useFolded('channels');
+  const shownChannels =
+    collapsed || !channelsFolded ? channels : channels.filter((c) => c.id === currentChannel);
 
   // Right-clicking someone an admin may kick opens what they can do to them.
   const [menu, setMenu] = useState<{
@@ -447,42 +568,62 @@ export default function Sidebar({
     const observer = new ResizeObserver(measure);
     observer.observe(group);
     return () => observer.disconnect();
-  }, [channels, currentChannel, collapsed, editing, members]);
+  }, [channels, currentChannel, collapsed, editing, members, channelsFolded]);
 
   return (
-    <aside className={`sidebar${collapsed ? ' collapsed' : ''}`}>
-      <div className="sidebar-header">
-        <button
-          className="sidebar-toggle"
-          onClick={toggleCollapsed}
-          aria-expanded={!collapsed}
-          title={collapsed ? t('sidebar.expand') : t('sidebar.collapse')}
-          aria-label={collapsed ? t('sidebar.expand') : t('sidebar.collapse')}
-        >
-          <IconPanel collapsed={collapsed} />
-        </button>
-        {/* On the arrow's line rather than a row of its own below it. */}
-        {!collapsed && channels.length > 0 && (
-          <h2 className="sidebar-title">{t('sidebar.channels')}</h2>
-        )}
-        {!collapsed && channels.length > 0 && canManageChannels && onSetChannelLimit && (
-          <LimitStepper
-            count={channels.length}
-            max={maxChannels}
-            ceiling={channelCeiling}
-            onChange={onSetChannelLimit}
-            title={t('sidebar.limitTitle')}
-            less={t('sidebar.limitLess')}
-            more={t('sidebar.limitMore')}
-          />
-        )}
-      </div>
+    <aside
+      className={`sidebar${collapsed ? ' collapsed' : ''}${dragWidth !== null ? ' resizing' : ''}`}
+      style={dragWidth !== null ? { width: dragWidth } : undefined}
+    >
+      {/* The edge facing the stage: drag it to open or close the sidebar. It
+          follows the pointer, swaps to avatars past halfway, and settles on
+          the nearer width when let go. */}
+      <div
+        className="sidebar-resize"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label={collapsed ? t('sidebar.expand') : t('sidebar.collapse')}
+        title={t('sidebar.resizeHint')}
+        tabIndex={0}
+        onPointerDown={startResize}
+        onDoubleClick={() => onCollapsedChange(!collapsed)}
+        onKeyDown={(event) => {
+          // The sidebar is on the right: left opens it, right closes it.
+          if (event.key === 'ArrowLeft') onCollapsedChange(false);
+          else if (event.key === 'ArrowRight') onCollapsedChange(true);
+          else if (event.key === 'Enter' || event.key === ' ') onCollapsedChange(!collapsed);
+          else return;
+          event.preventDefault();
+        }}
+      />
       <div className="sidebar-scroll">
         {channels.length > 0 && (
           <section
             className={`member-group channel-group${indicator ? ' has-indicator' : ''}`}
             ref={channelGroupRef}
           >
+            {/* In the list, like the chats' heading, not on the panel button's
+                line: two folding controls side by side read as one. */}
+            {!collapsed && (
+              <SectionHeading
+                title={t('sidebar.channels')}
+                count={channels.length}
+                folded={channelsFolded}
+                onToggle={toggleChannelsFolded}
+                add={
+                  canManageChannels
+                    ? {
+                        label: t('sidebar.newChannel'),
+                        full: channels.length >= maxChannels ? t('sidebar.channelsFull') : null,
+                        onClick: () => {
+                          unfoldChannels();
+                          setEditing('new');
+                        },
+                      }
+                    : undefined
+                }
+              />
+            )}
             {indicator && (
               <span
                 className={`channel-indicator${indicator.animate ? ' animate' : ''}`}
@@ -494,7 +635,7 @@ export default function Sidebar({
                 }}
               />
             )}
-            {channels.map((c) => {
+            {shownChannels.map((c) => {
               const current = c.id === currentChannel;
               if (editing === c.id) {
                 return (
@@ -538,10 +679,28 @@ export default function Sidebar({
                       <span className="channel-short" aria-hidden="true">
                         {shortName(c.name)}
                       </span>
+                      {/* A screen, as a chat has its #: what a channel is for. */}
+                      <svg
+                        className="channel-icon"
+                        viewBox="0 0 24 24"
+                        width="16"
+                        height="16"
+                        aria-hidden="true"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                      >
+                        <rect x="2.5" y="4" width="19" height="13" rx="2" />
+                        <path d="M8 20.5h8" />
+                      </svg>
                       <span className="channel-name">{c.name}</span>
-                      <span className="channel-count">
-                        {current ? liveMembers.length : othersInChannel(c, here).length}
-                      </span>
+                      {/* Only someone there is worth a number; an empty one says nothing. */}
+                      {(current ? liveMembers.length : othersInChannel(c, here).length) > 0 && (
+                        <span className="channel-count">
+                          {current ? liveMembers.length : othersInChannel(c, here).length}
+                        </span>
+                      )}
                     </button>
                     {/* Admins only: the server refuses anyone else anyway. */}
                     {canManageChannels && (
@@ -591,37 +750,51 @@ export default function Sidebar({
                     </div>
                   ) : (
                     othersInChannel(c, here).length > 0 && (
-                      // Just faces until you join: enough to see who is where.
+                      // Just faces until you join: enough to see who is where,
+                      // and past a handful, how many more.
                       <div className="channel-people">
-                        {othersInChannel(c, here).map((p) => (
+                        {othersInChannel(c, here)
+                          .slice(0, MAX_FACES)
+                          .map((p) => (
+                            <span
+                              key={p.identity}
+                              title={[
+                                p.role ? `${p.name} · ${t(`account.role.${p.role}`)}` : p.name,
+                                ...(mayKick(p.identity) ? [t('sidebar.kickHint')] : []),
+                              ].join('\n')}
+                              onContextMenu={
+                                mayKick(p.identity)
+                                  ? (event) => openMenu(event, p.identity, p.name, p.role)
+                                  : undefined
+                              }
+                              {...dragFrom(p.identity, p.role, c.id)}
+                            >
+                              <Avatar
+                                name={p.name}
+                                identity={p.identity}
+                                live={c.broadcasters.some((b) => b.identity === p.identity)}
+                                role={p.role}
+                              />
+                            </span>
+                          ))}
+                        {othersInChannel(c, here).length > MAX_FACES && (
                           <span
-                            key={p.identity}
-                            title={[
-                              p.role ? `${p.name} · ${t(`account.role.${p.role}`)}` : p.name,
-                              ...(mayKick(p.identity) ? [t('sidebar.kickHint')] : []),
-                            ].join('\n')}
-                            onContextMenu={
-                              mayKick(p.identity)
-                                ? (event) => openMenu(event, p.identity, p.name, p.role)
-                                : undefined
-                            }
-                            {...dragFrom(p.identity, p.role, c.id)}
+                            className="channel-people-more"
+                            title={othersInChannel(c, here)
+                              .slice(MAX_FACES)
+                              .map((p) => p.name)
+                              .join('\n')}
                           >
-                            <Avatar
-                              name={p.name}
-                              identity={p.identity}
-                              live={c.broadcasters.some((b) => b.identity === p.identity)}
-                              role={p.role}
-                            />
+                            +{othersInChannel(c, here).length - MAX_FACES}
                           </span>
-                        ))}
+                        )}
                       </div>
                     )
                   )}
                 </div>
               );
             })}
-            {editing === 'new' ? (
+            {editing === 'new' && (
               <ChannelNameField
                 initial=""
                 onDone={(name) => {
@@ -629,20 +802,6 @@ export default function Sidebar({
                   if (name) onCreateChannel(name);
                 }}
               />
-            ) : (
-              canManageChannels &&
-              channels.length < maxChannels && (
-                <button
-                  className="channel channel-new"
-                  onClick={() => setEditing('new')}
-                  title={t('sidebar.newChannelTitle', { count: channels.length, max: maxChannels })}
-                >
-                  <span className="channel-short" aria-hidden="true">
-                    +
-                  </span>
-                  <span className="channel-name">{t('sidebar.newChannel')}</span>
-                </button>
-              )
             )}
           </section>
         )}

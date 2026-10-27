@@ -2322,48 +2322,13 @@ button.danger {
 /* ---- people rail --------------------------------------------------------- */
 
 .sidebar {
+  position: relative;
   display: flex;
   flex: 0 0 auto;
   flex-direction: column;
   width: 240px;
   background: var(--surface);
   border-left: 1px solid var(--border);
-}
-
-.sidebar-header {
-  display: flex;
-  gap: 4px;
-  align-items: center;
-  justify-content: flex-start;
-  padding: 10px 8px 2px;
-}
-
-.sidebar-title {
-  margin: 0;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  color: var(--muted);
-  text-transform: uppercase;
-}
-
-.sidebar-toggle {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  color: var(--muted);
-  background: transparent;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-}
-
-.sidebar-toggle:hover {
-  color: var(--text);
-  background: var(--surface-2);
 }
 
 /* ---- channels ------------------------------------------------------------ */
@@ -2374,7 +2339,9 @@ button.danger {
   align-items: center;
   width: 100%;
   padding: 6px 8px;
-  color: var(--muted);
+  /* Between the headings' grey and full white: readable at a glance, with
+     the current one still standing out. */
+  color: #b5bac1;
   font-size: 14px;
   font-weight: 500;
   text-align: left;
@@ -2419,11 +2386,27 @@ button.danger {
   white-space: nowrap;
 }
 
-.channel-count {
-  min-width: 16px;
-  font-size: 12px;
-  text-align: right;
+.channel-icon {
+  flex: 0 0 auto;
   color: var(--muted);
+}
+
+.channel.current .channel-icon,
+.channel:hover .channel-icon {
+  color: inherit;
+}
+
+/* How many are in a channel, as a small pill: only shown when someone is. */
+.channel-count {
+  min-width: 18px;
+  padding: 1px 6px;
+  box-sizing: border-box;
+  font-size: 11px;
+  font-weight: 600;
+  text-align: center;
+  color: var(--text);
+  background: var(--raised);
+  border-radius: 9px;
 }
 
 /* A person dragged over a channel: the whole block lights up where they will land. */
@@ -2489,16 +2472,19 @@ button.danger {
   background: var(--raised);
 }
 
-.channel-new {
-  color: var(--muted);
-  font-size: 13px;
-}
-
 .channel-edit {
   padding: 3px 4px;
 }
 
+.channel-edit-row {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
 .channel-edit input {
+  flex: 1;
+  min-width: 0;
   width: 100%;
   padding: 5px 8px;
   color: var(--text);
@@ -2508,6 +2494,52 @@ button.danger {
   border: 1px solid var(--accent);
   border-radius: 4px;
   outline: none;
+}
+
+/* The emoji button beside a name being edited, and the grid it opens. */
+.channel-edit .channel-edit-emoji {
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  font-size: 16px;
+  line-height: 1;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  filter: grayscale(0.6);
+  transition: filter 0.15s ease;
+}
+
+.channel-edit .channel-edit-emoji:hover,
+.channel-edit .channel-edit-emoji.active {
+  filter: none;
+  background: var(--raised);
+}
+
+.emoji-grid {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 2px;
+  margin-top: 4px;
+  padding: 4px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.emoji-grid button {
+  aspect-ratio: 1;
+  padding: 0;
+  font-size: 16px;
+  line-height: 1;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+}
+
+.emoji-grid button:hover {
+  background: var(--raised);
 }
 
 .channel-members {
@@ -2554,9 +2586,44 @@ button.danger {
   width: 56px;
 }
 
-.sidebar.collapsed .sidebar-header {
-  justify-content: center;
-  padding: 8px 0 0;
+/* The edge that opens and closes the sidebar: wider than it looks, and lit
+   on hover, while dragged, or with the keyboard on it. */
+.sidebar-resize {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -3px;
+  z-index: 5;
+  width: 7px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.sidebar-resize::after {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 3px;
+  width: 2px;
+  content: '';
+  background: transparent;
+  transition: background 0.15s ease;
+}
+
+.sidebar-resize:hover::after,
+.sidebar-resize:focus-visible::after,
+.sidebar.resizing .sidebar-resize::after {
+  background: var(--accent);
+}
+
+.sidebar-resize:focus-visible {
+  outline: none;
+}
+
+/* While dragged: nothing spills past the edge, and no text gets selected. */
+.sidebar.resizing {
+  overflow: hidden;
+  user-select: none;
 }
 
 .sidebar.collapsed .sidebar-scroll {
@@ -2609,10 +2676,10 @@ button.danger {
     0 0 0 4px var(--accent);
 }
 
-.sidebar.collapsed .channel-new,
 .sidebar.collapsed .channel-actions,
 .sidebar.collapsed .channel-edit,
 .sidebar.collapsed .channel-name,
+.sidebar.collapsed .channel-icon,
 .sidebar.collapsed .channel-count,
 .sidebar.collapsed .channel-people,
 .sidebar.collapsed .member-name,
@@ -2635,8 +2702,11 @@ button.danger {
   padding: 12px 8px;
 }
 
+/* Channels and chats read as two groups, not one long list. */
 .member-group + .member-group {
-  margin-top: 18px;
+  margin-top: 22px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
 }
 
 .member-heading {
@@ -4003,29 +4073,6 @@ button.danger:active:not(:disabled),
   font-weight: 700;
 }
 
-.chat-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.chat-limit {
-  display: inline-flex;
-  gap: 4px;
-  align-items: center;
-  margin: 0 4px 6px 0;
-}
-
-.chat-limit .channel-action:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-
-.chat-limit-value {
-  font-size: 11px;
-  color: var(--muted);
-}
-
 .channel.chat {
   gap: 6px;
 }
@@ -4413,11 +4460,6 @@ button.danger:active:not(:disabled),
   border-radius: 0;
 }
 
-/* Beside the channels title, on the right, where the chats' one sits. */
-.sidebar-header .chat-limit {
-  margin: 0 4px 0 auto;
-}
-
 /* Admins: what to do to someone, on a right-click (ADR 0037). Its own
    button styles, so the app-wide button and .danger ones stay out. */
 .member-menu {
@@ -4493,4 +4535,161 @@ button.danger:active:not(:disabled),
   .member-menu {
     animation: none;
   }
+}
+
+/* A section's title in the sidebar (channels, chats): folds it, with its
+   count, and for admins a + that shows on hover. */
+.section-heading {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  min-width: 0;
+  margin-bottom: 4px;
+}
+
+.section-heading .section-toggle {
+  display: inline-flex;
+  flex: 1;
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+  padding: 4px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  text-transform: uppercase;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+}
+
+.section-heading .section-toggle:hover,
+.section-heading .section-toggle:focus-visible {
+  color: var(--text);
+  outline: none;
+}
+
+.section-chevron {
+  flex: 0 0 auto;
+  transition: transform 0.15s ease;
+}
+
+.section-chevron.folded {
+  transform: rotate(-90deg);
+}
+
+.section-count {
+  font-weight: 500;
+  letter-spacing: 0;
+  opacity: 0.7;
+}
+
+.section-heading .section-add {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  color: var(--muted);
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.section-heading:hover .section-add,
+.section-heading .section-add:focus-visible {
+  opacity: 1;
+}
+
+.section-heading .section-add:hover {
+  color: var(--text);
+  background: var(--surface-2);
+}
+
+.section-heading .section-add[aria-disabled='true'] {
+  cursor: default;
+  opacity: 0.4;
+}
+
+.section-heading .section-add[aria-disabled='true']:hover {
+  color: var(--muted);
+  background: transparent;
+}
+
+/* The faces past the first few under another channel, as one chip. */
+.channel-people-more {
+  display: inline-grid;
+  place-items: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  box-sizing: border-box;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--muted);
+  background: var(--surface-2);
+  border-radius: 10px;
+  cursor: default;
+}
+
+/* Settings › Server: a limit, with how many are in use under its name. */
+.settings-field.server-limit {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 0;
+  font-size: 13px;
+  color: var(--text);
+  border-bottom: 1px solid var(--border);
+}
+
+.server-limit-label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.server-limit-label small {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.server-limit-stepper {
+  display: inline-flex;
+  align-items: center;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.server-limit-stepper button {
+  width: 32px;
+  height: 30px;
+  padding: 0;
+  font-size: 16px;
+  line-height: 1;
+  background: var(--surface-2);
+  border: none;
+  border-radius: 0;
+}
+
+.server-limit-stepper button:hover:not(:disabled) {
+  background: var(--raised);
+}
+
+.server-limit-stepper button:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+
+.server-limit-value {
+  min-width: 40px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  text-align: center;
 }

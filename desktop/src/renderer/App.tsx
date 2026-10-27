@@ -10,7 +10,7 @@ import RemoteGrid, {
   type LoadingBroadcast,
   type StageState,
 } from './components/RemoteGrid';
-import Sidebar from './components/Sidebar';
+import Sidebar, { useSidebarCollapsed } from './components/Sidebar';
 import ChatList from './components/ChatList';
 import ChatView from './components/ChatView';
 import { useChat } from './chat/useChat';
@@ -149,6 +149,7 @@ export default function App() {
   };
 
   const room = useRoom();
+  const [sidebarCollapsed, setSidebarCollapsed] = useSidebarCollapsed();
   const gpuCast = useGpuBroadcast();
   const { setRemoteFocus, setRemotePaused } = room;
 
@@ -1145,6 +1146,8 @@ export default function App() {
         </main>
 
         <Sidebar
+          collapsed={sidebarCollapsed}
+          onCollapsedChange={setSidebarCollapsed}
           members={
             // Out of every channel, the last room's list would hide its people
             // from the poll's, since the sidebar takes them for your own.
@@ -1166,8 +1169,6 @@ export default function App() {
           onJoinChannel={(id) => void switchChannel(id)}
           onLeaveChannel={() => void leaveChannel()}
           maxChannels={maxChannels}
-          channelCeiling={channelCeiling}
-          onSetChannelLimit={(max) => void changeChannels(window.zoia.rooms.setLimit(max))}
           onCreateChannel={(name) => void changeChannels(window.zoia.rooms.create(name))}
           onRenameChannel={(id, name) => void changeChannels(window.zoia.rooms.rename(id, name))}
           onRemoveChannel={(id) => void changeChannels(window.zoia.rooms.remove(id))}
@@ -1257,6 +1258,25 @@ export default function App() {
           onSignOut={handleSignOut}
           onAccountsChanged={() => void window.zoia.account.refresh()}
           initialSection={settingsSection}
+          limits={{
+            channels: {
+              count: channels.length,
+              max: maxChannels,
+              ceiling: channelCeiling,
+              onChange: (max) => void changeChannels(window.zoia.rooms.setLimit(max)),
+            },
+            chats: chat.enabled
+              ? {
+                  count: chat.chats.length,
+                  max: chat.max,
+                  ceiling: chat.ceiling,
+                  onChange: (max) =>
+                    void chat.setLimit(max).then((code) => {
+                      if (code) setChatError(chatErrorText(code));
+                    }),
+                }
+              : undefined,
+          }}
         />
       )}
 

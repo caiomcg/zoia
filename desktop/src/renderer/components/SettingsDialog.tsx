@@ -23,11 +23,22 @@ import ReleaseNotesDialog from './ReleaseNotesDialog';
 import { useExit } from '../presence';
 
 export type Section =
-  'profile' | 'accounts' | 'broadcast' | 'general' | 'sounds' | 'updates' | 'about';
+  'profile' | 'accounts' | 'server' | 'broadcast' | 'general' | 'sounds' | 'updates' | 'about';
+
+/** One of the server's limits, for an admin to change. The server checks both. */
+export interface ServerLimit {
+  /** How many there are now. */
+  count: number;
+  max: number;
+  /** The most an admin may allow. */
+  ceiling: number;
+  onChange: (max: number) => void;
+}
 
 const SECTIONS: { id: Section; label: MessageKey; adminOnly?: boolean }[] = [
   { id: 'profile', label: 'settings.nav.profile' },
   { id: 'accounts', label: 'settings.nav.accounts', adminOnly: true },
+  { id: 'server', label: 'settings.nav.server', adminOnly: true },
   { id: 'broadcast', label: 'settings.nav.broadcast' },
   { id: 'general', label: 'settings.nav.general' },
   { id: 'sounds', label: 'settings.nav.sounds' },
@@ -58,6 +69,8 @@ interface SettingsDialogProps {
   onAccountsChanged?: () => void;
   /** Where to open: Accounts, when a sign-up notice was clicked. */
   initialSection?: Section;
+  /** Admins: how many channels and chats there may be. No chats without chat. */
+  limits?: { channels: ServerLimit; chats?: ServerLimit };
 }
 
 /**
@@ -81,6 +94,7 @@ export default function SettingsDialog({
   onSignOut,
   onAccountsChanged,
   initialSection = 'profile',
+  limits,
 }: SettingsDialogProps) {
   const t = useT();
   const [section, setSection] = useState<Section>(initialSection);
@@ -143,6 +157,7 @@ export default function SettingsDialog({
             {section === 'accounts' && account && isAdmin && (
               <AccountsSection me={account} onChanged={() => onAccountsChanged?.()} />
             )}
+            {section === 'server' && isAdmin && limits && <ServerSection limits={limits} />}
             {section === 'broadcast' && (
               <BroadcastSection
                 hardwareDetail={hardwareDetail}
@@ -483,6 +498,58 @@ function GeneralSection() {
         <LanguagePicker />
       </div>
     </>
+  );
+}
+
+/**
+ * How many channels and chats there may be. Set once and rarely touched, so
+ * here rather than beside every heading in the sidebar.
+ */
+function ServerSection({ limits }: { limits: { channels: ServerLimit; chats?: ServerLimit } }) {
+  const t = useT();
+  return (
+    <>
+      <h3>{t('settings.nav.server')}</h3>
+      <p className="muted">{t('server.intro')}</p>
+      <LimitField label={t('server.channels')} limit={limits.channels} />
+      {limits.chats && <LimitField label={t('server.chats')} limit={limits.chats} />}
+    </>
+  );
+}
+
+function LimitField({ label, limit }: { label: string; limit: ServerLimit }) {
+  const t = useT();
+  const { count, max, ceiling, onChange } = limit;
+  return (
+    <div className="settings-field server-limit">
+      <span className="server-limit-label">
+        {label}
+        <small>{t('server.inUse', { count })}</small>
+      </span>
+      <span className="server-limit-stepper">
+        <button
+          type="button"
+          disabled={max <= 1}
+          onClick={() => onChange(max - 1)}
+          aria-label={t('server.less', { what: label })}
+          title={t('server.less', { what: label })}
+        >
+          −
+        </button>
+        <span className="server-limit-value" aria-live="polite">
+          {max}
+        </span>
+        <button
+          type="button"
+          disabled={max >= ceiling}
+          onClick={() => onChange(max + 1)}
+          aria-label={t('server.more', { what: label })}
+          title={t('server.more', { what: label })}
+        >
+          +
+        </button>
+      </span>
+    </div>
   );
 }
 

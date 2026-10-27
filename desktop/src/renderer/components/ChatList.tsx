@@ -1,14 +1,22 @@
 import { useState } from 'react';
 import type { AccountRole } from '../../shared/ipc';
 import type { ChatController } from '../chat/useChat';
-import { ChannelNameField, IconPencil, IconTrash, LimitStepper, shortName } from './Sidebar';
+import {
+  ChannelNameField,
+  IconPencil,
+  IconTrash,
+  SectionHeading,
+  shortName,
+  useFolded,
+} from './Sidebar';
 import { useT } from '../i18n';
 
 /**
  * The text chats, under the channels in the sidebar (ADR 0036). Clicking one
  * opens it in the main area. Admins add, rename and remove chats as they do
- * channels, and set how many there may be. The server checks every one of
- * those again.
+ * channels; how many there may be is in Settings › Server. The server checks
+ * every one of those again. Folded, the list keeps the open chat and any
+ * with something unread.
  */
 export default function ChatList({
   chat,
@@ -30,6 +38,11 @@ export default function ChatList({
   const t = useT();
   const [editing, setEditing] = useState<string | null>(null);
   const canManage = myRole === 'admin' || myRole === 'super_admin';
+  const [folded, toggleFolded, unfold] = useFolded('chats');
+  const shown =
+    collapsed || !folded
+      ? chat.chats
+      : chat.chats.filter((c) => (showing && c.id === chat.openId) || (c.unread ?? 0) > 0);
 
   const report = (pending: Promise<string | null>) =>
     void pending.then((code) => {
@@ -39,23 +52,27 @@ export default function ChatList({
   return (
     <section className="member-group chat-group">
       {!collapsed && (
-        <div className="chat-heading">
-          <h2 className="member-heading">{t('chat.title')}</h2>
-          {canManage && (
-            <LimitStepper
-              count={chat.chats.length}
-              max={chat.max}
-              ceiling={chat.ceiling}
-              onChange={(max) => report(chat.setLimit(max))}
-              title={t('chat.limitTitle')}
-              less={t('chat.limitLess')}
-              more={t('chat.limitMore')}
-            />
-          )}
-        </div>
+        <SectionHeading
+          title={t('chat.title')}
+          count={chat.chats.length}
+          folded={folded}
+          onToggle={toggleFolded}
+          add={
+            canManage
+              ? {
+                  label: t('chat.new'),
+                  full: chat.chats.length >= chat.max ? t('chat.full') : null,
+                  onClick: () => {
+                    unfold();
+                    setEditing('new');
+                  },
+                }
+              : undefined
+          }
+        />
       )}
 
-      {chat.chats.map((c) => {
+      {shown.map((c) => {
         const current = showing && c.id === chat.openId;
         if (editing === c.id) {
           return (
@@ -122,7 +139,7 @@ export default function ChatList({
         );
       })}
 
-      {editing === 'new' ? (
+      {editing === 'new' && (
         <ChannelNameField
           initial=""
           label={t('chat.name')}
@@ -131,14 +148,6 @@ export default function ChatList({
             if (name) report(chat.create(name));
           }}
         />
-      ) : (
-        canManage &&
-        !collapsed &&
-        chat.chats.length < chat.max && (
-          <button className="channel channel-new" onClick={() => setEditing('new')}>
-            <span className="channel-name">{t('chat.new')}</span>
-          </button>
-        )
       )}
     </section>
   );
