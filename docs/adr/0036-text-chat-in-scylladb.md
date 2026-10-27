@@ -98,8 +98,11 @@ credentials and identities.
 - **One replica.** A disk failure loses the history; there is no second node to recover
   from. A three-node cluster is the remedy, and is not worth it for this.
 - **Removing a chat deletes its messages** month by month, from its creation to now.
-- **Photos and videos use the VM's disk with no quota** beyond 10 MB a file and the send
-  rate limit. A busy chat can fill it; a cap per chat or an expiry is the remedy if it does.
+- **Photos and videos share one cap on disk**, 5 GB by default (`CHAT_MEDIA_CAP_GB`), across
+  every chat. Past it the oldest files are deleted first, whichever chat they are in, so they
+  cannot fill the disk the database also uses. Their messages stay, and the app says the
+  photo or video is no longer available. A restart reads the sizes and ages back from disk.
+  Profile pictures are not counted: one small file per device, replaced in place.
 - Scylla 2025.1 is under ScyllaDB's source-available licence, free at this size.
 - The Android viewer does not show chat; it stays a viewer of broadcasts.
 
