@@ -1,11 +1,29 @@
-# A homolog (staging) environment, on a VM of its own: only the app, with its
-# own database. The production VM's caddy routes the homolog hostname here, and
-# the app uses the production LiveKit, so this VM publishes nothing to the
+# A homolog (staging) environment, on a VM of its own: the app and its own
+# stores. The production VM's caddy routes the homolog hostname here, and the
+# app uses the production LiveKit, so this VM publishes nothing to the
 # internet. See docs/adr/0035-homolog-environment.md.
 #
 #   ./deploy.sh --homolog
 
 services:
+  # Chat messages (docs/adr/0036-text-chat-in-scylladb.md), the homolog's own,
+  # set up as production's is in docker-compose.yml. On the compose network
+  # only, with no published ports.
+  scylla:
+    image: scylladb/scylla:2025.1
+    restart: unless-stopped
+    command: --smp 1 --memory 1G --overprovisioned 1 --developer-mode 1
+    expose:
+      - '9042'
+    volumes:
+      - scylla_data:/var/lib/scylla
+    healthcheck:
+      test: ['CMD-SHELL', "cqlsh -e 'SELECT now() FROM system.local' || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+
   app:
     build: .
     restart: unless-stopped
@@ -13,6 +31,7 @@ services:
     environment:
       # The production SFU's API, over the LAN, e.g. http://<prod-vm-ip>:7880.
       LIVEKIT_API_URL: ${LIVEKIT_API_URL:?set LIVEKIT_API_URL in .env to the production VM's LiveKit}
+      SCYLLA_CONTACT_POINTS: scylla
     # Reached by the production caddy across the LAN, so unlike production
     # this port is published.
     ports:
@@ -20,3 +39,10 @@ services:
     volumes:
       # This environment's own database, separate from production's.
       - ./server/data:/app/server/data
+    # Not waiting for scylla to be healthy, as in production: the app connects
+    # when it comes up.
+    depends_on:
+      - scylla
+
+volumes:
+  scylla_data:

@@ -108,11 +108,118 @@ export interface RoomInfo {
 export interface RoomsList {
   rooms: RoomInfo[];
   max: number;
+  /** The most channels an admin may allow; older servers do not say. */
+  ceiling?: number;
   you?: { role: AccountRole; pendingApprovals?: number };
 }
 
 /** How a channel change went; `error` is the server's code when refused. */
 export type ChannelOutcome = { ok: true } | { ok: false; error: string };
+
+/** A text chat (ADR 0036). Not a room: everyone sees every chat. */
+export interface ChatInfo {
+  id: string;
+  name: string;
+  isDefault: boolean;
+  /** Messages others wrote that you have not read, up to 100; null when unknown. */
+  unread: number | null;
+}
+
+/** The chats, how many there may be, and whether messages can be reached. */
+export interface ChatList {
+  chats: ChatInfo[];
+  max: number;
+  /** The most the super admin may allow. */
+  ceiling: number;
+  /** False while the server's message database is not reachable. */
+  available: boolean;
+}
+
+export interface ChatMessage {
+  /** A time-based uuid: orders the messages and is the paging cursor. */
+  id: string;
+  chatId: string;
+  /** The author's account id. */
+  authorId: string;
+  /** Empty when a photo or video is the whole message. */
+  body: string;
+  sentAt: string;
+  attachment?: ChatAttachment | null;
+  /** What it answers, as that message was: messages are never edited. */
+  replyTo?: ChatReply | null;
+  /** Who it @mentions, by the names written in it. */
+  mentions?: ChatMention[];
+}
+
+/** The message a reply answers, kept with the reply. */
+export interface ChatReply {
+  id: string;
+  authorId: string;
+  authorName: string | null;
+  /** Its opening words, up to 200 characters; empty for a bare photo or video. */
+  body: string;
+  kind: 'image' | 'video' | null;
+}
+
+/** Someone @mentioned, by the name they had when it was written. */
+export interface ChatMention {
+  id: string;
+  name: string;
+}
+
+/** Someone who can be @mentioned. */
+export interface ChatPerson {
+  id: string;
+  name: string;
+  avatar: string | null;
+}
+
+/** What may go with a message beside its text. */
+export interface ChatSendExtras {
+  /** The id of the message it answers. */
+  replyTo?: string;
+  /** Account ids; the server keeps those whose @name is in the text. */
+  mentions?: string[];
+}
+
+/** A photo or video sent in a chat, kept on the server's disk. */
+export interface ChatAttachment {
+  id: string;
+  type: string;
+  kind: 'image' | 'video';
+  size: number;
+  name: string | null;
+}
+
+/** The most a photo or video may be. Must match MEDIA_MAX_BYTES in server/src/chat-media.js. */
+export const CHAT_MEDIA_MAX_BYTES = 10 * 1024 * 1024;
+
+/** The scheme the window loads chat photos and videos from; see main/chat-media.ts. */
+export const CHAT_MEDIA_SCHEME = 'zoia-media';
+
+export const chatMediaUrl = (chatId: string, mediaId: string) =>
+  `${CHAT_MEDIA_SCHEME}://file/${chatId}/${mediaId}`;
+
+/** How an author is shown; null for an account that no longer exists. */
+export type ChatAuthor = { name: string; avatar: string | null } | null;
+
+/** A page of messages, newest first, with who wrote them and who read what. */
+export interface ChatPage {
+  messages: ChatMessage[];
+  hasMore: boolean;
+  /** Everyone the page mentions, as author or reader, by account id. */
+  authors: Record<string, ChatAuthor>;
+  /** Account id -> the last message id they have read. */
+  readers: Record<string, string>;
+}
+
+/** What the server pushes while the app is listening. */
+export type ChatEvent =
+  | { type: 'message'; message: ChatMessage; author: ChatAuthor }
+  | { type: 'read'; chatId: string; accountId: string; messageId: string; reader: ChatAuthor }
+  | { type: 'chats' }
+  /** The stream itself: connected, or lost and retrying. */
+  | { type: 'stream'; connected: boolean };
 
 export interface TokenResult {
   token: string;
@@ -337,11 +444,26 @@ export const IPC = {
   adminAccounts: 'zoia:admin:accounts',
   adminAction: 'zoia:admin:action',
   adminMoveDevice: 'zoia:admin:moveDevice',
+  adminKickDevice: 'zoia:admin:kickDevice',
   getToken: 'zoia:token:get',
   roomsList: 'zoia:rooms:list',
   roomsCreate: 'zoia:rooms:create',
   roomsRename: 'zoia:rooms:rename',
   roomsRemove: 'zoia:rooms:remove',
+  roomsSetLimit: 'zoia:rooms:limit',
+  chatList: 'zoia:chat:list',
+  chatCreate: 'zoia:chat:create',
+  chatRename: 'zoia:chat:rename',
+  chatRemove: 'zoia:chat:remove',
+  chatSetLimit: 'zoia:chat:limit',
+  chatMessages: 'zoia:chat:messages',
+  chatSend: 'zoia:chat:send',
+  chatRead: 'zoia:chat:read',
+  chatSendMedia: 'zoia:chat:media',
+  chatListen: 'zoia:chat:listen',
+  chatEvent: 'zoia:chat:event',
+  chatAvatar: 'zoia:chat:avatar',
+  chatPeople: 'zoia:chat:people',
   stageGet: 'zoia:stage:get',
   stageClaim: 'zoia:stage:claim',
   stageRelease: 'zoia:stage:release',
@@ -379,6 +501,7 @@ export const IPC = {
   updaterOpenInstaller: 'zoia:updater:installer:open',
   updaterReleaseNotes: 'zoia:updater:release-notes',
   appVersion: 'zoia:app:version',
+  appEmojiPanel: 'zoia:app:emojiPanel',
   trayCloseGet: 'zoia:tray:close:get',
   trayCloseSet: 'zoia:tray:close:set',
   devToolsGet: 'zoia:devtools:get',

@@ -115,7 +115,14 @@ missing UDP forward, certificates that never issued, containers that are up but 
 | `VIDEO_CODEC` | `vp9` | `vp9` compresses screen content best; `h264` is cheaper to encode. |
 | `ROOM_NAME` | `zoia` | The default channel's room, where clients that name no channel land. |
 | `DEFAULT_CHANNEL_NAME` | `Geral` | The default channel's name until someone renames it. |
-| `MAX_CHANNELS` | `5` | Most channels people can have, default included. See [ADR 0015](adr/0015-channels.md). |
+| `MAX_CHANNELS` | `10` | Most channels people can have, default included. See [ADR 0015](adr/0015-channels.md). |
+| `DEFAULT_CHAT_NAME` | `Geral` | The default chat's name until someone renames it. Chats start at a limit of ten. |
+| `CHAT_MEDIA_CAP_GB` | `5` | All chats' photos and videos together; past it the oldest are deleted first. |
+| `IDLE_KICK_MINUTES` | `10` | Minutes in a channel neither sharing nor watching before the server disconnects someone. `0` turns it off. |
+
+Chat needs ScyllaDB, which `docker-compose.yml` starts beside the app. It takes a minute to
+come up; until it answers, the app runs and broadcasts as usual and chat says it is not
+available yet. Admins change how many channels and chats there may be in Settings › Server.
 
 ### Capacity
 
@@ -205,3 +212,7 @@ The one backup that matters:
 # On the server. These are the access records; the rest is reproducible from git.
 tar czf zoia-data-$(date +%F).tar.gz -C /opt/zoia server/data
 ```
+
+That covers accounts, pictures and chat photos and videos. Chat messages are in ScyllaDB's
+volume instead; the runbook shows how to
+[back them up](RUNBOOK.md#back-up-the-chat-messages).

@@ -268,6 +268,24 @@ docker compose exec app node server/bin/keytool.js device:list <accountId>
 docker compose exec app node server/bin/keytool.js device:revoke <deviceId>
 ```
 
+### Disconnect someone, or find out why they were
+
+Right-click someone in the channel list and choose **Disconnect**: their app leaves its
+channel and the chat and waits until they reconnect. It is not a ban; keeping someone out is
+Disable, above. The server also disconnects anyone who has sat in a channel for
+`IDLE_KICK_MINUTES` (ten) neither sharing nor watching. Both are logged:
+
+```bash
+docker compose logs app | grep -E '\[admin\].*kicked|\[idle\] kicked'
+```
+
+### Chat photos and videos disappear
+
+All chats' photos and videos share `CHAT_MEDIA_CAP_GB` (5 GB). Past it, the oldest files are
+deleted to make room, and their messages say the file is no longer available. That is the cap
+working, not a fault: `docker compose logs app | grep 'over its cap'` shows when it happened.
+Raise the cap in `.env` if the disk has room, then `docker compose up -d app`.
+
 ### Deploy a change
 
 ```bash
@@ -292,7 +310,28 @@ ssh zoia@<server-ip> 'rm /opt/zoia/server/data/backup.db'
 
 It holds password hashes and every email: keep it private, and out of git — `deploy.sh`
 already refuses to transfer `server/data` in either direction. Losing it means everyone
-signs up again. Profile pictures are beside it, in `server/data/avatars/`.
+signs up again. Profile pictures are beside it, in `server/data/avatars/`, and photos and
+videos sent in chats in `server/data/chat-media/`; copy those folders as they are. The list
+of chats and their limit are in this file too.
+
+### Back up the chat messages
+
+Messages and read markers are in ScyllaDB, in the `scylla_data` volume
+([ADR 0036](adr/0036-text-chat-in-scylladb.md)), not in `server/data`. A snapshot is a set of
+hard links, consistent while Scylla runs; archive it, fetch it, then clear it:
+
+```bash
+ssh zoia@<server-ip> 'cd /opt/zoia && docker compose exec -T scylla \
+  sh -c "nodetool snapshot -t backup zoia && \
+         tar czf /tmp/chat.tgz -C /var/lib/scylla/data/zoia --wildcards \"*/snapshots/backup\" && \
+         nodetool clearsnapshot -t backup zoia" && \
+  docker compose cp scylla:/tmp/chat.tgz /tmp/chat.tgz'
+scp zoia@<server-ip>:/tmp/chat.tgz zoia-chat-$(date +%F).tgz
+ssh zoia@<server-ip> 'rm /tmp/chat.tgz'
+```
+
+Losing it loses the history and who has read what; the chats themselves, being in
+`zoia.db`, stay. `docker compose down -v` deletes the volume — never pass `-v` on the VM.
 
 ---
 

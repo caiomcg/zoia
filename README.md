@@ -14,8 +14,8 @@
 ---
 
 Zoia is a small, self-hosted alternative to screen sharing on a chat platform. You run the
-server; nobody else is in the path. There are no accounts, no meeting links, and no company
-deciding what your stream is worth.
+server; nobody else is in the path. There are no third-party accounts, no meeting links, and
+no company deciding what your stream is worth.
 
 It exists because of one thing browsers cannot do: **send the audio of a single
 application**. A web page gets the tab it is in, or your whole desktop mix — never "this
@@ -33,9 +33,17 @@ notifications, your music and your other calls stay out of the stream.
 - **Switch what you share** without stopping, so the picture never drops for viewers.
 - **Preview a camera first**, with device pickers and a level meter, before anything is
   published.
+- **Channels.** Everyone picks a channel to be in, and shares and watches there. Admins add,
+  rename and remove channels, and drag people from one to another.
+- **Text chats**, beside the channels and independent of them: messages, photos and videos,
+  replies, @mentions with autocompletion, unread counts and who has seen what. Channel and
+  chat names can carry an emoji.
 - **Accounts, approved by an admin.** Anyone can sign up with an email and password; an
   admin lets them in. Admins can disable someone, reset a password or sign out one machine,
   all from the app.
+- **No stale people.** An admin can disconnect someone from the server with a right-click,
+  and anyone who sits in a channel for ten minutes neither sharing nor watching is
+  disconnected on their own.
 
 ## How it works
 
@@ -44,7 +52,8 @@ notifications, your music and your other calls stay out of the stream.
  ┌──────────────────────┐                ┌────────────────────────┐
  │  window / screen     │   WebRTC       │  Caddy  (TLS)          │
  │  camera              │ ─────────────► │    ├── app   (Node)    │ ── accounts, tokens,
- │  app audio (WASAPI)  │                │    └── LiveKit (SFU)   │    the stage
+ │  app audio (WASAPI)  │                │    │     └── ScyllaDB  │    the stage, chat
+ │  chat                │                │    └── LiveKit (SFU)   │
  └──────────────────────┘                └────────────────────────┘
                                                    │  many streams in,
                                                    ▼  selected streams out
@@ -202,6 +211,9 @@ Stated plainly, because finding these out later is worse:
   subscribe to one or more streams. This is built for a handful of friends, not a platform.
 - **One audio stream at a time for viewers.** Multiple videos can be visible together, but only
   one stream is audible by default; each viewer can activate another stream and adjust volume.
+- **Chat photos and videos share a 5 GB cap** on the server's disk. Past it the oldest are
+  deleted first; their messages stay and say the file is gone. Messages themselves are kept.
+- **The Android app watches only.** It has no chat and cannot share.
 - **Unsigned binaries.** Code signing costs money this project does not have.
 
 ## Documentation

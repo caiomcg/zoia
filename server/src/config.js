@@ -1,6 +1,8 @@
 /** Environment parsing. Validates once at startup so misconfiguration fails loudly. */
 
 import { storePaths } from './stores.js';
+import { isKeyspaceName } from './scylla.js';
+import { DEFAULT_MAX_CHANNELS } from './channels.js';
 
 const required = ['SESSION_SECRET', 'LIVEKIT_API_KEY', 'LIVEKIT_API_SECRET', 'LIVEKIT_WS_URL'];
 
@@ -17,6 +19,12 @@ export function loadConfig(env = process.env) {
     throw new Error('SESSION_SECRET is too short; generate one with: openssl rand -base64 48');
   }
 
+  if (env.SCYLLA_KEYSPACE !== undefined && !isKeyspaceName(env.SCYLLA_KEYSPACE)) {
+    throw new Error(
+      'SCYLLA_KEYSPACE must be lowercase letters, digits and underscores, starting with a letter',
+    );
+  }
+
   return {
     port: Number(env.PORT ?? 3000),
     publicHost: env.PUBLIC_HOST ?? 'localhost:3000',
@@ -27,7 +35,7 @@ export function loadConfig(env = process.env) {
     channels: {
       defaultName: env.DEFAULT_CHANNEL_NAME ?? 'Geral',
       // The most channels the server holds, the default included.
-      max: Number(env.MAX_CHANNELS ?? 5),
+      max: Number(env.MAX_CHANNELS ?? DEFAULT_MAX_CHANNELS),
       file: env.CHANNEL_STORE_FILE ?? 'server/data/channels.json',
     },
     // Number of proxy hops to trust. Behind the caddy front end this is 1; if it
@@ -51,6 +59,28 @@ export function loadConfig(env = process.env) {
       deviceIdleDays: Number(env.ACCOUNT_DEVICE_IDLE_DAYS ?? 60),
       maxPending: Number(env.ACCOUNT_MAX_PENDING ?? 20),
     },
+    // Text chats (ADR 0036). The list is in the database above; messages are
+    // in ScyllaDB, and without SCYLLA_CONTACT_POINTS chat is off.
+    chat: {
+      defaultName: env.DEFAULT_CHAT_NAME ?? 'Geral',
+      // Photos and videos sent in chats, up to 10 MB each. Under server/data
+      // so it shares the store's volume and deploy.sh's exclude.
+      mediaDir: env.CHAT_MEDIA_DIR ?? 'server/data/chat-media',
+      // All chats' photos and videos together; past it the oldest go first.
+      mediaCapBytes: Number(env.CHAT_MEDIA_CAP_GB ?? 5) * 1024 ** 3,
+      scylla: env.SCYLLA_CONTACT_POINTS
+        ? {
+            contactPoints: env.SCYLLA_CONTACT_POINTS.split(',')
+              .map((p) => p.trim())
+              .filter(Boolean),
+            localDataCenter: env.SCYLLA_LOCAL_DC ?? 'datacenter1',
+            keyspace: env.SCYLLA_KEYSPACE ?? 'zoia',
+          }
+        : null,
+    },
+    // Minutes someone may sit in a channel neither sharing nor watching before
+    // the server kicks them (ADR 0037). 0 turns it off.
+    idleKickMinutes: Number(env.IDLE_KICK_MINUTES ?? 10),
     // Profile pictures, one file per device. Under server/data so it shares the
     // store's volume and deploy.sh's exclude.
     avatarDir: env.AVATAR_DIR ?? 'server/data/avatars',

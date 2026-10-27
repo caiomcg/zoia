@@ -21,6 +21,7 @@
     "version:check": "node scripts/check-release-version.js"
   },
   "dependencies": {
+    "cassandra-driver": "^4.10.0",
     "cookie-parser": "^1.4.7",
     "express": "^5.1.0",
     "express-rate-limit": "^8.1.0",

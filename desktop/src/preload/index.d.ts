@@ -19,6 +19,13 @@ import type {
   AdminAction,
   AdminActionOptions,
   IssuedCode,
+  ChatList,
+  ChatPage,
+  ChatMessage,
+  ChatAuthor,
+  ChatPerson,
+  ChatSendExtras,
+  ChatEvent,
 } from '../shared/ipc';
 
 export interface ZoiaBridge {
@@ -54,6 +61,8 @@ export interface ZoiaBridge {
     ): Promise<ActionOutcome<{ account?: AdminAccount } & Partial<IssuedCode>>>;
     /** Asks a machine (a participant identity) in a channel to switch to another. */
     moveDevice(id: string, channel: string): Promise<ActionOutcome<{ moved: boolean }>>;
+    /** Takes one machine off the server: out of its channel and the chat. Not a ban. */
+    kickDevice(id: string): Promise<ActionOutcome<{ kicked: boolean }>>;
   };
   token: {
     /** A join token for a channel; the first channel when none is named. */
@@ -66,6 +75,8 @@ export interface ZoiaBridge {
     rename(id: string, name: string): Promise<ChannelOutcome>;
     /** Only an empty channel that is not the default. */
     remove(id: string): Promise<ChannelOutcome>;
+    /** How many channels there may be, the default included. Admins only. */
+    setLimit(max: number): Promise<ChannelOutcome>;
   };
   stage: {
     get(): Promise<StageState>;
@@ -138,6 +149,38 @@ export interface ZoiaBridge {
     /** Someone's picture as a data: URL, or null when they have none. */
     get(identity: string, version: string): Promise<string | null>;
   };
+  /** Text chats (ADR 0036). Refusals come back as the server's error code. */
+  chat: {
+    list(): Promise<ActionOutcome<ChatList>>;
+    create(name: string): Promise<ActionOutcome>;
+    rename(id: string, name: string): Promise<ActionOutcome>;
+    remove(id: string): Promise<ActionOutcome>;
+    /** The super admin only. */
+    setLimit(max: number): Promise<ActionOutcome>;
+    /** Newest first; `before` is the oldest message already shown. */
+    messages(chatId: string, before?: string): Promise<ActionOutcome<ChatPage>>;
+    send(
+      chatId: string,
+      body: string,
+      extras?: ChatSendExtras,
+    ): Promise<ActionOutcome<{ message: ChatMessage; author: ChatAuthor }>>;
+    /** A photo or video as a message of its own, up to 10 MB, with an optional caption. */
+    sendMedia(
+      chatId: string,
+      bytes: Uint8Array,
+      name: string,
+      caption: string,
+      extras?: ChatSendExtras,
+    ): Promise<ActionOutcome<{ message: ChatMessage; author: ChatAuthor }>>;
+    /** Everyone who can be @mentioned. */
+    people(): Promise<ActionOutcome<ChatPerson[]>>;
+    read(chatId: string, messageId: string): Promise<ActionOutcome>;
+    /** Starts or stops the live stream of changes, which arrive through onEvent. */
+    listen(on: boolean): Promise<void>;
+    onEvent(cb: (event: ChatEvent) => void): () => void;
+    /** An author's picture as a data: URL, or null when they have none. */
+    avatar(accountId: string, version: string): Promise<string | null>;
+  };
   /** Sends a renderer-side failure to the server. */
   report(entry: { kind: string; message: string; stack?: string; context?: string }): void;
   gpu: {
@@ -155,6 +198,8 @@ export interface ZoiaBridge {
   };
   app: {
     version(): Promise<string>;
+    /** Opens the system's emoji picker over the focused field (Windows, macOS). */
+    emojiPanel(): Promise<void>;
     /** The OS this copy runs on; application audio is Windows-only. */
     platform: NodeJS.Platform;
   };

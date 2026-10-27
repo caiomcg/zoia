@@ -8,10 +8,15 @@ import { createTokenIssuer } from './token.js';
 import { createStage } from './stage.js';
 import { createWhipPublisher } from './whip.js';
 import { createReportStore } from './reports.js';
-import { createChannelStore } from './channels.js';
+import { CHANNEL_CEILING, createChannelStore } from './channels.js';
 import { createAvatarStore } from './avatars.js';
 import { openStores } from './stores.js';
+import { createLimitSetting } from './settings.js';
+import { connectInBackground } from './scylla.js';
+import { createMessageStore } from './messages.js';
+import { createMediaStore } from './chat-media.js';
 import { createApp } from './app.js';
+import { createIdleSweeper } from './idle.js';
 
 try {
   process.loadEnvFile('.env');
@@ -21,9 +26,15 @@ try {
 
 const config = loadConfig();
 
-const { devices: deviceStore, accounts: accountStore } = openStores({
+const {
+  db,
+  devices: deviceStore,
+  accounts: accountStore,
+  chats: chatStore,
+} = openStores({
   databaseFile: config.databaseFile,
   maxPending: config.accounts.maxPending,
+  defaultChatName: config.chat.defaultName,
 });
 const avatarStore = createAvatarStore({ dir: config.avatarDir });
 const tokenIssuer = createTokenIssuer({
@@ -47,6 +58,13 @@ const channels = createChannelStore({
   defaultId: config.roomName,
   defaultName: config.channels.defaultName,
   max: config.channels.max,
+  // Admins raise or lower it while the app runs; MAX_CHANNELS is where it starts.
+  limit: createLimitSetting({
+    db,
+    key: 'channels.max',
+    fallback: config.channels.max,
+    max: CHANNEL_CEILING,
+  }),
   makeRuntime: (id) => {
     const stage = createStage({ rooms, roomName: id });
     const whip = createWhipPublisher({
@@ -63,6 +81,19 @@ const channels = createChannelStore({
 
 const reports = createReportStore();
 
+// Chat messages live in ScyllaDB (ADR 0036), which may take a minute to start.
+// The app does not wait for it: until it answers, chat says it is unavailable
+// and everything else works.
+let messageStore = null;
+if (config.chat.scylla) {
+  connectInBackground({
+    ...config.chat.scylla,
+    onConnected: (client) => {
+      messageStore = createMessageStore({ client, keyspace: config.chat.scylla.keyspace });
+    },
+  });
+}
+
 const app = createApp({
   config,
   tokenIssuer,
@@ -71,13 +102,31 @@ const app = createApp({
   deviceStore,
   avatarStore,
   accountStore,
+  chatStore,
+  messageStore: () => messageStore,
+  chatMediaStore: createMediaStore({
+    dir: config.chat.mediaDir,
+    capBytes: config.chat.mediaCapBytes,
+  }),
 });
+
+// Nobody sits in a channel for long neither sharing nor watching; ADR 0037.
+if (config.idleKickMinutes > 0) {
+  createIdleSweeper({ channels, idleMs: config.idleKickMinutes * 60_000 }).start();
+}
 
 app.listen(config.port, () => {
   console.log(`[zoia] listening on :${config.port}`);
   console.log(`[zoia] public host  ${config.publicHost}`);
   console.log(`[zoia] livekit ws   ${config.livekit.wsUrl}`);
-  console.log(`[zoia] channels     default ${config.roomName}, up to ${config.channels.max}`);
+  console.log(`[zoia] channels     default ${config.roomName}, up to ${channels.max}`);
+  console.log(
+    `[zoia] idle kick    ${config.idleKickMinutes > 0 ? `${config.idleKickMinutes} min` : 'off'}`,
+  );
+  const scylla = config.chat.scylla;
+  console.log(
+    `[zoia] chat         ${scylla ? `scylla at ${scylla.contactPoints.join(', ')}` : 'off (SCYLLA_CONTACT_POINTS not set)'}`,
+  );
   if (config.trustProxy === 0) {
     console.warn('[zoia] TRUST_PROXY is 0 — behind a reverse proxy this breaks rate limiting');
   }

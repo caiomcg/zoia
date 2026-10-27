@@ -51,7 +51,13 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: npm
       - run: npm ci
+      # The message store's tests need a real ScyllaDB (ADR 0036); without
+      # SCYLLA_TEST_CONTACT_POINTS they skip, and so would its coverage.
+      - name: Start ScyllaDB
+        run: scripts/ci-scylla.sh
       - run: npm run test:coverage
+        env:
+          SCYLLA_TEST_CONTACT_POINTS: 127.0.0.1
 
   # The README shows a coverage figure. This keeps it from quietly rotting:
   # if line coverage drops below the floor, CI fails and the number has to be
@@ -65,8 +71,12 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Start ScyllaDB
+        run: scripts/ci-scylla.sh
       - name: Enforce the coverage floor
         run: npm run coverage:check
+        env:
+          SCYLLA_TEST_CONTACT_POINTS: 127.0.0.1
 
   # The desktop app was invisible to CI until now, which meant a type error or
   # a lint failure only surfaced on someone's Windows machine at package time.

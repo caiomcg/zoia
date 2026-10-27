@@ -23,6 +23,12 @@ import type {
   AccountState,
   AdminAccount,
   IssuedCode,
+  ChatList,
+  ChatPage,
+  ChatMessage,
+  ChatAuthor,
+  ChatPerson,
+  ChatSendExtras,
 } from '../shared/ipc';
 import { getServerUrl } from './config';
 
@@ -175,6 +181,13 @@ export function adminAction(id: string, action: string, options: { role?: Accoun
 }
 
 /** Asks a machine in a channel to switch to another; what dragging someone does. */
+/** Takes one machine off the server: its app leaves everything, chat too. Admins only. */
+export function adminKickDevice(id: string) {
+  return call<{ kicked: boolean }>(`/api/admin/devices/${encodeURIComponent(id)}/kick`, {
+    method: 'POST',
+  });
+}
+
 export function adminMoveDevice(id: string, channel: string) {
   return call<{ moved: boolean }>(`/api/admin/devices/${encodeURIComponent(id)}/move`, {
     method: 'POST',
@@ -231,6 +244,11 @@ export function roomsRename(id: string, name: string) {
       body: JSON.stringify({ name }),
     }),
   );
+}
+
+/** How many channels there may be; admins only, which the server checks. */
+export function roomsSetLimit(max: number) {
+  return outcome(call('/api/rooms/limit', { method: 'PUT', body: JSON.stringify({ max }) }));
 }
 
 export function roomsRemove(id: string) {
@@ -364,4 +382,107 @@ export function stageRelease() {
     method: 'POST',
     body: JSON.stringify({ room: currentRoom }),
   });
+}
+
+// ---- text chat (ADR 0036) -------------------------------------------------
+
+const chatPath = (id: string, rest = '') => `/api/chats/${encodeURIComponent(id)}${rest}`;
+
+export function chatList() {
+  return attempt(call<ChatList>('/api/chats'));
+}
+
+export function chatCreate(name: string) {
+  return attempt(
+    call('/api/chats', { method: 'POST', body: JSON.stringify({ name }) }).then(() => undefined),
+  );
+}
+
+export function chatRename(id: string, name: string) {
+  return attempt(
+    call(chatPath(id), { method: 'PATCH', body: JSON.stringify({ name }) }).then(() => undefined),
+  );
+}
+
+export function chatRemove(id: string) {
+  return attempt(call(chatPath(id), { method: 'DELETE' }).then(() => undefined));
+}
+
+export function chatSetLimit(max: number) {
+  return attempt(
+    call('/api/chats/limit', { method: 'PUT', body: JSON.stringify({ max }) }).then(
+      () => undefined,
+    ),
+  );
+}
+
+export function chatMessages(chatId: string, before?: string) {
+  const query = before ? `?before=${encodeURIComponent(before)}` : '';
+  return attempt(call<ChatPage>(chatPath(chatId, `/messages${query}`)));
+}
+
+export function chatSend(chatId: string, body: string, extras: ChatSendExtras = {}) {
+  return attempt(
+    call<{ message: ChatMessage; author: ChatAuthor }>(chatPath(chatId, '/messages'), {
+      method: 'POST',
+      body: JSON.stringify({ body, ...extras }),
+    }),
+  );
+}
+
+/** Everyone who can be @mentioned: name and picture, never email. */
+export function chatPeople() {
+  return attempt(call<{ people: ChatPerson[] }>('/api/chats/people').then((r) => r.people));
+}
+
+export function chatRead(chatId: string, messageId: string) {
+  return attempt(
+    call(chatPath(chatId, '/read'), {
+      method: 'POST',
+      body: JSON.stringify({ messageId }),
+    }).then(() => undefined),
+  );
+}
+
+/** An author's picture by account, as fetchAvatar does it by device. */
+export async function fetchAccountAvatar(
+  accountId: string,
+  version: string,
+): Promise<string | null> {
+  if (!AVATAR_ID.test(accountId) || !AVATAR_VERSION.test(version)) return null;
+  const base = getServerUrl();
+  if (!base) throw new NoServerError();
+
+  const res = await net.fetch(`${base}/api/avatar/account/${accountId}?v=${version}`, {
+    credentials: 'include',
+  });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new ApiError(res.status, null);
+
+  const type = res.headers.get('content-type') ?? '';
+  if (!/^image\/(webp|png|jpeg)$/.test(type)) return null;
+  const bytes = Buffer.from(await res.arrayBuffer());
+  return `data:${type};base64,${bytes.toString('base64')}`;
+}
+
+/** Sends a photo or video as a message of its own, with an optional caption. */
+export function chatSendMedia(
+  chatId: string,
+  bytes: Uint8Array,
+  name: string,
+  caption: string,
+  extras: ChatSendExtras = {},
+) {
+  const query = new URLSearchParams();
+  if (name) query.set('name', name);
+  if (caption.trim()) query.set('caption', caption);
+  if (extras.replyTo) query.set('replyTo', extras.replyTo);
+  if (extras.mentions?.length) query.set('mentions', extras.mentions.join(','));
+  return attempt(
+    call<{ message: ChatMessage; author: ChatAuthor }>(chatPath(chatId, `/media?${query}`), {
+      method: 'POST',
+      body: Buffer.from(bytes),
+      headers: { 'content-type': 'application/octet-stream' },
+    }),
+  );
 }

@@ -3,19 +3,23 @@ import Banner from './components/Banner';
 import CameraDialog from './components/CameraDialog';
 import AuthScreen from './components/AuthScreen';
 import WaitingScreen from './components/WaitingScreen';
+import KickedScreen from './components/KickedScreen';
 import Player from './components/Player';
 import RemoteGrid, {
   type GridControls,
   type LoadingBroadcast,
   type StageState,
 } from './components/RemoteGrid';
-import Sidebar from './components/Sidebar';
+import Sidebar, { useSidebarCollapsed } from './components/Sidebar';
+import ChatList from './components/ChatList';
+import ChatView from './components/ChatView';
+import { useChat } from './chat/useChat';
 import SourcePicker from './components/SourcePicker';
 import SettingsDialog, { type Section as SettingsSection } from './components/SettingsDialog';
 import ReleaseNotesDialog from './components/ReleaseNotesDialog';
 import Splash from './components/Splash';
 import StatusLight, { type StatusStat, type StatusTone } from './components/StatusLight';
-import { WHIP_SUFFIX, useRoom, type RoomMember } from './livekit/useRoom';
+import { WHIP_SUFFIX, useRoom, type KickReason, type RoomMember } from './livekit/useRoom';
 import { useGpuBroadcast } from './livekit/useGpuBroadcast';
 import { useSoundCues } from './sounds/useSoundCues';
 import { LAST_VERSION_STORAGE_KEY, shouldShowReleaseNotes } from './whats-new';
@@ -117,6 +121,7 @@ export default function App() {
   const [channel, setChannel] = useState<string | null>(null);
   const [channels, setChannels] = useState<RoomInfo[]>([]);
   const [maxChannels, setMaxChannels] = useState(0);
+  const [channelCeiling, setChannelCeiling] = useState(0);
   const [channelError, setChannelError] = useState<string | null>(null);
   // Bumped to refetch the channel list right after a change, not at the next poll.
   const [channelsVersion, setChannelsVersion] = useState(0);
@@ -144,6 +149,7 @@ export default function App() {
   };
 
   const room = useRoom();
+  const [sidebarCollapsed, setSidebarCollapsed] = useSidebarCollapsed();
   const gpuCast = useGpuBroadcast();
   const { setRemoteFocus, setRemotePaused } = room;
 
@@ -178,9 +184,15 @@ export default function App() {
     return window.zoia.pairing.onChange(setStatus);
   }, []);
 
+  // Kicked off the server (ADR 0037): an admin did it, or this machine sat
+  // in a channel idle. Nothing talks to the server until it is reconnected.
+  const [kickedOff, setKickedOff] = useState<KickReason | null>(null);
+
   // Signed in and let in: an account still waiting for approval is signed in
   // but can reach nothing, so nothing that talks to the room runs for it.
-  const usable = Boolean(status?.paired) && status?.account?.status !== 'pending';
+  // Kicked, the same: no channel list, no chat, no account checks.
+  const usable =
+    Boolean(status?.paired) && status?.account?.status !== 'pending' && kickedOff === null;
   const account = status?.account ?? null;
   const pendingApprovals = account?.pendingApprovals ?? 0;
 
@@ -234,10 +246,11 @@ export default function App() {
     const load = () =>
       window.zoia.rooms
         .list()
-        .then(({ rooms, max, you }) => {
+        .then(({ rooms, max, ceiling, you }) => {
           if (cancelled) return;
           setChannels(rooms);
           setMaxChannels(max);
+          setChannelCeiling(ceiling ?? max);
           setBooted(true);
           // Made or unmade an admin, or new sign-ups waiting: take it in now.
           const known = accountRef.current;
@@ -278,6 +291,7 @@ export default function App() {
 
   const CHANNEL_ERRORS: Record<string, MessageKey> = {
     room_limit: 'channel.error.limit',
+    invalid_limit: 'channel.error.limitRange',
     room_not_empty: 'channel.error.notEmpty',
     room_is_default: 'channel.error.isDefault',
     invalid_name: 'channel.error.invalidName',
@@ -314,6 +328,44 @@ export default function App() {
     setHopping(true);
     setChannel(id);
     await room.disconnect();
+  }
+
+  // An admin took this machine out of its channel: out of every channel, and
+  // say so, rather than a lost connection that would try again.
+  const { removed, clearRemoved } = room;
+  useEffect(() => {
+    if (!removed) return;
+    clearRemoved();
+    setHopping(false);
+    setChannel(null);
+    // A kick says why on its own screen.
+    setChannelError(kickedOff ? null : t('channel.error.removed'));
+    void room.disconnect();
+    // Only a new removal acts; room is read as it is now.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [removed]);
+
+  // Kicked off the server: the screen below takes over, and the effect that
+  // follows `usable` leaves the channel, sharing stopped.
+  const { kicked, clearKicked } = room;
+  useEffect(() => {
+    if (!kicked) return;
+    clearKicked();
+    setKickedOff(kicked);
+  }, [kicked, clearKicked]);
+
+  /**
+   * Admins: takes someone off the server altogether. No confirmation: the
+   * menu names who it is about, and they can reconnect at once.
+   */
+  async function kickMember(identity: string) {
+    try {
+      const outcome = await window.zoia.admin.kickDevice(identity);
+      setChannelError(outcome.ok ? null : t('channel.error.kickFailed', { code: outcome.error }));
+    } catch {
+      setChannelError(t('channel.error.unreachable'));
+    }
+    setChannelsVersion((v) => v + 1);
   }
 
   // An admin moved this machine: go, the way a click would.
@@ -536,10 +588,57 @@ export default function App() {
     [room, myIdentity],
   );
 
+  // ---- text chat (ADR 0036) -----------------------------------------------
+  // The main area shows the broadcasts while you watch something, and the
+  // chat otherwise. Tabs switch between them; starting to watch brings the
+  // stage forward, and watching nothing any more brings the chat back.
+  const [view, setView] = useState<'stage' | 'chat'>('chat');
+  const [focused, setFocused] = useState(() => document.hasFocus());
+  useEffect(() => {
+    const onFocus = () => setFocused(true);
+    const onBlur = () => setFocused(false);
+    window.addEventListener('focus', onFocus);
+    window.addEventListener('blur', onBlur);
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      window.removeEventListener('blur', onBlur);
+    };
+  }, []);
+  const watchingSomething =
+    stage.watching.length > 0 || stage.cameras.length > 0 || stage.localWatched;
+  const wasWatching = useRef(watchingSomething);
+  useEffect(() => {
+    if (watchingSomething !== wasWatching.current) setView(watchingSomething ? 'stage' : 'chat');
+    wasWatching.current = watchingSomething;
+  }, [watchingSomething]);
+  const [chatError, setChatError] = useState<string | null>(null);
+  // A stage only when there is something to put on it: someone in your
+  // channel, you included, sharing a screen or a camera. Otherwise — out of
+  // every channel, or in one where nobody is live — there is only the chat.
+  const someoneLive = channel !== null && room.members.some((m) => m.isBroadcasting);
+  const chatShownIfEnabled = !someoneLive || view === 'chat';
+  const chat = useChat({
+    usable,
+    me: accountId,
+    visible: chatShownIfEnabled && focused,
+  });
+  const chatShown = chat.enabled && chatShownIfEnabled;
+
   if (!status) return <Splash />;
   if (!status.paired) return <AuthScreen status={status} onSignedIn={setStatus} />;
   if (status.account?.status === 'pending') {
     return <WaitingScreen status={status} onChange={setStatus} />;
+  }
+  if (kickedOff) {
+    return (
+      <KickedScreen
+        reason={kickedOff}
+        onReconnect={() => {
+          setChannelError(null);
+          setKickedOff(null);
+        }}
+      />
+    );
   }
   if (!booted) return <Splash />;
 
@@ -733,6 +832,7 @@ export default function App() {
   const audioWarning = show('audio', room.audioWarning);
   const stageMessage = show('stage', stageError);
   const channelMessage = show('channel', channelError);
+  const chatMessage = show('chat', chatError);
   const gpuWarning = gpuLive ? show('gpustatus', gpuCast.status?.error) : null;
   const activeRemoteIds = new Set(room.remoteScreens.map((screen) => screen.participantIdentity));
   const loadingBroadcasts: LoadingBroadcast[] = room.members
@@ -747,6 +847,24 @@ export default function App() {
   // Only while live: a stale list would say people are watching nothing.
   const viewerIds = new Set(isLive ? room.viewers.map((v) => v.identity) : []);
   const loadingRemoteIds = new Set(loadingBroadcasts.map((broadcast) => broadcast.identity));
+
+  /** What an admin is told when the server refuses a chat change. */
+  function chatErrorText(code: string): string {
+    switch (code) {
+      case 'chat_limit':
+        return t('chat.error.limit');
+      case 'invalid_name':
+        return t('chat.error.name');
+      case 'invalid_limit':
+        return t('chat.error.limitRange');
+      case 'forbidden':
+        return t('chat.error.forbidden');
+      case 'chat_unavailable':
+        return t('chat.unavailable');
+      default:
+        return t('chat.error.generic');
+    }
+  }
 
   function dismissOnboarding() {
     setShowOnboarding(false);
@@ -854,6 +972,7 @@ export default function App() {
       {channelMessage && (
         <Banner onDismiss={() => dismiss('channel', channelMessage)}>{channelMessage}</Banner>
       )}
+      {chatMessage && <Banner onDismiss={() => dismiss('chat', chatMessage)}>{chatMessage}</Banner>}
       {audioWarning && (
         <Banner tone="warn" onDismiss={() => dismiss('audio', audioWarning)}>
           {audioWarning}
@@ -866,90 +985,169 @@ export default function App() {
       )}
 
       <div className="body">
-        <main className="main">
-          {/* Keyed by channel: what you watched or listened to in one channel
-              means nothing in the next. */}
-          {channel === null ? (
-            <section className="stage remote-empty">
-              <div className="overlay">
-                <h2>{t('grid.noChannelTitle')}</h2>
-                <p className="muted">{t('grid.noChannelBody')}</p>
-              </div>
-            </section>
-          ) : (
-            <RemoteGrid
-              key={channel ?? 'none'}
-              screens={room.remoteScreens}
-              onFocusChange={setRemoteFocus}
-              local={
-                isLive
-                  ? {
-                      renderStage: ({ active, toggle, onClose, closeButton }) => (
-                        <Player
-                          fullscreen={{ active, toggle }}
-                          onClose={onClose}
-                          closeButton={closeButton}
-                          name={status.deviceName ?? t('common.you')}
-                          identity={myIdentity}
-                          // Your camera alone is shown whatever the preview:
-                          // it is always in your grid, to be seen.
-                          showPreview={showPreview || !screenLive}
-                          onTogglePreview={togglePreview}
-                          localTrack={screenLive ? room.localTrack : room.cameraTrack}
-                          mirrored={!screenLive}
-                          gpuBroadcasting={gpuLive}
-                          sendAudio={
-                            room.sendingAudio
-                              ? {
-                                  value: room.sendAudio,
-                                  canSetVolume: room.canSetSendVolume,
-                                  onChange: (next) => void room.setSendAudio(next),
-                                }
-                              : undefined
-                          }
-                          mic={
-                            room.sendingMic
-                              ? {
-                                  muted: room.micMuted,
-                                  onToggle: () => void room.setMicMuted(!room.micMuted),
-                                }
-                              : undefined
-                          }
-                          onStop={() => void stopMain()}
-                          onSwitch={() => setPickerOpen(true)}
-                        />
-                      ),
-                      // The strip's thumbnail and the overview follow the
-                      // same choice: you only see yourself if you asked to.
-                      track: showPreview ? (screenLive ? room.localTrack : room.cameraTrack) : null,
-                      // A camera alone is the picture, and is shown mirrored.
-                      mirrored: !screenLive,
-                      showPreview,
-                      onTogglePreview: togglePreview,
-                      // Always in your grid while it is on, whatever the preview.
-                      camera: room.cameraState === 'live' ? room.cameraTrack : null,
-                      cameraIsMain: !screenLive,
-                      onStop: () => void stopMain(),
-                      name: status.deviceName ?? t('common.you'),
-                      identity: myIdentity,
-                    }
-                  : undefined
-              }
-              loadingBroadcasts={loadingBroadcasts}
-              showOnboarding={showOnboarding && (room.state === 'connected' || hopping)}
-              onStartSharing={() => {
-                dismissOnboarding();
-                setPickerOpen(true);
-              }}
-              onDismissOnboarding={dismissOnboarding}
-              onPausedChange={setRemotePaused}
-              controlRef={gridRef}
-              onStageChange={setStage}
-            />
+        <main className={`main${chatShown ? ' chat-full' : ''}`}>
+          {chat.enabled && someoneLive && (
+            <div className="main-tabs" role="tablist">
+              <button
+                role="tab"
+                aria-selected={!chatShown}
+                className={`main-tab${chatShown ? '' : ' current'}`}
+                onClick={() => setView('stage')}
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  width="16"
+                  height="16"
+                  aria-hidden="true"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
+                  <rect x="2.5" y="4" width="19" height="13" rx="2" />
+                  <path d="M8 20.5h8" strokeLinecap="round" />
+                </svg>
+                {t('chat.tabStage')}
+                {watchingSomething && <span className="share-live-dot" aria-hidden="true" />}
+              </button>
+              <button
+                role="tab"
+                aria-selected={chatShown}
+                className={`main-tab${chatShown ? ' current' : ''}`}
+                onClick={() => setView('chat')}
+              >
+                <span className="chat-hash" aria-hidden="true">
+                  #
+                </span>
+                {chat.openChat?.name ?? t('chat.title')}
+                {!chatShown && chat.totalUnread > 0 && (
+                  <span className="chat-unread">
+                    {chat.totalUnread >= 100 ? '99+' : chat.totalUnread}
+                  </span>
+                )}
+              </button>
+              {/* Someone else's broadcast in a small window on top, and the
+                  chat behind it: both at once. */}
+              {(stage.watching.length > 0 || stage.cameras.length > 0) && (
+                <button
+                  className="main-tab main-tab-pip"
+                  onClick={() => {
+                    if (gridRef.current?.popOut()) setView('chat');
+                  }}
+                  title={t('chat.popOutTitle')}
+                >
+                  <svg
+                    viewBox="0 0 24 24"
+                    width="16"
+                    height="16"
+                    aria-hidden="true"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                  >
+                    <rect x="2" y="4" width="20" height="16" rx="2" />
+                    <rect x="12" y="12" width="8" height="6" rx="1" />
+                  </svg>
+                  {t('chat.popOut')}
+                </button>
+              )}
+            </div>
           )}
+          <div className="main-panes">
+            {chatShown && <ChatView chat={chat} me={accountId} />}
+            {/* Behind the chat rather than unmounted: what you watch keeps
+              playing, and its sound with it, while you read. */}
+            <div className={`main-pane${chatShown ? ' behind' : ''}`}>
+              {/* Keyed by channel: what you watched or listened to in one channel
+              means nothing in the next. */}
+              {channel === null ? (
+                <section className="stage remote-empty">
+                  <div className="overlay">
+                    <h2>{t('grid.noChannelTitle')}</h2>
+                    <p className="muted">{t('grid.noChannelBody')}</p>
+                  </div>
+                </section>
+              ) : (
+                <RemoteGrid
+                  key={channel ?? 'none'}
+                  screens={room.remoteScreens}
+                  onFocusChange={setRemoteFocus}
+                  local={
+                    isLive
+                      ? {
+                          renderStage: ({ active, toggle, onClose, closeButton }) => (
+                            <Player
+                              fullscreen={{ active, toggle }}
+                              onClose={onClose}
+                              closeButton={closeButton}
+                              name={status.deviceName ?? t('common.you')}
+                              identity={myIdentity}
+                              // Your camera alone is shown whatever the preview:
+                              // it is always in your grid, to be seen.
+                              showPreview={showPreview || !screenLive}
+                              onTogglePreview={togglePreview}
+                              localTrack={screenLive ? room.localTrack : room.cameraTrack}
+                              mirrored={!screenLive}
+                              gpuBroadcasting={gpuLive}
+                              sendAudio={
+                                room.sendingAudio
+                                  ? {
+                                      value: room.sendAudio,
+                                      canSetVolume: room.canSetSendVolume,
+                                      onChange: (next) => void room.setSendAudio(next),
+                                    }
+                                  : undefined
+                              }
+                              mic={
+                                room.sendingMic
+                                  ? {
+                                      muted: room.micMuted,
+                                      onToggle: () => void room.setMicMuted(!room.micMuted),
+                                    }
+                                  : undefined
+                              }
+                              onStop={() => void stopMain()}
+                              onSwitch={() => setPickerOpen(true)}
+                            />
+                          ),
+                          // The strip's thumbnail and the overview follow the
+                          // same choice: you only see yourself if you asked to.
+                          track: showPreview
+                            ? screenLive
+                              ? room.localTrack
+                              : room.cameraTrack
+                            : null,
+                          // A camera alone is the picture, and is shown mirrored.
+                          mirrored: !screenLive,
+                          showPreview,
+                          onTogglePreview: togglePreview,
+                          // Always in your grid while it is on, whatever the preview.
+                          camera: room.cameraState === 'live' ? room.cameraTrack : null,
+                          cameraIsMain: !screenLive,
+                          onStop: () => void stopMain(),
+                          name: status.deviceName ?? t('common.you'),
+                          identity: myIdentity,
+                        }
+                      : undefined
+                  }
+                  loadingBroadcasts={loadingBroadcasts}
+                  showOnboarding={showOnboarding && (room.state === 'connected' || hopping)}
+                  onStartSharing={() => {
+                    dismissOnboarding();
+                    setPickerOpen(true);
+                  }}
+                  onDismissOnboarding={dismissOnboarding}
+                  onPausedChange={setRemotePaused}
+                  controlRef={gridRef}
+                  onStageChange={setStage}
+                />
+              )}
+            </div>
+          </div>
         </main>
 
         <Sidebar
+          collapsed={sidebarCollapsed}
+          onCollapsedChange={setSidebarCollapsed}
           members={
             // Out of every channel, the last room's list would hide its people
             // from the poll's, since the sidebar takes them for your own.
@@ -983,6 +1181,28 @@ export default function App() {
           onToggleCamera={(identity) => gridRef.current?.toggleCamera(identity)}
           onHoverBroadcast={(target, anchor) => gridRef.current?.hover(target, anchor)}
           onWatchBroadcast={(target) => gridRef.current?.watch(target)}
+          onKickMember={
+            account?.role === 'admin' || account?.role === 'super_admin'
+              ? (identity) => void kickMember(identity)
+              : undefined
+          }
+          chats={
+            chat.enabled
+              ? (collapsed) => (
+                  <ChatList
+                    chat={chat}
+                    collapsed={collapsed}
+                    showing={chatShown}
+                    myRole={account?.role}
+                    onOpen={(id) => {
+                      chat.open(id);
+                      setView('chat');
+                    }}
+                    onError={(code) => setChatError(chatErrorText(code))}
+                  />
+                )
+              : undefined
+          }
         />
       </div>
 
@@ -1038,6 +1258,25 @@ export default function App() {
           onSignOut={handleSignOut}
           onAccountsChanged={() => void window.zoia.account.refresh()}
           initialSection={settingsSection}
+          limits={{
+            channels: {
+              count: channels.length,
+              max: maxChannels,
+              ceiling: channelCeiling,
+              onChange: (max) => void changeChannels(window.zoia.rooms.setLimit(max)),
+            },
+            chats: chat.enabled
+              ? {
+                  count: chat.chats.length,
+                  max: chat.max,
+                  ceiling: chat.ceiling,
+                  onChange: (max) =>
+                    void chat.setLimit(max).then((code) => {
+                      if (code) setChatError(chatErrorText(code));
+                    }),
+                }
+              : undefined,
+          }}
         />
       )}
 

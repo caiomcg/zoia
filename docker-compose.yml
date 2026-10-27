@@ -44,6 +44,25 @@ services:
     network_mode: host
     command: redis-server --bind 127.0.0.1 --port 6379 --save "" --appendonly no
 
+  # Chat messages (ADR 0036). On the compose network only, with no published
+  # ports: the app is the one thing that talks to it. One shard and 1G, so it
+  # leaves the VM to LiveKit; developer mode skips the I/O tuning a shared VM
+  # disk would fail.
+  scylla:
+    image: scylladb/scylla:2025.1
+    restart: unless-stopped
+    command: --smp 1 --memory 1G --overprovisioned 1 --developer-mode 1
+    expose:
+      - '9042'
+    volumes:
+      - scylla_data:/var/lib/scylla
+    healthcheck:
+      test: ['CMD-SHELL', "cqlsh -e 'SELECT now() FROM system.local' || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+
   app:
     build: .
     restart: unless-stopped
@@ -51,6 +70,7 @@ services:
     environment:
       # livekit runs in the host network namespace.
       LIVEKIT_API_URL: http://host.docker.internal:7880
+      SCYLLA_CONTACT_POINTS: scylla
     extra_hosts:
       - 'host.docker.internal:host-gateway'
     # No published ports: the app is reachable only through caddy.
@@ -59,9 +79,13 @@ services:
     volumes:
       # The key store lives on the server and survives redeploys.
       - ./server/data:/app/server/data
+    # Not waiting for scylla to be healthy: if it is down, chat is down and
+    # broadcasting carries on. The app connects when it comes up.
     depends_on:
       - livekit
+      - scylla
 
 volumes:
   caddy_data:
   caddy_config:
+  scylla_data:

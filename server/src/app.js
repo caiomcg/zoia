@@ -17,6 +17,8 @@ import { NotStageHolderError, WHIP_SUFFIX } from './whip.js';
 import { fixedChannels } from './channels.js';
 import { AVATAR_MAX_BYTES, imageType, isAvatarId } from './avatars.js';
 import { canManage, isAdmin } from './accounts.js';
+import { chatRoutes } from './chat-routes.js';
+import { KICK_GRACE_MS, kick } from './idle.js';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -37,6 +39,10 @@ export function createApp({
   deviceStore = null,
   avatarStore = null,
   accountStore = null,
+  chatStore = null,
+  messageStore = () => null,
+  chatMediaStore = null,
+  kickGraceMs = KICK_GRACE_MS,
   logger = console,
 }) {
   const app = express();
@@ -66,6 +72,7 @@ export function createApp({
 
   const CHANNEL_ERRORS = {
     invalid_name: 400,
+    invalid_limit: 400,
     unknown_room: 404,
     room_limit: 409,
     room_is_default: 409,
@@ -125,13 +132,18 @@ export function createApp({
    * must not share it.
    */
   async function currentUser(req, res) {
+    const user = await sessionUser(req);
+    if (!user) clearSession(res);
+    return user;
+  }
+
+  /** The person the request's cookie names, as they stand now, or null. */
+  async function sessionUser(req) {
     const value = req.signedCookies?.[COOKIE_NAME];
     if (typeof value !== 'string' || !value.startsWith('device:')) return null;
 
     const record = await deviceStore?.getActive(value.slice('device:'.length));
-    const user = record ? await deviceUser(record) : null;
-    if (!user) clearSession(res);
-    return user;
+    return record ? deviceUser(record) : null;
   }
 
   /** The person a live device is, while its account is not disabled. */
@@ -590,6 +602,51 @@ export function createApp({
     }
   });
 
+  // Takes one machine out of the channel it is in. Unlike a move, this does
+  // not rely on the app: LiveKit drops the connection, and its broadcast with
+  // it. Any admin may disconnect anyone else, other admins and the super
+  // admin included: keeping order in a channel is not about rank. It is not
+  // a ban: the person can join a channel again.
+  app.post('/api/admin/devices/:id/disconnect', requireAdmin, async (req, res, next) => {
+    try {
+      const device = await deviceStore.getActive(req.params.id);
+      const target = device?.accountId ? await accountStore.get(device.accountId) : null;
+      if (!target) return adminRefuse(res, 'unknown_account');
+      // Leaving is the person's own button, not this.
+      if (target.id === req.user.accountId) return adminRefuse(res, 'forbidden');
+      const from = (await whereAll()).get(device.id);
+      if (!from) return adminRefuse(res, 'not_connected');
+      await from.stage.disconnect([device.id]);
+      logger.info(
+        `[admin] ${req.user.accountId} disconnected ${device.id} (${target.id}) from ${from.id}`,
+      );
+      res.json({ disconnected: true });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // Takes one machine off the server: out of its channel like a disconnect,
+  // and its app, told why, leaves the chat too and waits to be reconnected by
+  // hand. The same rules as a disconnect; not a ban either. See ADR 0037.
+  app.post('/api/admin/devices/:id/kick', requireAdmin, async (req, res, next) => {
+    try {
+      const device = await deviceStore.getActive(req.params.id);
+      const target = device?.accountId ? await accountStore.get(device.accountId) : null;
+      if (!target) return adminRefuse(res, 'unknown_account');
+      if (target.id === req.user.accountId) return adminRefuse(res, 'forbidden');
+      const from = (await whereAll()).get(device.id);
+      if (!from) return adminRefuse(res, 'not_connected');
+      await kick(from.stage, device.id, 'admin', { graceMs: kickGraceMs });
+      logger.info(
+        `[admin] ${req.user.accountId} kicked ${device.id} (${target.id}) from ${from.id}`,
+      );
+      res.json({ kicked: true });
+    } catch (err) {
+      next(err);
+    }
+  });
+
   // The code is shown once, to the admin, who passes it on. It is never logged.
   app.post('/api/admin/accounts/:id/reset', requireAdmin, async (req, res, next) => {
     try {
@@ -675,7 +732,7 @@ export function createApp({
         role: req.user.role,
         ...(isAdmin(req.user) ? { pendingApprovals: await accountStore.countPending() } : {}),
       };
-      res.json({ rooms, max: channelSet.max, you });
+      res.json({ rooms, max: channelSet.max, ceiling: channelSet.ceiling, you });
     } catch (err) {
       next(err);
     }
@@ -688,6 +745,17 @@ export function createApp({
       const result = await channelSet.create(req.body?.name, req.user);
       if (!result.ok) return refuse(res, result.reason);
       res.status(201).json({ room: result.channel });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // How many channels there may be: admins change it while the app runs.
+  app.put('/api/rooms/limit', requireAdmin, async (req, res, next) => {
+    try {
+      const result = await channelSet.setMax(req.body?.max, req.user);
+      if (!result.ok) return refuse(res, result.reason);
+      res.json({ max: result.max });
     } catch (err) {
       next(err);
     }
@@ -897,22 +965,57 @@ export function createApp({
       if (!isAvatarId(id)) return res.status(404).json({ error: 'no_avatar' });
       const record = await deviceStore.getActive(id);
       const holder = record ? await accountStore.get(record.accountId) : null;
-      if (!holder?.avatar) return res.status(404).json({ error: 'no_avatar' });
-      const picture = await avatarStore.read(holder.id);
-      if (!picture) return res.status(404).json({ error: 'no_avatar' });
-
-      // The type is the one sniffed from the stored bytes, never one a client
-      // supplied, and nosniff keeps anything from reading it as something else.
-      res.set('Content-Type', picture.type);
-      res.set('X-Content-Type-Options', 'nosniff');
-      res.set('Content-Security-Policy', "default-src 'none'");
-      // Clients ask with ?v=<version>, so a new picture is a new URL.
-      res.set('Cache-Control', 'private, max-age=86400');
-      res.send(picture.bytes);
+      await sendAvatar(res, holder);
     } catch (err) {
       next(err);
     }
   });
+
+  // An account's picture, for chat messages, whose authors are accounts
+  // rather than machines in a room.
+  app.get('/api/avatar/account/:id', requireSession, requireAvatars, async (req, res, next) => {
+    try {
+      const { id } = req.params;
+      await sendAvatar(res, isAvatarId(id) ? await accountStore.get(id) : null);
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  async function sendAvatar(res, holder) {
+    const picture = holder?.avatar ? await avatarStore.read(holder.id) : null;
+    if (!picture) return res.status(404).json({ error: 'no_avatar' });
+
+    // The type is the one sniffed from the stored bytes, never one a client
+    // supplied, and nosniff keeps anything from reading it as something else.
+    res.set('Content-Type', picture.type);
+    res.set('X-Content-Type-Options', 'nosniff');
+    res.set('Content-Security-Policy', "default-src 'none'");
+    // Clients ask with ?v=<version>, so a new picture is a new URL.
+    res.set('Cache-Control', 'private, max-age=86400');
+    res.send(picture.bytes);
+  }
+
+  // ---- text chat (ADR 0036) ------------------------------------------------
+
+  if (chatStore) {
+    app.use(
+      '/api/chats',
+      chatRoutes({
+        chats: chatStore,
+        messages: messageStore,
+        media: chatMediaStore,
+        accountStore,
+        requireSession,
+        requireAdmin,
+        recheck: sessionUser,
+        // Tests shorten these; undefined keeps the defaults.
+        sendLimit: config.chat?.sendLimit,
+        heartbeatMs: config.chat?.heartbeatMs,
+        logger,
+      }),
+    );
+  }
 
   // maxAge 0 with etags means the browser revalidates and gets a 304 when
   // nothing changed. An hour of caching meant a deploy did not reach anyone

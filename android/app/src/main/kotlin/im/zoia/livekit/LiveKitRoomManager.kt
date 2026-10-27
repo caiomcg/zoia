@@ -55,6 +55,16 @@ data class StreamItem(
  */
 internal const val WHIP_SUFFIX = "-gpu"
 
+/**
+ * Whose broadcasts this viewer is watching, announced as the desktop does
+ * (desktop/src/renderer/livekit/watching.ts): broadcasters see who watches
+ * them, and the server kicks nobody who is watching for being idle (ADR 0037).
+ */
+internal const val WATCHING_ATTRIBUTE = "zoia.watching"
+
+/** The attribute's value: the people whose picture is on screen, sorted. */
+internal fun watchingValue(onScreen: Iterable<String>): String = onScreen.sorted().joinToString(",")
+
 internal fun ownerIdentity(identity: String): String = identity.removeSuffix(WHIP_SUFFIX)
 
 /** A published track, with where it came from. */
@@ -111,6 +121,8 @@ class LiveKitRoomManager(
     // nobody's camera opens and nobody's microphone plays by itself.
     private var cameraShown: Set<String> = emptySet()
     private var micOn: Set<String> = emptySet()
+    // What was last announced as watched, so an unchanged list is not resent.
+    private var announcedWatching: String? = null
 
     var currentChannelId: String? = null
         private set
@@ -178,6 +190,7 @@ class LiveKitRoomManager(
                 _selectedAudioParticipantId.value = null
                 cameraShown = emptySet()
                 micOn = emptySet()
+                announcedWatching = null
             }
             else -> Unit
         }
@@ -249,6 +262,19 @@ class LiveKitRoomManager(
         }
 
         _streams.value = items
+
+        // Every screen in the list is on the grid; a camera only once chosen.
+        val watching = watchingValue(
+            items.filter { it.screenTrack != null || it.cameraShown }.map { it.participantId }
+        )
+        if (watching != announcedWatching) {
+            announcedWatching = watching
+            try {
+                currentRoom.localParticipant.updateAttributes(mapOf(WATCHING_ATTRIBUTE to watching))
+            } catch (_: Exception) {
+                announcedWatching = null
+            }
+        }
     }
 
     private inline fun <reified T : Track> feedsOf(
@@ -308,5 +334,6 @@ class LiveKitRoomManager(
         _selectedAudioParticipantId.value = null
         cameraShown = emptySet()
         micOn = emptySet()
+        announcedWatching = null
     }
 }

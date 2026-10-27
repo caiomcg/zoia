@@ -43,6 +43,8 @@ record that supersedes it, so the history stays legible.
 | [0033](0033-admins-move-people-between-channels.md) | Admins move people between channels | accepted |
 | [0034](0034-camera-beside-the-screen.md) | A camera beside the screen | accepted |
 | [0035](0035-homolog-environment.md) | A homolog environment on a VM of its own | accepted |
+| [0036](0036-text-chat-in-scylladb.md) | Text chat, with its messages in ScyllaDB | proposed |
+| [0037](0037-kicks-and-idle-removal.md) | Kicking someone off the server, and removing the idle | accepted |
 
 ## The two that explain the most
 

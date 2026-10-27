@@ -2278,8 +2278,31 @@ button.danger {
 .main {
   display: flex;
   flex: 1;
+  flex-direction: column;
+  gap: 8px;
   min-width: 0;
   padding: 12px;
+}
+
+/* The stage and the chat share the main area (ADR 0036). */
+.main-panes {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.main-pane {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* Still laid out and playing, so the picture and its sound carry on. */
+.main-pane.behind {
+  visibility: hidden;
 }
 
 .main .stage {
@@ -2299,48 +2322,13 @@ button.danger {
 /* ---- people rail --------------------------------------------------------- */
 
 .sidebar {
+  position: relative;
   display: flex;
   flex: 0 0 auto;
   flex-direction: column;
   width: 240px;
   background: var(--surface);
   border-left: 1px solid var(--border);
-}
-
-.sidebar-header {
-  display: flex;
-  gap: 4px;
-  align-items: center;
-  justify-content: flex-start;
-  padding: 10px 8px 2px;
-}
-
-.sidebar-title {
-  margin: 0;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  color: var(--muted);
-  text-transform: uppercase;
-}
-
-.sidebar-toggle {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  color: var(--muted);
-  background: transparent;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-}
-
-.sidebar-toggle:hover {
-  color: var(--text);
-  background: var(--surface-2);
 }
 
 /* ---- channels ------------------------------------------------------------ */
@@ -2351,7 +2339,9 @@ button.danger {
   align-items: center;
   width: 100%;
   padding: 6px 8px;
-  color: var(--muted);
+  /* Between the headings' grey and full white: readable at a glance, with
+     the current one still standing out. */
+  color: #b5bac1;
   font-size: 14px;
   font-weight: 500;
   text-align: left;
@@ -2396,11 +2386,27 @@ button.danger {
   white-space: nowrap;
 }
 
-.channel-count {
-  min-width: 16px;
-  font-size: 12px;
-  text-align: right;
+.channel-icon {
+  flex: 0 0 auto;
   color: var(--muted);
+}
+
+.channel.current .channel-icon,
+.channel:hover .channel-icon {
+  color: inherit;
+}
+
+/* How many are in a channel, as a small pill: only shown when someone is. */
+.channel-count {
+  min-width: 18px;
+  padding: 1px 6px;
+  box-sizing: border-box;
+  font-size: 11px;
+  font-weight: 600;
+  text-align: center;
+  color: var(--text);
+  background: var(--raised);
+  border-radius: 9px;
 }
 
 /* A person dragged over a channel: the whole block lights up where they will land. */
@@ -2466,16 +2472,19 @@ button.danger {
   background: var(--raised);
 }
 
-.channel-new {
-  color: var(--muted);
-  font-size: 13px;
-}
-
 .channel-edit {
   padding: 3px 4px;
 }
 
+.channel-edit-row {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
 .channel-edit input {
+  flex: 1;
+  min-width: 0;
   width: 100%;
   padding: 5px 8px;
   color: var(--text);
@@ -2485,6 +2494,52 @@ button.danger {
   border: 1px solid var(--accent);
   border-radius: 4px;
   outline: none;
+}
+
+/* The emoji button beside a name being edited, and the grid it opens. */
+.channel-edit .channel-edit-emoji {
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  font-size: 16px;
+  line-height: 1;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  filter: grayscale(0.6);
+  transition: filter 0.15s ease;
+}
+
+.channel-edit .channel-edit-emoji:hover,
+.channel-edit .channel-edit-emoji.active {
+  filter: none;
+  background: var(--raised);
+}
+
+.emoji-grid {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 2px;
+  margin-top: 4px;
+  padding: 4px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.emoji-grid button {
+  aspect-ratio: 1;
+  padding: 0;
+  font-size: 16px;
+  line-height: 1;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+}
+
+.emoji-grid button:hover {
+  background: var(--raised);
 }
 
 .channel-members {
@@ -2531,9 +2586,44 @@ button.danger {
   width: 56px;
 }
 
-.sidebar.collapsed .sidebar-header {
-  justify-content: center;
-  padding: 8px 0 0;
+/* The edge that opens and closes the sidebar: wider than it looks, and lit
+   on hover, while dragged, or with the keyboard on it. */
+.sidebar-resize {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -3px;
+  z-index: 5;
+  width: 7px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.sidebar-resize::after {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 3px;
+  width: 2px;
+  content: '';
+  background: transparent;
+  transition: background 0.15s ease;
+}
+
+.sidebar-resize:hover::after,
+.sidebar-resize:focus-visible::after,
+.sidebar.resizing .sidebar-resize::after {
+  background: var(--accent);
+}
+
+.sidebar-resize:focus-visible {
+  outline: none;
+}
+
+/* While dragged: nothing spills past the edge, and no text gets selected. */
+.sidebar.resizing {
+  overflow: hidden;
+  user-select: none;
 }
 
 .sidebar.collapsed .sidebar-scroll {
@@ -2586,10 +2676,10 @@ button.danger {
     0 0 0 4px var(--accent);
 }
 
-.sidebar.collapsed .channel-new,
 .sidebar.collapsed .channel-actions,
 .sidebar.collapsed .channel-edit,
 .sidebar.collapsed .channel-name,
+.sidebar.collapsed .channel-icon,
 .sidebar.collapsed .channel-count,
 .sidebar.collapsed .channel-people,
 .sidebar.collapsed .member-name,
@@ -2612,8 +2702,11 @@ button.danger {
   padding: 12px 8px;
 }
 
+/* Channels and chats read as two groups, not one long list. */
 .member-group + .member-group {
-  margin-top: 18px;
+  margin-top: 22px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
 }
 
 .member-heading {
@@ -3935,4 +4028,848 @@ button.danger:active:not(:disabled),
 
 .password-rules li.met {
   color: var(--live);
+}
+
+/* ---- text chat (ADR 0036) ------------------------------------------------ */
+
+.main-tabs {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 4px;
+}
+
+.main-tab {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  height: var(--control-height);
+  padding: 0 12px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.main-tab:hover {
+  color: var(--text);
+  background: var(--surface-2);
+}
+
+.main-tab.current {
+  color: var(--text);
+  background: var(--surface-2);
+  border-color: var(--border);
+}
+
+.main-tab .share-live-dot {
+  background: var(--live);
+}
+
+.chat-hash {
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.channel.chat {
+  gap: 6px;
+}
+
+.channel.chat.unread {
+  color: var(--text);
+  font-weight: 700;
+}
+
+.chat-unread {
+  min-width: 18px;
+  padding: 1px 6px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 16px;
+  color: #fff;
+  text-align: center;
+  background: var(--danger);
+  border-radius: 9px;
+}
+
+.sidebar.collapsed .chat-hash,
+.sidebar.collapsed .channel.chat .chat-unread {
+  display: none;
+}
+
+.sidebar.collapsed .channel.chat.unread .channel-short {
+  box-shadow: 0 0 0 2px var(--danger);
+}
+
+.chat-view {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.chat-header {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.chat-header h2 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.chat-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px 0;
+}
+
+.chat-empty {
+  margin: 0;
+  padding: 24px 16px;
+  text-align: center;
+}
+
+.chat-messages {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chat-older {
+  padding: 4px 16px;
+  font-size: 12px;
+  text-align: center;
+}
+
+.chat-message {
+  position: relative;
+  display: grid;
+  grid-template-columns: 48px 1fr;
+  gap: 10px;
+  padding: 6px 16px 2px;
+}
+
+.chat-message.grouped {
+  padding-top: 1px;
+}
+
+.chat-message:hover {
+  background: color-mix(in srgb, var(--surface-2) 60%, transparent);
+}
+
+.chat-message .avatar {
+  width: 36px;
+  height: 36px;
+  font-size: 13px;
+}
+
+.chat-time-side {
+  align-self: center;
+  font-size: 10px;
+  color: var(--muted);
+  text-align: right;
+  white-space: nowrap;
+  opacity: 0;
+}
+
+.chat-message.grouped:hover .chat-time-side {
+  opacity: 1;
+}
+
+.chat-content {
+  min-width: 0;
+}
+
+.chat-meta {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.chat-author {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.chat-message.mine .chat-author {
+  color: color-mix(in srgb, var(--accent) 55%, var(--text));
+}
+
+.chat-meta time {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.chat-body {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.chat-day,
+.chat-new {
+  display: flex;
+  align-items: center;
+  margin: 12px 16px 4px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.chat-day::before,
+.chat-day::after,
+.chat-new::after {
+  flex: 1;
+  height: 1px;
+  content: '';
+  background: var(--border);
+}
+
+.chat-day span {
+  padding: 0 8px;
+}
+
+.chat-new {
+  color: var(--danger);
+}
+
+.chat-new span {
+  padding-right: 8px;
+}
+
+.chat-new::after {
+  background: var(--danger);
+}
+
+.chat-seen {
+  margin: 4px 16px 0 74px;
+  font-size: 11px;
+}
+
+.chat-composer {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px 12px;
+  border-top: 1px solid var(--border);
+}
+
+.chat-composer-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+}
+
+.chat-attach {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  color: var(--muted);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.chat-attach:hover:not(:disabled) {
+  color: var(--text);
+}
+
+.chat-attach:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* The photo or video about to be sent, above the box its caption goes in. */
+.chat-pending {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 6px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.chat-pending img,
+.chat-pending video {
+  width: 56px;
+  height: 56px;
+  object-fit: cover;
+  border-radius: 6px;
+}
+
+.chat-pending-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-media-button {
+  display: block;
+  padding: 0;
+  background: none;
+  border: none;
+  cursor: zoom-in;
+}
+
+.chat-media {
+  display: block;
+  max-width: min(400px, 100%);
+  max-height: 300px;
+  margin: 4px 0;
+  background: #000;
+  border-radius: 8px;
+}
+
+/* A dragged file over the chat: one place to let go of it. */
+.chat-drop {
+  position: absolute;
+  inset: 8px;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+  pointer-events: none;
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  border: 2px dashed var(--accent);
+  border-radius: var(--radius);
+}
+
+.chat-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 32px;
+  cursor: zoom-out;
+  background: rgb(0 0 0 / 85%);
+  outline: none;
+}
+
+.chat-lightbox img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.chat-composer textarea {
+  flex: 1;
+  max-height: 160px;
+  /* One line is exactly as tall as the buttons beside it: 18 + 2 × 9 + 2. */
+  min-height: 38px;
+  padding: 9px 12px;
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  line-height: 18px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  outline: none;
+  resize: none;
+  field-sizing: content;
+}
+
+.chat-composer textarea:focus {
+  border-color: var(--accent);
+}
+
+.chat-send {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  color: #fff;
+  background: var(--accent);
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.chat-send:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.chat-send:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.chat-error {
+  position: absolute;
+  bottom: 100%;
+  left: 12px;
+  margin: 0 0 4px;
+  padding: 4px 8px;
+  font-size: 12px;
+  color: #fff;
+  background: var(--danger);
+  border-radius: 4px;
+}
+
+.main-tab-pip {
+  margin-left: auto;
+  color: var(--text);
+  border-color: var(--border);
+}
+
+/* The chat in front fills the main area edge to edge, up to the sidebar;
+   only the stage sits inset, as a picture. */
+.main.chat-full {
+  gap: 0;
+  padding: 0;
+}
+
+.main.chat-full .main-tabs {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.main.chat-full .chat-view {
+  border: none;
+  border-radius: 0;
+}
+
+/* Admins: what to do to someone, on a right-click (ADR 0037). Its own
+   button styles, so the app-wide button and .danger ones stay out. */
+.member-menu {
+  position: fixed;
+  z-index: 1000;
+  min-width: 160px;
+  padding: 4px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  animation: pop-in 0.12s ease-out;
+}
+
+.member-menu-head {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 8px 8px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+
+.member-menu-head .avatar {
+  width: 24px;
+  height: 24px;
+  font-size: 10px;
+}
+
+.member-menu-who {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.25;
+}
+
+.member-menu-name {
+  overflow: hidden;
+  max-width: 180px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.member-menu-role {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.member-menu .member-menu-item {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+  padding: 6px 10px;
+  font-weight: 500;
+  color: var(--danger);
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+}
+
+.member-menu .member-menu-item:hover,
+.member-menu .member-menu-item:focus-visible {
+  color: #fff;
+  background: var(--danger);
+  outline: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .member-menu {
+    animation: none;
+  }
+}
+
+/* A section's title in the sidebar (channels, chats): folds it, with its
+   count, and for admins a + that shows on hover. */
+.section-heading {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  min-width: 0;
+  margin-bottom: 4px;
+}
+
+.section-heading .section-toggle {
+  display: inline-flex;
+  flex: 1;
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+  padding: 4px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  text-transform: uppercase;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+}
+
+.section-heading .section-toggle:hover,
+.section-heading .section-toggle:focus-visible {
+  color: var(--text);
+  outline: none;
+}
+
+.section-chevron {
+  flex: 0 0 auto;
+  transition: transform 0.15s ease;
+}
+
+.section-chevron.folded {
+  transform: rotate(-90deg);
+}
+
+.section-count {
+  font-weight: 500;
+  letter-spacing: 0;
+  opacity: 0.7;
+}
+
+.section-heading .section-add {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  color: var(--muted);
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.section-heading:hover .section-add,
+.section-heading .section-add:focus-visible {
+  opacity: 1;
+}
+
+.section-heading .section-add:hover {
+  color: var(--text);
+  background: var(--surface-2);
+}
+
+.section-heading .section-add[aria-disabled='true'] {
+  cursor: default;
+  opacity: 0.4;
+}
+
+.section-heading .section-add[aria-disabled='true']:hover {
+  color: var(--muted);
+  background: transparent;
+}
+
+/* The faces past the first few under another channel, as one chip. */
+.channel-people-more {
+  display: inline-grid;
+  place-items: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  box-sizing: border-box;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--muted);
+  background: var(--surface-2);
+  border-radius: 10px;
+  cursor: default;
+}
+
+/* Settings › Server: a limit, with how many are in use under its name. */
+.settings-field.server-limit {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 0;
+  font-size: 13px;
+  color: var(--text);
+  border-bottom: 1px solid var(--border);
+}
+
+.server-limit-label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.server-limit-label small {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.server-limit-stepper {
+  display: inline-flex;
+  align-items: center;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.server-limit-stepper button {
+  width: 32px;
+  height: 30px;
+  padding: 0;
+  font-size: 16px;
+  line-height: 1;
+  background: var(--surface-2);
+  border: none;
+  border-radius: 0;
+}
+
+.server-limit-stepper button:hover:not(:disabled) {
+  background: var(--raised);
+}
+
+.server-limit-stepper button:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+
+.server-limit-value {
+  min-width: 40px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  text-align: center;
+}
+
+/* The last cell of the emoji grid: the system picker, with all the rest. */
+.emoji-grid .emoji-more {
+  font-weight: 700;
+  color: var(--muted);
+}
+
+/* ---- replies and @mentions ------------------------------------------------ */
+
+/* Answer a message: a button at its top right, on hover. */
+.chat-message .chat-reply-button {
+  position: absolute;
+  top: -10px;
+  right: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 26px;
+  padding: 0;
+  color: var(--muted);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  opacity: 0;
+  transition: opacity 0.1s ease;
+}
+
+.chat-message:hover .chat-reply-button,
+.chat-message .chat-reply-button:focus-visible {
+  opacity: 1;
+}
+
+.chat-message .chat-reply-button:hover {
+  color: var(--text);
+  background: var(--raised);
+}
+
+/* What a message answers, above it: who, and their opening words. */
+.chat-quote {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  min-width: 0;
+  padding-left: 8px;
+  font-size: 12px;
+  border-left: 2px solid var(--border);
+}
+
+.chat-quote-author {
+  flex: 0 0 auto;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.chat-quote-body {
+  overflow: hidden;
+  color: var(--muted);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.chat-content .chat-reply-link {
+  display: block;
+  max-width: 100%;
+  margin-bottom: 4px;
+  padding: 0;
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+}
+
+.chat-content .chat-reply-link:hover .chat-quote {
+  border-left-color: var(--accent);
+}
+
+.chat-content .chat-reply-link:hover .chat-quote-body {
+  color: var(--text);
+}
+
+/* Jumped to from a reply: lit for a moment. */
+@keyframes chat-flash {
+  from {
+    background: color-mix(in srgb, var(--accent) 30%, transparent);
+  }
+}
+
+.chat-message.flash {
+  animation: chat-flash 1.6s ease-out;
+}
+
+/* @Name in a message; yours stand out, and so does a message that has one. */
+.chat-mention {
+  padding: 0 2px;
+  font-weight: 600;
+  color: #c9cdfb;
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  border-radius: 3px;
+}
+
+.chat-mention.me {
+  color: #fff;
+  background: color-mix(in srgb, var(--warn) 40%, transparent);
+}
+
+.chat-message.mentions-me {
+  background: color-mix(in srgb, var(--warn) 8%, transparent);
+  box-shadow: inset 2px 0 0 var(--warn);
+}
+
+/* Above the box while answering: what is being answered, and a ×. */
+.chat-replying {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 6px 6px 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+/* People to @mention, over the box while typing. */
+.chat-suggest {
+  position: absolute;
+  right: 12px;
+  bottom: calc(100% - 4px);
+  left: 12px;
+  z-index: 10;
+  max-width: 320px;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.chat-suggest li {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 8px;
+  font-size: 13px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.chat-suggest li.active {
+  color: #fff;
+  background: var(--accent);
+}
+
+.chat-suggest .avatar {
+  width: 22px;
+  height: 22px;
+  font-size: 9px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-message.flash {
+    animation: none;
+  }
+}
+
+/* A photo or video the server has since dropped to stay under its cap. */
+.chat-media-gone {
+  display: inline-block;
+  margin: 2px 0;
+  padding: 10px 14px;
+  font-size: 13px;
+  font-style: italic;
+  color: var(--muted);
+  background: var(--surface-2);
+  border: 1px dashed var(--border);
+  border-radius: 8px;
 }

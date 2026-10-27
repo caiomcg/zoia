@@ -111,12 +111,30 @@ that sign-up, login and resets emit none of them.
 Crash reports collected from clients are held in memory and reachable only with a session,
 so a report never becomes a public channel.
 
+## Chat
+
+- **Every chat route needs an approved session**, re-checked on each request. The live
+  stream outlives its request, so it re-checks the session on every heartbeat and ends when
+  the machine is signed out or the account disabled.
+- **Changing chats is for admins**, checked on the server: adding, renaming and removing
+  chats, and how many there may be.
+- **A photo or video is typed by its bytes**, never by its name or what the client claims,
+  and only kinds the app shows inline are kept. It is served with `nosniff` and a closed
+  content security policy, so it cannot be read as anything else.
+- **@mentions cannot be smuggled in.** The server keeps a mention only for an approved
+  account whose `@Name` appears in the text, so a message cannot notify someone it does not
+  visibly name. The list of people to mention carries names and pictures, never emails.
+- **A reply cannot quote another chat.** The server checks the original is in the same chat
+  before keeping a snapshot of it.
+
 ## Rate limiting
 
 Failed logins are limited per address (20 a minute), on top of the per-account lockout.
 Sign-up is limited to 3 an hour per address, counting successes, and the server holds at
 most 20 accounts waiting for approval; past that, sign-up is closed until an admin works the
-queue. Reset codes are limited harder than logins, since one is worth an account.
+queue. Reset codes are limited harder than logins, since one is worth an account. Chat messages,
+photos and videos are limited per person, not per address, to 20 every ten seconds, and one
+account may hold at most ten live chat streams open.
 
 `TRUST_PROXY=1` is required: behind Caddy, every request otherwise appears to come from the
 proxy's address and the limiter would throttle all users as one client.
@@ -131,6 +149,8 @@ proxy's address and the limiter would throttle all users as one client.
   cap. It costs an admin a click per junk request, and nothing more.
 - **Binaries are unsigned.** SmartScreen will warn, and a warning people are taught to click
   through is a real weakness. Code signing costs money this project does not have.
+- **Chat history is readable by every approved account**, and photos and videos by anyone
+  with a session. There are no private chats.
 - **No per-viewer watermarking or DRM.** A viewer can record what they see. If that matters,
   this is the wrong architecture.
 - **The router is outside this repo's control.** The port forwards are configured by hand

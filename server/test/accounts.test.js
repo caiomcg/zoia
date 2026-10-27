@@ -66,6 +66,8 @@ function buildApp({ accounts: accountConfig, rateLimit, channels } = {}) {
     },
     deviceStore: devices,
     accountStore: accounts,
+    // Kicks pause for the message to arrive; there is nothing to wait for here.
+    kickGraceMs: 0,
     avatarStore: createAvatarStore({ dir: join(dir, 'avatars') }),
     tokenIssuer: createTokenIssuer({
       apiKey: 'devkey',
@@ -742,9 +744,13 @@ describe('admins move people between channels', () => {
     const room = {
       participants: [],
       sent: [],
+      removed: [],
       listParticipants: async () => room.participants,
       updateParticipant: async () => {},
-      removeParticipant: async () => {},
+      removeParticipant: async (_name, identity) => {
+        room.removed.push(identity);
+        room.participants = room.participants.filter((p) => p.identity !== identity);
+      },
       sendData: async (_name, data, _kind, options) => {
         room.sent.push({
           to: options.destinationIdentities,
@@ -827,5 +833,84 @@ describe('admins move people between channels', () => {
     const carol = await person('carol@example.com');
     assert.equal((await move(admin, carol)).status, 409);
     assert.equal((await move(admin, { id: 'nope' })).status, 404);
+  });
+
+  test('a machine disconnected leaves its channel, broadcast and all, by the server', async () => {
+    const admin = await person('admin@example.com', 'admin');
+    const bob = await person('bob@example.com');
+    const laptop = await login('bob@example.com', PASSWORD, 'Laptop');
+    enter(lounge, bob.id, `${bob.id}-gpu`);
+    enter(lobby, laptop.id);
+
+    const res = await admin.agent.post(`/api/admin/devices/${bob.id}/disconnect`);
+    assert.equal(res.status, 200);
+    assert.equal(res.body.disconnected, true);
+    // That machine and its hardware broadcast, in its own channel only.
+    assert.deepEqual(lounge.removed, [bob.id, `${bob.id}-gpu`]);
+    assert.deepEqual(lobby.removed, []);
+    assert.deepEqual(
+      lobby.participants.map((p) => p.identity),
+      [laptop.id],
+    );
+    // Gone already: nothing left to disconnect.
+    const again = await admin.agent.post(`/api/admin/devices/${bob.id}/disconnect`);
+    assert.equal(again.status, 409);
+  });
+
+  test('any admin may disconnect anyone else, the super admin included; users none', async () => {
+    const owner = await person('owner@example.com', 'super_admin');
+    const admin = await person('admin@example.com', 'admin');
+    const other = await person('other@example.com', 'admin');
+    const bob = await person('bob@example.com');
+    const carol = await person('carol@example.com');
+    enter(lobby, owner.id, admin.id, other.id, bob.id, carol.id);
+    const kick = (who, target) => who.agent.post(`/api/admin/devices/${target.id}/disconnect`);
+
+    assert.equal((await kick(bob, carol)).status, 403);
+    assert.equal((await kick(bob, admin)).status, 403);
+    assert.equal((await kick(admin, admin)).status, 403);
+    assert.equal((await kick(admin, bob)).status, 200);
+    assert.equal((await kick(admin, other)).status, 200);
+    assert.equal((await kick(admin, owner)).status, 200);
+    assert.equal((await kick(owner, carol)).status, 200);
+    assert.equal((await kick(admin, { id: 'nope' })).status, 404);
+    assert.deepEqual(
+      lobby.removed.filter((id) => !id.endsWith('-gpu')),
+      [bob.id, other.id, owner.id, carol.id],
+    );
+  });
+
+  test('a machine kicked is told so, then leaves its channel, by the server', async () => {
+    const admin = await person('admin@example.com', 'admin');
+    const bob = await person('bob@example.com');
+    enter(lounge, bob.id, `${bob.id}-gpu`);
+
+    const res = await admin.agent.post(`/api/admin/devices/${bob.id}/kick`);
+    assert.equal(res.status, 200);
+    assert.equal(res.body.kicked, true);
+    assert.deepEqual(lounge.sent, [
+      { to: [bob.id], topic: 'zoia.kick', message: { reason: 'admin' } },
+    ]);
+    assert.deepEqual(lounge.removed, [bob.id, `${bob.id}-gpu`]);
+    assert.equal((await admin.agent.post(`/api/admin/devices/${bob.id}/kick`)).status, 409);
+  });
+
+  test('kicking follows the rules of disconnecting', async () => {
+    const owner = await person('owner@example.com', 'super_admin');
+    const admin = await person('admin@example.com', 'admin');
+    const bob = await person('bob@example.com');
+    const carol = await person('carol@example.com');
+    enter(lobby, owner.id, admin.id, bob.id, carol.id);
+    const kick = (who, target) => who.agent.post(`/api/admin/devices/${target.id}/kick`);
+
+    assert.equal((await kick(bob, carol)).status, 403);
+    assert.equal((await kick(admin, admin)).status, 403);
+    assert.equal((await kick(admin, { id: 'nope' })).status, 404);
+    assert.equal((await kick(admin, owner)).status, 200);
+    assert.equal((await kick(owner, bob)).status, 200);
+    assert.deepEqual(
+      lobby.removed.filter((id) => !id.endsWith('-gpu')),
+      [owner.id, bob.id],
+    );
   });
 });

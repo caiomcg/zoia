@@ -6,9 +6,9 @@
  * channel lands, so clients from before channels keep working. It can be
  * renamed but never removed.
  *
- * Anyone with a session may add channels, up to a fixed total (five by default,
- * the default channel included), rename any channel, and remove an empty one
- * that is not the default. Each channel is its own LiveKit room, with its own
+ * Admins add channels, up to a limit (five to start, the default channel
+ * included) that admins raise or lower while the app runs, rename any channel,
+ * and remove an empty one that is not the default. Each channel is its own LiveKit room, with its own
  * stage and WHIP publisher, built on first use.
  *
  * Validation failures come back as `{ ok: false, reason }` rather than thrown:
@@ -20,7 +20,13 @@ import { randomBytes } from 'node:crypto';
 
 import { createJsonStore } from './store.js';
 
-export const DEFAULT_MAX_CHANNELS = 5;
+export const DEFAULT_MAX_CHANNELS = 10;
+
+/**
+ * The most channels admins may allow. Every client's channel poll asks
+ * LiveKit about each channel, every two seconds, so this stays modest.
+ */
+export const CHANNEL_CEILING = 20;
 export const CHANNEL_NAME_MAX = 32;
 
 /** A display name, tidied, or null if it is not one. */
@@ -38,12 +44,16 @@ export function cleanChannelName(name) {
  * @param {string} options.file where added channels and renames are kept
  * @param {string} options.defaultId the default channel's id and LiveKit room
  * @param {(id: string) => { stage: object, whip: object | null }} options.makeRuntime
+ * @param {ReturnType<import('./settings.js').createLimitSetting>} [options.limit]
+ *   how many channels there may be, kept in the database; without it, `max`
+ *   is fixed
  */
 export function createChannelStore({
   file,
   defaultId,
   defaultName = 'Geral',
   max = DEFAULT_MAX_CHANNELS,
+  limit = null,
   makeRuntime,
   logger = console,
 }) {
@@ -67,10 +77,30 @@ export function createChannelStore({
   }
 
   const withRuntime = (channel) => ({ ...channel, ...runtime(channel.id) });
+  const maxNow = () => (limit ? limit.get() : max);
 
   return {
     defaultId,
-    max,
+
+    /** How many channels there may be now, the default included. */
+    get max() {
+      return maxNow();
+    },
+
+    /** The most an admin may set. */
+    ceiling: limit?.max ?? max,
+
+    /**
+     * Sets how many channels there may be. Lowering it below how many exist
+     * removes none; it only stops new ones until enough are removed.
+     */
+    async setMax(value, by) {
+      if (!limit) return { ok: false, reason: 'channels_fixed' };
+      const result = await limit.set(value);
+      if (!result.ok) return result;
+      logger.info(`[channels] limit set to ${value} by ${by?.accountId ?? 'keytool'}`);
+      return { ok: true, max: value };
+    },
 
     async list() {
       return arrange(await store.all()).map(withRuntime);
@@ -85,7 +115,7 @@ export function createChannelStore({
       const clean = cleanChannelName(name);
       if (!clean) return { ok: false, reason: 'invalid_name' };
       return store.mutate((saved) => {
-        if (arrange(saved).length >= max) return { ok: false, reason: 'room_limit' };
+        if (arrange(saved).length >= maxNow()) return { ok: false, reason: 'room_limit' };
         const id = `${defaultId}-${randomBytes(3).toString('hex')}`;
         saved.push({ id, name: clean, createdBy: by?.id, createdAt: new Date().toISOString() });
         logger.info(`[channels] ${by?.name ?? '?'} created "${clean}" (${id})`);
@@ -139,6 +169,8 @@ export function fixedChannels(list) {
   return {
     defaultId: first.id,
     max: list.length,
+    ceiling: list.length,
+    setMax: async () => ({ ok: false, reason: 'channels_fixed' }),
     list: async () => list.map((c, i) => ({ isDefault: i === 0, ...c })),
     get: async (id) => {
       const channel = find(id);

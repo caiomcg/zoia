@@ -5,6 +5,8 @@
 - **Replaces** the JSON-file stores of [ADR 0002](0002-invite-keys-over-shared-password.md),
   [ADR 0007](0007-device-pairing.md) and [ADR 0031](0031-accounts-with-admin-approval.md)
   for accounts and devices
+- **Amended by** [ADR 0036](0036-text-chat-in-scylladb.md): chat messages go to ScyllaDB,
+  a second database service; the chat list stays here
 
 ## Context
 
