@@ -139,7 +139,7 @@ approved account sees every one ([ADR 0036](adr/0036-text-chat-in-scylladb.md)).
 An admin can disconnect someone from their channel: the server tells that app why on a data
 message, then removes it from its room, and the app leaves the channel and says so. The
 chats stay open to it. Every minute the server also disconnects anyone who has been in a
-channel for ten minutes neither sharing nor watching, which it reads from the
+channel for thirty minutes neither sharing nor watching, which it reads from the
 `zoia.watching` attribute each app sets ([ADR 0037](adr/0037-kicks-and-idle-removal.md)).
 
 ## Why these choices

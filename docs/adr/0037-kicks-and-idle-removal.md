@@ -68,3 +68,10 @@ away from a broadcast can still read and answer.
 
 The server side is unchanged: the `zoia.kick` message with its reason, the grace period and
 the removal, under the same rules. Only what the app does on hearing it changed.
+
+## Amendment: thirty minutes
+
+`IDLE_KICK_MINUTES` defaults to 30, not 10. Ten minutes caught people who had only paused:
+someone waiting for a friend to go live, or between streams, was put out of the channel
+before anything had happened. Thirty still clears a channel of people who walked away well
+within an evening, and a server can set any other value, or 0 to turn it off.
