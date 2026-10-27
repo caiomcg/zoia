@@ -77,6 +77,7 @@ export const en = {
   'sidebar.collapse': 'Collapse list',
   'sidebar.channelName': 'Channel name',
   'sidebar.addEmoji': 'Add emoji',
+  'sidebar.moreEmoji': 'More emoji',
   'sidebar.resizeHint': 'Drag to open or close. Double-click to switch.',
   'sidebar.youAreHere': '{channel} — you are here',
   'sidebar.joinOne': 'Join {channel} (1 person)',
@@ -141,6 +142,11 @@ export const en = {
   'chat.error.tooLarge': 'That file is over 10 MB.',
   'chat.error.unsupported':
     'Only photos (PNG, JPEG, GIF, WebP) and videos (MP4, WebM) can be sent.',
+  'chat.reply': 'Reply',
+  'chat.replyingTo': 'Replying to {name}',
+  'chat.cancelReply': 'Cancel reply',
+  'chat.mentionList': 'People to mention',
+  'chat.error.replyGone': 'The message you replied to is no longer there.',
 
   // ---- your own share
   'player.youreLive': 'You’re live',

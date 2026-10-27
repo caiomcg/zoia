@@ -12,7 +12,14 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { ChatAuthor, ChatInfo, ChatList, ChatMessage } from '../../shared/ipc';
+import type {
+  ChatAuthor,
+  ChatInfo,
+  ChatList,
+  ChatMessage,
+  ChatPerson,
+  ChatSendExtras,
+} from '../../shared/ipc';
 import { atOrAfter, laterMarker, mergeMessages } from './model';
 
 export interface ChatThread {
@@ -54,6 +61,9 @@ export function useChat({
   // moment, or have answered, and comes back for what arrives while away.
   const [readWhenOpened, setReadWhenOpened] = useState<string | null>(null);
   const [showDivider, setShowDivider] = useState(true);
+  // Who can be @mentioned. Read when chat comes up, and again when the list
+  // changes, which is when someone new is most likely to have been let in.
+  const [people, setPeople] = useState<ChatPerson[]>([]);
 
   const openRef = useRef(openId);
   openRef.current = openId;
@@ -69,6 +79,9 @@ export function useChat({
     if (result.ok) {
       setEnabled(true);
       setList(result.value);
+      void window.zoia.chat.people().then((found) => {
+        if (found.ok) setPeople(found.value);
+      });
     } else if (NO_CHAT.has(result.error)) {
       setEnabled(false);
     }
@@ -250,27 +263,31 @@ export function useChat({
    * Sends to the open chat: text, or a photo or video with `body` as its
    * caption. Resolves to the server's refusal code, or null.
    */
-  const send = useCallback(async (body: string, file?: File): Promise<string | null> => {
-    const chatId = openRef.current;
-    if (!chatId) return 'not_found';
-    const result = file
-      ? await window.zoia.chat.sendMedia(
-          chatId,
-          new Uint8Array(await file.arrayBuffer()),
-          file.name,
-          body,
-        )
-      : await window.zoia.chat.send(chatId, body);
-    if (!result.ok) return result.error;
-    const { message, author } = result.value;
-    if (author) setAuthors((known) => ({ ...known, [message.authorId]: author }));
-    // Answering is the surest sign the new messages were read.
-    setShowDivider(false);
-    setThread((t) =>
-      t && t.chatId === chatId ? { ...t, messages: mergeMessages(t.messages, [message]) } : t,
-    );
-    return null;
-  }, []);
+  const send = useCallback(
+    async (body: string, file?: File, extras: ChatSendExtras = {}): Promise<string | null> => {
+      const chatId = openRef.current;
+      if (!chatId) return 'not_found';
+      const result = file
+        ? await window.zoia.chat.sendMedia(
+            chatId,
+            new Uint8Array(await file.arrayBuffer()),
+            file.name,
+            body,
+            extras,
+          )
+        : await window.zoia.chat.send(chatId, body, extras);
+      if (!result.ok) return result.error;
+      const { message, author } = result.value;
+      if (author) setAuthors((known) => ({ ...known, [message.authorId]: author }));
+      // Answering is the surest sign the new messages were read.
+      setShowDivider(false);
+      setThread((t) =>
+        t && t.chatId === chatId ? { ...t, messages: mergeMessages(t.messages, [message]) } : t,
+      );
+      return null;
+    },
+    [],
+  );
 
   /** Runs an admin change, then re-reads the list. Resolves to a refusal code, or null. */
   const change = useCallback(
@@ -295,6 +312,7 @@ export function useChat({
     thread,
     authors,
     readers,
+    people,
     /** Where "new messages" begins, or null for no line at all. */
     readWhenOpened: showDivider ? readWhenOpened : undefined,
     send,

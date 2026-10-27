@@ -145,6 +145,41 @@ export interface ChatMessage {
   body: string;
   sentAt: string;
   attachment?: ChatAttachment | null;
+  /** What it answers, as that message was: messages are never edited. */
+  replyTo?: ChatReply | null;
+  /** Who it @mentions, by the names written in it. */
+  mentions?: ChatMention[];
+}
+
+/** The message a reply answers, kept with the reply. */
+export interface ChatReply {
+  id: string;
+  authorId: string;
+  authorName: string | null;
+  /** Its opening words, up to 200 characters; empty for a bare photo or video. */
+  body: string;
+  kind: 'image' | 'video' | null;
+}
+
+/** Someone @mentioned, by the name they had when it was written. */
+export interface ChatMention {
+  id: string;
+  name: string;
+}
+
+/** Someone who can be @mentioned. */
+export interface ChatPerson {
+  id: string;
+  name: string;
+  avatar: string | null;
+}
+
+/** What may go with a message beside its text. */
+export interface ChatSendExtras {
+  /** The id of the message it answers. */
+  replyTo?: string;
+  /** Account ids; the server keeps those whose @name is in the text. */
+  mentions?: string[];
 }
 
 /** A photo or video sent in a chat, kept on the server's disk. */
@@ -428,6 +463,7 @@ export const IPC = {
   chatListen: 'zoia:chat:listen',
   chatEvent: 'zoia:chat:event',
   chatAvatar: 'zoia:chat:avatar',
+  chatPeople: 'zoia:chat:people',
   stageGet: 'zoia:stage:get',
   stageClaim: 'zoia:stage:claim',
   stageRelease: 'zoia:stage:release',
@@ -465,6 +501,7 @@ export const IPC = {
   updaterOpenInstaller: 'zoia:updater:installer:open',
   updaterReleaseNotes: 'zoia:updater:release-notes',
   appVersion: 'zoia:app:version',
+  appEmojiPanel: 'zoia:app:emojiPanel',
   trayCloseGet: 'zoia:tray:close:get',
   trayCloseSet: 'zoia:tray:close:set',
   devToolsGet: 'zoia:devtools:get',

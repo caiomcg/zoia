@@ -25,7 +25,7 @@ import { isDevToolsEnabled, openDevTools, setDevToolsEnabled } from './devtools'
 import * as language from './language';
 import { isLanguagePreference } from '../shared/i18n';
 import { CHAT_MEDIA_MAX_BYTES, IPC } from '../shared/ipc';
-import type { GpuStatus } from '../shared/ipc';
+import type { ChatSendExtras, GpuStatus } from '../shared/ipc';
 import {
   checkForUpdate,
   getUpdaterConfig,
@@ -307,6 +307,17 @@ function createWindow(): void {
  */
 let encoderGeneration = 0;
 
+/** A reply and mentions from the window, kept to the shapes the server takes. */
+function sendExtras(value: unknown): ChatSendExtras {
+  const extras = (value ?? {}) as Record<string, unknown>;
+  return {
+    ...(typeof extras.replyTo === 'string' ? { replyTo: extras.replyTo } : {}),
+    ...(Array.isArray(extras.mentions)
+      ? { mentions: extras.mentions.filter((id): id is string => typeof id === 'string') }
+      : {}),
+  };
+}
+
 function registerIpc(): void {
   ipcMain.handle(IPC.pairingStatus, () => pairing.getRestoredStatus());
 
@@ -373,6 +384,10 @@ function registerIpc(): void {
     return shell.openExternal(url.toString());
   });
   ipcMain.handle(IPC.appVersion, () => app.getVersion());
+  // The system's own emoji picker, typing into whatever field has focus.
+  ipcMain.handle(IPC.appEmojiPanel, () => {
+    if (app.isEmojiPanelSupported()) app.showEmojiPanel();
+  });
   const languageState = () => ({
     preference: language.getPreference(),
     language: language.currentLanguage(),
@@ -442,12 +457,13 @@ function registerIpc(): void {
   ipcMain.handle(IPC.chatMessages, (_event, chatId: unknown, before: unknown) =>
     api.chatMessages(String(chatId), typeof before === 'string' ? before : undefined),
   );
-  ipcMain.handle(IPC.chatSend, (_event, chatId: unknown, body: unknown) =>
-    api.chatSend(String(chatId), String(body)),
+  ipcMain.handle(IPC.chatSend, (_event, chatId: unknown, body: unknown, extras: unknown) =>
+    api.chatSend(String(chatId), String(body), sendExtras(extras)),
   );
+  ipcMain.handle(IPC.chatPeople, () => api.chatPeople());
   ipcMain.handle(
     IPC.chatSendMedia,
-    (_event, chatId: unknown, bytes: unknown, name: unknown, caption: unknown) => {
+    (_event, chatId: unknown, bytes: unknown, name: unknown, caption: unknown, extras: unknown) => {
       if (!(bytes instanceof Uint8Array) || bytes.length > CHAT_MEDIA_MAX_BYTES) {
         return { ok: false, error: 'media_too_large' };
       }
@@ -456,6 +472,7 @@ function registerIpc(): void {
         bytes,
         typeof name === 'string' ? name : '',
         typeof caption === 'string' ? caption : '',
+        sendExtras(extras),
       );
     },
   );

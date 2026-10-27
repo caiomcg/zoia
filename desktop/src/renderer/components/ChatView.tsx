@@ -12,11 +12,22 @@ import {
   chatMediaUrl,
   type ChatAttachment,
   type ChatAuthor,
+  type ChatMention,
   type ChatMessage,
+  type ChatPerson,
+  type ChatReply,
 } from '../../shared/ipc';
 import type { ChatController } from '../chat/useChat';
 import { useAccountAvatar } from '../chat/avatars';
 import { continues, newMessagesIndex, sameDay, seenBy } from '../chat/model';
+import {
+  applyMention,
+  matchPeople,
+  mentionQuery,
+  mentionedIn,
+  splitMentions,
+  type MentionQuery,
+} from '../chat/mentions';
 import Avatar from './Avatar';
 import { useLanguage, useT } from '../i18n';
 
@@ -40,7 +51,8 @@ function fileProblem(file: File): 'tooLarge' | 'unsupported' | null {
  * The open chat (ADR 0036): its messages, newest at the bottom, and a box to
  * write in. Enter sends and Shift+Enter starts a new line. A photo or video
  * goes in by the clip button, by pasting or by dropping it on the chat, and is
- * sent with whatever is typed as its caption. Scrolling to the top loads
+ * sent with whatever is typed as its caption. A message is answered from
+ * its Reply button, and typing @ offers people to mention, by name. Scrolling to the top loads
  * older messages; a new one scrolls into view only when you were already at
  * the bottom, so reading back is not interrupted.
  */
@@ -54,6 +66,12 @@ export default function ChatView({ chat, me }: { chat: ChatController; me: strin
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [viewing, setViewing] = useState<string | null>(null);
+  // What the message being written answers, and who was picked to mention.
+  const [replyingTo, setReplyingTo] = useState<ChatMessage | null>(null);
+  const [picked, setPicked] = useState<ChatMention[]>([]);
+  // The @query at the caret, and which suggestion is highlighted.
+  const [mention, setMention] = useState<{ query: MentionQuery; index: number } | null>(null);
+  const textRef = useRef<HTMLTextAreaElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const stickRef = useRef(true);
@@ -81,6 +99,9 @@ export default function ChatView({ chat, me }: { chat: ChatController; me: strin
     stickRef.current = true;
     setError(null);
     setFile(null);
+    setReplyingTo(null);
+    setPicked([]);
+    setMention(null);
   }, [thread?.chatId]);
 
   // The chosen file, shown before it is sent.
@@ -126,7 +147,10 @@ export default function ChatView({ chat, me }: { chat: ChatController; me: strin
     if ((!body && !file) || sending) return;
     setSending(true);
     setError(null);
-    const refused = await chat.send(body, file ?? undefined);
+    const refused = await chat.send(body, file ?? undefined, {
+      ...(replyingTo ? { replyTo: replyingTo.id } : {}),
+      mentions: mentionedIn(body, picked).map((p) => p.id),
+    });
     setSending(false);
     if (refused) {
       setError(errorText(refused));
@@ -135,9 +159,79 @@ export default function ChatView({ chat, me }: { chat: ChatController; me: strin
     stickRef.current = true;
     setDraft('');
     setFile(null);
+    setReplyingTo(null);
+    setPicked([]);
+    setMention(null);
+  }
+
+  // Who the @query at the caret may mean; none shown, none to pick.
+  const suggestions = mention ? matchPeople(chat.people, mention.query.query) : [];
+
+  /** Looks for an @query at the caret, after typing or moving it. */
+  function findMention(text: string, caret: number) {
+    const query = mentionQuery(text, caret);
+    setMention((current) =>
+      query ? { query, index: current?.query.start === query.start ? current.index : 0 } : null,
+    );
+  }
+
+  /** Puts the chosen person's name in place of the @query. */
+  function pick(person: ChatPerson) {
+    if (!mention) return;
+    const next = applyMention(draft, mention.query, person.name);
+    setDraft(next.text);
+    setPicked((list) => [...list, { id: person.id, name: person.name }]);
+    setMention(null);
+    requestAnimationFrame(() => {
+      textRef.current?.focus();
+      textRef.current?.setSelectionRange(next.caret, next.caret);
+    });
+  }
+
+  /** Answers a message: shown above the box until sent or cancelled. */
+  function reply(message: ChatMessage) {
+    setReplyingTo(message);
+    textRef.current?.focus();
+  }
+
+  /** Scrolls to the message a reply answers, if it is loaded, and flashes it. */
+  function jumpTo(id: string) {
+    const el = scrollRef.current?.querySelector<HTMLElement>(`[data-message-id="${id}"]`);
+    if (!el) return;
+    el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    el.classList.remove('flash');
+    void el.offsetWidth;
+    el.classList.add('flash');
   }
 
   function onKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (mention && suggestions.length > 0) {
+      const move = (by: number) =>
+        setMention({
+          ...mention,
+          index: (mention.index + by + suggestions.length) % suggestions.length,
+        });
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        event.preventDefault();
+        move(event.key === 'ArrowDown' ? 1 : -1);
+        return;
+      }
+      if (event.key === 'Enter' || event.key === 'Tab') {
+        event.preventDefault();
+        pick(suggestions[Math.min(mention.index, suggestions.length - 1)]!);
+        return;
+      }
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setMention(null);
+        return;
+      }
+    }
+    if (event.key === 'Escape' && replyingTo) {
+      event.preventDefault();
+      setReplyingTo(null);
+      return;
+    }
     if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
       event.preventDefault();
       void submit();
@@ -164,6 +258,7 @@ export default function ChatView({ chat, me }: { chat: ChatController; me: strin
     if (code === 'invalid_message') return t('chat.error.invalid');
     if (code === 'media_too_large') return t('chat.error.tooLarge');
     if (code === 'unsupported_media') return t('chat.error.unsupported');
+    if (code === 'invalid_reply') return t('chat.error.replyGone');
     return t('chat.error.generic');
   }
 
@@ -231,8 +326,12 @@ export default function ChatView({ chat, me }: { chat: ChatController; me: strin
                   newMessages={i === divider}
                   time={time.format(new Date(m.sentAt))}
                   mine={m.authorId === me}
+                  mentionsMe={Boolean(me && m.mentions?.some((x) => x.id === me))}
+                  me={me}
                   onMediaLoad={onMediaLoad}
                   onView={setViewing}
+                  onReply={chat.available ? () => reply(m) : undefined}
+                  onJump={jumpTo}
                 />
               );
             })}
@@ -258,6 +357,44 @@ export default function ChatView({ chat, me }: { chat: ChatController; me: strin
           void submit();
         }}
       >
+        {mention && suggestions.length > 0 && (
+          <ul className="chat-suggest" role="listbox" aria-label={t('chat.mentionList')}>
+            {suggestions.map((person, i) => (
+              <Suggestion
+                key={person.id}
+                person={person}
+                active={i === mention.index}
+                onHover={() => setMention({ ...mention, index: i })}
+                onPick={() => pick(person)}
+              />
+            ))}
+          </ul>
+        )}
+        {replyingTo && (
+          <div className="chat-replying">
+            <ReplyQuote
+              reply={{
+                id: replyingTo.id,
+                authorId: replyingTo.authorId,
+                authorName: chat.authors[replyingTo.authorId]?.name ?? null,
+                body: replyingTo.body,
+                kind: replyingTo.attachment?.kind ?? null,
+              }}
+              label={t('chat.replyingTo', {
+                name: chat.authors[replyingTo.authorId]?.name ?? t('chat.someone'),
+              })}
+            />
+            <button
+              type="button"
+              className="channel-action"
+              onClick={() => setReplyingTo(null)}
+              aria-label={t('chat.cancelReply')}
+              title={t('chat.cancelReply')}
+            >
+              ×
+            </button>
+          </div>
+        )}
         {file && preview && (
           <div className="chat-pending">
             {file.type.startsWith('video/') ? (
@@ -279,6 +416,7 @@ export default function ChatView({ chat, me }: { chat: ChatController; me: strin
         )}
         <div className="chat-composer-row">
           <textarea
+            ref={textRef}
             value={draft}
             rows={1}
             maxLength={MESSAGE_MAX}
@@ -291,7 +429,14 @@ export default function ChatView({ chat, me }: { chat: ChatController; me: strin
                   : t('chat.unavailable')
             }
             aria-label={t('chat.placeholder', { chat: chat.openChat?.name ?? '' })}
-            onChange={(event) => setDraft(event.target.value)}
+            onChange={(event) => {
+              setDraft(event.target.value);
+              findMention(event.target.value, event.target.selectionStart);
+            }}
+            onSelect={(event) =>
+              findMention(event.currentTarget.value, event.currentTarget.selectionStart)
+            }
+            onBlur={() => setMention(null)}
             onKeyDown={onKeyDown}
             onPaste={onPaste}
           />
@@ -368,8 +513,12 @@ function MessageRow({
   newMessages,
   time,
   mine,
+  mentionsMe,
+  me,
   onMediaLoad,
   onView,
+  onReply,
+  onJump,
 }: {
   message: ChatMessage;
   author: ChatAuthor;
@@ -378,8 +527,15 @@ function MessageRow({
   newMessages: boolean;
   time: string;
   mine: boolean;
+  /** It @mentions you: it stands out from the rest. */
+  mentionsMe: boolean;
+  me: string | null;
   onMediaLoad: () => void;
   onView: (url: string) => void;
+  /** Absent while messages cannot be sent. */
+  onReply?: () => void;
+  /** Scrolls to the message a reply answers. */
+  onJump: (id: string) => void;
 }) {
   const t = useT();
   const name = author?.name ?? t('chat.someone');
@@ -396,8 +552,22 @@ function MessageRow({
           <span>{t('chat.newMessages')}</span>
         </li>
       )}
-      <li className={`chat-message${grouped ? ' grouped' : ''}${mine ? ' mine' : ''}`}>
-        {grouped ? (
+      <li
+        className={`chat-message${grouped && !message.replyTo ? ' grouped' : ''}${mine ? ' mine' : ''}${mentionsMe ? ' mentions-me' : ''}`}
+        data-message-id={message.id}
+      >
+        {onReply && (
+          <button
+            type="button"
+            className="chat-reply-button"
+            onClick={onReply}
+            aria-label={t('chat.reply')}
+            title={t('chat.reply')}
+          >
+            <IconReply />
+          </button>
+        )}
+        {grouped && !message.replyTo ? (
           <time className="chat-time-side" dateTime={message.sentAt}>
             {time}
           </time>
@@ -405,7 +575,16 @@ function MessageRow({
           <Avatar name={name} live={false} image={image} />
         )}
         <div className="chat-content">
-          {!grouped && (
+          {message.replyTo && (
+            <button
+              type="button"
+              className="chat-reply-link"
+              onClick={() => onJump(message.replyTo!.id)}
+            >
+              <ReplyQuote reply={message.replyTo} />
+            </button>
+          )}
+          {(!grouped || message.replyTo) && (
             <div className="chat-meta">
               <span className="chat-author">{name}</span>
               <time dateTime={message.sentAt}>{time}</time>
@@ -419,7 +598,19 @@ function MessageRow({
               onView={onView}
             />
           )}
-          {message.body && <p className="chat-body">{message.body}</p>}
+          {message.body && (
+            <p className="chat-body">
+              {splitMentions(message.body, message.mentions).map((part, i) =>
+                part.mention ? (
+                  <span key={i} className={`chat-mention${part.mention.id === me ? ' me' : ''}`}>
+                    {part.text}
+                  </span>
+                ) : (
+                  part.text
+                ),
+              )}
+            </p>
+          )}
         </div>
       </li>
     </>
@@ -461,5 +652,70 @@ function Attachment({
         onLoad={onLoad}
       />
     </button>
+  );
+}
+
+/** The message a reply answers: who wrote it, and its opening words. */
+function ReplyQuote({ reply, label }: { reply: ChatReply; label?: string }) {
+  const t = useT();
+  const what =
+    reply.body ||
+    (reply.kind === 'video' ? t('chat.video') : reply.kind === 'image' ? t('chat.photo') : '');
+  return (
+    <span className="chat-quote">
+      <span className="chat-quote-author">{label ?? reply.authorName ?? t('chat.someone')}</span>
+      <span className="chat-quote-body">{what}</span>
+    </span>
+  );
+}
+
+/** Someone offered while typing an @: picked by click, Enter or Tab. */
+function Suggestion({
+  person,
+  active,
+  onHover,
+  onPick,
+}: {
+  person: ChatPerson;
+  active: boolean;
+  onHover: () => void;
+  onPick: () => void;
+}) {
+  const image = useAccountAvatar(person.id, person.avatar);
+  return (
+    <li
+      role="option"
+      aria-selected={active}
+      className={active ? 'active' : undefined}
+      onMouseEnter={onHover}
+      // Before the box's blur, which would close the list first.
+      onMouseDown={(event) => {
+        event.preventDefault();
+        onPick();
+      }}
+    >
+      <Avatar name={person.name} live={false} image={image} />
+      <span>{person.name}</span>
+    </li>
+  );
+}
+
+/** An arrow curving back: answer this. */
+function IconReply() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="16"
+      height="16"
+      aria-hidden="true"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M9 14L4 9l5-5" />
+      <path d="M4 9h10.5a5.5 5.5 0 010 11H11" />
+    </svg>
   );
 }

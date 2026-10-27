@@ -41,10 +41,20 @@ const DRAG_TYPE = 'application/x-zoia-member';
 
 /** "Room 3" → "R3", "Games" → "GA": what a collapsed sidebar shows. */
 export function shortName(name: string): string {
+  // By whole characters: an emoji is two or more code units, and half of one
+  // shows as nothing. A name that starts with one shows just that emoji.
+  const chars = (s: string) => [...SEGMENTER.segment(s)].map((g) => g.segment);
+  const first = chars(name.trim())[0] ?? '';
+  if (/\p{Extended_Pictographic}/u.test(first)) return first;
   const words = name.trim().split(/\s+/).filter(Boolean);
-  if (words.length > 1) return (words[0]![0]! + words[words.length - 1]!.slice(0, 2)).toUpperCase();
-  return name.slice(0, 2).toUpperCase();
+  if (words.length > 1) {
+    const last = chars(words[words.length - 1]!);
+    return (chars(words[0]!)[0]! + last.slice(0, 2).join('')).toUpperCase();
+  }
+  return chars(name).slice(0, 2).join('').toUpperCase();
 }
+
+const SEGMENTER = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
 
 function readCollapsed(): boolean {
   try {
@@ -209,7 +219,8 @@ export function SectionHeading({
 /** What a channel or chat name may start with, offered beside the name field. */
 const NAME_EMOJI = (
   '🎮 🕹️ 👾 🎲 🧩 🏆 ⚽ 🏀 🎬 📺 🍿 🎵 🎧 🎤 📢 💬 🗣️ 💻 🛠️ 📚 ' +
-  '🎨 📷 ☕ 🍕 🍺 🔥 ⭐ 🎉 🚀 🌙 🌎 ❤️ 😂 😎 🤖 🐱 🐶 💤 🔒 ✨'
+  '🎨 📷 ☕ 🍕 🍺 🔥 ⭐ 🎉 🚀 🌙 🌎 ❤️ 😂 😎 🤖 🐱 🐶 💤 🔒 ✨ ' +
+  '🎯 🥳 💀 👀 🙌 🍔 🌈'
 ).split(' ');
 /** As the server counts it: UTF-16 units, so an emoji takes two or more. */
 const NAME_MAX = 32;
@@ -298,6 +309,18 @@ export function ChannelNameField({
               {emoji}
             </button>
           ))}
+          {/* Every other emoji, with search: the system's own picker, which
+              types into this field since it keeps the focus. */}
+          <button
+            type="button"
+            className="emoji-more"
+            onMouseDown={keepFocus}
+            onClick={() => void window.zoia.app.emojiPanel()}
+            title={t('sidebar.moreEmoji')}
+            aria-label={t('sidebar.moreEmoji')}
+          >
+            …
+          </button>
         </div>
       )}
     </div>

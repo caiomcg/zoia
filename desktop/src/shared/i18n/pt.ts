@@ -71,6 +71,7 @@ export const pt: Messages = {
   'sidebar.collapse': 'Recolher lista',
   'sidebar.channelName': 'Nome do canal',
   'sidebar.addEmoji': 'Adicionar emoji',
+  'sidebar.moreEmoji': 'Mais emojis',
   'sidebar.resizeHint': 'Arraste para abrir ou fechar. Clique duplo para alternar.',
   'sidebar.youAreHere': '{channel} — você está aqui',
   'sidebar.joinOne': 'Entrar em {channel} (1 pessoa)',
@@ -133,6 +134,11 @@ export const pt: Messages = {
   'chat.sending': 'Enviando…',
   'chat.error.tooLarge': 'Esse arquivo passa de 10 MB.',
   'chat.error.unsupported': 'Só dá para enviar fotos (PNG, JPEG, GIF, WebP) e vídeos (MP4, WebM).',
+  'chat.reply': 'Responder',
+  'chat.replyingTo': 'Respondendo a {name}',
+  'chat.cancelReply': 'Cancelar resposta',
+  'chat.mentionList': 'Pessoas para mencionar',
+  'chat.error.replyGone': 'A mensagem que você respondeu não existe mais.',
 
   'player.youreLive': 'Você está ao vivo',
   'player.previewHidden':

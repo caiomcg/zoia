@@ -23,6 +23,8 @@ import type {
   ChatPage,
   ChatMessage,
   ChatAuthor,
+  ChatPerson,
+  ChatSendExtras,
   ChatEvent,
 } from '../shared/ipc';
 
@@ -160,6 +162,7 @@ export interface ZoiaBridge {
     send(
       chatId: string,
       body: string,
+      extras?: ChatSendExtras,
     ): Promise<ActionOutcome<{ message: ChatMessage; author: ChatAuthor }>>;
     /** A photo or video as a message of its own, up to 10 MB, with an optional caption. */
     sendMedia(
@@ -167,7 +170,10 @@ export interface ZoiaBridge {
       bytes: Uint8Array,
       name: string,
       caption: string,
+      extras?: ChatSendExtras,
     ): Promise<ActionOutcome<{ message: ChatMessage; author: ChatAuthor }>>;
+    /** Everyone who can be @mentioned. */
+    people(): Promise<ActionOutcome<ChatPerson[]>>;
     read(chatId: string, messageId: string): Promise<ActionOutcome>;
     /** Starts or stops the live stream of changes, which arrive through onEvent. */
     listen(on: boolean): Promise<void>;
@@ -192,6 +198,8 @@ export interface ZoiaBridge {
   };
   app: {
     version(): Promise<string>;
+    /** Opens the system's emoji picker over the focused field (Windows, macOS). */
+    emojiPanel(): Promise<void>;
     /** The OS this copy runs on; application audio is Windows-only. */
     platform: NodeJS.Platform;
   };

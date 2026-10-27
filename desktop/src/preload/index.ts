@@ -114,9 +114,10 @@ const bridge: ZoiaBridge = {
     remove: (id) => ipcRenderer.invoke(IPC.chatRemove, id),
     setLimit: (max) => ipcRenderer.invoke(IPC.chatSetLimit, max),
     messages: (chatId, before) => ipcRenderer.invoke(IPC.chatMessages, chatId, before),
-    send: (chatId, body) => ipcRenderer.invoke(IPC.chatSend, chatId, body),
-    sendMedia: (chatId, bytes, name, caption) =>
-      ipcRenderer.invoke(IPC.chatSendMedia, chatId, bytes, name, caption),
+    send: (chatId, body, extras) => ipcRenderer.invoke(IPC.chatSend, chatId, body, extras),
+    sendMedia: (chatId, bytes, name, caption, extras) =>
+      ipcRenderer.invoke(IPC.chatSendMedia, chatId, bytes, name, caption, extras),
+    people: () => ipcRenderer.invoke(IPC.chatPeople),
     read: (chatId, messageId) => ipcRenderer.invoke(IPC.chatRead, chatId, messageId),
     listen: (on) => ipcRenderer.invoke(IPC.chatListen, on),
     onEvent: (cb) => {
@@ -141,6 +142,7 @@ const bridge: ZoiaBridge = {
   },
   app: {
     version: () => ipcRenderer.invoke(IPC.appVersion) as Promise<string>,
+    emojiPanel: () => ipcRenderer.invoke(IPC.appEmojiPanel) as Promise<void>,
     platform: process.platform,
   },
   language: {

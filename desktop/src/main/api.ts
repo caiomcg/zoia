@@ -27,6 +27,8 @@ import type {
   ChatPage,
   ChatMessage,
   ChatAuthor,
+  ChatPerson,
+  ChatSendExtras,
 } from '../shared/ipc';
 import { getServerUrl } from './config';
 
@@ -419,13 +421,18 @@ export function chatMessages(chatId: string, before?: string) {
   return attempt(call<ChatPage>(chatPath(chatId, `/messages${query}`)));
 }
 
-export function chatSend(chatId: string, body: string) {
+export function chatSend(chatId: string, body: string, extras: ChatSendExtras = {}) {
   return attempt(
     call<{ message: ChatMessage; author: ChatAuthor }>(chatPath(chatId, '/messages'), {
       method: 'POST',
-      body: JSON.stringify({ body }),
+      body: JSON.stringify({ body, ...extras }),
     }),
   );
+}
+
+/** Everyone who can be @mentioned: name and picture, never email. */
+export function chatPeople() {
+  return attempt(call<{ people: ChatPerson[] }>('/api/chats/people').then((r) => r.people));
 }
 
 export function chatRead(chatId: string, messageId: string) {
@@ -459,10 +466,18 @@ export async function fetchAccountAvatar(
 }
 
 /** Sends a photo or video as a message of its own, with an optional caption. */
-export function chatSendMedia(chatId: string, bytes: Uint8Array, name: string, caption: string) {
+export function chatSendMedia(
+  chatId: string,
+  bytes: Uint8Array,
+  name: string,
+  caption: string,
+  extras: ChatSendExtras = {},
+) {
   const query = new URLSearchParams();
   if (name) query.set('name', name);
   if (caption.trim()) query.set('caption', caption);
+  if (extras.replyTo) query.set('replyTo', extras.replyTo);
+  if (extras.mentions?.length) query.set('mentions', extras.mentions.join(','));
   return attempt(
     call<{ message: ChatMessage; author: ChatAuthor }>(chatPath(chatId, `/media?${query}`), {
       method: 'POST',
