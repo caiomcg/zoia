@@ -2,6 +2,7 @@
 
 import { storePaths } from './stores.js';
 import { isKeyspaceName } from './scylla.js';
+import { DEFAULT_MAX_CHANNELS } from './channels.js';
 
 const required = ['SESSION_SECRET', 'LIVEKIT_API_KEY', 'LIVEKIT_API_SECRET', 'LIVEKIT_WS_URL'];
 
@@ -34,7 +35,7 @@ export function loadConfig(env = process.env) {
     channels: {
       defaultName: env.DEFAULT_CHANNEL_NAME ?? 'Geral',
       // The most channels the server holds, the default included.
-      max: Number(env.MAX_CHANNELS ?? 5),
+      max: Number(env.MAX_CHANNELS ?? DEFAULT_MAX_CHANNELS),
       file: env.CHANNEL_STORE_FILE ?? 'server/data/channels.json',
     },
     // Number of proxy hops to trust. Behind the caddy front end this is 1; if it

@@ -115,7 +115,7 @@ missing UDP forward, certificates that never issued, containers that are up but 
 | `VIDEO_CODEC` | `vp9` | `vp9` compresses screen content best; `h264` is cheaper to encode. |
 | `ROOM_NAME` | `zoia` | The default channel's room, where clients that name no channel land. |
 | `DEFAULT_CHANNEL_NAME` | `Geral` | The default channel's name until someone renames it. |
-| `MAX_CHANNELS` | `5` | Most channels people can have, default included. See [ADR 0015](adr/0015-channels.md). |
+| `MAX_CHANNELS` | `10` | Most channels people can have, default included. See [ADR 0015](adr/0015-channels.md). |
 
 ### Capacity
 

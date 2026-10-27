@@ -20,7 +20,7 @@ import { randomBytes } from 'node:crypto';
 
 import { createJsonStore } from './store.js';
 
-export const DEFAULT_MAX_CHANNELS = 5;
+export const DEFAULT_MAX_CHANNELS = 10;
 
 /**
  * The most channels admins may allow. Every client's channel poll asks

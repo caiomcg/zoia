@@ -134,7 +134,7 @@ describe('the list', () => {
     assert.equal(res.body.chats.length, 1);
     assert.equal(res.body.chats[0].isDefault, true);
     assert.equal(res.body.chats[0].unread, 0);
-    assert.equal(res.body.max, 1);
+    assert.equal(res.body.max, 10);
     assert.equal(res.body.available, true);
   });
 
@@ -180,6 +180,8 @@ describe('who may change the list', () => {
     const admin = await signIn(app, stores.accounts, 'Bia', { role: 'admin' });
 
     await user.agent.post('/api/chats').send({ name: 'Jogos' }).expect(403);
+    // Lowered to the default chat alone, so the list is full.
+    await stores.chats.setMax(1);
     const full = await admin.agent.post('/api/chats').send({ name: 'Jogos' }).expect(409);
     assert.equal(full.body.error, 'chat_limit');
 

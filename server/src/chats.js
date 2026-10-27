@@ -2,8 +2,8 @@
  * Text chats: the list, and how long it may grow. See ADR 0036.
  *
  * There is always a default chat, which can be renamed but never removed.
- * Admins add, rename and remove the others, up to a limit that starts at one
- * — the default alone — and that admins change. The limit is kept in the
+ * Admins add, rename and remove the others, up to a limit that starts at ten,
+ * the default included, and that admins change. The limit is kept in the
  * database rather than the environment so raising it needs no redeploy, and
  * is capped at CHAT_CEILING whatever is asked.
  *
@@ -21,7 +21,7 @@ import { cleanChannelName } from './channels.js';
 import { createLimitSetting } from './settings.js';
 
 /** Chats that may exist before an admin raises the limit. */
-export const DEFAULT_MAX_CHATS = 1;
+export const DEFAULT_MAX_CHATS = 10;
 
 /** The most chats an admin may allow. */
 export const CHAT_CEILING = 50;

@@ -1,6 +1,6 @@
 /**
  * The chat list (ADR 0036): a default chat that always exists, others up to a
- * limit that starts at one and that only grows when the super admin says so.
+ * limit that starts at ten and that admins raise or lower.
  */
 
 import { test, describe, beforeEach, afterEach } from 'node:test';
@@ -66,9 +66,13 @@ describe('the default chat', () => {
 });
 
 describe('the limit', () => {
-  test('starts at one, so nothing can be added until it is raised', async () => {
+  test('starts at ten, the default included, and refuses an eleventh', async () => {
     const chats = open();
     assert.equal(await chats.max(), DEFAULT_MAX_CHATS);
+    assert.equal(DEFAULT_MAX_CHATS, 10);
+    for (let i = 1; i < DEFAULT_MAX_CHATS; i += 1) {
+      assert.equal((await chats.add({ name: `Chat ${i}`, by: 'a' })).ok, true);
+    }
     assert.deepEqual(await chats.add({ name: 'Jogos', by: 'a' }), {
       ok: false,
       reason: 'chat_limit',
