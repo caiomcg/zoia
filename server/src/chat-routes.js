@@ -16,7 +16,7 @@ import express from 'express';
 import rateLimit from 'express-rate-limit';
 
 import { CHAT_CEILING } from './chats.js';
-import { cleanBody } from './messages.js';
+import { MENTIONS_MAX, cleanBody, replySnapshot } from './messages.js';
 import { MEDIA_MAX_BYTES, cleanFileName } from './chat-media.js';
 
 const PAGE_DEFAULT = 50;
@@ -33,6 +33,7 @@ const ERRORS = {
   invalid_limit: 400,
   invalid_message: 400,
   invalid_cursor: 400,
+  invalid_reply: 400,
   unsupported_media: 415,
   media_too_large: 413,
   forbidden: 403,
@@ -127,6 +128,36 @@ export function chatRoutes({
 
   const publicChat = ({ id, name, isDefault }) => ({ id, name, isDefault });
 
+  /**
+   * The snapshot of the message `replyTo` names, in this chat; undefined for
+   * no reply, null for one that is not there to answer.
+   */
+  async function replyOf(current, chat, replyTo) {
+    if (replyTo === undefined || replyTo === null || replyTo === '') return undefined;
+    if (typeof replyTo !== 'string') return null;
+    const original = await current.get({ chatId: chat.id, id: replyTo });
+    if (!original) return null;
+    const author = await accountStore.get(original.authorId);
+    return replySnapshot(original, author?.name);
+  }
+
+  /**
+   * Who a message @mentions, as { id, name }: people who exist and are let
+   * in, and whose @name is in what was written, so a mention cannot be
+   * slipped in unseen. Anything else asked for is dropped, not refused.
+   */
+  async function mentionsOf(ids, body) {
+    if (!Array.isArray(ids) || !body) return [];
+    const mentions = [];
+    for (const id of new Set(ids.filter((x) => typeof x === 'string').slice(0, MENTIONS_MAX))) {
+      const account = await accountStore.get(id);
+      if (account?.status === 'active' && account.name && body.includes(`@${account.name}`)) {
+        mentions.push({ id: account.id, name: account.name });
+      }
+    }
+    return mentions;
+  }
+
   // ---- the list ----------------------------------------------------------
 
   router.get('/', requireSession, async (req, res) => {
@@ -190,6 +221,16 @@ export function chatRoutes({
     media
       ?.removeChat(result.chat.id)
       .catch((err) => logger.warn(`[chat] media of ${result.chat.id} not deleted: ${err.message}`));
+  });
+
+  // Who can be @mentioned: everyone let in, by name and picture, never by
+  // email. Before /:id, like /events.
+  router.get('/people', requireSession, async (_req, res) => {
+    const people = (await accountStore.list())
+      .filter((a) => a.status === 'active' && a.name)
+      .map((a) => ({ id: a.id, name: a.name, avatar: a.avatar ?? null }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+    res.json({ people });
   });
 
   // ---- live updates --------------------------------------------------------
@@ -265,9 +306,18 @@ export function chatRoutes({
     if (!current) return;
     const body = cleanBody(req.body?.body);
     if (!body) return refuse(res, 'invalid_message');
+    const replyTo = await replyOf(current, chat, req.body?.replyTo);
+    if (replyTo === null) return refuse(res, 'invalid_reply');
+    const mentions = await mentionsOf(req.body?.mentions, body);
 
     const { accountId } = req.user;
-    const message = await current.send({ chatId: chat.id, authorId: accountId, body });
+    const message = await current.send({
+      chatId: chat.id,
+      authorId: accountId,
+      body,
+      replyTo,
+      mentions,
+    });
     // Whoever wrote it has read up to it.
     await current.markRead({ chatId: chat.id, accountId, messageId: message.id });
 
@@ -299,13 +349,24 @@ export function chatRoutes({
     const caption = typeof req.query.caption === 'string' ? req.query.caption : '';
     const body = caption.trim() ? cleanBody(caption) : '';
     if (body === null) return refuse(res, 'invalid_message');
+    const replyTo = await replyOf(current, chat, req.query.replyTo);
+    if (replyTo === null) return refuse(res, 'invalid_reply');
+    const asked = typeof req.query.mentions === 'string' ? req.query.mentions.split(',') : [];
+    const mentions = await mentionsOf(asked, body);
     const bytes = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
     const saved = await media.save(chat.id, bytes);
     if (!saved) return refuse(res, 'unsupported_media');
 
     const { accountId } = req.user;
     const attachment = { ...saved, name: cleanFileName(req.query.name) };
-    const message = await current.send({ chatId: chat.id, authorId: accountId, body, attachment });
+    const message = await current.send({
+      chatId: chat.id,
+      authorId: accountId,
+      body,
+      attachment,
+      replyTo,
+      mentions,
+    });
     await current.markRead({ chatId: chat.id, accountId, messageId: message.id });
     logger.info(`[chat] ${accountId} sent ${saved.kind} ${saved.id} (${saved.size} bytes)`);
 

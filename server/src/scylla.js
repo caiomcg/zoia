@@ -48,6 +48,13 @@ const MIGRATIONS = [
     // media folder, type, size and name. The file is on the app's disk.
     `ALTER TABLE {ks}.messages ADD attachment text`,
   ],
+  [
+    // What a message answers, as JSON: a snapshot of the original (its id,
+    // author and opening words), since messages are never edited.
+    `ALTER TABLE {ks}.messages ADD reply_to text`,
+    // Who it @mentions, as JSON: [{ id, name }] as written at the time.
+    `ALTER TABLE {ks}.messages ADD mentions text`,
+  ],
 ];
 
 /**

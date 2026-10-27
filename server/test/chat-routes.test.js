@@ -33,7 +33,7 @@ function memoryMessages() {
   const key = (chatId, accountId) => `${chatId}/${accountId}`;
   const place = (id) => sent.findIndex((m) => m.id === id);
   return {
-    async send({ chatId, authorId, body, attachment = null }) {
+    async send({ chatId, authorId, body, attachment = null, replyTo = null, mentions = [] }) {
       const id = TimeUuid.now();
       const message = {
         id: id.toString(),
@@ -42,9 +42,14 @@ function memoryMessages() {
         body,
         sentAt: id.getDate().toISOString(),
         attachment,
+        replyTo,
+        mentions,
       };
       sent.push(message);
       return message;
+    },
+    async get({ chatId, id }) {
+      return sent.find((m) => m.chatId === chatId && m.id === id) ?? null;
     },
     async page({ chatId, before, limit }) {
       const end = before ? place(before) : sent.length;
@@ -216,6 +221,58 @@ describe('messages', () => {
     assert.equal(page.body.readers[ana.account.id], res.body.message.id);
     assert.equal(page.body.authors[ana.account.id].name, 'Ana');
     assert.equal(page.body.hasMore, false);
+  });
+
+  test('a reply carries a snapshot of what it answers, in the same chat only', async () => {
+    const ana = await signIn(app, stores.accounts, 'Ana');
+    const bia = await signIn(app, stores.accounts, 'Bia');
+    const chat = await defaultChat();
+    const send = (who, body) => who.agent.post(`/api/chats/${chat.id}/messages`).send(body);
+
+    const original = (await send(ana, { body: `long ${'x'.repeat(300)}` }).expect(201)).body;
+    const reply = (await send(bia, { body: 'sim', replyTo: original.message.id }).expect(201)).body;
+    const { replyTo } = reply.message;
+    assert.equal(replyTo.id, original.message.id);
+    assert.equal(replyTo.authorId, ana.account.id);
+    assert.equal(replyTo.authorName, 'Ana');
+    assert.equal(replyTo.body.length, 200);
+    assert.ok(replyTo.body.endsWith('…'));
+
+    // Not a message, or one that is not in this chat: nothing to answer.
+    const refused = await send(bia, { body: 'x', replyTo: 'nope' }).expect(400);
+    assert.equal(refused.body.error, 'invalid_reply');
+    await send(bia, { body: 'x', replyTo: '6b0f6b0e-0000-1000-8000-000000000000' }).expect(400);
+  });
+
+  test('a mention names someone let in, and only as written in the message', async () => {
+    const ana = await signIn(app, stores.accounts, 'Ana');
+    const bia = await signIn(app, stores.accounts, 'Bia Souza');
+    const caio = await signIn(app, stores.accounts, 'Caio');
+    const chat = await defaultChat();
+
+    const res = await ana.agent
+      .post(`/api/chats/${chat.id}/messages`)
+      .send({
+        body: 'oi @Bia Souza, tudo bem?',
+        // Caio is not in the text; the others are not accounts at all.
+        mentions: [bia.account.id, caio.account.id, 'nope', 42, bia.account.id],
+      })
+      .expect(201);
+    assert.deepEqual(res.body.message.mentions, [{ id: bia.account.id, name: 'Bia Souza' }]);
+  });
+
+  test('everyone let in can be mentioned, by name and picture, never email', async () => {
+    const ana = await signIn(app, stores.accounts, 'Ana');
+    await signIn(app, stores.accounts, 'Bia');
+    await stores.accounts.signup({ email: 'waiting@example.com', password: PASSWORD });
+
+    const { people } = (await ana.agent.get('/api/chats/people').expect(200)).body;
+    assert.deepEqual(
+      people.map((p) => p.name),
+      ['Ana', 'Bia'],
+    );
+    assert.deepEqual(Object.keys(people[0]).sort(), ['avatar', 'id', 'name']);
+    await request(app).get('/api/chats/people').expect(401);
   });
 
   test('an empty or oversized message is refused, as is an unknown chat', async () => {

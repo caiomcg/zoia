@@ -20,6 +20,12 @@ const { TimeUuid } = cassandra.types;
 /** Characters in one message. Enough for a long paragraph, not a document. */
 export const MESSAGE_MAX = 4000;
 
+/** How much of the original a reply shows. */
+export const REPLY_EXCERPT_MAX = 200;
+
+/** People one message may @mention. */
+export const MENTIONS_MAX = 20;
+
 /** Months a single query walks back at most, so a bad `since` cannot loop for long. */
 const MAX_BUCKETS = 240;
 
@@ -86,11 +92,13 @@ function toMessage(chatId, row) {
     authorId: row.author_id,
     body: row.body ?? '',
     sentAt: row.id.getDate().toISOString(),
-    attachment: parseAttachment(row.attachment),
+    attachment: parseJson(row.attachment),
+    replyTo: parseJson(row.reply_to),
+    mentions: parseJson(row.mentions) ?? [],
   };
 }
 
-function parseAttachment(value) {
+function parseJson(value) {
   if (!value) return null;
   try {
     return JSON.parse(value);
@@ -98,6 +106,23 @@ function parseAttachment(value) {
     return null;
   }
 }
+
+/**
+ * What a reply keeps of the message it answers: enough to show it above the
+ * reply without fetching it, and the id to find it by.
+ */
+export function replySnapshot(original, authorName) {
+  const body = original.body.replace(/\s+/g, ' ').trim();
+  return {
+    id: original.id,
+    authorId: original.authorId,
+    authorName: authorName ?? null,
+    body: body.length > REPLY_EXCERPT_MAX ? `${body.slice(0, REPLY_EXCERPT_MAX - 1)}…` : body,
+    kind: original.attachment?.kind ?? null,
+  };
+}
+
+const COLUMNS = 'id, author_id, body, attachment, reply_to, mentions';
 
 /**
  * @param {object} options
@@ -116,16 +141,48 @@ export function createMessageStore({ client, keyspace }) {
      * Stores a message. The body must already have passed `cleanBody`, or be
      * empty when an attachment — a photo or video — is the message.
      */
-    async send({ chatId, authorId, body, attachment = null }) {
+    async send({ chatId, authorId, body, attachment = null, replyTo = null, mentions = [] }) {
       const id = TimeUuid.now();
-      const stored = attachment ? JSON.stringify(attachment) : null;
+      const row = {
+        id,
+        author_id: authorId,
+        body,
+        attachment: attachment ? JSON.stringify(attachment) : null,
+        reply_to: replyTo ? JSON.stringify(replyTo) : null,
+        mentions: mentions.length > 0 ? JSON.stringify(mentions) : null,
+      };
       await client.execute(
-        `INSERT INTO ${t('messages')} (chat_id, bucket, id, author_id, body, attachment)
-         VALUES (?, ?, ?, ?, ?, ?)`,
-        [chatId, bucketOf(id.getDate()), id, authorId, body, stored],
+        `INSERT INTO ${t('messages')}
+           (chat_id, bucket, id, author_id, body, attachment, reply_to, mentions)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          chatId,
+          bucketOf(id.getDate()),
+          id,
+          authorId,
+          body,
+          row.attachment,
+          row.reply_to,
+          row.mentions,
+        ],
         prepared,
       );
-      return toMessage(chatId, { id, author_id: authorId, body, attachment: stored });
+      return toMessage(chatId, row);
+    },
+
+    /**
+     * One message by its id, or null. The id says when it was sent, and so
+     * which month's partition holds it: one read, by the full key.
+     */
+    async get({ chatId, id }) {
+      const uuid = parseMessageId(id);
+      if (!uuid) return null;
+      const result = await client.execute(
+        `SELECT ${COLUMNS} FROM ${t('messages')} WHERE chat_id = ? AND bucket = ? AND id = ?`,
+        [chatId, bucketOf(uuid.getDate()), uuid],
+        prepared,
+      );
+      return result.rows[0] ? toMessage(chatId, result.rows[0]) : null;
     },
 
     /**
@@ -140,7 +197,7 @@ export function createMessageStore({ client, keyspace }) {
         const want = limit - messages.length;
         const bounded = cursor && bucket === newest;
         const result = await client.execute(
-          `SELECT id, author_id, body, attachment FROM ${t('messages')}
+          `SELECT ${COLUMNS} FROM ${t('messages')}
            WHERE chat_id = ? AND bucket = ?${bounded ? ' AND id < ?' : ''} LIMIT ?`,
           bounded ? [chatId, bucket, cursor, want] : [chatId, bucket, want],
           prepared,
