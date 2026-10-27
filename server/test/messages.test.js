@@ -274,6 +274,15 @@ describe(
       assert.deepEqual(plain.mentions, []);
     });
 
+    test('a deleted message is gone, and deleting it again is harmless', async () => {
+      const m = await store.send({ chatId: 'c12', authorId: 'ana00000', body: 'apaga' });
+      await store.remove({ chatId: 'c12', id: m.id });
+      assert.equal(await store.get({ chatId: 'c12', id: m.id }), null);
+      await store.remove({ chatId: 'c12', id: m.id });
+      await store.remove({ chatId: 'c12', id: 'nope' });
+      assert.deepEqual(await store.page({ chatId: 'c12', since }), []);
+    });
+
     test('chats do not see each other', async () => {
       await store.send({ chatId: 'c3', authorId: 'ana00000', body: 'só aqui' });
       assert.deepEqual(await store.page({ chatId: 'c4', since }), []);

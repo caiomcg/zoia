@@ -185,6 +185,17 @@ export function createMessageStore({ client, keyspace }) {
       return result.rows[0] ? toMessage(chatId, result.rows[0]) : null;
     },
 
+    /** Deletes one message, by its full key; nothing happens if it is not there. */
+    async remove({ chatId, id }) {
+      const uuid = parseMessageId(id);
+      if (!uuid) return;
+      await client.execute(
+        `DELETE FROM ${t('messages')} WHERE chat_id = ? AND bucket = ? AND id = ?`,
+        [chatId, bucketOf(uuid.getDate()), uuid],
+        prepared,
+      );
+    },
+
     /**
      * Up to `limit` messages, newest first, older than `before` when given.
      * `since` is when the chat was created.

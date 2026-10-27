@@ -145,6 +145,18 @@ describe('the store', () => {
     assert.ok(await capped.find('bbbb0000', alsoKept.id));
   });
 
+  test('deleting one file frees its share of the cap at once', async () => {
+    const capped = createMediaStore({ dir, capBytes: PNG.length * 2, logger: { info() {} } });
+    const first = await capped.save('aaaa0000', PNG);
+    const second = await capped.save('aaaa0000', PNG);
+    await capped.remove('aaaa0000', second.id);
+    await capped.remove('aaaa0000', '../../etc');
+    const third = await capped.save('aaaa0000', PNG);
+    assert.equal(await capped.find('aaaa0000', second.id), null);
+    assert.ok(await capped.find('aaaa0000', first.id));
+    assert.ok(await capped.find('aaaa0000', third.id));
+  });
+
   test('removing a chat removes its files, and only its own', async () => {
     const mine = await store.save('aaaa0000', PNG);
     const theirs = await store.save('bbbb0000', PNG);

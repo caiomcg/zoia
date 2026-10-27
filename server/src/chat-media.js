@@ -165,6 +165,18 @@ export function createMediaStore({ dir, capBytes = MEDIA_CAP_BYTES, logger = con
       }
     },
 
+    /** Deletes one file, with the message it was sent in; it stops counting at once. */
+    async remove(chatId, id) {
+      if (!CHAT_ID.test(chatId) || !isMediaId(id)) return;
+      await serially(async () => {
+        await rm(join(folder(chatId), id), { force: true });
+        const file = index?.get(`${chatId}/${id}`);
+        if (!file) return;
+        index.delete(`${chatId}/${id}`);
+        total -= file.size;
+      });
+    },
+
     /** Deletes every file of a chat that is being removed. */
     async removeChat(chatId) {
       if (!CHAT_ID.test(chatId)) return;

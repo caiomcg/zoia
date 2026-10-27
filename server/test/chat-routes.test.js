@@ -51,6 +51,10 @@ function memoryMessages() {
     async get({ chatId, id }) {
       return sent.find((m) => m.chatId === chatId && m.id === id) ?? null;
     },
+    async remove({ chatId, id }) {
+      const at = sent.findIndex((m) => m.chatId === chatId && m.id === id);
+      if (at !== -1) sent.splice(at, 1);
+    },
     async page({ chatId, before, limit }) {
       const end = before ? place(before) : sent.length;
       return sent
@@ -275,6 +279,50 @@ describe('messages', () => {
     await request(app).get('/api/chats/people').expect(401);
   });
 
+  test("you delete your own messages; an admin deletes anyone's; nobody else can", async () => {
+    const ana = await signIn(app, stores.accounts, 'Ana');
+    const bia = await signIn(app, stores.accounts, 'Bia');
+    const boss = await signIn(app, stores.accounts, 'Chefe', { role: 'admin' });
+    const chat = await defaultChat();
+    const send = async (who, body) =>
+      (await who.agent.post(`/api/chats/${chat.id}/messages`).send({ body }).expect(201)).body
+        .message;
+    const drop = (who, m) => who.agent.delete(`/api/chats/${chat.id}/messages/${m.id}`);
+
+    const mine = await send(ana, 'oi');
+    const hers = await send(bia, 'olá');
+    await drop(ana, hers).expect(403);
+    await drop(ana, mine).expect(200);
+    await drop(ana, mine).expect(404);
+    await drop(boss, hers).expect(200);
+    await request(app).delete(`/api/chats/${chat.id}/messages/${hers.id}`).expect(401);
+
+    const page = await ana.agent.get(`/api/chats/${chat.id}/messages`).expect(200);
+    assert.deepEqual(page.body.messages, []);
+  });
+
+  test('a reply to a deleted message keeps nothing of what it said', async () => {
+    const ana = await signIn(app, stores.accounts, 'Ana');
+    const bia = await signIn(app, stores.accounts, 'Bia');
+    const chat = await defaultChat();
+    const original = (
+      await ana.agent.post(`/api/chats/${chat.id}/messages`).send({ body: 'segredo' }).expect(201)
+    ).body.message;
+    await bia.agent
+      .post(`/api/chats/${chat.id}/messages`)
+      .send({ body: 'hein?', replyTo: original.id })
+      .expect(201);
+    await ana.agent.delete(`/api/chats/${chat.id}/messages/${original.id}`).expect(200);
+
+    const [reply] = (await bia.agent.get(`/api/chats/${chat.id}/messages`).expect(200)).body
+      .messages;
+    assert.deepEqual(reply.replyTo, {
+      id: original.id,
+      authorId: ana.account.id,
+      deleted: true,
+    });
+  });
+
   test('an empty or oversized message is refused, as is an unknown chat', async () => {
     const ana = await signIn(app, stores.accounts, 'Ana');
     const chat = await defaultChat();
@@ -376,6 +424,10 @@ describe('photos and videos', () => {
     assert.equal(file.headers['content-type'], 'image/png');
     assert.equal(file.headers['x-content-type-options'], 'nosniff');
     assert.ok(Buffer.from(file.body).equals(PNG));
+
+    // Deleting the message deletes the file with it.
+    await ana.agent.delete(`/api/chats/${chat.id}/messages/${message.id}`).expect(200);
+    await bia.agent.get(`/api/chats/${chat.id}/media/${message.attachment.id}`).expect(404);
   });
 
   test('a video can be fetched in ranges, for scrubbing', async () => {

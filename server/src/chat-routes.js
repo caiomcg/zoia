@@ -16,6 +16,7 @@ import express from 'express';
 import rateLimit from 'express-rate-limit';
 
 import { CHAT_CEILING } from './chats.js';
+import { isAdmin } from './accounts.js';
 import { MENTIONS_MAX, cleanBody, replySnapshot } from './messages.js';
 import { MEDIA_MAX_BYTES, cleanFileName } from './chat-media.js';
 
@@ -139,6 +140,27 @@ export function chatRoutes({
     if (!original) return null;
     const author = await accountStore.get(original.authorId);
     return replySnapshot(original, author?.name);
+  }
+
+  /**
+   * A reply keeps the opening words of what it answers. When that message has
+   * since been deleted, its words go with it: the quote only says so. One read
+   * by full key per reply on the page, and none for a page without replies.
+   */
+  async function withDeletedReplies(current, chat, list) {
+    const answered = [...new Set(list.filter((m) => m.replyTo).map((m) => m.replyTo.id))];
+    if (answered.length === 0) return list;
+    const gone = new Set();
+    await Promise.all(
+      answered.map(async (id) => {
+        if (!(await current.get({ chatId: chat.id, id }))) gone.add(id);
+      }),
+    );
+    return list.map((m) =>
+      m.replyTo && gone.has(m.replyTo.id)
+        ? { ...m, replyTo: { id: m.replyTo.id, authorId: m.replyTo.authorId, deleted: true } }
+        : m,
+    );
   }
 
   /**
@@ -288,7 +310,7 @@ export function chatRoutes({
       before: before ?? null,
       limit: limit + 1,
     });
-    const list = page.slice(0, limit);
+    const list = await withDeletedReplies(current, chat, page.slice(0, limit));
     const readers = await current.readMarkers(chat.id);
     res.json({
       messages: list,
@@ -325,6 +347,29 @@ export function chatRoutes({
     hub.publish('message', { message, author });
     hub.publish('read', { chatId: chat.id, accountId, messageId: message.id, reader: author });
     res.status(201).json({ message, author });
+  });
+
+  // Its author may delete a message, and so may any admin, anyone's. The
+  // message goes, with its photo or video, and every open app is told.
+  router.delete('/:id/messages/:messageId', requireSession, async (req, res) => {
+    const chat = await chatOf(req, res);
+    if (!chat) return;
+    const current = store(res);
+    if (!current) return;
+    const message = await current.get({ chatId: chat.id, id: req.params.messageId });
+    if (!message) return refuse(res, 'not_found');
+    const { accountId } = req.user;
+    if (message.authorId !== accountId && !isAdmin(req.user)) return refuse(res, 'forbidden');
+
+    await current.remove({ chatId: chat.id, id: message.id });
+    if (message.attachment?.id) {
+      await media?.remove(chat.id, message.attachment.id).catch(() => {});
+    }
+    if (message.authorId !== accountId) {
+      logger.info(`[chat] ${accountId} deleted a message by ${message.authorId} in ${chat.id}`);
+    }
+    hub.publish('deleted', { chatId: chat.id, messageId: message.id });
+    res.json({ ok: true });
   });
 
   // ---- photos and videos ---------------------------------------------------
