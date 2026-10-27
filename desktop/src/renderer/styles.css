@@ -4385,21 +4385,192 @@ button.danger:active:not(:disabled),
   white-space: nowrap;
 }
 
-.chat-media-button {
+/* A photo or video in a message, whole: never wider than the column or
+   400px, never taller than 300px, its shape kept. The button must be
+   bounded too, or the picture's 100% means its own width and it overflows. */
+.chat-media-button,
+.chat-video {
+  position: relative;
   display: block;
+  width: fit-content;
+  max-width: min(400px, 100%);
   padding: 0;
   background: none;
   border: none;
+}
+
+.chat-media-button {
   cursor: zoom-in;
 }
 
 .chat-media {
   display: block;
-  max-width: min(400px, 100%);
+  width: auto;
+  max-width: 100%;
+  height: auto;
   max-height: 300px;
   margin: 4px 0;
+  object-fit: contain;
   background: #000;
   border-radius: 8px;
+}
+
+/* Opens a video on the whole window, from its corner, on hover. */
+.chat-media-open {
+  position: absolute;
+  top: 12px;
+  right: 8px;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  color: #fff;
+  background: rgb(0 0 0 / 60%);
+  border: none;
+  border-radius: 6px;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.chat-video:hover .chat-media-open,
+.chat-media-open:focus-visible {
+  opacity: 1;
+}
+
+.chat-media-open:hover {
+  background: rgb(0 0 0 / 80%);
+}
+
+/* A link in a message: opens in the browser. */
+.chat-link {
+  color: #00a8fc;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.chat-link:hover {
+  text-decoration: underline;
+}
+
+/* Scrolled far back: the way down, floating just above the message box,
+   however tall a reply or a pending photo makes it. */
+.chat-jump {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 10px);
+  left: 0;
+  z-index: 3;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  width: fit-content;
+  margin: 0 auto;
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+  background: var(--accent);
+  border: none;
+  border-radius: 16px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  animation: chat-reaction-card-in 0.15s ease-out;
+}
+
+.chat-jump:hover {
+  background: var(--accent-hover);
+}
+
+/* A photo or video on the whole window: a bar, and the picture fitted under it. */
+.media-viewer {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  background: rgb(0 0 0 / 90%);
+  animation: chat-reaction-card-in 0.15s ease-out;
+}
+
+.media-viewer-bar {
+  display: flex;
+  flex-shrink: 0;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 12px 10px 16px;
+  color: #fff;
+}
+
+.media-viewer-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.media-viewer-hint {
+  font-size: 12px;
+  color: rgb(255 255 255 / 60%);
+  white-space: nowrap;
+}
+
+.media-viewer-error {
+  font-size: 12px;
+  color: #ff8a8d;
+}
+
+.media-viewer-button {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  height: 32px;
+  padding: 0 12px;
+  font-size: 13px;
+  color: #fff;
+  background: rgb(255 255 255 / 12%);
+  border: none;
+  border-radius: 6px;
+}
+
+.media-viewer-button:hover:not(:disabled) {
+  background: rgb(255 255 255 / 22%);
+}
+
+.media-viewer-button.icon {
+  justify-content: center;
+  width: 32px;
+  padding: 0;
+  font-size: 20px;
+}
+
+/* A definite box the picture fits inside; zoomed, it is cut at the edges. */
+.media-viewer-stage {
+  position: relative;
+  display: grid;
+  flex: 1;
+  place-items: center;
+  min-height: 0;
+  overflow: hidden;
+  touch-action: none;
+  user-select: none;
+}
+
+.media-viewer-image {
+  max-width: none;
+  transition: transform 0.18s ease;
+  will-change: transform;
+}
+
+.media-viewer-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #000;
 }
 
 /* A dragged file over the chat: one place to let go of it. */
@@ -4416,24 +4587,6 @@ button.danger:active:not(:disabled),
   background: color-mix(in srgb, var(--accent) 18%, transparent);
   border: 2px dashed var(--accent);
   border-radius: var(--radius);
-}
-
-.chat-lightbox {
-  position: fixed;
-  inset: 0;
-  z-index: 50;
-  display: grid;
-  place-items: center;
-  padding: 32px;
-  cursor: zoom-out;
-  background: rgb(0 0 0 / 85%);
-  outline: none;
-}
-
-.chat-lightbox img {
-  max-width: 100%;
-  max-height: 100%;
-  object-fit: contain;
 }
 
 .chat-composer textarea {

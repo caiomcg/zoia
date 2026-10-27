@@ -19,7 +19,7 @@ import * as audioCapture from './audio';
 import * as encoder from './encoder';
 import * as capture from './capture';
 import { createChatStream } from './chat-stream';
-import { handleMediaScheme, registerMediaScheme } from './chat-media';
+import { handleMediaScheme, registerMediaScheme, saveMedia } from './chat-media';
 import { getCloseToTray, installTray, setCloseToTray, showWindow } from './tray';
 import { isDevToolsEnabled, openDevTools, setDevToolsEnabled } from './devtools';
 import * as language from './language';
@@ -249,7 +249,9 @@ function createWindow(): void {
         },
       };
     }
-    shell.openExternal(url);
+    // Only the web and mail: a chat link must never open a file or start
+    // another app through its URL scheme.
+    if (/^(https?|mailto):/i.test(url)) void shell.openExternal(url);
     return { action: 'deny' };
   });
 
@@ -483,6 +485,17 @@ function registerIpc(): void {
         sendExtras(extras),
       );
     },
+  );
+  ipcMain.handle(
+    IPC.chatSaveMedia,
+    (_event, chatId: unknown, mediaId: unknown, name: unknown, type: unknown) =>
+      saveMedia(
+        mainWindow,
+        String(chatId),
+        String(mediaId),
+        typeof name === 'string' ? name : null,
+        String(type),
+      ),
   );
   ipcMain.handle(IPC.chatRead, (_event, chatId: unknown, messageId: unknown) =>
     api.chatRead(String(chatId), String(messageId)),

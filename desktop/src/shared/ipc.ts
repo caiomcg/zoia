@@ -490,6 +490,7 @@ export const IPC = {
   chatPeople: 'zoia:chat:people',
   chatDeleteMessage: 'zoia:chat:deleteMessage',
   chatReact: 'zoia:chat:react',
+  chatSaveMedia: 'zoia:chat:saveMedia',
   stageGet: 'zoia:stage:get',
   stageClaim: 'zoia:stage:claim',
   stageRelease: 'zoia:stage:release',

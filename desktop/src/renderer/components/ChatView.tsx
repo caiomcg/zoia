@@ -31,6 +31,8 @@ import {
   type MentionQuery,
 } from '../chat/mentions';
 import Avatar from './Avatar';
+import MediaViewer from './MediaViewer';
+import { splitLinks } from '../chat/links';
 import { IconTrash } from './Sidebar';
 import { useConfirm } from './ConfirmDialog';
 import { useLanguage, useT } from '../i18n';
@@ -40,6 +42,9 @@ const MESSAGE_MAX = 4000;
 
 /** Within this many pixels of the bottom counts as reading the latest. */
 const STICK_PX = 80;
+
+/** Scrolled back more than this many screens, a button offers the way back down. */
+const JUMP_SCREENS = 1.5;
 
 /** Offered by a message's react button; anyone may also add to one already there. */
 const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🎉', '🔥', '👀'];
@@ -86,7 +91,10 @@ export default function ChatView({
   const [dragging, setDragging] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
-  const [viewing, setViewing] = useState<string | null>(null);
+  // The photo or video open on the whole window.
+  const [viewing, setViewing] = useState<ChatAttachment | null>(null);
+  // Scrolled far back: the way down to the newest is offered.
+  const [far, setFar] = useState(false);
   // What the message being written answers, and who was picked to mention.
   const [replyingTo, setReplyingTo] = useState<ChatMessage | null>(null);
   const { confirm, dialog } = useConfirm();
@@ -122,6 +130,7 @@ export default function ChatView({
   // A new chat starts at its newest message, with nothing half-sent from the last.
   useLayoutEffect(() => {
     stickRef.current = true;
+    setFar(false);
     setError(null);
     setFile(null);
     setReplyingTo(null);
@@ -149,11 +158,22 @@ export default function ChatView({
   function onScroll() {
     const el = scrollRef.current;
     if (!el) return;
-    stickRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < STICK_PX;
+    const below = el.scrollHeight - el.scrollTop - el.clientHeight;
+    stickRef.current = below < STICK_PX;
+    setFar(below > el.clientHeight * JUMP_SCREENS);
     if (el.scrollTop < 40 && thread?.hasMore && !thread.loadingOlder) {
       anchorRef.current = el.scrollHeight;
       void chat.loadOlder();
     }
+  }
+
+  /** Back down to the newest message, where new ones keep it in view again. */
+  function jumpToLatest() {
+    const el = scrollRef.current;
+    if (!el) return;
+    stickRef.current = true;
+    setFar(false);
+    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
   }
 
   function choose(next: File | undefined | null) {
@@ -425,6 +445,24 @@ export default function ChatView({
           void submit();
         }}
       >
+        {far && (
+          <button type="button" className="chat-jump" onClick={jumpToLatest}>
+            <svg
+              viewBox="0 0 24 24"
+              width="16"
+              height="16"
+              aria-hidden="true"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M12 5v14M6 13l6 6 6-6" />
+            </svg>
+            {t('chat.jumpToLatest')}
+          </button>
+        )}
         {mention && suggestions.length > 0 && (
           <ul className="chat-suggest" role="listbox" aria-label={t('chat.mentionList')}>
             {suggestions.map((person, i) => (
@@ -556,18 +594,8 @@ export default function ChatView({
         {error && <p className="chat-error">{error}</p>}
       </form>
 
-      {viewing && (
-        <div
-          className="chat-lightbox"
-          role="dialog"
-          aria-label={t('chat.photo')}
-          onClick={() => setViewing(null)}
-          onKeyDown={(event) => event.key === 'Escape' && setViewing(null)}
-          tabIndex={-1}
-          ref={(el) => el?.focus()}
-        >
-          <img src={viewing} alt="" />
-        </div>
+      {viewing && thread && (
+        <MediaViewer chatId={thread.chatId} attachment={viewing} onClose={() => setViewing(null)} />
       )}
       {dialog}
     </section>
@@ -603,7 +631,7 @@ function MessageRow({
   mentionsMe: boolean;
   me: string | null;
   onMediaLoad: () => void;
-  onView: (url: string) => void;
+  onView: (attachment: ChatAttachment) => void;
   /** Absent while messages cannot be sent. */
   onReply?: () => void;
   /** Adds your emoji, or takes it back with `on` false; absent while chat is down. */
@@ -749,7 +777,21 @@ function MessageRow({
                     {part.text}
                   </span>
                 ) : (
-                  part.text
+                  splitLinks(part.text).map((piece, j) =>
+                    piece.href ? (
+                      <a
+                        key={`${i}-${j}`}
+                        className="chat-link"
+                        href={piece.href}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        {piece.text}
+                      </a>
+                    ) : (
+                      piece.text
+                    ),
+                  )
                 ),
               )}
             </p>
@@ -791,7 +833,7 @@ function Attachment({
   chatId: string;
   attachment: ChatAttachment;
   onLoad: () => void;
-  onView: (url: string) => void;
+  onView: (attachment: ChatAttachment) => void;
 }) {
   const t = useT();
   const src = chatMediaUrl(chatId, attachment.id);
@@ -806,20 +848,44 @@ function Attachment({
     );
   }
   if (attachment.kind === 'video') {
+    // Played where it is; the corner button opens it on the whole window.
     return (
-      <video
-        className="chat-media"
-        src={src}
-        controls
-        preload="metadata"
-        onLoadedMetadata={onLoad}
-        onError={() => setGone(true)}
-        aria-label={attachment.name ?? t('chat.video')}
-      />
+      <span className="chat-video">
+        <video
+          className="chat-media"
+          src={src}
+          controls
+          preload="metadata"
+          onLoadedMetadata={onLoad}
+          onError={() => setGone(true)}
+          aria-label={attachment.name ?? t('chat.video')}
+        />
+        <button
+          type="button"
+          className="chat-media-open"
+          onClick={() => onView(attachment)}
+          aria-label={t('chat.viewer.open')}
+          title={t('chat.viewer.open')}
+        >
+          <svg
+            viewBox="0 0 24 24"
+            width="16"
+            height="16"
+            aria-hidden="true"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7" />
+          </svg>
+        </button>
+      </span>
     );
   }
   return (
-    <button type="button" className="chat-media-button" onClick={() => onView(src)}>
+    <button type="button" className="chat-media-button" onClick={() => onView(attachment)}>
       <img
         className="chat-media"
         src={src}

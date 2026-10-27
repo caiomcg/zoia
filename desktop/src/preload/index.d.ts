@@ -176,6 +176,13 @@ export interface ZoiaBridge {
     people(): Promise<ActionOutcome<ChatPerson[]>>;
     /** Deletes a message: your own, or anyone's as an admin. */
     deleteMessage(chatId: string, messageId: string): Promise<ActionOutcome>;
+    /** Asks where, then saves a chat photo or video there; `saved` is false if not chosen. */
+    saveMedia(
+      chatId: string,
+      mediaId: string,
+      name: string | null,
+      type: string,
+    ): Promise<ActionOutcome<{ saved: boolean }>>;
     /** Adds your emoji to a message, or takes it off with `on` false. */
     react(chatId: string, messageId: string, emoji: string, on: boolean): Promise<ActionOutcome>;
     read(chatId: string, messageId: string): Promise<ActionOutcome>;
