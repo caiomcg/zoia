@@ -21,6 +21,7 @@ import {
   MESSAGE_MAX,
   parseMessageId,
   previousBucket,
+  replySnapshot,
 } from '../src/messages.js';
 import { connectInBackground, connectScylla, isKeyspaceName } from '../src/scylla.js';
 
@@ -164,9 +165,20 @@ describe(
         keyspace,
         logger: quiet,
       });
-      const { rows } = await again.execute(`SELECT version FROM ${keyspace}.schema_migrations`);
-      assert.deepEqual(rows.map((r) => r.version).sort(), [1, 2]);
-      await again.shutdown();
+      // Closed whatever happens: an open connection keeps the test run alive
+      // for ever, and CI then hangs instead of failing.
+      try {
+        const { rows } = await again.execute(`SELECT version FROM ${keyspace}.schema_migrations`);
+        // Each version once, from 1 up, however many there are by now.
+        const versions = rows.map((r) => r.version).sort((a, b) => a - b);
+        assert.ok(versions.length >= 3);
+        assert.deepEqual(
+          versions,
+          versions.map((_, i) => i + 1),
+        );
+      } finally {
+        await again.shutdown();
+      }
     });
 
     test('a sent message comes back newest first, with its author and time', async () => {
@@ -243,6 +255,23 @@ describe(
       assert.equal(text.attachment, null);
       assert.deepEqual(photo.attachment, attachment);
       assert.equal(photo.body, '');
+    });
+
+    test('a reply and its mentions are kept, and a message is found by its id', async () => {
+      const original = await store.send({ chatId: 'c10', authorId: 'ana00000', body: 'oi' });
+      const found = await store.get({ chatId: 'c10', id: original.id });
+      assert.equal(found.body, 'oi');
+      assert.equal(await store.get({ chatId: 'c11', id: original.id }), null);
+      assert.equal(await store.get({ chatId: 'c10', id: 'nope' }), null);
+
+      const replyTo = replySnapshot(found, 'Ana');
+      const mentions = [{ id: 'ana00000', name: 'Ana' }];
+      await store.send({ chatId: 'c10', authorId: 'bia00000', body: 'oi @Ana', replyTo, mentions });
+      const [reply, plain] = await store.page({ chatId: 'c10', since });
+      assert.deepEqual(reply.replyTo, replyTo);
+      assert.deepEqual(reply.mentions, mentions);
+      assert.equal(plain.replyTo, null);
+      assert.deepEqual(plain.mentions, []);
     });
 
     test('chats do not see each other', async () => {

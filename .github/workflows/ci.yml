@@ -40,6 +40,9 @@ jobs:
 
   test:
     runs-on: ubuntu-latest
+    # A hang (an open database connection keeps node:test alive) fails here
+    # instead of holding a runner for GitHub's six-hour default.
+    timeout-minutes: 15
     strategy:
       matrix:
         # node:sqlite (ADR 0032) needs 22.13 or later; production runs 25.
@@ -64,6 +67,9 @@ jobs:
   # looked at rather than silently drifting away from reality.
   coverage:
     runs-on: ubuntu-latest
+    # A hang (an open database connection keeps node:test alive) fails here
+    # instead of holding a runner for GitHub's six-hour default.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
