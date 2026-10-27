@@ -5,7 +5,7 @@
 
 import { test, describe, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readdir, rm } from 'node:fs/promises';
+import { mkdtemp, readdir, rm, utimes } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { isAbsolute, join, relative } from 'node:path';
 
@@ -60,7 +60,7 @@ describe('the store', () => {
 
   beforeEach(async () => {
     dir = await mkdtemp(join(tmpdir(), 'zoia-media-'));
-    store = createMediaStore({ dir });
+    store = createMediaStore({ dir, logger: { info() {} } });
   });
 
   afterEach(async () => {
@@ -100,6 +100,49 @@ describe('the store', () => {
     assert.equal(await store.find('aaaa0000', '../../../etc'), null);
     assert.equal(await store.find('../x', 'aaaaaaaaaaaaaaaa'), null);
     await assert.rejects(store.save('../escape', PNG));
+  });
+
+  test('past the cap, the oldest files go first, whichever chat they are in', async () => {
+    const capped = createMediaStore({ dir, capBytes: PNG.length * 3, logger: { info() {} } });
+    const first = await capped.save('aaaa0000', PNG);
+    const second = await capped.save('bbbb0000', PNG);
+    const third = await capped.save('aaaa0000', PNG);
+    assert.ok(await capped.find('aaaa0000', first.id));
+
+    const fourth = await capped.save('bbbb0000', PNG);
+    assert.equal(await capped.find('aaaa0000', first.id), null);
+    for (const [chat, file] of [
+      ['bbbb0000', second],
+      ['aaaa0000', third],
+      ['bbbb0000', fourth],
+    ]) {
+      assert.ok(await capped.find(chat, file.id));
+    }
+  });
+
+  test('the cap counts files already on disk, oldest by when they were written', async () => {
+    const older = await store.save('aaaa0000', PNG);
+    const newer = await store.save('aaaa0000', PNG);
+    await utimes(join(dir, 'aaaa0000', older.id), new Date(1000), new Date(1000));
+    await utimes(join(dir, 'aaaa0000', newer.id), new Date(2000), new Date(2000));
+
+    const restarted = createMediaStore({ dir, capBytes: PNG.length * 2, logger: { info() {} } });
+    const latest = await restarted.save('bbbb0000', PNG);
+    assert.equal(await restarted.find('aaaa0000', older.id), null);
+    assert.ok(await restarted.find('aaaa0000', newer.id));
+    assert.ok(await restarted.find('bbbb0000', latest.id));
+  });
+
+  test('a removed chat no longer counts towards the cap', async () => {
+    const capped = createMediaStore({ dir, capBytes: PNG.length * 2, logger: { info() {} } });
+    const gone = await capped.save('aaaa0000', PNG);
+    await capped.save('aaaa0000', PNG);
+    await capped.removeChat('aaaa0000');
+    const kept = await capped.save('bbbb0000', PNG);
+    const alsoKept = await capped.save('bbbb0000', PNG);
+    assert.equal(await capped.find('aaaa0000', gone.id), null);
+    assert.ok(await capped.find('bbbb0000', kept.id));
+    assert.ok(await capped.find('bbbb0000', alsoKept.id));
   });
 
   test('removing a chat removes its files, and only its own', async () => {

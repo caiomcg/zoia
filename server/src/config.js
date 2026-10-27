@@ -66,6 +66,8 @@ export function loadConfig(env = process.env) {
       // Photos and videos sent in chats, up to 10 MB each. Under server/data
       // so it shares the store's volume and deploy.sh's exclude.
       mediaDir: env.CHAT_MEDIA_DIR ?? 'server/data/chat-media',
+      // All chats' photos and videos together; past it the oldest go first.
+      mediaCapBytes: Number(env.CHAT_MEDIA_CAP_GB ?? 5) * 1024 ** 3,
       scylla: env.SCYLLA_CONTACT_POINTS
         ? {
             contactPoints: env.SCYLLA_CONTACT_POINTS.split(',')

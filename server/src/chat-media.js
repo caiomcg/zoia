@@ -6,14 +6,21 @@
  * What a file is gets decided by its bytes, never by its name or what the
  * client said it sent: whatever is stored here is served back to everyone in
  * the chat. Only kinds a Chromium-based app shows inline are accepted.
+ *
+ * All chats share one cap on disk. Past it, the oldest files go first, so the
+ * disk the database also lives on cannot fill up; their messages stay, and
+ * the app says the photo or video is no longer there.
  */
 
 import { randomBytes } from 'node:crypto';
-import { mkdir, open, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, open, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 
 /** The most a single file may be. */
 export const MEDIA_MAX_BYTES = 10 * 1024 * 1024;
+
+/** The most all chats' files may take together before the oldest go. */
+export const MEDIA_CAP_BYTES = 5 * 1024 ** 3;
 
 const MEDIA_ID = /^[0-9a-f]{16}$/;
 const CHAT_ID = /^[0-9a-f]{8}$/;
@@ -67,13 +74,55 @@ export function cleanFileName(name) {
   return tidy ? tidy.slice(0, 100) : null;
 }
 
-export function createMediaStore({ dir }) {
+export function createMediaStore({ dir, capBytes = MEDIA_CAP_BYTES, logger = console }) {
   // Absolute, whatever CHAT_MEDIA_DIR says: res.sendFile refuses a relative
   // path, and the default is relative to the working directory.
   const root = resolve(dir);
   const folder = (chatId) => {
     if (!CHAT_ID.test(chatId)) throw new Error('not a chat id');
     return join(root, chatId);
+  };
+
+  // Every file's size and age, by "chat/id", read from disk on the first save
+  // and kept up to date after it, so the cap needs no walk of the folder.
+  let index = null;
+  let total = 0;
+  async function loadIndex() {
+    if (index) return;
+    index = new Map();
+    total = 0;
+    const chats = await readdir(root).catch(() => []);
+    for (const chatId of chats.filter((c) => CHAT_ID.test(c))) {
+      for (const id of (await readdir(join(root, chatId)).catch(() => [])).filter(isMediaId)) {
+        const info = await stat(join(root, chatId, id)).catch(() => null);
+        if (!info?.isFile()) continue;
+        index.set(`${chatId}/${id}`, { chatId, id, size: info.size, at: info.mtimeMs });
+        total += info.size;
+      }
+    }
+  }
+
+  /** Deletes the oldest files until all of them fit under the cap again. */
+  async function enforceCap() {
+    if (total <= capBytes) return;
+    const oldest = [...index.values()].sort((a, b) => a.at - b.at);
+    let removed = 0;
+    for (const file of oldest) {
+      if (total <= capBytes) break;
+      await rm(join(root, file.chatId, file.id), { force: true });
+      index.delete(`${file.chatId}/${file.id}`);
+      total -= file.size;
+      removed += 1;
+    }
+    logger.info(`[chat] media over its cap: removed the ${removed} oldest file(s)`);
+  }
+
+  // Saves run one at a time, so two at once cannot both miss the cap.
+  let queue = Promise.resolve();
+  const serially = (task) => {
+    const run = queue.then(task);
+    queue = run.catch(() => {});
+    return run;
   };
 
   return {
@@ -84,10 +133,17 @@ export function createMediaStore({ dir }) {
     async save(chatId, bytes) {
       const kind = mediaType(bytes);
       if (!kind || bytes.length === 0 || bytes.length > MEDIA_MAX_BYTES) return null;
-      const id = randomBytes(8).toString('hex');
-      await mkdir(folder(chatId), { recursive: true });
-      await writeFile(join(folder(chatId), id), bytes, { mode: 0o600 });
-      return { id, type: kind.type, kind: kind.kind, size: bytes.length };
+      const where = folder(chatId);
+      return serially(async () => {
+        await loadIndex();
+        const id = randomBytes(8).toString('hex');
+        await mkdir(where, { recursive: true });
+        await writeFile(join(where, id), bytes, { mode: 0o600 });
+        index.set(`${chatId}/${id}`, { chatId, id, size: bytes.length, at: Date.now() });
+        total += bytes.length;
+        await enforceCap();
+        return { id, type: kind.type, kind: kind.kind, size: bytes.length };
+      });
     },
 
     /** Where a stored file is and what it is, judged again by its bytes; null if none. */
@@ -112,7 +168,15 @@ export function createMediaStore({ dir }) {
     /** Deletes every file of a chat that is being removed. */
     async removeChat(chatId) {
       if (!CHAT_ID.test(chatId)) return;
-      await rm(folder(chatId), { recursive: true, force: true });
+      await serially(async () => {
+        await rm(folder(chatId), { recursive: true, force: true });
+        if (!index) return;
+        for (const [key, file] of index) {
+          if (file.chatId !== chatId) continue;
+          index.delete(key);
+          total -= file.size;
+        }
+      });
     },
   };
 }

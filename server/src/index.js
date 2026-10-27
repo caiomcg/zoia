@@ -104,7 +104,10 @@ const app = createApp({
   accountStore,
   chatStore,
   messageStore: () => messageStore,
-  chatMediaStore: createMediaStore({ dir: config.chat.mediaDir }),
+  chatMediaStore: createMediaStore({
+    dir: config.chat.mediaDir,
+    capBytes: config.chat.mediaCapBytes,
+  }),
 });
 
 // Nobody sits in a channel for long neither sharing nor watching; ADR 0037.
