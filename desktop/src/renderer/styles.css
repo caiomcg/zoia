@@ -1736,12 +1736,21 @@ button.danger {
   width: min(560px, 92vw);
 }
 
+/* Scrolls inside the dialog's max-height: a flex child does not shrink below
+   its content without min-height 0, and long notes were cut off instead. */
 .release-body {
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
   gap: 8px;
+  min-height: 0;
   padding: 16px 20px;
   overflow-y: auto;
+}
+
+.release-dialog .settings-header,
+.release-footer {
+  flex-shrink: 0;
 }
 
 .release-date {
