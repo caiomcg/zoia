@@ -36,7 +36,8 @@ notifications, your music and your other calls stay out of the stream.
 - **Channels.** Everyone picks a channel to be in, and shares and watches there. Admins add,
   rename and remove channels, and drag people from one to another.
 - **Text chats**, beside the channels and independent of them: messages, photos and videos,
-  replies, emoji reactions, @mentions with autocompletion, unread counts and who has seen what. Channel and
+  replies, emoji reactions, @mentions with autocompletion and an alert when you are mentioned,
+  unread counts and who has seen what. Channel and
   chat names can carry an emoji.
 - **Accounts, approved by an admin.** Anyone can sign up with an email and password; an
   admin lets them in. Admins can disable someone, reset a password or sign out one machine,

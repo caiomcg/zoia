@@ -123,8 +123,12 @@ version 3), as JSON text like `attachment`:
   is what makes `@Name` unambiguous.
 
 `GET /api/chats/people` lists who can be mentioned, by name and picture, never email, to any
-approved session. A mention only highlights the message for that person; it sends no
-notification of its own.
+approved session. A mention highlights the message for that person, and, while unread, is
+counted for them apart from the rest: the chat list carries `mentions` beside `unread` for
+each chat, counted in the same read, so the app can mark the chat with an `@` and play a
+sound of its own (Settings › Sounds, which can be turned off; the badge cannot). A message
+that arrives on the live stream mentioning you is counted, and heard, at once unless it is
+already on your screen.
 
 ## Amendment: deleting messages
 
