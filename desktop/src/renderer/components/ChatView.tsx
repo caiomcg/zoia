@@ -278,6 +278,24 @@ export default function ChatView({ chat, me }: { chat: ChatController; me: strin
           </div>
         )}
         <div className="chat-composer-row">
+          <textarea
+            value={draft}
+            rows={1}
+            maxLength={MESSAGE_MAX}
+            disabled={!chat.available}
+            placeholder={
+              file
+                ? t('chat.caption')
+                : chat.openChat
+                  ? t('chat.placeholder', { chat: chat.openChat.name })
+                  : t('chat.unavailable')
+            }
+            aria-label={t('chat.placeholder', { chat: chat.openChat?.name ?? '' })}
+            onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={onKeyDown}
+            onPaste={onPaste}
+          />
+          {/* Beside send, where the eye ends up after typing. */}
           <button
             type="button"
             className="chat-attach"
@@ -309,23 +327,6 @@ export default function ChatView({ chat, me }: { chat: ChatController; me: strin
               choose(event.target.files?.[0]);
               event.target.value = '';
             }}
-          />
-          <textarea
-            value={draft}
-            rows={1}
-            maxLength={MESSAGE_MAX}
-            disabled={!chat.available}
-            placeholder={
-              file
-                ? t('chat.caption')
-                : chat.openChat
-                  ? t('chat.placeholder', { chat: chat.openChat.name })
-                  : t('chat.unavailable')
-            }
-            aria-label={t('chat.placeholder', { chat: chat.openChat?.name ?? '' })}
-            onChange={(event) => setDraft(event.target.value)}
-            onKeyDown={onKeyDown}
-            onPaste={onPaste}
           />
           <button
             type="submit"
