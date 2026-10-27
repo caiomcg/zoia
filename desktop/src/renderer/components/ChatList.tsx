@@ -10,6 +10,7 @@ import {
   useFolded,
 } from './Sidebar';
 import { useT } from '../i18n';
+import { useConfirm } from './ConfirmDialog';
 
 /**
  * The text chats, under the channels in the sidebar (ADR 0036). Clicking one
@@ -38,6 +39,7 @@ export default function ChatList({
   const t = useT();
   const [editing, setEditing] = useState<string | null>(null);
   const canManage = myRole === 'admin' || myRole === 'super_admin';
+  const { confirm, dialog } = useConfirm();
   const [folded, toggleFolded, unfold] = useFolded('chats');
   const shown =
     collapsed || !folded
@@ -122,11 +124,14 @@ export default function ChatList({
                 {!c.isDefault && (
                   <button
                     className="channel-action"
-                    onClick={() => {
-                      if (window.confirm(t('chat.deleteConfirm', { chat: c.name }))) {
-                        report(chat.remove(c.id));
-                      }
-                    }}
+                    onClick={() =>
+                      void confirm(
+                        t('chat.deleteConfirm', { chat: c.name }),
+                        t('chat.delete', { chat: c.name }),
+                      ).then((yes) => {
+                        if (yes) report(chat.remove(c.id));
+                      })
+                    }
                     title={t('chat.delete', { chat: c.name })}
                     aria-label={t('chat.delete', { chat: c.name })}
                   >
@@ -149,6 +154,7 @@ export default function ChatList({
           }}
         />
       )}
+      {dialog}
     </section>
   );
 }

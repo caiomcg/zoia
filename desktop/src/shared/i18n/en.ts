@@ -64,6 +64,8 @@ export const en = {
   'channel.error.limit': 'The channel limit has been reached. An admin can raise it.',
   'channel.error.limitRange': 'That limit is out of range.',
   'channel.error.removed': 'An admin disconnected you from the channel. You can join again.',
+  'channel.error.idle':
+    'You were disconnected from the channel after a while without sharing or watching anyone. You can join again.',
   'channel.error.kickFailed': 'Could not disconnect them ({code}).',
   'channel.error.notEmpty': 'Only an empty channel can be deleted.',
   'channel.error.isDefault': 'The main channel cannot be deleted.',
@@ -96,18 +98,9 @@ export const en = {
   'sidebar.kickHint': 'Right-click to disconnect',
   'sidebar.kickAction': 'Disconnect',
 
-  // ---- kicked off the server (ADR 0037)
-  'kicked.title': 'Disconnected',
-  'kicked.admin': 'An admin disconnected you from the server. You can reconnect whenever you like.',
-  'kicked.idle':
-    'You were disconnected for staying in a channel a while without sharing or watching anyone. You can reconnect whenever you like.',
-  'kicked.reconnect': 'Reconnect',
-
   // ---- text chat
   'chat.title': 'Chats',
   'chat.tabStage': 'Broadcast',
-  'chat.popOut': 'Watch while chatting',
-  'chat.popOutTitle': 'Open the broadcast in a small window on top, and show the chat',
   'chat.name': 'Chat name',
   'chat.new': 'New chat',
   'chat.full': 'Chat limit reached. Raise it in Settings › Server.',
@@ -143,6 +136,11 @@ export const en = {
   'chat.error.unsupported':
     'Only photos (PNG, JPEG, GIF, WebP) and videos (MP4, WebM) can be sent.',
   'chat.reply': 'Reply',
+  'chat.deleteMessage': 'Delete message',
+  'chat.deleteMine': 'Delete this message? Everyone stops seeing it.',
+  'chat.deleteTheirs': "Delete {name}'s message? Everyone stops seeing it.",
+  'chat.messageDeleted': 'Message deleted',
+  'chat.error.deleteFailed': 'Could not delete that message.',
   'chat.replyingTo': 'Replying to {name}',
   'chat.cancelReply': 'Cancel reply',
   'chat.mentionList': 'People to mention',

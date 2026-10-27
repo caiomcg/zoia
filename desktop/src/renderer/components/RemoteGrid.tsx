@@ -85,12 +85,6 @@ export interface GridControls {
   hover(target: GridTarget | null, anchor?: DOMRect): void;
   /** Puts their camera on stage, or takes it off if it is there. */
   toggleCamera(identity: string): void;
-  /**
-   * Opens the broadcast in front of you — the large one, or else the first
-   * watched — in picture-in-picture, so it stays in view over the chat.
-   * False when nothing is being watched.
-   */
-  popOut(): boolean;
 }
 
 /** What the channel list marks on each person: whose screen and camera are on stage. */
@@ -459,10 +453,7 @@ function RemoteTile({
   pictureAction = null,
   onPictureClick,
   onToggleMic,
-  onPipReady,
 }: {
-  /** Hands the grid a way to open this tile in picture-in-picture; null when it goes. */
-  onPipReady?: (open: (() => void) | null) => void;
   screen: RemoteScreen;
   audio: AudioSetting;
   onAudioChange: (next: AudioSetting) => void;
@@ -489,18 +480,6 @@ function RemoteTile({
   useMediaStream(videoRef, screen.videoTrack, null);
   const hasAudio = Boolean(screen.audioTrack || screen.micTrack);
   const pip = usePopout();
-  // The grid can open this tile in picture-in-picture from outside it, for
-  // the button beside the chat tab. Opened, never closed, from there.
-  const pipRef = useRef(pip);
-  pipRef.current = pip;
-  const readyRef = useRef(onPipReady);
-  readyRef.current = onPipReady;
-  useEffect(() => {
-    readyRef.current?.(() => {
-      if (!pipRef.current.active) pipRef.current.toggle();
-    });
-    return () => readyRef.current?.(null);
-  }, []);
   // A click enlarges this tile out of the mosaic, or brings the mosaic back;
   // a double click is fullscreen. In fullscreen a single click does nothing.
   const clickable = !isFullscreen && pictureAction !== null;
@@ -907,6 +886,7 @@ export default function RemoteGrid({
   onPausedChange,
   controlRef,
   onStageChange,
+  onShow,
 }: {
   screens: RemoteScreen[];
   /** Present while this device is broadcasting. */
@@ -948,6 +928,8 @@ export default function RemoteGrid({
   controlRef?: Ref<GridControls>;
   /** Called with who is on stage or only heard, for the channel list. */
   onStageChange?: (state: StageState) => void;
+  /** Someone chose a broadcast from the channel list: the stage should come forward. */
+  onShow?: () => void;
 }) {
   const t = useT();
   const [mode, setMode] = useState<LayoutMode>(() =>
@@ -976,8 +958,6 @@ export default function RemoteGrid({
   // aria values) follow the window rather than a fixed fraction.
   const [pairWidth, setPairWidth] = useState(0);
   const mainsRef = useRef<HTMLDivElement>(null);
-  // Each tile on screen, by view id, with how to open it in picture-in-picture.
-  const pipOpeners = useRef(new Map<string, () => void>());
   const draggingRef = useRef(false);
   const areaRef = useRef<HTMLDivElement>(null);
   const dockRef = useRef<HTMLDivElement>(null);
@@ -1335,6 +1315,17 @@ export default function RemoteGrid({
   }
 
   /** Off the stage: no longer watched, nor enlarged, nor a camera on offer. */
+  /**
+   * Someone chose this broadcast from outside the stage, in the channel list
+   * or its hover card: put it on the stage, large, and have the app bring the
+   * stage forward, from the chat too.
+   */
+  function show(id: string) {
+    watch(id);
+    if (!fullId) setFocusId(id);
+    onShow?.();
+  }
+
   function stopWatching(id: string) {
     setPinned((current) => current.filter((other) => other !== id));
     // Only their camera takes their camera button down; closing their screen
@@ -1407,7 +1398,7 @@ export default function RemoteGrid({
   }
 
   useImperativeHandle(controlRef, () => ({
-    watch: (target) => watch(idFor(target)),
+    watch: (target) => show(idFor(target)),
     hover: (target, anchor) => {
       if (!target || !anchor) return releaseHover();
       keepHover();
@@ -1417,13 +1408,6 @@ export default function RemoteGrid({
     // grid shows once nothing is enlarged. Again, and it leaves the grid, and
     // the large view too if it was there.
     toggleCamera: (identity) => toggleCameraOf(identity),
-    popOut: () => {
-      const remote = (ids: string[]) => ids.filter((id) => !isLocalId(id));
-      const id = [...remote(mains), ...remote(livePinned)].find((x) => pipOpeners.current.has(x));
-      if (!id) return false;
-      pipOpeners.current.get(id)?.();
-      return true;
-    },
   }));
 
   // The channel list marks people, not pictures: whose screen is watched, and
@@ -1498,7 +1482,7 @@ export default function RemoteGrid({
           label={t('grid.yourBroadcast')}
           liveVideo={local.track}
           mirrored={local.mirrored}
-          onWatch={() => watch(id)}
+          onWatch={() => show(id)}
           onStop={local.onStop}
           preview={{ on: local.showPreview, onToggle: local.onTogglePreview }}
         />,
@@ -1525,7 +1509,7 @@ export default function RemoteGrid({
         label={sourceText(t, screen.sourceName, screen.sourceKind)}
         liveVideo={screen.videoTrack}
         snapshot={snapshotFor(id)}
-        onWatch={() => watch(id)}
+        onWatch={() => show(id)}
         peeking={pipIds.includes(id)}
         // The mosaic has room for another tile, so clicking is the way to see
         // it alongside; the spotlight has one, so a small window instead.
@@ -1723,10 +1707,6 @@ export default function RemoteGrid({
         onClose={() => stopWatching(id)}
         pictureAction={pictureActionFor(id)}
         onPictureClick={() => clickPicture(id)}
-        onPipReady={(open) => {
-          if (open) pipOpeners.current.set(id, open);
-          else pipOpeners.current.delete(id);
-        }}
       />
     );
   }

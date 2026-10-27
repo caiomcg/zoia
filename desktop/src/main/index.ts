@@ -461,6 +461,9 @@ function registerIpc(): void {
     api.chatSend(String(chatId), String(body), sendExtras(extras)),
   );
   ipcMain.handle(IPC.chatPeople, () => api.chatPeople());
+  ipcMain.handle(IPC.chatDeleteMessage, (_event, chatId: unknown, messageId: unknown) =>
+    api.chatDeleteMessage(String(chatId), String(messageId)),
+  );
   ipcMain.handle(
     IPC.chatSendMedia,
     (_event, chatId: unknown, bytes: unknown, name: unknown, caption: unknown, extras: unknown) => {

@@ -2696,10 +2696,33 @@ button.danger {
   padding: 10px 0;
 }
 
+/* Collapsed, your picture is a button that opens the sidebar. */
+.sidebar-footer .sidebar-me {
+  position: relative;
+  display: inline-flex;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.sidebar-footer .sidebar-me:hover .avatar,
+.sidebar-footer .sidebar-me:focus-visible .avatar {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
 .sidebar-scroll {
   flex: 1;
   overflow-y: auto;
-  padding: 12px 8px;
+  padding: 8px 8px 12px;
+}
+
+/* The channels' heading takes the height of the tabs over the main area,
+   8 + 28 + 8 + 1, so the first channel starts level with their line. */
+.channel-group > .section-heading {
+  height: var(--control-height);
+  margin-bottom: 9px;
 }
 
 /* Channels and chats read as two groups, not one long list. */
@@ -2927,6 +2950,10 @@ button.danger {
   display: flex;
   gap: 8px;
   align-items: center;
+  /* As tall as the chat's message bar beside it, so their top lines meet:
+     1 + 10 + 38 + 12 there. */
+  box-sizing: border-box;
+  height: 61px;
   padding: 10px;
   background: var(--surface-2);
   border-top: 1px solid var(--border);
@@ -4064,10 +4091,6 @@ button.danger:active:not(:disabled),
   border-color: var(--border);
 }
 
-.main-tab .share-live-dot {
-  background: var(--live);
-}
-
 .chat-hash {
   color: var(--muted);
   font-weight: 700;
@@ -4438,12 +4461,6 @@ button.danger:active:not(:disabled),
   border-radius: 4px;
 }
 
-.main-tab-pip {
-  margin-left: auto;
-  color: var(--text);
-  border-color: var(--border);
-}
-
 /* The chat in front fills the main area edge to edge, up to the sidebar;
    only the stage sits inset, as a picture. */
 .main.chat-full {
@@ -4451,9 +4468,17 @@ button.danger:active:not(:disabled),
   padding: 0;
 }
 
-.main.chat-full .main-tabs {
+/* The tabs are one full-width strip, the same on either tab: on the stage
+   they reach out over the main area's padding to sit where they do above
+   the edge-to-edge chat, so switching moves nothing. */
+.main-tabs {
+  margin: -12px -12px 4px;
   padding: 8px 12px;
   border-bottom: 1px solid var(--border);
+}
+
+.main.chat-full .main-tabs {
+  margin: 0;
 }
 
 .main.chat-full .chat-view {
@@ -4703,18 +4728,13 @@ button.danger:active:not(:disabled),
 
 /* ---- replies and @mentions ------------------------------------------------ */
 
-/* Answer a message: a button at its top right, on hover. */
-.chat-message .chat-reply-button {
+/* Answer or delete a message: buttons at its top right, on hover. */
+.chat-message .chat-actions {
   position: absolute;
   top: -10px;
   right: 16px;
   display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 30px;
-  height: 26px;
-  padding: 0;
-  color: var(--muted);
+  overflow: hidden;
   background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -4722,14 +4742,36 @@ button.danger:active:not(:disabled),
   transition: opacity 0.1s ease;
 }
 
-.chat-message:hover .chat-reply-button,
-.chat-message .chat-reply-button:focus-visible {
+.chat-message:hover .chat-actions,
+.chat-message .chat-actions:focus-within {
   opacity: 1;
 }
 
-.chat-message .chat-reply-button:hover {
+.chat-message .chat-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 26px;
+  padding: 0;
+  color: var(--muted);
+  background: transparent;
+  border: none;
+  border-radius: 0;
+}
+
+.chat-message .chat-actions button:hover {
   color: var(--text);
   background: var(--raised);
+}
+
+.chat-message .chat-actions button.danger:hover {
+  color: #fff;
+  background: var(--danger);
+}
+
+.chat-quote.deleted .chat-quote-body {
+  font-style: italic;
 }
 
 /* What a message answers, above it: who, and their opening words. */
@@ -4872,4 +4914,22 @@ button.danger:active:not(:disabled),
   background: var(--surface-2);
   border: 1px dashed var(--border);
   border-radius: 8px;
+}
+
+/* An in-app "are you sure", in place of the native one; see ConfirmDialog. */
+.picker.confirm-dialog {
+  width: min(380px, calc(100vw - 32px));
+  padding: 20px;
+}
+
+.confirm-dialog p {
+  margin: 0 0 18px;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.confirm-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
 }

@@ -843,15 +843,34 @@ export default function Sidebar({
         )}
       </div>
 
-      <div className="sidebar-footer" title={collapsed ? myName : undefined}>
-        <Avatar name={myName} identity={myIdentity} live={false} role={myRole} />
+      <div className="sidebar-footer">
+        {collapsed ? (
+          // Collapsed, your picture is all there is: clicking it opens the
+          // sidebar, where leaving and settings are. Sign-ups waiting for an
+          // admin still show, on the picture.
+          <button
+            className="sidebar-me"
+            onClick={() => onCollapsedChange(false)}
+            title={`${myName}\n${t('sidebar.expand')}`}
+            aria-label={t('sidebar.expand')}
+          >
+            <Avatar name={myName} identity={myIdentity} live={false} role={myRole} />
+            {settingsBadge > 0 && (
+              <span className="settings-dot" aria-hidden="true">
+                {settingsBadge}
+              </span>
+            )}
+          </button>
+        ) : (
+          <Avatar name={myName} identity={myIdentity} live={false} role={myRole} />
+        )}
         {!collapsed && (
           <span className="sidebar-name" title={myName}>
             {myName}
           </span>
         )}
         {/* Only while in a channel: outside one there is nothing to leave. */}
-        {currentChannel !== null && (
+        {!collapsed && currentChannel !== null && (
           <button
             className="icon-button sidebar-settings sidebar-leave"
             onClick={onLeaveChannel}
@@ -861,27 +880,29 @@ export default function Sidebar({
             <IconLeave />
           </button>
         )}
-        <button
-          className="icon-button sidebar-settings"
-          onClick={onOpenSettings}
-          title={
-            settingsBadge > 0
-              ? t('sidebar.settingsPending', { count: settingsBadge })
-              : t('sidebar.settings')
-          }
-          aria-label={
-            settingsBadge > 0
-              ? t('sidebar.settingsPending', { count: settingsBadge })
-              : t('sidebar.settings')
-          }
-        >
-          <IconSliders />
-          {settingsBadge > 0 && (
-            <span className="settings-dot" aria-hidden="true">
-              {settingsBadge}
-            </span>
-          )}
-        </button>
+        {!collapsed && (
+          <button
+            className="icon-button sidebar-settings"
+            onClick={onOpenSettings}
+            title={
+              settingsBadge > 0
+                ? t('sidebar.settingsPending', { count: settingsBadge })
+                : t('sidebar.settings')
+            }
+            aria-label={
+              settingsBadge > 0
+                ? t('sidebar.settingsPending', { count: settingsBadge })
+                : t('sidebar.settings')
+            }
+          >
+            <IconSliders />
+            {settingsBadge > 0 && (
+              <span className="settings-dot" aria-hidden="true">
+                {settingsBadge}
+              </span>
+            )}
+          </button>
+        )}
       </div>
       {menu && onKickMember && (
         <MemberMenu

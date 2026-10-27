@@ -58,5 +58,8 @@ export function toChatEvent(event: string, data: string): ChatEvent | null {
     };
   }
   if (event === 'chats') return { type: 'chats' };
+  if (event === 'deleted' && typeof payload.chatId === 'string') {
+    return { type: 'deleted', chatId: payload.chatId, messageId: String(payload.messageId) };
+  }
   return null;
 }

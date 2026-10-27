@@ -29,6 +29,8 @@ import {
   type MentionQuery,
 } from '../chat/mentions';
 import Avatar from './Avatar';
+import { IconTrash } from './Sidebar';
+import { useConfirm } from './ConfirmDialog';
 import { useLanguage, useT } from '../i18n';
 
 /** Must match MESSAGE_MAX in server/src/messages.js. */
@@ -56,7 +58,16 @@ function fileProblem(file: File): 'tooLarge' | 'unsupported' | null {
  * older messages; a new one scrolls into view only when you were already at
  * the bottom, so reading back is not interrupted.
  */
-export default function ChatView({ chat, me }: { chat: ChatController; me: string | null }) {
+export default function ChatView({
+  chat,
+  me,
+  canModerate = false,
+}: {
+  chat: ChatController;
+  me: string | null;
+  /** An admin, who may delete anyone's messages; the server checks it again. */
+  canModerate?: boolean;
+}) {
   const t = useT();
   const { language } = useLanguage();
   const [draft, setDraft] = useState('');
@@ -68,6 +79,7 @@ export default function ChatView({ chat, me }: { chat: ChatController; me: strin
   const [viewing, setViewing] = useState<string | null>(null);
   // What the message being written answers, and who was picked to mention.
   const [replyingTo, setReplyingTo] = useState<ChatMessage | null>(null);
+  const { confirm, dialog } = useConfirm();
   const [picked, setPicked] = useState<ChatMention[]>([]);
   // The @query at the caret, and which suggestion is highlighted.
   const [mention, setMention] = useState<{ query: MentionQuery; index: number } | null>(null);
@@ -186,6 +198,17 @@ export default function ChatView({ chat, me }: { chat: ChatController; me: strin
       textRef.current?.focus();
       textRef.current?.setSelectionRange(next.caret, next.caret);
     });
+  }
+
+  /** Deletes a message, yours or, as an admin, anyone's, after asking. */
+  async function remove(message: ChatMessage) {
+    const mine = message.authorId === me;
+    const name = chat.authors[message.authorId]?.name ?? t('chat.someone');
+    const question = mine ? t('chat.deleteMine') : t('chat.deleteTheirs', { name });
+    if (!(await confirm(question, t('chat.deleteMessage')))) return;
+    const refused = await chat.deleteMessage(message.id);
+    if (refused) setError(t('chat.error.deleteFailed'));
+    else if (replyingTo?.id === message.id) setReplyingTo(null);
   }
 
   /** Answers a message: shown above the box until sent or cancelled. */
@@ -331,6 +354,11 @@ export default function ChatView({ chat, me }: { chat: ChatController; me: strin
                   onMediaLoad={onMediaLoad}
                   onView={setViewing}
                   onReply={chat.available ? () => reply(m) : undefined}
+                  onDelete={
+                    chat.available && (m.authorId === me || canModerate)
+                      ? () => void remove(m)
+                      : undefined
+                  }
                   onJump={jumpTo}
                 />
               );
@@ -501,6 +529,7 @@ export default function ChatView({ chat, me }: { chat: ChatController; me: strin
           <img src={viewing} alt="" />
         </div>
       )}
+      {dialog}
     </section>
   );
 }
@@ -518,6 +547,7 @@ function MessageRow({
   onMediaLoad,
   onView,
   onReply,
+  onDelete,
   onJump,
 }: {
   message: ChatMessage;
@@ -534,6 +564,8 @@ function MessageRow({
   onView: (url: string) => void;
   /** Absent while messages cannot be sent. */
   onReply?: () => void;
+  /** Yours, or anyone's for an admin; absent otherwise. */
+  onDelete?: () => void;
   /** Scrolls to the message a reply answers. */
   onJump: (id: string) => void;
 }) {
@@ -556,16 +588,30 @@ function MessageRow({
         className={`chat-message${grouped && !message.replyTo ? ' grouped' : ''}${mine ? ' mine' : ''}${mentionsMe ? ' mentions-me' : ''}`}
         data-message-id={message.id}
       >
-        {onReply && (
-          <button
-            type="button"
-            className="chat-reply-button"
-            onClick={onReply}
-            aria-label={t('chat.reply')}
-            title={t('chat.reply')}
-          >
-            <IconReply />
-          </button>
+        {(onReply || onDelete) && (
+          <span className="chat-actions">
+            {onReply && (
+              <button
+                type="button"
+                onClick={onReply}
+                aria-label={t('chat.reply')}
+                title={t('chat.reply')}
+              >
+                <IconReply />
+              </button>
+            )}
+            {onDelete && (
+              <button
+                type="button"
+                className="danger"
+                onClick={onDelete}
+                aria-label={t('chat.deleteMessage')}
+                title={t('chat.deleteMessage')}
+              >
+                <IconTrash />
+              </button>
+            )}
+          </span>
         )}
         {grouped && !message.replyTo ? (
           <time className="chat-time-side" dateTime={message.sentAt}>
@@ -670,6 +716,13 @@ function Attachment({
 /** The message a reply answers: who wrote it, and its opening words. */
 function ReplyQuote({ reply, label }: { reply: ChatReply; label?: string }) {
   const t = useT();
+  if (reply.deleted) {
+    return (
+      <span className="chat-quote deleted">
+        <span className="chat-quote-body">{t('chat.messageDeleted')}</span>
+      </span>
+    );
+  }
   const what =
     reply.body ||
     (reply.kind === 'video' ? t('chat.video') : reply.kind === 'image' ? t('chat.photo') : '');

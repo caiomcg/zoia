@@ -3,7 +3,6 @@ import Banner from './components/Banner';
 import CameraDialog from './components/CameraDialog';
 import AuthScreen from './components/AuthScreen';
 import WaitingScreen from './components/WaitingScreen';
-import KickedScreen from './components/KickedScreen';
 import Player from './components/Player';
 import RemoteGrid, {
   type GridControls,
@@ -19,7 +18,7 @@ import SettingsDialog, { type Section as SettingsSection } from './components/Se
 import ReleaseNotesDialog from './components/ReleaseNotesDialog';
 import Splash from './components/Splash';
 import StatusLight, { type StatusStat, type StatusTone } from './components/StatusLight';
-import { WHIP_SUFFIX, useRoom, type KickReason, type RoomMember } from './livekit/useRoom';
+import { WHIP_SUFFIX, useRoom, type RoomMember } from './livekit/useRoom';
 import { useGpuBroadcast } from './livekit/useGpuBroadcast';
 import { useSoundCues } from './sounds/useSoundCues';
 import { LAST_VERSION_STORAGE_KEY, shouldShowReleaseNotes } from './whats-new';
@@ -184,15 +183,9 @@ export default function App() {
     return window.zoia.pairing.onChange(setStatus);
   }, []);
 
-  // Kicked off the server (ADR 0037): an admin did it, or this machine sat
-  // in a channel idle. Nothing talks to the server until it is reconnected.
-  const [kickedOff, setKickedOff] = useState<KickReason | null>(null);
-
   // Signed in and let in: an account still waiting for approval is signed in
   // but can reach nothing, so nothing that talks to the room runs for it.
-  // Kicked, the same: no channel list, no chat, no account checks.
-  const usable =
-    Boolean(status?.paired) && status?.account?.status !== 'pending' && kickedOff === null;
+  const usable = Boolean(status?.paired) && status?.account?.status !== 'pending';
   const account = status?.account ?? null;
   const pendingApprovals = account?.pendingApprovals ?? 0;
 
@@ -338,21 +331,25 @@ export default function App() {
     clearRemoved();
     setHopping(false);
     setChannel(null);
-    // A kick says why on its own screen.
-    setChannelError(kickedOff ? null : t('channel.error.removed'));
+    setChannelError(t('channel.error.removed'));
     void room.disconnect();
     // Only a new removal acts; room is read as it is now.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [removed]);
 
-  // Kicked off the server: the screen below takes over, and the effect that
-  // follows `usable` leaves the channel, sharing stopped.
+  // Disconnected by the server (ADR 0037), by an admin or for sitting idle:
+  // out of the channel, sharing stopped, and told why. Only the channel: the
+  // chats and the channel list stay, and any channel can be joined again.
   const { kicked, clearKicked } = room;
   useEffect(() => {
     if (!kicked) return;
     clearKicked();
-    setKickedOff(kicked);
-  }, [kicked, clearKicked]);
+    void leaveChannel().then(() =>
+      setChannelError(t(kicked === 'idle' ? 'channel.error.idle' : 'channel.error.removed')),
+    );
+    // Only a new disconnect acts; leaveChannel is read as it is now.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kicked]);
 
   /**
    * Admins: takes someone off the server altogether. No confirmation: the
@@ -606,17 +603,20 @@ export default function App() {
   }, []);
   const watchingSomething =
     stage.watching.length > 0 || stage.cameras.length > 0 || stage.localWatched;
+  // Starting to watch something brings the stage forward; stopping leaves you
+  // where you are, since the stage is where a channel is.
   const wasWatching = useRef(watchingSomething);
   useEffect(() => {
-    if (watchingSomething !== wasWatching.current) setView(watchingSomething ? 'stage' : 'chat');
+    if (watchingSomething && !wasWatching.current) setView('stage');
     wasWatching.current = watchingSomething;
   }, [watchingSomething]);
+  // Joining a channel is to share or to watch: its stage comes first, whether
+  // or not anyone is live yet. Out of every channel there is only the chat.
+  useEffect(() => {
+    setView(channel === null ? 'chat' : 'stage');
+  }, [channel]);
   const [chatError, setChatError] = useState<string | null>(null);
-  // A stage only when there is something to put on it: someone in your
-  // channel, you included, sharing a screen or a camera. Otherwise — out of
-  // every channel, or in one where nobody is live — there is only the chat.
-  const someoneLive = channel !== null && room.members.some((m) => m.isBroadcasting);
-  const chatShownIfEnabled = !someoneLive || view === 'chat';
+  const chatShownIfEnabled = channel === null || view === 'chat';
   const chat = useChat({
     usable,
     me: accountId,
@@ -628,17 +628,6 @@ export default function App() {
   if (!status.paired) return <AuthScreen status={status} onSignedIn={setStatus} />;
   if (status.account?.status === 'pending') {
     return <WaitingScreen status={status} onChange={setStatus} />;
-  }
-  if (kickedOff) {
-    return (
-      <KickedScreen
-        reason={kickedOff}
-        onReconnect={() => {
-          setChannelError(null);
-          setKickedOff(null);
-        }}
-      />
-    );
   }
   if (!booted) return <Splash />;
 
@@ -986,7 +975,7 @@ export default function App() {
 
       <div className="body">
         <main className={`main${chatShown ? ' chat-full' : ''}`}>
-          {chat.enabled && someoneLive && (
+          {chat.enabled && channel !== null && (
             <div className="main-tabs" role="tablist">
               <button
                 role="tab"
@@ -1007,7 +996,6 @@ export default function App() {
                   <path d="M8 20.5h8" strokeLinecap="round" />
                 </svg>
                 {t('chat.tabStage')}
-                {watchingSomething && <span className="share-live-dot" aria-hidden="true" />}
               </button>
               <button
                 role="tab"
@@ -1025,35 +1013,10 @@ export default function App() {
                   </span>
                 )}
               </button>
-              {/* Someone else's broadcast in a small window on top, and the
-                  chat behind it: both at once. */}
-              {(stage.watching.length > 0 || stage.cameras.length > 0) && (
-                <button
-                  className="main-tab main-tab-pip"
-                  onClick={() => {
-                    if (gridRef.current?.popOut()) setView('chat');
-                  }}
-                  title={t('chat.popOutTitle')}
-                >
-                  <svg
-                    viewBox="0 0 24 24"
-                    width="16"
-                    height="16"
-                    aria-hidden="true"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                  >
-                    <rect x="2" y="4" width="20" height="16" rx="2" />
-                    <rect x="12" y="12" width="8" height="6" rx="1" />
-                  </svg>
-                  {t('chat.popOut')}
-                </button>
-              )}
             </div>
           )}
           <div className="main-panes">
-            {chatShown && <ChatView chat={chat} me={accountId} />}
+            {chatShown && <ChatView chat={chat} me={accountId} canModerate={isAdmin} />}
             {/* Behind the chat rather than unmounted: what you watch keeps
               playing, and its sound with it, while you read. */}
             <div className={`main-pane${chatShown ? ' behind' : ''}`}>
@@ -1068,6 +1031,9 @@ export default function App() {
                 </section>
               ) : (
                 <RemoteGrid
+                  // Choosing someone in the channel list, or its hover card, is
+                  // asking to see them: from the chat too, whatever was on stage.
+                  onShow={() => setView('stage')}
                   key={channel ?? 'none'}
                   screens={room.remoteScreens}
                   onFocusChange={setRemoteFocus}

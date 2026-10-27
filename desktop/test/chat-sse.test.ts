@@ -34,6 +34,11 @@ describe('toChatEvent', () => {
       { type: 'read', chatId: 'c', accountId: 'a', messageId: 'm', reader: null },
     );
     assert.deepEqual(toChatEvent('chats', '{}'), { type: 'chats' });
+    assert.deepEqual(toChatEvent('deleted', '{"chatId":"c1","messageId":"m1"}'), {
+      type: 'deleted',
+      chatId: 'c1',
+      messageId: 'm1',
+    });
   });
 
   test('ignores what it does not know, and what is not JSON', () => {

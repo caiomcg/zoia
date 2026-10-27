@@ -58,6 +58,8 @@ export const es: Messages = {
   'channel.error.limit': 'Se alcanzó el límite de canales. Un admin puede aumentarlo.',
   'channel.error.limitRange': 'Ese límite está fuera de rango.',
   'channel.error.removed': 'Un admin te desconectó del canal. Puedes volver a entrar.',
+  'channel.error.idle':
+    'Te desconectamos del canal tras un rato sin compartir ni ver a nadie. Puedes volver a entrar.',
   'channel.error.kickFailed': 'No se pudo desconectar ({code}).',
   'channel.error.notEmpty': 'Solo se puede eliminar un canal vacío.',
   'channel.error.isDefault': 'El canal principal no se puede eliminar.',
@@ -90,17 +92,9 @@ export const es: Messages = {
   'sidebar.kickHint': 'Clic derecho para desconectar',
   'sidebar.kickAction': 'Desconectar',
 
-  'kicked.title': 'Desconectado',
-  'kicked.admin': 'Un admin te desconectó del servidor. Puedes volver a conectarte cuando quieras.',
-  'kicked.idle':
-    'Te desconectamos por pasar un rato en un canal sin compartir ni ver a nadie. Puedes volver a conectarte cuando quieras.',
-  'kicked.reconnect': 'Volver a conectar',
-
   // ---- chat de texto
   'chat.title': 'Chats',
   'chat.tabStage': 'Transmisión',
-  'chat.popOut': 'Ver y chatear',
-  'chat.popOutTitle': 'Abre la transmisión en una ventanita encima y muestra el chat',
   'chat.name': 'Nombre del chat',
   'chat.new': 'Nuevo chat',
   'chat.full': 'Se alcanzó el límite de chats. Auméntalo en Configuración › Servidor.',
@@ -136,6 +130,11 @@ export const es: Messages = {
   'chat.error.unsupported':
     'Solo se pueden enviar fotos (PNG, JPEG, GIF, WebP) y videos (MP4, WebM).',
   'chat.reply': 'Responder',
+  'chat.deleteMessage': 'Eliminar mensaje',
+  'chat.deleteMine': '¿Eliminar este mensaje? Nadie lo verá más.',
+  'chat.deleteTheirs': '¿Eliminar el mensaje de {name}? Nadie lo verá más.',
+  'chat.messageDeleted': 'Mensaje eliminado',
+  'chat.error.deleteFailed': 'No se pudo eliminar ese mensaje.',
   'chat.replyingTo': 'Respondiendo a {name}',
   'chat.cancelReply': 'Cancelar respuesta',
   'chat.mentionList': 'Personas para mencionar',

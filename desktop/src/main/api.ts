@@ -430,6 +430,15 @@ export function chatSend(chatId: string, body: string, extras: ChatSendExtras = 
   );
 }
 
+/** Deletes a message: your own, or anyone's as an admin. The server checks which. */
+export function chatDeleteMessage(chatId: string, messageId: string) {
+  return attempt(
+    call(chatPath(chatId, `/messages/${encodeURIComponent(messageId)}`), {
+      method: 'DELETE',
+    }).then(() => undefined),
+  );
+}
+
 /** Everyone who can be @mentioned: name and picture, never email. */
 export function chatPeople() {
   return attempt(call<{ people: ChatPerson[] }>('/api/chats/people').then((r) => r.people));

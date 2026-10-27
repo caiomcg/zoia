@@ -144,6 +144,26 @@ export function useChat({
     else setThread(null);
   }, [openId, available, loadThread]);
 
+  /**
+   * Takes a deleted message out of the open chat, and empties the quote of
+   * any reply to it, as the server does for a page loaded later.
+   */
+  const dropMessage = useCallback((id: string) => {
+    setThread(
+      (t) =>
+        t && {
+          ...t,
+          messages: t.messages
+            .filter((m) => m.id !== id)
+            .map((m) =>
+              m.replyTo?.id === id
+                ? { ...m, replyTo: { id, authorId: m.replyTo.authorId, deleted: true } }
+                : m,
+            ),
+        },
+    );
+  }, []);
+
   const setUnread = useCallback((chatId: string, next: (n: number) => number) => {
     setList(
       (l) =>
@@ -186,6 +206,9 @@ export function useChat({
             }
             break;
           }
+          case 'deleted':
+            if (event.chatId === openRef.current) dropMessage(event.messageId);
+            break;
           case 'read':
             if (event.reader) {
               const { reader } = event;
@@ -204,7 +227,7 @@ export function useChat({
             break;
         }
       }),
-    [refresh, loadThread, setUnread],
+    [refresh, loadThread, setUnread, dropMessage],
   );
 
   // On screen means read, up to the newest message.
@@ -289,6 +312,19 @@ export function useChat({
     [],
   );
 
+  /** Deletes a message in the open chat. Resolves to the server's refusal code, or null. */
+  const deleteMessage = useCallback(
+    async (id: string): Promise<string | null> => {
+      const chatId = openRef.current;
+      if (!chatId) return 'not_found';
+      const result = await window.zoia.chat.deleteMessage(chatId, id);
+      if (!result.ok) return result.error;
+      dropMessage(id);
+      return null;
+    },
+    [dropMessage],
+  );
+
   /** Runs an admin change, then re-reads the list. Resolves to a refusal code, or null. */
   const change = useCallback(
     async (request: Promise<{ ok: true } | { ok: false; error: string }>) => {
@@ -316,6 +352,7 @@ export function useChat({
     /** Where "new messages" begins, or null for no line at all. */
     readWhenOpened: showDivider ? readWhenOpened : undefined,
     send,
+    deleteMessage,
     loadOlder,
     create: (name: string) => change(window.zoia.chat.create(name)),
     rename: (id: string, name: string) => change(window.zoia.chat.rename(id, name)),

@@ -58,6 +58,8 @@ export const pt: Messages = {
   'channel.error.limit': 'O limite de canais foi atingido. Um admin pode aumentá-lo.',
   'channel.error.limitRange': 'Esse limite está fora do permitido.',
   'channel.error.removed': 'Um admin desconectou você do canal. Você pode entrar de novo.',
+  'channel.error.idle':
+    'Você foi desconectado do canal após um tempo sem compartilhar nem assistir ninguém. Você pode entrar de novo.',
   'channel.error.kickFailed': 'Não foi possível desconectar ({code}).',
   'channel.error.notEmpty': 'Só é possível apagar um canal vazio.',
   'channel.error.isDefault': 'O canal principal não pode ser apagado.',
@@ -90,17 +92,9 @@ export const pt: Messages = {
   'sidebar.kickHint': 'Clique com o botão direito para desconectar',
   'sidebar.kickAction': 'Desconectar',
 
-  'kicked.title': 'Desconectado',
-  'kicked.admin': 'Um admin desconectou você do servidor. Você pode reconectar quando quiser.',
-  'kicked.idle':
-    'Você foi desconectado por ficar um tempo em um canal sem compartilhar nem assistir ninguém. Você pode reconectar quando quiser.',
-  'kicked.reconnect': 'Reconectar',
-
   // ---- chat de texto
   'chat.title': 'Chats',
   'chat.tabStage': 'Transmissão',
-  'chat.popOut': 'Assistir e conversar',
-  'chat.popOutTitle': 'Abre a transmissão numa janelinha por cima e mostra o chat',
   'chat.name': 'Nome do chat',
   'chat.new': 'Novo chat',
   'chat.full': 'O limite de chats foi atingido. Aumente em Configurações › Servidor.',
@@ -135,6 +129,11 @@ export const pt: Messages = {
   'chat.error.tooLarge': 'Esse arquivo passa de 10 MB.',
   'chat.error.unsupported': 'Só dá para enviar fotos (PNG, JPEG, GIF, WebP) e vídeos (MP4, WebM).',
   'chat.reply': 'Responder',
+  'chat.deleteMessage': 'Apagar mensagem',
+  'chat.deleteMine': 'Apagar esta mensagem? Ninguém mais vai vê-la.',
+  'chat.deleteTheirs': 'Apagar a mensagem de {name}? Ninguém mais vai vê-la.',
+  'chat.messageDeleted': 'Mensagem apagada',
+  'chat.error.deleteFailed': 'Não foi possível apagar essa mensagem.',
   'chat.replyingTo': 'Respondendo a {name}',
   'chat.cancelReply': 'Cancelar resposta',
   'chat.mentionList': 'Pessoas para mencionar',

@@ -174,6 +174,8 @@ export interface ZoiaBridge {
     ): Promise<ActionOutcome<{ message: ChatMessage; author: ChatAuthor }>>;
     /** Everyone who can be @mentioned. */
     people(): Promise<ActionOutcome<ChatPerson[]>>;
+    /** Deletes a message: your own, or anyone's as an admin. */
+    deleteMessage(chatId: string, messageId: string): Promise<ActionOutcome>;
     read(chatId: string, messageId: string): Promise<ActionOutcome>;
     /** Starts or stops the live stream of changes, which arrive through onEvent. */
     listen(on: boolean): Promise<void>;

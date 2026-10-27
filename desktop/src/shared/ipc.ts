@@ -155,10 +155,12 @@ export interface ChatMessage {
 export interface ChatReply {
   id: string;
   authorId: string;
-  authorName: string | null;
+  authorName?: string | null;
   /** Its opening words, up to 200 characters; empty for a bare photo or video. */
-  body: string;
-  kind: 'image' | 'video' | null;
+  body?: string;
+  kind?: 'image' | 'video' | null;
+  /** The message answered was deleted since: nothing of it is kept. */
+  deleted?: boolean;
 }
 
 /** Someone @mentioned, by the name they had when it was written. */
@@ -218,6 +220,8 @@ export type ChatEvent =
   | { type: 'message'; message: ChatMessage; author: ChatAuthor }
   | { type: 'read'; chatId: string; accountId: string; messageId: string; reader: ChatAuthor }
   | { type: 'chats' }
+  /** A message deleted by its author or an admin. */
+  | { type: 'deleted'; chatId: string; messageId: string }
   /** The stream itself: connected, or lost and retrying. */
   | { type: 'stream'; connected: boolean };
 
@@ -464,6 +468,7 @@ export const IPC = {
   chatEvent: 'zoia:chat:event',
   chatAvatar: 'zoia:chat:avatar',
   chatPeople: 'zoia:chat:people',
+  chatDeleteMessage: 'zoia:chat:deleteMessage',
   stageGet: 'zoia:stage:get',
   stageClaim: 'zoia:stage:claim',
   stageRelease: 'zoia:stage:release',
