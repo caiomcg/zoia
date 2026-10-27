@@ -9,6 +9,8 @@
 
 *(Nota: O módulo de transmissão `android-broadcaster` foi postergado para uma etapa futura conforme alinhamento com o usuário).*
 
+*(Nota: O chat de texto (ADR 0036) é só do desktop. O Android anuncia, no atributo `zoia.watching`, quais transmissões está exibindo, para que o servidor não o desconecte por inatividade (ADR 0037).)*
+
 **Ordem de construção:** `android-core-auth` → `android-viewer`.
 
 ---

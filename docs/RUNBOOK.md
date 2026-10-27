@@ -268,6 +268,24 @@ docker compose exec app node server/bin/keytool.js device:list <accountId>
 docker compose exec app node server/bin/keytool.js device:revoke <deviceId>
 ```
 
+### Disconnect someone, or find out why they were
+
+Right-click someone in the channel list and choose **Disconnect**: their app leaves its
+channel and the chat and waits until they reconnect. It is not a ban; keeping someone out is
+Disable, above. The server also disconnects anyone who has sat in a channel for
+`IDLE_KICK_MINUTES` (ten) neither sharing nor watching. Both are logged:
+
+```bash
+docker compose logs app | grep -E '\[admin\].*kicked|\[idle\] kicked'
+```
+
+### Chat photos and videos disappear
+
+All chats' photos and videos share `CHAT_MEDIA_CAP_GB` (5 GB). Past it, the oldest files are
+deleted to make room, and their messages say the file is no longer available. That is the cap
+working, not a fault: `docker compose logs app | grep 'over its cap'` shows when it happened.
+Raise the cap in `.env` if the disk has room, then `docker compose up -d app`.
+
 ### Deploy a change
 
 ```bash

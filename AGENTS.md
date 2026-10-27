@@ -10,7 +10,9 @@ a **channel** (each its own LiveKit room; a permanent default plus any admins ad
 limit admins change at runtime; see ADR 0015 and 0036) and watches
 there; **anyone may claim an independent broadcast slot** in their channel and share a screen,
 window or tab with audio. Multiple people may stream at the same time, and each viewer chooses
-which broadcasts to watch. Latency is ~200–500 ms. Access is by account: anyone may sign up
+which broadcasts to watch. Latency is ~200–500 ms. Beside the channels are **text chats**
+(ADR 0036): messages, photos and videos, replies and @mentions, every chat visible to every
+approved account. Access is by account: anyone may sign up
 with an email and password, and an admin approves them before they can join. Roles (user,
 admin, one super admin) govern administration only, never who may broadcast — see ADR 0031.
 
@@ -96,7 +98,9 @@ source; match on "not `MICROPHONE`" instead.
 | `server/src/idle.js` | Kicking a machine off the server, and the sweep that kicks the idle (ADR 0037) |
 | `server/src/devices.js` | One credential per machine signed in to an account |
 | `server/src/chats.js` | The text chats and how many there may be (ADR 0036), in SQLite |
-| `server/src/messages.js` | Chat messages and read markers, in ScyllaDB |
+| `server/src/messages.js` | Chat messages, read markers, replies and mentions, in ScyllaDB |
+| `server/src/chat-routes.js` | The chat API and its live SSE stream |
+| `server/src/chat-media.js` | Chat photos and videos on disk, typed by their bytes, under one cap |
 | `server/src/scylla.js` | Connects to ScyllaDB, creates the keyspace, applies its schema |
 | `server/bin/keytool.js` | CLI on the server: the super admin, reset codes, devices, backups |
 | `server/public/` | The login page and viewer app (no build step, plain ESM) |

@@ -102,6 +102,44 @@ go through was removed.
 Accounts, approval and roles: [ADR 0031](adr/0031-accounts-with-admin-approval.md). The stage:
 [ADR 0005](adr/0005-one-tier-claimable-stage.md).
 
+## Text chat
+
+Chats sit beside the channels and do not depend on them: nobody joins a chat, and every
+approved account sees every one ([ADR 0036](adr/0036-text-chat-in-scylladb.md)).
+
+```
+  desktop app                          app (Node)                    stores
+ ┌──────────────┐  /api/chats/...   ┌──────────────────────┐   ┌──────────────────────────┐
+ │ chat list    │ ────────────────► │ chat-routes.js       │──►│ SQLite: the chat list    │
+ │ messages     │                   │  ├ send, page, read  │──►│ ScyllaDB: messages,      │
+ │ photo/video  │ ◄──── SSE ─────── │  └ /events stream    │   │   read markers           │
+ └──────────────┘  (one stream)     └──────────────────────┘──►│ disk: photos and videos  │
+                                                               └──────────────────────────┘
+```
+
+- **The list** (names, the default chat, how many there may be) is in the SQLite database,
+  beside the accounts that may change it.
+- **Messages** are in ScyllaDB, one partition per chat per month, newest first, so the
+  latest page is one read and no partition grows without bound. A message's id is a
+  timeuuid: it orders messages and says which month holds each one.
+- **Live updates** are one Server-Sent Events stream per app window. The server pushes new
+  messages, read markers and list changes; the stream re-checks the session on every
+  heartbeat, so signing a machine out ends it.
+- **Photos and videos** are files in `server/data/chat-media/<chat>/`, typed by their bytes
+  and never by what the client says. All chats share one cap (5 GB by default); past it the
+  oldest files go first. The app loads them through its own `zoia-media://` scheme, which
+  adds the session and lets a video be scrubbed.
+- **Replies** keep a snapshot of the message they answer, since messages are never edited.
+  **@mentions** are kept only for approved people whose `@Name` is in the text.
+
+## Keeping channels tidy
+
+An admin can disconnect someone from the server: the server tells that app why on a data
+message, then removes it from its room, and the app leaves its channel and the chat until it
+is reconnected by hand. Every minute the server also disconnects anyone who has been in a
+channel for ten minutes neither sharing nor watching, which it reads from the
+`zoia.watching` attribute each app sets ([ADR 0037](adr/0037-kicks-and-idle-removal.md)).
+
 ## Why these choices
 
 **An SFU, not a mesh or an MCU.** A mesh makes the broadcaster upload once per viewer, which
@@ -139,6 +177,7 @@ safety ([ADR 0032](adr/0032-sqlite-for-credentials.md)).
 | 3000 | TCP | no | Node app — no host port, reached only via Caddy |
 | 7880 | TCP | no | LiveKit signalling, reached only via Caddy |
 | 6379 | TCP | no | Redis, used by LiveKit; bound to localhost |
+| 9042 | TCP | no | ScyllaDB, chat messages; reached only by the app, inside compose |
 
 Hardware-encoded broadcasts need nothing extra here. They publish over WHIP to the SFU at
 `/whip/v1`, through the same 443 and 7882 as everything else.
@@ -161,8 +200,9 @@ degrading the stream for everyone.
 
 ```
 zoia/
-├── server/          Node + Express: accounts, tokens, the stage, crash reports
+├── server/          Node + Express: accounts, tokens, the stage, chat, crash reports
 │   ├── src/         app.js · token.js · stage.js · accounts.js · devices.js · database.js
+│   │                chats.js · messages.js · chat-routes.js · chat-media.js · idle.js
 │   ├── bin/         keytool.js — super admin, reset codes, devices, backups
 │   └── public/      the static landing page (no client JavaScript)
 ├── desktop/         Electron + React, Windows x64
