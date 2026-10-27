@@ -409,7 +409,7 @@ export const IPC = {
   adminAccounts: 'zoia:admin:accounts',
   adminAction: 'zoia:admin:action',
   adminMoveDevice: 'zoia:admin:moveDevice',
-  adminDisconnectDevice: 'zoia:admin:disconnectDevice',
+  adminKickDevice: 'zoia:admin:kickDevice',
   getToken: 'zoia:token:get',
   roomsList: 'zoia:rooms:list',
   roomsCreate: 'zoia:rooms:create',

@@ -484,6 +484,15 @@ const WATCHING_SETTLE_MS = 1500;
  */
 export const MOVE_TOPIC = 'zoia.move';
 
+/**
+ * The server kicking this machine off arrives on this topic, just before it
+ * is removed from the room (ADR 0037). Must match KICK_TOPIC in server/src/idle.js.
+ */
+export const KICK_TOPIC = 'zoia.kick';
+
+/** Why the server kicked this machine: an admin did, or it sat idle. */
+export type KickReason = 'admin' | 'idle';
+
 /** Where an admin asked this machine to go. */
 export interface MoveRequest {
   channel: string;
@@ -537,6 +546,8 @@ export function useRoom() {
   // The server took this machine out of the room: an admin disconnected it,
   // or its access was revoked. Not a lost connection, so nothing to retry.
   const [removed, setRemoved] = useState(false);
+  // The server is kicking this machine off altogether, not just the room.
+  const [kicked, setKicked] = useState<KickReason | null>(null);
   const [remoteScreens, setRemoteScreens] = useState<RemoteScreen[]>([]);
   const selectedRemoteIdsRef = useRef<Set<string>>(new Set());
   const pausedRemoteIdsRef = useRef<ReadonlySet<string>>(new Set());
@@ -886,13 +897,20 @@ export function useRoom() {
         .on(RoomEvent.TrackSubscribed, () => refresh())
         .on(RoomEvent.TrackUnsubscribed, () => refresh())
         .on(RoomEvent.ParticipantConnected, () => refresh())
-        // A move is only taken from the server: anything another participant
-        // sends carries them as its sender, and is ignored here.
+        // A move or a kick is only taken from the server: anything another
+        // participant sends carries them as its sender, and is ignored here.
         .on(RoomEvent.DataReceived, (payload, participant, _kind, topic) => {
-          if (participant || topic !== MOVE_TOPIC || roomRef.current !== room) return;
+          if (participant || roomRef.current !== room) return;
           try {
-            const { channel } = JSON.parse(new TextDecoder().decode(payload)) as MoveRequest;
-            if (typeof channel === 'string') setMoveRequest({ channel });
+            if (topic === MOVE_TOPIC) {
+              const { channel } = JSON.parse(new TextDecoder().decode(payload)) as MoveRequest;
+              if (typeof channel === 'string') setMoveRequest({ channel });
+            } else if (topic === KICK_TOPIC) {
+              const { reason } = JSON.parse(new TextDecoder().decode(payload)) as {
+                reason?: string;
+              };
+              setKicked(reason === 'idle' ? 'idle' : 'admin');
+            }
           } catch {
             // Not a message this version understands.
           }
@@ -1692,6 +1710,8 @@ export function useRoom() {
     clearMoveRequest: useCallback(() => setMoveRequest(null), []),
     removed,
     clearRemoved: useCallback(() => setRemoved(false), []),
+    kicked,
+    clearKicked: useCallback(() => setKicked(null), []),
     setRemotePaused,
     setRemoteFocus,
     participantCount,

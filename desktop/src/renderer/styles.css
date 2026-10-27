@@ -4418,34 +4418,79 @@ button.danger:active:not(:disabled),
   margin: 0 4px 0 auto;
 }
 
-/* Admins: take someone out of the channel. On hover, at the row's end. */
-.member-disconnect {
-  display: inline-flex;
-  flex: 0 0 auto;
+/* Admins: what to do to someone, on a right-click (ADR 0037). Its own
+   button styles, so the app-wide button and .danger ones stay out. */
+.member-menu {
+  position: fixed;
+  z-index: 1000;
+  min-width: 160px;
+  padding: 4px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  animation: pop-in 0.12s ease-out;
+}
+
+.member-menu-head {
+  display: flex;
+  gap: 8px;
   align-items: center;
-  justify-content: center;
+  padding: 6px 8px 8px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+
+.member-menu-head .avatar {
   width: 24px;
   height: 24px;
-  margin-left: auto;
-  padding: 0;
+  font-size: 10px;
+}
+
+.member-menu-who {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.25;
+}
+
+.member-menu-name {
+  overflow: hidden;
+  max-width: 180px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.member-menu-role {
+  font-size: 11px;
   color: var(--muted);
+}
+
+.member-menu .member-menu-item {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+  padding: 6px 10px;
+  font-weight: 500;
+  color: var(--danger);
+  text-align: left;
   background: transparent;
   border: none;
   border-radius: 4px;
-  cursor: pointer;
-  opacity: 0;
 }
 
-.member:hover .member-disconnect,
-.member-disconnect:focus-visible {
-  opacity: 1;
-}
-
-.member-disconnect:hover {
+.member-menu .member-menu-item:hover,
+.member-menu .member-menu-item:focus-visible {
   color: #fff;
   background: var(--danger);
+  outline: none;
 }
 
-.member-camera + .member-disconnect {
-  margin-left: 0;
+@media (prefers-reduced-motion: reduce) {
+  .member-menu {
+    animation: none;
+  }
 }

@@ -3,6 +3,7 @@ import Banner from './components/Banner';
 import CameraDialog from './components/CameraDialog';
 import AuthScreen from './components/AuthScreen';
 import WaitingScreen from './components/WaitingScreen';
+import KickedScreen from './components/KickedScreen';
 import Player from './components/Player';
 import RemoteGrid, {
   type GridControls,
@@ -18,7 +19,7 @@ import SettingsDialog, { type Section as SettingsSection } from './components/Se
 import ReleaseNotesDialog from './components/ReleaseNotesDialog';
 import Splash from './components/Splash';
 import StatusLight, { type StatusStat, type StatusTone } from './components/StatusLight';
-import { WHIP_SUFFIX, useRoom, type RoomMember } from './livekit/useRoom';
+import { WHIP_SUFFIX, useRoom, type KickReason, type RoomMember } from './livekit/useRoom';
 import { useGpuBroadcast } from './livekit/useGpuBroadcast';
 import { useSoundCues } from './sounds/useSoundCues';
 import { LAST_VERSION_STORAGE_KEY, shouldShowReleaseNotes } from './whats-new';
@@ -182,9 +183,15 @@ export default function App() {
     return window.zoia.pairing.onChange(setStatus);
   }, []);
 
+  // Kicked off the server (ADR 0037): an admin did it, or this machine sat
+  // in a channel idle. Nothing talks to the server until it is reconnected.
+  const [kickedOff, setKickedOff] = useState<KickReason | null>(null);
+
   // Signed in and let in: an account still waiting for approval is signed in
   // but can reach nothing, so nothing that talks to the room runs for it.
-  const usable = Boolean(status?.paired) && status?.account?.status !== 'pending';
+  // Kicked, the same: no channel list, no chat, no account checks.
+  const usable =
+    Boolean(status?.paired) && status?.account?.status !== 'pending' && kickedOff === null;
   const account = status?.account ?? null;
   const pendingApprovals = account?.pendingApprovals ?? 0;
 
@@ -330,20 +337,30 @@ export default function App() {
     clearRemoved();
     setHopping(false);
     setChannel(null);
-    setChannelError(t('channel.error.removed'));
+    // A kick says why on its own screen.
+    setChannelError(kickedOff ? null : t('channel.error.removed'));
     void room.disconnect();
     // Only a new removal acts; room is read as it is now.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [removed]);
 
-  /** Admins: takes someone out of their channel, after asking. */
-  async function disconnectMember(identity: string, name: string) {
-    if (!window.confirm(t('sidebar.disconnectConfirm', { name }))) return;
+  // Kicked off the server: the screen below takes over, and the effect that
+  // follows `usable` leaves the channel, sharing stopped.
+  const { kicked, clearKicked } = room;
+  useEffect(() => {
+    if (!kicked) return;
+    clearKicked();
+    setKickedOff(kicked);
+  }, [kicked, clearKicked]);
+
+  /**
+   * Admins: takes someone off the server altogether. No confirmation: the
+   * menu names who it is about, and they can reconnect at once.
+   */
+  async function kickMember(identity: string) {
     try {
-      const outcome = await window.zoia.admin.disconnectDevice(identity);
-      setChannelError(
-        outcome.ok ? null : t('channel.error.disconnectFailed', { code: outcome.error }),
-      );
+      const outcome = await window.zoia.admin.kickDevice(identity);
+      setChannelError(outcome.ok ? null : t('channel.error.kickFailed', { code: outcome.error }));
     } catch {
       setChannelError(t('channel.error.unreachable'));
     }
@@ -610,6 +627,17 @@ export default function App() {
   if (!status.paired) return <AuthScreen status={status} onSignedIn={setStatus} />;
   if (status.account?.status === 'pending') {
     return <WaitingScreen status={status} onChange={setStatus} />;
+  }
+  if (kickedOff) {
+    return (
+      <KickedScreen
+        reason={kickedOff}
+        onReconnect={() => {
+          setChannelError(null);
+          setKickedOff(null);
+        }}
+      />
+    );
   }
   if (!booted) return <Splash />;
 
@@ -1152,9 +1180,9 @@ export default function App() {
           onToggleCamera={(identity) => gridRef.current?.toggleCamera(identity)}
           onHoverBroadcast={(target, anchor) => gridRef.current?.hover(target, anchor)}
           onWatchBroadcast={(target) => gridRef.current?.watch(target)}
-          onDisconnectMember={
+          onKickMember={
             account?.role === 'admin' || account?.role === 'super_admin'
-              ? (identity, name) => void disconnectMember(identity, name)
+              ? (identity) => void kickMember(identity)
               : undefined
           }
           chats={

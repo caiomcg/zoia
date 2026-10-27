@@ -340,8 +340,8 @@ function registerIpc(): void {
         }),
       ),
   );
-  ipcMain.handle(IPC.adminDisconnectDevice, (_event, id: string) =>
-    api.attempt(api.adminDisconnectDevice(String(id))),
+  ipcMain.handle(IPC.adminKickDevice, (_event, id: string) =>
+    api.attempt(api.adminKickDevice(String(id))),
   );
   ipcMain.handle(IPC.adminMoveDevice, (_event, id: string, channel: string) =>
     api.attempt(api.adminMoveDevice(String(id), String(channel))),

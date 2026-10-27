@@ -4,8 +4,10 @@ import {
   useRef,
   useState,
   type HTMLAttributes,
+  type MouseEvent as ReactMouseEvent,
   type ReactNode,
 } from 'react';
+import { createPortal } from 'react-dom';
 import type { RoomMember } from '../livekit/useRoom';
 import type { AccountRole, RoomInfo } from '../../shared/ipc';
 import type { GridTarget } from './RemoteGrid';
@@ -223,7 +225,7 @@ export default function Sidebar({
   onWatchBroadcast,
   onToggleCamera,
   chats,
-  onDisconnectMember,
+  onKickMember,
 }: {
   members: RoomMember[];
   myName: string;
@@ -260,8 +262,8 @@ export default function Sidebar({
   onToggleCamera: (identity: string) => void;
   /** The text chats (ADR 0036), listed under the channels. */
   chats?: (collapsed: boolean) => ReactNode;
-  /** Admins only: takes someone out of the channel they are in. */
-  onDisconnectMember?: (identity: string, name: string) => void;
+  /** Admins only: takes someone off the server, chat and all (ADR 0037). */
+  onKickMember?: (identity: string, name: string) => void;
 }) {
   const t = useT();
   const canManageChannels = myRole === 'admin' || myRole === 'super_admin';
@@ -295,14 +297,11 @@ export default function Sidebar({
       listed.has(identity) &&
       role !== 'super_admin' &&
       (role !== 'admin' || myRole === 'super_admin'));
-  // Any admin may disconnect anyone else, whatever their role: keeping order
-  // in a channel is not about rank. Never yourself: leaving is the button in
+  // Any admin may kick anyone else off the server, whatever their role:
+  // keeping order is not about rank. Never yourself: leaving is the button in
   // the footer. The server checks it again.
-  const mayDisconnect = (identity: string) =>
-    Boolean(onDisconnectMember) &&
-    canManageChannels &&
-    identity !== myIdentity &&
-    listed.has(identity);
+  const mayKick = (identity: string) =>
+    Boolean(onKickMember) && canManageChannels && identity !== myIdentity && listed.has(identity);
   const dragFrom = (
     identity: string,
     role: AccountRole | undefined,
@@ -361,6 +360,26 @@ export default function Sidebar({
       return !current;
     });
   }
+
+  // Right-clicking someone an admin may kick opens what they can do to them.
+  const [menu, setMenu] = useState<{
+    identity: string;
+    name: string;
+    role?: AccountRole;
+    x: number;
+    y: number;
+  } | null>(null);
+  const openMenu = (
+    event: ReactMouseEvent,
+    identity: string,
+    name: string,
+    role: AccountRole | undefined,
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+    onHoverBroadcast(null);
+    setMenu({ identity, name, role, x: event.clientX, y: event.clientY });
+  };
 
   const rowProps = {
     viewerIds,
@@ -561,9 +580,9 @@ export default function Sidebar({
                           role={roleOf(m)}
                           leaving={leaving}
                           drag={leaving ? {} : dragFrom(m.identity, roleOf(m), c.id)}
-                          onDisconnect={
-                            !leaving && mayDisconnect(m.identity)
-                              ? () => onDisconnectMember?.(m.identity, m.name)
+                          onContextMenu={
+                            !leaving && mayKick(m.identity)
+                              ? (event) => openMenu(event, m.identity, m.name, roleOf(m))
                               : undefined
                           }
                           {...rowProps}
@@ -579,14 +598,11 @@ export default function Sidebar({
                             key={p.identity}
                             title={[
                               p.role ? `${p.name} · ${t(`account.role.${p.role}`)}` : p.name,
-                              ...(mayDisconnect(p.identity) ? [t('sidebar.disconnectHint')] : []),
+                              ...(mayKick(p.identity) ? [t('sidebar.kickHint')] : []),
                             ].join('\n')}
                             onContextMenu={
-                              mayDisconnect(p.identity)
-                                ? (event) => {
-                                    event.preventDefault();
-                                    onDisconnectMember?.(p.identity, p.name);
-                                  }
+                              mayKick(p.identity)
+                                ? (event) => openMenu(event, p.identity, p.name, p.role)
                                 : undefined
                             }
                             {...dragFrom(p.identity, p.role, c.id)}
@@ -685,7 +701,96 @@ export default function Sidebar({
           )}
         </button>
       </div>
+      {menu && onKickMember && (
+        <MemberMenu
+          {...menu}
+          onClose={() => setMenu(null)}
+          onKick={() => onKickMember(menu.identity, menu.name)}
+        />
+      )}
     </aside>
+  );
+}
+
+/**
+ * What an admin may do to someone, at the pointer. Closes on a choice, a
+ * click elsewhere, Escape, or the window losing focus.
+ */
+function MemberMenu({
+  identity,
+  name,
+  role,
+  x,
+  y,
+  onClose,
+  onKick,
+}: {
+  identity: string;
+  name: string;
+  role?: AccountRole;
+  x: number;
+  y: number;
+  onClose: () => void;
+  onKick: () => void;
+}) {
+  const t = useT();
+  const ref = useRef<HTMLDivElement>(null);
+  // Kept inside the window: measured once drawn, then nudged in.
+  const [place, setPlace] = useState({ left: x, top: y });
+  useLayoutEffect(() => {
+    const box = ref.current?.getBoundingClientRect();
+    if (!box) return;
+    setPlace({
+      left: Math.max(4, Math.min(x, window.innerWidth - box.width - 4)),
+      top: Math.max(4, Math.min(y, window.innerHeight - box.height - 4)),
+    });
+    ref.current?.querySelector('button')?.focus();
+  }, [x, y]);
+  useEffect(() => {
+    const onDown = (event: MouseEvent) => {
+      if (!ref.current?.contains(event.target as Node)) onClose();
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    window.addEventListener('mousedown', onDown);
+    window.addEventListener('keydown', onKey);
+    window.addEventListener('blur', onClose);
+    window.addEventListener('resize', onClose);
+    return () => {
+      window.removeEventListener('mousedown', onDown);
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('blur', onClose);
+      window.removeEventListener('resize', onClose);
+    };
+  }, [onClose]);
+  const choose = (action: () => void) => () => {
+    onClose();
+    action();
+  };
+  return createPortal(
+    <div
+      ref={ref}
+      className="member-menu"
+      role="menu"
+      aria-label={name}
+      style={place}
+      onContextMenu={(event) => event.preventDefault()}
+    >
+      {/* Who it is about, since a choice acts at once: a misclick shows here. */}
+      <div className="member-menu-head">
+        <Avatar name={name} identity={identity} live={false} role={role} />
+        <span className="member-menu-who">
+          <span className="member-menu-name">{name}</span>
+          {role && <span className="member-menu-role">{t(`account.role.${role}`)}</span>}
+        </span>
+      </div>
+      <button type="button" role="menuitem" className="member-menu-item" onClick={choose(onKick)}>
+        <IconKick />
+        {t('sidebar.kickAction')}
+      </button>
+    </div>,
+    document.body,
   );
 }
 
@@ -705,10 +810,10 @@ function MemberRow({
   onWatch,
   onToggleCamera,
   collapsed,
-  onDisconnect,
+  onContextMenu,
 }: {
-  /** Admins only, for someone they may disconnect. */
-  onDisconnect?: () => void;
+  /** Admins only: opens what they may do to this person. */
+  onContextMenu?: (event: ReactMouseEvent) => void;
   member: RoomMember;
   role?: AccountRole;
   leaving: boolean;
@@ -748,6 +853,7 @@ function MemberRow({
       role={live ? 'button' : undefined}
       tabIndex={live ? 0 : undefined}
       aria-label={live ? t('sidebar.watchLive', { name: m.name }) : undefined}
+      onContextMenu={onContextMenu}
       onClick={live ? () => onWatch(target) : undefined}
       onKeyDown={
         live
@@ -779,32 +885,26 @@ function MemberRow({
           onToggle={() => onToggleCamera(m.identity)}
         />
       )}
-      {onDisconnect && !collapsed && (
-        <button
-          className="member-disconnect"
-          onClick={(event) => {
-            event.stopPropagation();
-            onDisconnect();
-          }}
-          title={t('sidebar.disconnect', { name: m.name })}
-          aria-label={t('sidebar.disconnect', { name: m.name })}
-        >
-          <svg
-            viewBox="0 0 24 24"
-            width="14"
-            height="14"
-            aria-hidden="true"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M15 4h4a1 1 0 011 1v14a1 1 0 01-1 1h-4M10 16l-4-4 4-4M6 12h10" />
-          </svg>
-        </button>
-      )}
     </div>
+  );
+}
+
+/** A door with an arrow leaving it: out of the server. */
+function IconKick() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="14"
+      height="14"
+      aria-hidden="true"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M15 4h4a1 1 0 011 1v14a1 1 0 01-1 1h-4M10 16l-4-4 4-4M6 12h10" />
+    </svg>
   );
 }
 
