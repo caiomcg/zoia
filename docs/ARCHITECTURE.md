@@ -123,7 +123,7 @@ approved account sees every one ([ADR 0036](adr/0036-text-chat-in-scylladb.md)).
   latest page is one read and no partition grows without bound. A message's id is a
   timeuuid: it orders messages and says which month holds each one.
 - **Live updates** are one Server-Sent Events stream per app window. The server pushes new
-  messages, read markers and list changes; the stream re-checks the session on every
+  messages, reactions, deletions, read markers and list changes; the stream re-checks the session on every
   heartbeat, so signing a machine out ends it.
 - **Photos and videos** are files in `server/data/chat-media/<chat>/`, typed by their bytes
   and never by what the client says. All chats share one cap (5 GB by default); past it the
@@ -131,6 +131,8 @@ approved account sees every one ([ADR 0036](adr/0036-text-chat-in-scylladb.md)).
   adds the session and lets a video be scrubbed.
 - **Replies** keep a snapshot of the message they answer, since messages are never edited.
   **@mentions** are kept only for approved people whose `@Name` is in the text.
+- **Reactions** are rows beside the messages, under the same chat-and-month partition key,
+  so a page's reactions are one more read per month it spans.
 
 ## Keeping channels tidy
 

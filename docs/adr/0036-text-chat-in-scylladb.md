@@ -137,3 +137,22 @@ A reply keeps a snapshot of what it answered, which would outlive a deletion. So
 is read, each reply's original is looked up, one read by full key per reply on the page, and
 a reply to a deleted message keeps only that it answered something now deleted. Deletion is
 final: there is no undo, and an admin's deletion of someone else's message is logged by id.
+
+## Amendment: reactions
+
+Anyone may react to any message with an emoji and take their own reaction off again, with
+`PUT` and `DELETE /api/chats/:id/messages/:messageId/reactions/:emoji`. Both are harmless to
+repeat, and only an actual change goes out on the live stream, as a `reaction` event.
+
+Reactions are a table of their own (schema version 4), `reactions`, keyed
+`((chat_id, bucket), message_id, emoji, account_id)`: the same partition as the message, so a
+page's reactions are one `IN` read per month the page spans, and deleting a message or a
+chat deletes its reactions with the same keys. Each row keeps when it was made, so emoji show
+in the order first used. A counter or a set column on `messages` was not used: a counter
+cannot say who reacted, and a collection on the message row would need a read-modify-write
+for every reaction.
+
+The server takes one emoji per reaction — a single grapheme that is a pictograph, flag or
+keycap — never free text, and at most 20 different emoji on one message; adding to an emoji
+already there is always allowed. Reactions have their own per-person rate limit, apart from
+sending, so reacting never stops anyone answering.

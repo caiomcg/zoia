@@ -128,6 +128,8 @@ so a report never becomes a public channel.
   before keeping a snapshot of it.
 - **Only the author or an admin deletes a message**, checked on the server. A deleted
   message's photo or video goes with it, and replies stop quoting it.
+- **A reaction is one emoji**, checked on the server, and you can only take off your own. A
+  message takes at most 20 different emoji, so nobody can grow one without bound.
 
 ## Rate limiting
 
@@ -135,7 +137,8 @@ Failed logins are limited per address (20 a minute), on top of the per-account l
 Sign-up is limited to 3 an hour per address, counting successes, and the server holds at
 most 20 accounts waiting for approval; past that, sign-up is closed until an admin works the
 queue. Reset codes are limited harder than logins, since one is worth an account. Chat messages,
-photos and videos are limited per person, not per address, to 20 every ten seconds, and one
+photos and videos are limited per person, not per address, to 20 every ten seconds, reactions
+separately to 30 every ten seconds, and one
 account may hold at most ten live chat streams open.
 
 `TRUST_PROXY=1` is required: behind Caddy, every request otherwise appears to come from the
