@@ -43,6 +43,12 @@ import { DataPacket_Kind } from 'livekit-server-sdk';
 import { isWhipIdentity, ownerOf, WHIP_SUFFIX } from './whip.js';
 import { AVATAR_ATTRIBUTE } from './avatars.js';
 
+/**
+ * Whose broadcasts a participant is watching, as each app announces it.
+ * Must match WATCHING_ATTRIBUTE in desktop/src/renderer/livekit/watching.ts.
+ */
+const WATCHING_ATTRIBUTE = 'zoia.watching';
+
 export function createStage({ rooms, roomName, logger = console, now = () => Date.now() }) {
   // Claim times are a hint for the staleness check only. Losing them (a
   // restart) makes an idle holder look stale, which errs towards the stage
@@ -176,6 +182,8 @@ export function createStage({ rooms, roomName, logger = console, now = () => Dat
           canPublish: Boolean(p.permission?.canPublish),
           publishing: (p.tracks ?? []).length > 0,
           joinedAt: Number(p.joinedAt ?? 0),
+          // Watching someone's picture, for the idle sweep (src/idle.js).
+          watching: Boolean(p.attributes?.[WATCHING_ATTRIBUTE]),
           ...(avatar ? { avatar } : {}),
         };
       });

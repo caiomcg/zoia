@@ -18,6 +18,7 @@ import { fixedChannels } from './channels.js';
 import { AVATAR_MAX_BYTES, imageType, isAvatarId } from './avatars.js';
 import { canManage, isAdmin } from './accounts.js';
 import { chatRoutes } from './chat-routes.js';
+import { KICK_GRACE_MS, kick } from './idle.js';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -41,6 +42,7 @@ export function createApp({
   chatStore = null,
   messageStore = () => null,
   chatMediaStore = null,
+  kickGraceMs = KICK_GRACE_MS,
   logger = console,
 }) {
   const app = express();
@@ -619,6 +621,27 @@ export function createApp({
         `[admin] ${req.user.accountId} disconnected ${device.id} (${target.id}) from ${from.id}`,
       );
       res.json({ disconnected: true });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // Takes one machine off the server: out of its channel like a disconnect,
+  // and its app, told why, leaves the chat too and waits to be reconnected by
+  // hand. The same rules as a disconnect; not a ban either. See ADR 0037.
+  app.post('/api/admin/devices/:id/kick', requireAdmin, async (req, res, next) => {
+    try {
+      const device = await deviceStore.getActive(req.params.id);
+      const target = device?.accountId ? await accountStore.get(device.accountId) : null;
+      if (!target) return adminRefuse(res, 'unknown_account');
+      if (target.id === req.user.accountId) return adminRefuse(res, 'forbidden');
+      const from = (await whereAll()).get(device.id);
+      if (!from) return adminRefuse(res, 'not_connected');
+      await kick(from.stage, device.id, 'admin', { graceMs: kickGraceMs });
+      logger.info(
+        `[admin] ${req.user.accountId} kicked ${device.id} (${target.id}) from ${from.id}`,
+      );
+      res.json({ kicked: true });
     } catch (err) {
       next(err);
     }

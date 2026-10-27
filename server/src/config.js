@@ -75,6 +75,9 @@ export function loadConfig(env = process.env) {
           }
         : null,
     },
+    // Minutes someone may sit in a channel neither sharing nor watching before
+    // the server kicks them (ADR 0037). 0 turns it off.
+    idleKickMinutes: Number(env.IDLE_KICK_MINUTES ?? 10),
     // Profile pictures, one file per device. Under server/data so it shares the
     // store's volume and deploy.sh's exclude.
     avatarDir: env.AVATAR_DIR ?? 'server/data/avatars',

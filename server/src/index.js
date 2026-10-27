@@ -16,6 +16,7 @@ import { connectInBackground } from './scylla.js';
 import { createMessageStore } from './messages.js';
 import { createMediaStore } from './chat-media.js';
 import { createApp } from './app.js';
+import { createIdleSweeper } from './idle.js';
 
 try {
   process.loadEnvFile('.env');
@@ -106,11 +107,19 @@ const app = createApp({
   chatMediaStore: createMediaStore({ dir: config.chat.mediaDir }),
 });
 
+// Nobody sits in a channel for long neither sharing nor watching; ADR 0037.
+if (config.idleKickMinutes > 0) {
+  createIdleSweeper({ channels, idleMs: config.idleKickMinutes * 60_000 }).start();
+}
+
 app.listen(config.port, () => {
   console.log(`[zoia] listening on :${config.port}`);
   console.log(`[zoia] public host  ${config.publicHost}`);
   console.log(`[zoia] livekit ws   ${config.livekit.wsUrl}`);
   console.log(`[zoia] channels     default ${config.roomName}, up to ${channels.max}`);
+  console.log(
+    `[zoia] idle kick    ${config.idleKickMinutes > 0 ? `${config.idleKickMinutes} min` : 'off'}`,
+  );
   const scylla = config.chat.scylla;
   console.log(
     `[zoia] chat         ${scylla ? `scylla at ${scylla.contactPoints.join(', ')}` : 'off (SCYLLA_CONTACT_POINTS not set)'}`,

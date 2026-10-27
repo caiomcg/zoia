@@ -93,6 +93,7 @@ source; match on "not `MICROPHONE`" instead.
 | `server/src/token.js` | LiveKit AccessToken minting — subscribe-only, always |
 | `server/src/stage.js` | Who may broadcast right now — **the security boundary** |
 | `server/src/config.js` | Env parsing and validation, fail-fast on startup |
+| `server/src/idle.js` | Kicking a machine off the server, and the sweep that kicks the idle (ADR 0037) |
 | `server/src/devices.js` | One credential per machine signed in to an account |
 | `server/src/chats.js` | The text chats and how many there may be (ADR 0036), in SQLite |
 | `server/src/messages.js` | Chat messages and read markers, in ScyllaDB |

@@ -66,6 +66,8 @@ function buildApp({ accounts: accountConfig, rateLimit, channels } = {}) {
     },
     deviceStore: devices,
     accountStore: accounts,
+    // Kicks pause for the message to arrive; there is nothing to wait for here.
+    kickGraceMs: 0,
     avatarStore: createAvatarStore({ dir: join(dir, 'avatars') }),
     tokenIssuer: createTokenIssuer({
       apiKey: 'devkey',
@@ -875,6 +877,40 @@ describe('admins move people between channels', () => {
     assert.deepEqual(
       lobby.removed.filter((id) => !id.endsWith('-gpu')),
       [bob.id, other.id, owner.id, carol.id],
+    );
+  });
+
+  test('a machine kicked is told so, then leaves its channel, by the server', async () => {
+    const admin = await person('admin@example.com', 'admin');
+    const bob = await person('bob@example.com');
+    enter(lounge, bob.id, `${bob.id}-gpu`);
+
+    const res = await admin.agent.post(`/api/admin/devices/${bob.id}/kick`);
+    assert.equal(res.status, 200);
+    assert.equal(res.body.kicked, true);
+    assert.deepEqual(lounge.sent, [
+      { to: [bob.id], topic: 'zoia.kick', message: { reason: 'admin' } },
+    ]);
+    assert.deepEqual(lounge.removed, [bob.id, `${bob.id}-gpu`]);
+    assert.equal((await admin.agent.post(`/api/admin/devices/${bob.id}/kick`)).status, 409);
+  });
+
+  test('kicking follows the rules of disconnecting', async () => {
+    const owner = await person('owner@example.com', 'super_admin');
+    const admin = await person('admin@example.com', 'admin');
+    const bob = await person('bob@example.com');
+    const carol = await person('carol@example.com');
+    enter(lobby, owner.id, admin.id, bob.id, carol.id);
+    const kick = (who, target) => who.agent.post(`/api/admin/devices/${target.id}/kick`);
+
+    assert.equal((await kick(bob, carol)).status, 403);
+    assert.equal((await kick(admin, admin)).status, 403);
+    assert.equal((await kick(admin, { id: 'nope' })).status, 404);
+    assert.equal((await kick(admin, owner)).status, 200);
+    assert.equal((await kick(owner, bob)).status, 200);
+    assert.deepEqual(
+      lobby.removed.filter((id) => !id.endsWith('-gpu')),
+      [owner.id, bob.id],
     );
   });
 });
