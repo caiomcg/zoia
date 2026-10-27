@@ -56,3 +56,15 @@ camera put on its grid. Without it every Android viewer would look idle.
 - The timers live in memory. A restart forgets them, which errs towards keeping people.
 - The message and the removal travel on different connections; the grace period is what
   makes the message usually win. If it does not, the app shows a channel disconnect instead.
+
+## Amendment: only the channel
+
+A disconnect, an admin's or the idle sweep's, no longer takes the app off the server. It
+leaves its channel, sharing stopped, and says why: an admin disconnected it, or it sat idle.
+The chats, the channel list and the account checks carry on, and any channel can be joined
+again at once; the *Disconnected* screen and its Reconnect button are gone. Being in a
+channel is what a stale person makes misleading, and the chat is not: someone who stepped
+away from a broadcast can still read and answer.
+
+The server side is unchanged: the `zoia.kick` message with its reason, the grace period and
+the removal, under the same rules. Only what the app does on hearing it changed.

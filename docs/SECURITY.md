@@ -126,6 +126,8 @@ so a report never becomes a public channel.
   visibly name. The list of people to mention carries names and pictures, never emails.
 - **A reply cannot quote another chat.** The server checks the original is in the same chat
   before keeping a snapshot of it.
+- **Only the author or an admin deletes a message**, checked on the server. A deleted
+  message's photo or video goes with it, and replies stop quoting it.
 
 ## Rate limiting
 

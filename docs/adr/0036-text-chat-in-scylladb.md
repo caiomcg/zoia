@@ -125,3 +125,15 @@ version 3), as JSON text like `attachment`:
 `GET /api/chats/people` lists who can be mentioned, by name and picture, never email, to any
 approved session. A mention only highlights the message for that person; it sends no
 notification of its own.
+
+## Amendment: deleting messages
+
+The author of a message may delete it, and so may any admin or the super admin, anyone's;
+the server checks which on `DELETE /api/chats/:id/messages/:messageId`. The row is deleted
+by its full key, and a photo or video goes with it, freeing its share of the media cap.
+Every open app is told on the live stream and takes it out at once.
+
+A reply keeps a snapshot of what it answered, which would outlive a deletion. So when a page
+is read, each reply's original is looked up, one read by full key per reply on the page, and
+a reply to a deleted message keeps only that it answered something now deleted. Deletion is
+final: there is no undo, and an admin's deletion of someone else's message is logged by id.

@@ -41,9 +41,9 @@ notifications, your music and your other calls stay out of the stream.
 - **Accounts, approved by an admin.** Anyone can sign up with an email and password; an
   admin lets them in. Admins can disable someone, reset a password or sign out one machine,
   all from the app.
-- **No stale people.** An admin can disconnect someone from the server with a right-click,
-  and anyone who sits in a channel for ten minutes neither sharing nor watching is
-  disconnected on their own.
+- **No stale people.** An admin can disconnect someone from their channel with a
+  right-click, and anyone who sits in a channel for ten minutes neither sharing nor watching
+  is disconnected from it on their own. Either way the chats stay open to them.
 
 ## How it works
 

@@ -271,7 +271,7 @@ docker compose exec app node server/bin/keytool.js device:revoke <deviceId>
 ### Disconnect someone, or find out why they were
 
 Right-click someone in the channel list and choose **Disconnect**: their app leaves its
-channel and the chat and waits until they reconnect. It is not a ban; keeping someone out is
+channel and says an admin disconnected it; the chats stay open, and they can join again. It is not a ban; keeping someone out is
 Disable, above. The server also disconnects anyone who has sat in a channel for
 `IDLE_KICK_MINUTES` (ten) neither sharing nor watching. Both are logged:
 
