@@ -203,17 +203,26 @@ export function chatRoutes({
   router.get('/', requireSession, async (req, res) => {
     const current = messages();
     const list = await chats.list();
-    const unread = current
+    const counts = current
       ? await Promise.all(
           list.map((chat) =>
             current
-              .unread({ chatId: chat.id, accountId: req.user.accountId, since: chat.createdAt })
+              .unreadCounts({
+                chatId: chat.id,
+                accountId: req.user.accountId,
+                since: chat.createdAt,
+              })
               .catch(() => null),
           ),
         )
       : [];
     res.json({
-      chats: list.map((chat, i) => ({ ...publicChat(chat), unread: unread[i] ?? null })),
+      // Mentions: how many of the unread @mention you, for a badge of their own.
+      chats: list.map((chat, i) => ({
+        ...publicChat(chat),
+        unread: counts[i]?.unread ?? null,
+        mentions: counts[i]?.mentions ?? null,
+      })),
       max: await chats.max(),
       ceiling: CHAT_CEILING,
       available: Boolean(current),

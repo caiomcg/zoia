@@ -114,9 +114,11 @@ function toMessage(chatId, row) {
     sentAt: row.id.getDate().toISOString(),
     attachment: parseJson(row.attachment),
     replyTo: parseJson(row.reply_to),
-    mentions: parseJson(row.mentions) ?? [],
+    mentions: mentionsOf(row),
   };
 }
+
+const mentionsOf = (row) => parseJson(row.mentions) ?? [];
 
 function parseJson(value) {
   if (!value) return null;
@@ -351,6 +353,14 @@ export function createMessageStore({ client, keyspace }) {
      * counted up to `cap`: past that, a badge only needs to say "many".
      */
     async unread({ chatId, accountId, since, cap = 100 }) {
+      return (await this.unreadCounts({ chatId, accountId, since, cap })).unread;
+    },
+
+    /**
+     * What `unread` counts, and how many of those @mention `accountId`, from
+     * the same read: { unread, mentions }, each up to `cap`.
+     */
+    async unreadCounts({ chatId, accountId, since, cap = 100 }) {
       const marker = await client.execute(
         `SELECT last_read FROM ${t('read_markers')} WHERE chat_id = ? AND account_id = ?`,
         [chatId, accountId],
@@ -360,19 +370,24 @@ export function createMessageStore({ client, keyspace }) {
       const oldest = lastRead
         ? Math.max(bucketOf(lastRead.getDate()), sinceBucket(since))
         : sinceBucket(since);
-      let count = 0;
+      let unread = 0;
+      let mentions = 0;
       for (const bucket of bucketsBetween(bucketOf(Date.now()), oldest)) {
         const bounded = lastRead && bucket === bucketOf(lastRead.getDate());
         const result = await client.execute(
-          `SELECT author_id FROM ${t('messages')}
+          `SELECT author_id, mentions FROM ${t('messages')}
            WHERE chat_id = ? AND bucket = ?${bounded ? ' AND id > ?' : ''} LIMIT ?`,
           bounded ? [chatId, bucket, lastRead, cap] : [chatId, bucket, cap],
           prepared,
         );
-        count += result.rows.filter((row) => row.author_id !== accountId).length;
-        if (count >= cap) return cap;
+        for (const row of result.rows) {
+          if (row.author_id === accountId) continue;
+          unread += 1;
+          if (mentionsOf(row).some((m) => m.id === accountId)) mentions += 1;
+        }
+        if (unread >= cap) break;
       }
-      return count;
+      return { unread: Math.min(unread, cap), mentions: Math.min(mentions, cap) };
     },
 
     /** Deletes every message, reaction and read marker of a chat that is being removed. */

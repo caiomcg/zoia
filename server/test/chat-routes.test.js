@@ -103,12 +103,17 @@ function memoryMessages() {
       }
       return out;
     },
-    async unread({ chatId, accountId }) {
+    async unreadCounts({ chatId, accountId }) {
       const last = markers.has(key(chatId, accountId))
         ? place(markers.get(key(chatId, accountId)))
         : -1;
-      return sent.slice(last + 1).filter((m) => m.chatId === chatId && m.authorId !== accountId)
-        .length;
+      const unread = sent
+        .slice(last + 1)
+        .filter((m) => m.chatId === chatId && m.authorId !== accountId);
+      return {
+        unread: unread.length,
+        mentions: unread.filter((m) => m.mentions.some((x) => x.id === accountId)).length,
+      };
     },
     removed: [],
     async removeChat({ chatId }) {
@@ -446,6 +451,26 @@ describe('messages', () => {
     );
     assert.equal(second.body.hasMore, false);
     await ana.agent.get(`/api/chats/${chat.id}/messages?before=nope`).expect(400);
+  });
+
+  test('the unread that @mention you are counted apart, until read', async () => {
+    const ana = await signIn(app, stores.accounts, 'Ana');
+    const bia = await signIn(app, stores.accounts, 'Bia');
+    const chat = await defaultChat();
+    const say = (body, mentions = []) =>
+      bia.agent.post(`/api/chats/${chat.id}/messages`).send({ body, mentions }).expect(201);
+    await say('oi @Ana', [ana.account.id]);
+    await say('tudo bem?');
+    const { body } = await say('@Ana olha', [ana.account.id]);
+
+    const [mine] = (await ana.agent.get('/api/chats')).body.chats;
+    assert.deepEqual([mine.unread, mine.mentions], [3, 2]);
+    const [hers] = (await bia.agent.get('/api/chats')).body.chats;
+    assert.deepEqual([hers.unread, hers.mentions], [0, 0]);
+
+    await ana.agent.post(`/api/chats/${chat.id}/read`).send({ messageId: body.message.id });
+    const [after] = (await ana.agent.get('/api/chats')).body.chats;
+    assert.deepEqual([after.unread, after.mentions], [0, 0]);
   });
 
   test('unread counts what others wrote, until it is marked read', async () => {

@@ -364,6 +364,21 @@ describe(
       assert.equal(await store.unread({ chatId: 'c5', accountId: 'cai00000', since, cap: 2 }), 2);
     });
 
+    test('the unread that @mention someone are counted for them alone', async () => {
+      const ana = [{ id: 'ana00000', name: 'Ana' }];
+      await store.send({ chatId: 'c15', authorId: 'bia00000', body: '@Ana', mentions: ana });
+      await store.send({ chatId: 'c15', authorId: 'bia00000', body: 'oi' });
+      await store.send({ chatId: 'c15', authorId: 'cai00000', body: 'e @Ana?', mentions: ana });
+      assert.deepEqual(await store.unreadCounts({ chatId: 'c15', accountId: 'ana00000', since }), {
+        unread: 3,
+        mentions: 2,
+      });
+      assert.deepEqual(await store.unreadCounts({ chatId: 'c15', accountId: 'bia00000', since }), {
+        unread: 1,
+        mentions: 0,
+      });
+    });
+
     test('a read marker never moves back', async () => {
       const older = await store.send({ chatId: 'c6', authorId: 'bia00000', body: 'a' });
       const newer = await store.send({ chatId: 'c6', authorId: 'bia00000', body: 'b' });
