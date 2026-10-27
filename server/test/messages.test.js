@@ -17,7 +17,9 @@ import {
   bucketOf,
   bucketsBetween,
   cleanBody,
+  cleanEmoji,
   createMessageStore,
+  groupReactions,
   MESSAGE_MAX,
   parseMessageId,
   previousBucket,
@@ -38,6 +40,35 @@ describe('message bodies', () => {
     assert.equal(cleanBody('x'.repeat(MESSAGE_MAX + 1)), null);
     assert.equal(cleanBody('x'.repeat(MESSAGE_MAX)).length, MESSAGE_MAX);
     assert.equal(cleanBody(42), null);
+  });
+});
+
+describe('reactions', () => {
+  test('are one emoji, modifiers and flags included', () => {
+    for (const ok of ['👍', '❤️', '👍🏽', '🇧🇷', '👨‍👩‍👧', '1️⃣', '🎉']) assert.equal(cleanEmoji(ok), ok);
+    for (const bad of ['', 'a', '1', '👍👍', ' 👍', '<script>', '©x', 42, null]) {
+      assert.equal(cleanEmoji(bad), null, String(bad));
+    }
+  });
+
+  test('group by message and emoji, in the order they were made', () => {
+    const id = TimeUuid.now();
+    const at = (s) => new Date(s * 1000);
+    const row = (emoji, account, s) => ({
+      message_id: id,
+      emoji,
+      account_id: account,
+      reacted_at: at(s),
+    });
+    assert.deepEqual(
+      groupReactions([row('🎉', 'bia', 3), row('👍', 'bia', 2), row('🎉', 'ana', 1)]),
+      {
+        [id.toString()]: [
+          { emoji: '🎉', accountIds: ['ana', 'bia'] },
+          { emoji: '👍', accountIds: ['bia'] },
+        ],
+      },
+    );
   });
 });
 
@@ -281,6 +312,35 @@ describe(
       await store.remove({ chatId: 'c12', id: m.id });
       await store.remove({ chatId: 'c12', id: 'nope' });
       assert.deepEqual(await store.page({ chatId: 'c12', since }), []);
+    });
+
+    test('reactions come and go, and go with their message', async () => {
+      const a = await store.send({ chatId: 'c13', authorId: 'ana00000', body: 'a' });
+      const b = await store.send({ chatId: 'c13', authorId: 'ana00000', body: 'b' });
+      await store.react({ chatId: 'c13', messageId: a.id, accountId: 'bia00000', emoji: '👍' });
+      await store.react({ chatId: 'c13', messageId: a.id, accountId: 'cai00000', emoji: '👍' });
+      await store.react({ chatId: 'c13', messageId: b.id, accountId: 'bia00000', emoji: '🎉' });
+      await store.react({ chatId: 'c13', messageId: b.id, accountId: 'bia00000', emoji: '😂' });
+      await store.react({
+        chatId: 'c13',
+        messageId: b.id,
+        accountId: 'bia00000',
+        emoji: '😂',
+        on: false,
+      });
+
+      assert.deepEqual(await store.reactions({ chatId: 'c13', ids: [a.id, b.id, 'nope'] }), {
+        [a.id]: [{ emoji: '👍', accountIds: ['bia00000', 'cai00000'] }],
+        [b.id]: [{ emoji: '🎉', accountIds: ['bia00000'] }],
+      });
+      assert.deepEqual(await store.reactions({ chatId: 'c14', ids: [a.id] }), {});
+
+      await store.remove({ chatId: 'c13', id: a.id });
+      assert.deepEqual(await store.reactions({ chatId: 'c13', ids: [a.id, b.id] }), {
+        [b.id]: [{ emoji: '🎉', accountIds: ['bia00000'] }],
+      });
+      await store.removeChat({ chatId: 'c13', since });
+      assert.deepEqual(await store.reactions({ chatId: 'c13', ids: [b.id] }), {});
     });
 
     test('chats do not see each other', async () => {

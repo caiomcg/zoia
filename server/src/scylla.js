@@ -55,6 +55,19 @@ const MIGRATIONS = [
     // Who it @mentions, as JSON: [{ id, name }] as written at the time.
     `ALTER TABLE {ks}.messages ADD mentions text`,
   ],
+  [
+    // Who reacted to a message with what, beside the messages: the same
+    // partition key, so a page's reactions are one read per month.
+    `CREATE TABLE IF NOT EXISTS {ks}.reactions (
+       chat_id text,
+       bucket int,
+       message_id timeuuid,
+       emoji text,
+       account_id text,
+       reacted_at timestamp,
+       PRIMARY KEY ((chat_id, bucket), message_id, emoji, account_id)
+     )`,
+  ],
 ];
 
 /**

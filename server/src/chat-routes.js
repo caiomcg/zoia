@@ -17,7 +17,7 @@ import rateLimit from 'express-rate-limit';
 
 import { CHAT_CEILING } from './chats.js';
 import { isAdmin } from './accounts.js';
-import { MENTIONS_MAX, cleanBody, replySnapshot } from './messages.js';
+import { MENTIONS_MAX, REACTIONS_MAX, cleanBody, cleanEmoji, replySnapshot } from './messages.js';
 import { MEDIA_MAX_BYTES, cleanFileName } from './chat-media.js';
 
 const PAGE_DEFAULT = 50;
@@ -35,11 +35,13 @@ const ERRORS = {
   invalid_message: 400,
   invalid_cursor: 400,
   invalid_reply: 400,
+  invalid_reaction: 400,
   unsupported_media: 415,
   media_too_large: 413,
   forbidden: 403,
   not_found: 404,
   chat_limit: 409,
+  too_many_reactions: 409,
   default_chat: 409,
   too_many_streams: 429,
   chat_unavailable: 503,
@@ -91,6 +93,7 @@ export function chatRoutes({
   hub = createChatHub(),
   heartbeatMs = HEARTBEAT_MS,
   sendLimit = { windowMs: 10_000, limit: 20 },
+  reactLimit = { windowMs: 10_000, limit: 30 },
   logger = console,
 }) {
   const router = express.Router();
@@ -102,6 +105,14 @@ export function chatRoutes({
     legacyHeaders: false,
     keyGenerator: (req) => req.user.accountId,
     message: { error: 'too_many_messages' },
+  });
+  // Apart from sending, so reacting a lot never stops anyone answering.
+  const reactLimiter = rateLimit({
+    ...reactLimit,
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+    keyGenerator: (req) => req.user.accountId,
+    message: { error: 'too_many_reactions' },
   });
 
   /** The message store, or a refusal when ScyllaDB is not there. */
@@ -161,6 +172,13 @@ export function chatRoutes({
         ? { ...m, replyTo: { id: m.replyTo.id, authorId: m.replyTo.authorId, deleted: true } }
         : m,
     );
+  }
+
+  /** Each message with its reactions, as [{ emoji, accountIds }]; none is []. */
+  async function withReactions(current, chat, list) {
+    if (list.length === 0) return list;
+    const found = await current.reactions({ chatId: chat.id, ids: list.map((m) => m.id) });
+    return list.map((m) => ({ ...m, reactions: found[m.id] ?? [] }));
   }
 
   /**
@@ -310,13 +328,21 @@ export function chatRoutes({
       before: before ?? null,
       limit: limit + 1,
     });
-    const list = await withDeletedReplies(current, chat, page.slice(0, limit));
+    const list = await withReactions(
+      current,
+      chat,
+      await withDeletedReplies(current, chat, page.slice(0, limit)),
+    );
     const readers = await current.readMarkers(chat.id);
     res.json({
       messages: list,
       hasMore: page.length > limit,
-      // Readers too, so "seen by" can name someone who has not written.
-      authors: await authorsOf([...list.map((m) => m.authorId), ...readers.keys()]),
+      // Readers and who reacted too, so each can be named.
+      authors: await authorsOf([
+        ...list.map((m) => m.authorId),
+        ...readers.keys(),
+        ...list.flatMap((m) => m.reactions.flatMap((r) => r.accountIds)),
+      ]),
       readers: Object.fromEntries(readers),
     });
   });
@@ -371,6 +397,43 @@ export function chatRoutes({
     hub.publish('deleted', { chatId: chat.id, messageId: message.id });
     res.json({ ok: true });
   });
+
+  // Anyone may react to any message with an emoji, and take their own
+  // reaction off again. A message carries at most REACTIONS_MAX different
+  // emoji; adding to one already there is always allowed. Both are harmless
+  // to repeat, and only a change goes out on the stream.
+  async function react(req, res, on) {
+    const chat = await chatOf(req, res);
+    if (!chat) return;
+    const current = store(res);
+    if (!current) return;
+    const emoji = cleanEmoji(req.params.emoji);
+    if (!emoji) return refuse(res, 'invalid_reaction');
+    const message = await current.get({ chatId: chat.id, id: req.params.messageId });
+    if (!message) return refuse(res, 'not_found');
+
+    const { accountId } = req.user;
+    const now = (await current.reactions({ chatId: chat.id, ids: [message.id] }))[message.id] ?? [];
+    const group = now.find((r) => r.emoji === emoji);
+    if (Boolean(group?.accountIds.includes(accountId)) === on) return res.json({ ok: true });
+    if (on && !group && now.length >= REACTIONS_MAX) return refuse(res, 'too_many_reactions');
+
+    await current.react({ chatId: chat.id, messageId: message.id, accountId, emoji, on });
+    const reactor = { name: req.user.name, avatar: req.user.avatar ?? null };
+    hub.publish('reaction', {
+      chatId: chat.id,
+      messageId: message.id,
+      emoji,
+      accountId,
+      on,
+      reactor,
+    });
+    res.json({ ok: true });
+  }
+
+  const reaction = '/:id/messages/:messageId/reactions/:emoji';
+  router.put(reaction, requireSession, reactLimiter, (req, res) => react(req, res, true));
+  router.delete(reaction, requireSession, reactLimiter, (req, res) => react(req, res, false));
 
   // ---- photos and videos ---------------------------------------------------
   // A file is a message of its own, with an optional caption. The bytes come

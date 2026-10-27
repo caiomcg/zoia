@@ -31,6 +31,8 @@ function memoryMessages() {
   const sent = [];
   const markers = new Map();
   const key = (chatId, accountId) => `${chatId}/${accountId}`;
+  // [{ chatId, messageId, emoji, accountId }], oldest first.
+  const reactions = [];
   const place = (id) => sent.findIndex((m) => m.id === id);
   return {
     async send({ chatId, authorId, body, attachment = null, replyTo = null, mentions = [] }) {
@@ -54,6 +56,31 @@ function memoryMessages() {
     async remove({ chatId, id }) {
       const at = sent.findIndex((m) => m.chatId === chatId && m.id === id);
       if (at !== -1) sent.splice(at, 1);
+      for (let i = reactions.length - 1; i >= 0; i -= 1) {
+        if (reactions[i].chatId === chatId && reactions[i].messageId === id) reactions.splice(i, 1);
+      }
+    },
+    async react({ chatId, messageId, accountId, emoji, on = true }) {
+      const at = reactions.findIndex(
+        (r) =>
+          r.chatId === chatId &&
+          r.messageId === messageId &&
+          r.emoji === emoji &&
+          r.accountId === accountId,
+      );
+      if (on && at === -1) reactions.push({ chatId, messageId, emoji, accountId });
+      if (!on && at !== -1) reactions.splice(at, 1);
+    },
+    async reactions({ chatId, ids }) {
+      const out = {};
+      for (const r of reactions) {
+        if (r.chatId !== chatId || !ids.includes(r.messageId)) continue;
+        const list = (out[r.messageId] ??= []);
+        let group = list.find((g) => g.emoji === r.emoji);
+        if (!group) list.push((group = { emoji: r.emoji, accountIds: [] }));
+        group.accountIds.push(r.accountId);
+      }
+      return out;
     },
     async page({ chatId, before, limit }) {
       const end = before ? place(before) : sent.length;
@@ -323,6 +350,70 @@ describe('messages', () => {
     });
   });
 
+  test('anyone reacts to any message, and takes only their own reaction off', async () => {
+    const ana = await signIn(app, stores.accounts, 'Ana');
+    const bia = await signIn(app, stores.accounts, 'Bia');
+    const chat = await defaultChat();
+    const message = (
+      await ana.agent.post(`/api/chats/${chat.id}/messages`).send({ body: 'oi' }).expect(201)
+    ).body.message;
+    const path = (emoji) =>
+      `/api/chats/${chat.id}/messages/${message.id}/reactions/${encodeURIComponent(emoji)}`;
+
+    await bia.agent.put(path('👍')).expect(200);
+    await bia.agent.put(path('👍')).expect(200);
+    await ana.agent.put(path('👍')).expect(200);
+    await ana.agent.put(path('❤️')).expect(200);
+    await ana.agent.delete(path('❤️')).expect(200);
+    // Bia's 👍 is hers: Ana taking hers off leaves it.
+    await ana.agent.delete(path('👍')).expect(200);
+    await request(app).put(path('😂')).expect(401);
+
+    const page = (await ana.agent.get(`/api/chats/${chat.id}/messages`).expect(200)).body;
+    assert.deepEqual(page.messages[0].reactions, [{ emoji: '👍', accountIds: [bia.account.id] }]);
+    assert.equal(page.authors[bia.account.id].name, 'Bia');
+  });
+
+  test('a reaction must be one emoji, to a message that is there', async () => {
+    const ana = await signIn(app, stores.accounts, 'Ana');
+    const chat = await defaultChat();
+    const message = (
+      await ana.agent.post(`/api/chats/${chat.id}/messages`).send({ body: 'oi' }).expect(201)
+    ).body.message;
+    const put = (emoji, id = message.id) =>
+      ana.agent.put(`/api/chats/${chat.id}/messages/${id}/reactions/${encodeURIComponent(emoji)}`);
+
+    for (const bad of ['a', 'ok', '👍👍', '<b>', '1', '👍 ']) {
+      const res = await put(bad).expect(400);
+      assert.equal(res.body.error, 'invalid_reaction');
+    }
+    await put('👍🏽').expect(200);
+    await put('🇧🇷').expect(200);
+    await put('👍', TimeUuid.now().toString()).expect(404);
+    await ana.agent.delete(`/api/chats/${chat.id}/messages/${message.id}`).expect(200);
+    await put('👍').expect(404);
+  });
+
+  test('a message takes only so many different emoji', async () => {
+    const ana = await signIn(app, stores.accounts, 'Ana');
+    const bia = await signIn(app, stores.accounts, 'Bia');
+    const chat = await defaultChat();
+    const message = (
+      await ana.agent.post(`/api/chats/${chat.id}/messages`).send({ body: 'oi' }).expect(201)
+    ).body.message;
+    const put = (who, emoji) =>
+      who.agent.put(
+        `/api/chats/${chat.id}/messages/${message.id}/reactions/${encodeURIComponent(emoji)}`,
+      );
+    // Twenty different animals, from 🐀 on.
+    const emoji = Array.from({ length: 20 }, (_, i) => String.fromCodePoint(0x1f400 + i));
+    for (const e of emoji) await put(ana, e).expect(200);
+    const res = await put(ana, '👍').expect(409);
+    assert.equal(res.body.error, 'too_many_reactions');
+    // One already there is always open to more people.
+    await put(bia, emoji[0]).expect(200);
+  });
+
   test('an empty or oversized message is refused, as is an unknown chat', async () => {
     const ana = await signIn(app, stores.accounts, 'Ana');
     const chat = await defaultChat();
@@ -514,6 +605,22 @@ describe('the live stream', () => {
       const data = JSON.parse(frame.split('\ndata: ')[1]);
       assert.equal(data.message.body, 'olá');
       assert.equal(data.author.name, 'Bia');
+
+      await bia.agent
+        .put(
+          `/api/chats/${chat.id}/messages/${data.message.id}/reactions/${encodeURIComponent('🎉')}`,
+        )
+        .expect(200);
+      await until(() => stream.text.includes('event: reaction'));
+      const reaction = stream.text.split('\n\n').find((f) => f.startsWith('event: reaction'));
+      assert.deepEqual(JSON.parse(reaction.split('\ndata: ')[1]), {
+        chatId: chat.id,
+        messageId: data.message.id,
+        emoji: '🎉',
+        accountId: bia.account.id,
+        on: true,
+        reactor: { name: 'Bia', avatar: null },
+      });
 
       await bia.agent.patch(`/api/chats/${chat.id}`).send({ name: 'Papo' });
       await until(() => stream.text.includes('event: chats'));
