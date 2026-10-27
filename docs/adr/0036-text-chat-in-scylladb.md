@@ -21,10 +21,11 @@ rewritten every time someone looks.
 
 **Text chats, independent of channels.** A chat is not a LiveKit room and nobody joins one:
 every approved account sees every chat. There is a default chat that can be renamed but
-never removed. Admins add, rename and remove others, up to a limit that **starts at one** and
+never removed. Admins add, rename and remove others, up to a limit that **starts at ten** and
 that **admins and the super admin** change, at runtime, up to a hard ceiling of 50. The limit
 is a row in the SQLite `settings` table, not an environment variable, so raising it needs no
-redeploy. Lowering it below how many chats exist removes none.
+redeploy. Lowering it below how many chats exist removes none. Both limits are changed in
+the app's Settings › Server, which only admins see, rather than beside the sidebar's headings.
 
 **The channel limit works the same way**, amending [ADR 0015](0015-channels.md): admins raise
 or lower it at runtime, from the same `settings` table. `MAX_CHANNELS` is only where it
