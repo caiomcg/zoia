@@ -102,3 +102,21 @@ credentials and identities.
   rate limit. A busy chat can fill it; a cap per chat or an expiry is the remedy if it does.
 - Scylla 2025.1 is under ScyllaDB's source-available licence, free at this size.
 - The Android viewer does not show chat; it stays a viewer of broadcasts.
+
+## Amendment: replies and @mentions
+
+A message may answer another and @mention people. Both are columns on `messages` (schema
+version 3), as JSON text like `attachment`:
+
+- **`reply_to`** is a snapshot of the message answered: its id, author, author's name and its
+  first 200 characters. Messages are never edited, so the snapshot cannot go stale, and the
+  reply shows it without a second read. The server checks the original is in the same chat,
+  which is one read by the full key, since a message id says which month holds it.
+- **`mentions`** is `[{ id, name }]`. The app sends the account ids picked from its @ list;
+  the server keeps only people who are let in and whose `@Name` is in the text, so a mention
+  cannot be hidden in a message that does not show it. Names are unique on a server, which
+  is what makes `@Name` unambiguous.
+
+`GET /api/chats/people` lists who can be mentioned, by name and picture, never email, to any
+approved session. A mention only highlights the message for that person; it sends no
+notification of its own.
