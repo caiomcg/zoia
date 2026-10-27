@@ -630,6 +630,16 @@ function Attachment({
 }) {
   const t = useT();
   const src = chatMediaUrl(chatId, attachment.id);
+  // The server keeps photos and videos under one cap, dropping the oldest;
+  // one that is gone says so rather than showing a broken picture.
+  const [gone, setGone] = useState(false);
+  if (gone) {
+    return (
+      <p className="chat-media-gone">
+        {t(attachment.kind === 'video' ? 'chat.videoGone' : 'chat.photoGone')}
+      </p>
+    );
+  }
   if (attachment.kind === 'video') {
     return (
       <video
@@ -638,6 +648,7 @@ function Attachment({
         controls
         preload="metadata"
         onLoadedMetadata={onLoad}
+        onError={() => setGone(true)}
         aria-label={attachment.name ?? t('chat.video')}
       />
     );
@@ -650,6 +661,7 @@ function Attachment({
         alt={attachment.name ?? t('chat.photo')}
         loading="lazy"
         onLoad={onLoad}
+        onError={() => setGone(true)}
       />
     </button>
   );

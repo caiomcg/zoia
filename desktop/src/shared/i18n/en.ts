@@ -147,6 +147,8 @@ export const en = {
   'chat.cancelReply': 'Cancel reply',
   'chat.mentionList': 'People to mention',
   'chat.error.replyGone': 'The message you replied to is no longer there.',
+  'chat.photoGone': 'This photo is no longer available.',
+  'chat.videoGone': 'This video is no longer available.',
 
   // ---- your own share
   'player.youreLive': 'You’re live',

@@ -4860,3 +4860,16 @@ button.danger:active:not(:disabled),
     animation: none;
   }
 }
+
+/* A photo or video the server has since dropped to stay under its cap. */
+.chat-media-gone {
+  display: inline-block;
+  margin: 2px 0;
+  padding: 10px 14px;
+  font-size: 13px;
+  font-style: italic;
+  color: var(--muted);
+  background: var(--surface-2);
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+}

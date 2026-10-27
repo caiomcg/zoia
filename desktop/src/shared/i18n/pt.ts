@@ -139,6 +139,8 @@ export const pt: Messages = {
   'chat.cancelReply': 'Cancelar resposta',
   'chat.mentionList': 'Pessoas para mencionar',
   'chat.error.replyGone': 'A mensagem que você respondeu não existe mais.',
+  'chat.photoGone': 'Esta foto não está mais disponível.',
+  'chat.videoGone': 'Este vídeo não está mais disponível.',
 
   'player.youreLive': 'Você está ao vivo',
   'player.previewHidden':
