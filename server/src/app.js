@@ -17,7 +17,7 @@ import { NotStageHolderError, WHIP_SUFFIX } from './whip.js';
 import { fixedChannels } from './channels.js';
 import { AVATAR_MAX_BYTES, imageType, isAvatarId } from './avatars.js';
 import { canManage, isAdmin } from './accounts.js';
-import { chatRoutes } from './chat-routes.js';
+import { chatRoutes, createChatHub } from './chat-routes.js';
 import { KICK_GRACE_MS, kick } from './idle.js';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -42,6 +42,9 @@ export function createApp({
   chatStore = null,
   messageStore = () => null,
   chatMediaStore = null,
+  // Everyone listening to the chat. Passed in so the server can tell them
+  // when chat becomes available, once ScyllaDB answers after a start.
+  chatHub = createChatHub(),
   kickGraceMs = KICK_GRACE_MS,
   logger = console,
 }) {
@@ -626,9 +629,9 @@ export function createApp({
     }
   });
 
-  // Takes one machine off the server: out of its channel like a disconnect,
-  // and its app, told why, leaves the chat too and waits to be reconnected by
-  // hand. The same rules as a disconnect; not a ban either. See ADR 0037.
+  // Takes one machine out of its channel, telling its app it was an admin, so
+  // it says so rather than seeing a lost connection. The chats stay open to
+  // it. The same rules as a disconnect; not a ban either. See ADR 0037.
   app.post('/api/admin/devices/:id/kick', requireAdmin, async (req, res, next) => {
     try {
       const device = await deviceStore.getActive(req.params.id);
@@ -1009,6 +1012,7 @@ export function createApp({
         requireSession,
         requireAdmin,
         recheck: sessionUser,
+        hub: chatHub,
         // Tests shorten these; undefined keeps the defaults.
         sendLimit: config.chat?.sendLimit,
         heartbeatMs: config.chat?.heartbeatMs,

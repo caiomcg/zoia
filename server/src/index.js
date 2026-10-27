@@ -16,6 +16,7 @@ import { connectInBackground } from './scylla.js';
 import { createMessageStore } from './messages.js';
 import { createMediaStore } from './chat-media.js';
 import { createApp } from './app.js';
+import { createChatHub } from './chat-routes.js';
 import { createIdleSweeper } from './idle.js';
 
 try {
@@ -85,16 +86,22 @@ const reports = createReportStore();
 // The app does not wait for it: until it answers, chat says it is unavailable
 // and everything else works.
 let messageStore = null;
+const chatHub = createChatHub();
 if (config.chat.scylla) {
   connectInBackground({
     ...config.chat.scylla,
     onConnected: (client) => {
       messageStore = createMessageStore({ client, keyspace: config.chat.scylla.keyspace });
+      // Apps that reconnected while ScyllaDB was still starting were told chat
+      // is unavailable, and nothing else would tell them it came back: a
+      // change to the list has every app read it again, available this time.
+      chatHub.publish('chats', {});
     },
   });
 }
 
 const app = createApp({
+  chatHub,
   config,
   tokenIssuer,
   channels,

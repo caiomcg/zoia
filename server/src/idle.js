@@ -1,12 +1,12 @@
 /**
- * Kicking a machine off the server, and doing it to whoever sits in a
+ * Disconnecting a machine from its channel, and doing it to whoever sits in a
  * channel doing nothing. See ADR 0037.
  *
- * A kick is more than a channel disconnect: the app leaves everything, the
- * chat included, and waits to be told to reconnect. The app learns it was a
- * kick from a message on KICK_TOPIC, sent just before the server removes it
- * from its room; LiveKit's removal alone cannot say why. The removal does not
- * rely on the app: an app that ignores the message is still out of the room.
+ * The app learns why, an admin or idleness, from a message on KICK_TOPIC sent
+ * just before the server removes it from its room; LiveKit's removal alone
+ * cannot say. It leaves the channel and says so; the chats stay open to it.
+ * The removal does not rely on the app: one that ignores the message is
+ * still out of the room.
  */
 
 import { ownerOf } from './whip.js';
