@@ -90,10 +90,11 @@ export default function ChatList({
           );
         }
         const unread = c.unread ?? 0;
+        const mentions = c.mentions ?? 0;
         return (
           <div key={c.id} className="channel-row">
             <button
-              className={`channel chat${current ? ' current' : ''}${unread > 0 ? ' unread' : ''}`}
+              className={`channel chat${current ? ' current' : ''}${unread > 0 ? ' unread' : ''}${mentions > 0 ? ' mentioned' : ''}`}
               onClick={() => onOpen(c.id)}
               aria-current={current ? 'true' : undefined}
               title={collapsed ? c.name : undefined}
@@ -105,6 +106,15 @@ export default function ChatList({
                 #
               </span>
               <span className="channel-name">{c.name}</span>
+              {mentions > 0 && (
+                <span
+                  className="chat-mention-badge"
+                  aria-label={t('chat.mentionsUnread', { count: mentions })}
+                  title={t('chat.mentionsUnread', { count: mentions })}
+                >
+                  @
+                </span>
+              )}
               {unread > 0 && (
                 <span className="chat-unread" aria-label={t('chat.unread', { count: unread })}>
                   {unread >= 100 ? '99+' : unread}

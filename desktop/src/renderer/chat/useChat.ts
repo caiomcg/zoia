@@ -5,7 +5,8 @@
  *
  * A chat is read when its messages are on screen: `visible` says so, and
  * then the newest message is marked read. Until then a message from someone
- * else counts as unread.
+ * else counts as unread, and one that @mentions you also counts as a mention,
+ * which has a badge of its own and a sound (Settings › Sounds).
  *
  * Against a server without chat (older, or no message database configured
  * at all) `enabled` stays false and nothing here shows.
@@ -21,6 +22,7 @@ import type {
   ChatSendExtras,
 } from '../../shared/ipc';
 import { applyReaction, atOrAfter, laterMarker, mergeMessages } from './model';
+import { playCues } from '../sounds/useSoundCues';
 
 export interface ChatThread {
   chatId: string;
@@ -182,17 +184,30 @@ export function useChat({
     [],
   );
 
-  const setUnread = useCallback((chatId: string, next: (n: number) => number) => {
-    setList(
-      (l) =>
-        l && {
-          ...l,
-          chats: l.chats.map((c) =>
-            c.id === chatId && c.unread !== null ? { ...c, unread: next(c.unread) } : c,
-          ),
-        },
-    );
-  }, []);
+  /** Moves a chat's unread count, and its mentions with `mentioned`; null ones stay unknown. */
+  const setUnread = useCallback(
+    (chatId: string, next: (n: number) => number, mentioned?: (n: number) => number) => {
+      setList(
+        (l) =>
+          l && {
+            ...l,
+            chats: l.chats.map((c) =>
+              c.id !== chatId
+                ? c
+                : {
+                    ...c,
+                    unread: c.unread === null ? null : next(c.unread),
+                    mentions:
+                      mentioned && typeof c.mentions === 'number'
+                        ? mentioned(c.mentions)
+                        : c.mentions,
+                  },
+            ),
+          },
+      );
+    },
+    [],
+  );
 
   useEffect(
     () =>
@@ -220,7 +235,11 @@ export function useChat({
               );
             }
             if (message.authorId !== meRef.current && !(isOpen && visibleRef.current)) {
-              setUnread(message.chatId, (n) => Math.min(n + 1, 100));
+              const me = meRef.current;
+              const mentioned = Boolean(me && message.mentions?.some((m) => m.id === me));
+              const more = (n: number) => Math.min(n + 1, 100);
+              setUnread(message.chatId, more, mentioned ? more : undefined);
+              if (mentioned) playCues(['mention']);
             }
             break;
           }
@@ -264,7 +283,11 @@ export function useChat({
     if (!visible || !openId || !latest || !me) return;
     if (myMarker && atOrAfter(myMarker, latest)) return;
     setReaders((r) => ({ ...r, [me]: laterMarker(r[me], latest) }));
-    setUnread(openId, () => 0);
+    setUnread(
+      openId,
+      () => 0,
+      () => 0,
+    );
     void window.zoia.chat.read(openId, latest);
   }, [visible, openId, latest, me, myMarker, setUnread]);
 
@@ -405,6 +428,8 @@ export function useChat({
     setLimit: (max: number) => change(window.zoia.chat.setLimit(max)),
     /** Unread across every chat, for a badge on the way back to the chat. */
     totalUnread: chats.reduce((sum, c) => sum + (c.unread ?? 0), 0),
+    /** Unread that @mention you, across every chat: a badge of its own. */
+    totalMentions: chats.reduce((sum, c) => sum + (c.mentions ?? 0), 0),
   };
 }
 

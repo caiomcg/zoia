@@ -137,6 +137,7 @@ export const en = {
     'Only photos (PNG, JPEG, GIF, WebP) and videos (MP4, WebM) can be sent.',
   'chat.reply': 'Reply',
   'chat.react': 'Add reaction',
+  'chat.mentionsUnread': 'You were @mentioned ({count})',
   'chat.reactorsMore': '{count} more',
   'chat.reactedWith': '{emoji} from {names}',
   'chat.error.reactFailed': 'Could not add that reaction.',
@@ -482,12 +483,14 @@ export const en = {
   'update.failedMessage': 'The update could not be installed.',
 
   // ---- sounds
-  'sounds.intro': 'Short sounds for what happens in your channel. They play on this computer only.',
+  'sounds.intro':
+    'Short sounds for what happens in your channel, and when someone @mentions you. They play on this computer only.',
   'sounds.volume': 'Volume',
   'sounds.event.join': 'Someone joins the channel',
   'sounds.event.leave': 'Someone leaves the channel',
   'sounds.event.streamStart': 'A stream starts',
   'sounds.event.streamStop': 'A stream stops',
+  'sounds.event.mention': 'Someone @mentions you',
   'sounds.style': 'Sound',
   'sounds.style.chime': 'Chime',
   'sounds.style.pop': 'Pop',

@@ -14,6 +14,7 @@ import {
   CUE_STYLES,
   DEFAULT_SOUND_SETTINGS,
   PITCH_RANGE,
+  isFixedCue,
   type CueEvent,
   type CueSettings,
 } from '../sounds/cues';
@@ -558,6 +559,7 @@ const CUE_LABELS: Record<CueEvent, MessageKey> = {
   leave: 'sounds.event.leave',
   streamStart: 'sounds.event.streamStart',
   streamStop: 'sounds.event.streamStop',
+  mention: 'sounds.event.mention',
 };
 
 /**
@@ -618,36 +620,59 @@ function SoundsSection() {
                 ▶ {t('sounds.preview')}
               </button>
             </div>
-            <div className="sound-cue-controls">
-              <div className="sound-styles" role="radiogroup" aria-label={t('sounds.style')}>
-                {CUE_STYLES.map((style) => (
-                  <button
-                    key={style}
-                    type="button"
-                    role="radio"
-                    aria-checked={cue.style === style}
-                    className={cue.style === style ? 'active' : undefined}
+            {/* A fixed cue has its own sound: only on, off and how loud are yours. */}
+            {!isFixedCue(event) && (
+              <div className="sound-cue-controls">
+                <div className="sound-styles" role="radiogroup" aria-label={t('sounds.style')}>
+                  {CUE_STYLES.map((style) => (
+                    <button
+                      key={style}
+                      type="button"
+                      role="radio"
+                      aria-checked={cue.style === style}
+                      className={cue.style === style ? 'active' : undefined}
+                      disabled={!cue.enabled}
+                      onClick={() => updateCue(event, { style })}
+                    >
+                      {t(`sounds.style.${style}`)}
+                    </button>
+                  ))}
+                </div>
+                <label className="sound-pitch">
+                  <span>
+                    {t('sounds.pitch')} {cue.pitch > 0 ? `+${cue.pitch}` : cue.pitch}
+                  </span>
+                  <input
+                    className="settings-range"
+                    type="range"
+                    min={-PITCH_RANGE}
+                    max={PITCH_RANGE}
+                    step={1}
+                    value={cue.pitch}
                     disabled={!cue.enabled}
-                    onClick={() => updateCue(event, { style })}
-                  >
-                    {t(`sounds.style.${style}`)}
-                  </button>
-                ))}
+                    onChange={(change) =>
+                      updateCue(event, { pitch: Number(change.target.value) }, false)
+                    }
+                    onPointerUp={() => playCue(event, cue, settings.volume)}
+                  />
+                </label>
               </div>
+            )}
+            <div className="sound-cue-controls">
               <label className="sound-pitch">
                 <span>
-                  {t('sounds.pitch')} {cue.pitch > 0 ? `+${cue.pitch}` : cue.pitch}
+                  {t('sounds.volume')} {Math.round(cue.volume * 100)}%
                 </span>
                 <input
                   className="settings-range"
                   type="range"
-                  min={-PITCH_RANGE}
-                  max={PITCH_RANGE}
-                  step={1}
-                  value={cue.pitch}
+                  min={0}
+                  max={100}
+                  value={Math.round(cue.volume * 100)}
                   disabled={!cue.enabled}
+                  aria-label={`${t(CUE_LABELS[event])}: ${t('sounds.volume')}`}
                   onChange={(change) =>
-                    updateCue(event, { pitch: Number(change.target.value) }, false)
+                    updateCue(event, { volume: Number(change.target.value) / 100 }, false)
                   }
                   onPointerUp={() => playCue(event, cue, settings.volume)}
                 />

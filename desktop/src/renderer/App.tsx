@@ -1007,6 +1007,15 @@ export default function App() {
                   #
                 </span>
                 {chat.openChat?.name ?? t('chat.title')}
+                {!chatShown && chat.totalMentions > 0 && (
+                  <span
+                    className="chat-mention-badge"
+                    aria-label={t('chat.mentionsUnread', { count: chat.totalMentions })}
+                    title={t('chat.mentionsUnread', { count: chat.totalMentions })}
+                  >
+                    @
+                  </span>
+                )}
                 {!chatShown && chat.totalUnread > 0 && (
                   <span className="chat-unread">
                     {chat.totalUnread >= 100 ? '99+' : chat.totalUnread}

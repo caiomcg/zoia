@@ -131,6 +131,7 @@ export const es: Messages = {
     'Solo se pueden enviar fotos (PNG, JPEG, GIF, WebP) y videos (MP4, WebM).',
   'chat.reply': 'Responder',
   'chat.react': 'Reaccionar',
+  'chat.mentionsUnread': 'Te @mencionaron ({count})',
   'chat.reactorsMore': '{count} más',
   'chat.reactedWith': '{emoji} de {names}',
   'chat.error.reactFailed': 'No se pudo agregar esa reacción.',
@@ -478,12 +479,14 @@ export const es: Messages = {
   'update.failedMessage': 'No se pudo instalar la actualización.',
 
   // ---- sounds
-  'sounds.intro': 'Sonidos cortos para lo que pasa en tu canal. Solo suenan en este equipo.',
+  'sounds.intro':
+    'Sonidos cortos para lo que pasa en tu canal y cuando alguien te @menciona. Solo suenan en este equipo.',
   'sounds.volume': 'Volumen',
   'sounds.event.join': 'Alguien entra al canal',
   'sounds.event.leave': 'Alguien sale del canal',
   'sounds.event.streamStart': 'Empieza una transmisión',
   'sounds.event.streamStop': 'Termina una transmisión',
+  'sounds.event.mention': 'Alguien te @menciona',
   'sounds.style': 'Sonido',
   'sounds.style.chime': 'Campana',
   'sounds.style.pop': 'Pop',

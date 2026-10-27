@@ -4117,13 +4117,37 @@ button.danger:active:not(:disabled),
   border-radius: 9px;
 }
 
+/* Unread that @mention you: amber, as a message that mentions you is. */
+.chat-mention-badge {
+  display: inline-grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
+  color: #1a1b1e;
+  background: var(--warn);
+  border-radius: 50%;
+}
+
+.chat-mention-badge + .chat-unread {
+  margin-left: -2px;
+}
+
 .sidebar.collapsed .chat-hash,
-.sidebar.collapsed .channel.chat .chat-unread {
+.sidebar.collapsed .channel.chat .chat-unread,
+.sidebar.collapsed .channel.chat .chat-mention-badge {
   display: none;
 }
 
 .sidebar.collapsed .channel.chat.unread .channel-short {
   box-shadow: 0 0 0 2px var(--danger);
+}
+
+.sidebar.collapsed .channel.chat.mentioned .channel-short {
+  box-shadow: 0 0 0 2px var(--warn);
 }
 
 .chat-view {

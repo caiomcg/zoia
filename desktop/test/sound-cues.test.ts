@@ -8,8 +8,10 @@ import assert from 'node:assert/strict';
 import {
   DEFAULT_SOUND_SETTINGS,
   cuesBetween,
+  isFixedCue,
   notesFor,
   parseSoundSettings,
+  voiceFor,
   type CueMember,
 } from '../src/renderer/sounds/cues.ts';
 
@@ -71,8 +73,8 @@ describe('parseSoundSettings', () => {
       }),
     );
     assert.equal(parsed.volume, 1);
-    assert.deepEqual(parsed.cues.join, { enabled: false, style: 'chime', pitch: 6 });
-    assert.deepEqual(parsed.cues.leave, { enabled: true, style: 'chime', pitch: -2 });
+    assert.deepEqual(parsed.cues.join, { enabled: false, style: 'chime', pitch: 6, volume: 1 });
+    assert.deepEqual(parsed.cues.leave, { enabled: true, style: 'chime', pitch: -2, volume: 1 });
     assert.deepEqual(parsed.cues.streamStart, DEFAULT_SOUND_SETTINGS.cues.streamStart);
   });
 });
@@ -99,5 +101,61 @@ describe('notesFor', () => {
       const end = Math.max(...notes.map((note) => note.at + note.duration));
       assert.ok(end < 0.7, `${style} lasts ${end}s`);
     }
+  });
+});
+
+describe('the mention cue', () => {
+  test('is on for settings saved before it existed, keeping the others', () => {
+    const saved = JSON.stringify({
+      volume: 0.3,
+      cues: { join: { enabled: false, style: 'soft', pitch: 2 } },
+    });
+    const settings = parseSoundSettings(saved);
+    assert.deepEqual(settings.cues.mention, DEFAULT_SOUND_SETTINGS.cues.mention);
+    assert.equal(settings.cues.mention.enabled, true);
+    assert.deepEqual(settings.cues.join, { enabled: false, style: 'soft', pitch: 2, volume: 1 });
+  });
+
+  test('sounds unlike any channel cue', () => {
+    const pattern = (event: Parameters<typeof notesFor>[0]) =>
+      notesFor(event, { style: 'chime', pitch: 0 })
+        .map((n) => n.frequency.toFixed(1))
+        .join();
+    const mention = pattern('mention');
+    for (const other of ['join', 'leave', 'streamStart', 'streamStop'] as const) {
+      assert.notEqual(mention, pattern(other));
+    }
+  });
+});
+
+describe('the mention bell', () => {
+  test('is the same whatever style or pitch is set', () => {
+    const plain = notesFor('mention', { style: 'chime', pitch: 0 });
+    assert.deepEqual(notesFor('mention', { style: 'soft', pitch: 5 }), plain);
+    assert.deepEqual(voiceFor('mention', 'pop'), voiceFor('mention', 'chime'));
+    assert.ok(isFixedCue('mention'));
+    assert.ok(!isFixedCue('join'));
+  });
+
+  test('has the uneven partials no channel cue has', () => {
+    assert.ok((voiceFor('mention', 'chime').partials ?? []).length > 0);
+    for (const style of ['chime', 'pop', 'soft'] as const) {
+      assert.equal(voiceFor('join', style).partials, undefined);
+    }
+  });
+});
+
+describe("a cue's own volume", () => {
+  test('is kept between 0 and 1, and full for settings saved before it', () => {
+    const parsed = parseSoundSettings(
+      JSON.stringify({ cues: { mention: { volume: 0.4 }, join: { volume: 3 }, leave: {} } }),
+    );
+    assert.equal(parsed.cues.mention.volume, 0.4);
+    assert.equal(parsed.cues.join.volume, 1);
+    assert.equal(parsed.cues.leave.volume, 1);
+    assert.equal(
+      parseSoundSettings(JSON.stringify({ cues: { join: { volume: -1 } } })).cues.join.volume,
+      0,
+    );
   });
 });

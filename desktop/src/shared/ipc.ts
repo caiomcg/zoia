@@ -123,6 +123,8 @@ export interface ChatInfo {
   isDefault: boolean;
   /** Messages others wrote that you have not read, up to 100; null when unknown. */
   unread: number | null;
+  /** How many of those @mention you; absent from a server before mentions were counted. */
+  mentions?: number | null;
 }
 
 /** The chats, how many there may be, and whether messages can be reached. */

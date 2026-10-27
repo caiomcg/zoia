@@ -130,6 +130,7 @@ export const pt: Messages = {
   'chat.error.unsupported': 'Só dá para enviar fotos (PNG, JPEG, GIF, WebP) e vídeos (MP4, WebM).',
   'chat.reply': 'Responder',
   'chat.react': 'Reagir',
+  'chat.mentionsUnread': 'Você foi @mencionado ({count})',
   'chat.reactorsMore': 'mais {count}',
   'chat.reactedWith': '{emoji} de {names}',
   'chat.error.reactFailed': 'Não foi possível adicionar essa reação.',
@@ -475,12 +476,14 @@ export const pt: Messages = {
   'update.failedMessage': 'Não foi possível instalar a atualização.',
 
   // ---- sounds
-  'sounds.intro': 'Sons curtos para o que acontece no seu canal. Tocam só neste computador.',
+  'sounds.intro':
+    'Sons curtos para o que acontece no seu canal e quando alguém @menciona você. Tocam só neste computador.',
   'sounds.volume': 'Volume',
   'sounds.event.join': 'Alguém entra no canal',
   'sounds.event.leave': 'Alguém sai do canal',
   'sounds.event.streamStart': 'Uma transmissão começa',
   'sounds.event.streamStop': 'Uma transmissão termina',
+  'sounds.event.mention': 'Alguém @menciona você',
   'sounds.style': 'Som',
   'sounds.style.chime': 'Sino',
   'sounds.style.pop': 'Pop',

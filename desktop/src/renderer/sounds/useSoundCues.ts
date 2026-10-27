@@ -14,7 +14,8 @@ const CUE_SPACING_MS = 400;
 /** When the last queued cue has finished and the next may start. */
 let freeAt = 0;
 
-function play(events: readonly CueEvent[]): void {
+/** Plays cues in turn, each only if it is on. Also for the chat's mention cue. */
+export function playCues(events: readonly CueEvent[]): void {
   const settings = getSoundSettings();
   for (const event of events) {
     if (!settings.cues[event].enabled) continue;
@@ -64,7 +65,7 @@ export function useSoundCues(
       arrivedIn.current = channel;
       events = arrived ? ['join'] : [];
     }
-    play(events);
+    playCues(events);
     // The channel changes before the room does; the members are what say the
     // new room has arrived.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -75,13 +76,13 @@ export function useSoundCues(
   useEffect(() => {
     if (channel !== null || arrivedIn.current === null) return;
     arrivedIn.current = null;
-    play(['leave']);
+    playCues(['leave']);
   }, [channel]);
 
   const wasLive = useRef(live);
   useEffect(() => {
     if (live === wasLive.current) return;
     wasLive.current = live;
-    play([live ? 'streamStart' : 'streamStop']);
+    playCues([live ? 'streamStart' : 'streamStop']);
   }, [live]);
 }

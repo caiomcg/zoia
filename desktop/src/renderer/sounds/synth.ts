@@ -4,7 +4,7 @@
  * change is a parameter, not a new asset, and nothing is added to app.asar.
  */
 
-import { STYLE_VOICES, notesFor, type CueEvent, type CueSettings } from './cues';
+import { notesFor, voiceFor, type CueEvent, type CueSettings } from './cues';
 
 /** Loud enough to notice under a stream's audio, quiet enough not to startle. */
 const PEAK_GAIN = 0.25;
@@ -19,11 +19,13 @@ function audioContext(): AudioContext {
   return context;
 }
 
+/** Plays `event` at the overall `volume`, times the cue's own when it has one. */
 export function playCue(
   event: CueEvent,
-  cue: Pick<CueSettings, 'style' | 'pitch'>,
-  volume: number,
+  cue: Pick<CueSettings, 'style' | 'pitch'> & Partial<Pick<CueSettings, 'volume'>>,
+  overall: number,
 ): void {
+  const volume = overall * (cue.volume ?? 1);
   if (volume <= 0) return;
   let ctx: AudioContext;
   try {
@@ -32,7 +34,7 @@ export function playCue(
     // No audio output at all: a cue is never worth an error.
     return;
   }
-  const voice = STYLE_VOICES[cue.style];
+  const voice = voiceFor(event, cue.style);
   const start = ctx.currentTime + 0.01;
 
   const output = ctx.createGain();
@@ -51,6 +53,9 @@ export function playCue(
   for (const note of notesFor(event, cue)) {
     const partials: [number, number][] = [[note.frequency, 1]];
     if (voice.overtone > 0) partials.push([note.frequency * 2, voice.overtone]);
+    for (const [ratio, level] of voice.partials ?? []) {
+      partials.push([note.frequency * ratio, level]);
+    }
     for (const [frequency, level] of partials) {
       const oscillator = ctx.createOscillator();
       const envelope = ctx.createGain();
