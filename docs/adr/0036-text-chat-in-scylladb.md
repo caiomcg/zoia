@@ -93,8 +93,10 @@ credentials and identities.
 - **Two backups instead of one.** `keytool db:backup` covers `zoia.db`; messages need a
   Scylla snapshot of the `scylla_data` volume (see the runbook). `docker compose down -v`
   deletes every message.
-- **CI starts Scylla** for the message store's tests, a minute or so per job. Locally they
-  skip unless `SCYLLA_TEST_CONTACT_POINTS` is set.
+- **The message store's tests need a real Scylla**, and skip without
+  `SCYLLA_TEST_CONTACT_POINTS`. CI runs them in a job of their own that is advisory and
+  stops after ten minutes, so a slow or stuck database never holds up a deploy; the other
+  jobs, the coverage floor included, run without Scylla.
 - **One replica.** A disk failure loses the history; there is no second node to recover
   from. A three-node cluster is the remedy, and is not worth it for this.
 - **Removing a chat deletes its messages** month by month, from its creation to now.
