@@ -67,6 +67,13 @@ internal fun watchingValue(onScreen: Iterable<String>): String = onScreen.sorted
 
 internal fun ownerIdentity(identity: String): String = identity.removeSuffix(WHIP_SUFFIX)
 
+/**
+ * Who is in voice (ADR 0038), set by the server; must match VOICE_ATTRIBUTE
+ * in server/src/stage.js. This app does not join voice, so a voice is never
+ * a broadcast here, and never played.
+ */
+internal const val VOICE_ATTRIBUTE = "zoia.voice"
+
 /** A published track, with where it came from. */
 internal data class Feed<T>(val source: Track.Source, val track: T, val fromIngress: Boolean)
 
@@ -84,13 +91,19 @@ internal data class PersonFeeds<V, A>(
  * only a person's own Camera and Microphone are their camera. A camera is
  * never the screen, even shared alone: it is opened from the camera bar.
  */
-internal fun <V, A> pickFeeds(video: List<Feed<V>>, audio: List<Feed<A>>): PersonFeeds<V, A> {
+internal fun <V, A> pickFeeds(
+    video: List<Feed<V>>,
+    audio: List<Feed<A>>,
+    inVoice: Boolean = false
+): PersonFeeds<V, A> {
     val screen = video.firstOrNull { it.fromIngress }
         ?: video.firstOrNull { !it.fromIngress && it.source != Track.Source.CAMERA }
     val camera = video.firstOrNull { !it.fromIngress && it.source == Track.Source.CAMERA }
     val screenAudio = audio.firstOrNull { it.fromIngress }
         ?: audio.firstOrNull { !it.fromIngress && it.source != Track.Source.MICROPHONE }
-    val mic = audio.firstOrNull { !it.fromIngress && it.source == Track.Source.MICROPHONE }
+    // In voice, a person's microphone is their voice, not their camera's.
+    val mic = if (inVoice) null
+        else audio.firstOrNull { !it.fromIngress && it.source == Track.Source.MICROPHONE }
     return PersonFeeds(
         screen = screen?.track,
         camera = camera?.track,
@@ -208,10 +221,21 @@ class LiveKitRoomManager(
             val human = participants.firstOrNull { it.identity?.value == owner }
             val ingress = participants.firstOrNull { it.identity?.value != owner }
 
+            val inVoice = human?.attributes?.get(VOICE_ATTRIBUTE) == "1"
             val feeds = pickFeeds(
                 video = feedsOf<VideoTrack>(human, ingress) { it.videoTrackPublications },
-                audio = feedsOf<AudioTrack>(human, ingress) { it.audioTrackPublications }
+                audio = feedsOf<AudioTrack>(human, ingress) { it.audioTrackPublications },
+                inVoice = inVoice
             )
+            // Someone only in voice is skipped below, and a track left alone
+            // plays: their voice is silenced here, before that.
+            if (inVoice) {
+                human?.audioTrackPublications?.forEach { (publication, track) ->
+                    if (publication.source == Track.Source.MICROPHONE) {
+                        (track as? AudioTrack)?.enabled = false
+                    }
+                }
+            }
 
             // Only include participants who are actively broadcasting (skip passive viewers)
             if (feeds.screen == null && feeds.camera == null &&
