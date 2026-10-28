@@ -430,7 +430,9 @@ describe('passwords and codes', () => {
     const issued = await admin.agent.post(`/api/admin/accounts/${bob.account.id}/reset`);
     assert.equal(issued.status, 200);
     assert.match(issued.body.code, /^zcode_[0-9a-f]{8}_/);
-    assert.ok(!logLines.join('\n').includes(issued.body.code.split('_')[2]));
+    // The secret is base64url, which can hold `_` itself, so not split('_').
+    const secret = issued.body.code.slice(`zcode_${bob.account.id}_`.length);
+    assert.ok(secret.length > 20 && !logLines.join('\n').includes(secret));
 
     const reset = { code: issued.body.code, password: 'My-new-pass-1' };
     assert.equal((await request(app).post('/api/reset').send(reset)).status, 200);
