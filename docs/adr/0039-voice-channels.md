@@ -50,19 +50,32 @@ suppression, echo cancellation and gain therefore run on the speaker's machine, 
 encoder. Voice publishes as `Microphone`, mono, at the speech preset with DTX (silence costs
 nothing) and RED (redundancy against loss). Shared screen audio keeps its music preset.
 
-**Noise suppression is RNNoise,** in WebAssembly in an AudioWorklet, on by default, with
-Chromium's own suppression as the lighter choice and off as the third. Krisp, which Discord
-uses, comes to LiveKit only as a filter that works against LiveKit Cloud, not a self-hosted
-server.
+**Noise suppression is RNNoise,** in WebAssembly in an AudioWorklet
+(`@sapphi-red/web-noise-suppressor`), on by default as "Enhanced", with Chromium's own
+suppression as "Standard" and off as the third. Krisp, which Discord uses, comes to LiveKit
+only as a filter that works against LiveKit Cloud, not a self-hosted server. It runs as
+LiveKit's track processor, so a device or settings change rebuilds it with the capture:
+capture (echo cancellation, gain) → RNNoise → the input gate → the encoder. The page's
+policy allows `'wasm-unsafe-eval'` for it, and the model is bundled inline, never fetched.
+
+**What is sent is decided on the sender:** by input sensitivity (a gate on the level after
+suppression, faded rather than cut) or by push-to-talk. The speaking ring is worked out
+locally from the sound itself, what you send and what you receive, not from LiveKit's
+smoothed active speakers.
+
+**Each listener sets each voice's volume** for themselves, up to twice as sent, kept per
+person on their machine.
 
 **One microphone per person.** In voice, a camera shares the voice microphone instead of
 opening another. Everyone in voice hears everyone in voice without turning them on; ADR
 0034's "off until you turn it on" stays for the microphone of a camera shared by someone
 not in voice.
 
-**Shortcuts work while Zoia is in the background:** push-to-talk, mute and deafen. Electron's
-global shortcuts have no key-up, so push-to-talk uses a native keyboard hook, loaded
-optionally like the WASAPI capture.
+**Shortcuts work while Zoia is in the background:** push-to-talk, mute and deafen, bound to
+keys, combinations or mouse buttons. Electron's global shortcuts take keys only and have no
+key-up, so main uses a native input hook (`uiohook-napi`), loaded optionally like the WASAPI
+capture and running only while something is bound. A short tone confirms a mute or deafen
+done from a shortcut.
 
 **Android listens.** It plays everyone in voice and publishes nothing.
 
@@ -76,7 +89,9 @@ optionally like the WASAPI capture.
   while the microphone's echo reference is another can let it echo.
 - RNNoise costs each speaker a little CPU and is weaker than Krisp on some noises; a heavier
   model (DeepFilterNet) is the next step if it is not enough.
-- The keyboard hook needs Accessibility permission on macOS; without it, push-to-talk works
-  only while Zoia has focus.
+- The input hook needs Accessibility permission on macOS; without it there are no shortcuts,
+  and Settings says so.
+- The hook sees every key pressed while it runs. It keeps nothing and acts only on what is
+  bound, which is why it runs only while something is.
 - Older apps do not know the attribute: they see someone in voice as a microphone they can
   turn on, as for a camera.

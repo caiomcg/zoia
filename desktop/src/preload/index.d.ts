@@ -1,3 +1,4 @@
+import type { ShortcutAction, ShortcutEvent, ShortcutsState } from '../shared/shortcuts';
 import type {
   PairingStatus,
   RoomsList,
@@ -92,6 +93,15 @@ export interface ZoiaBridge {
     leave(): Promise<{ ok: boolean }>;
     /** Silences every sound Zoia plays, in every window, or lets it play again. */
     deafen(deafened: boolean): Promise<void>;
+  };
+  /** Voice's global shortcuts (ADR 0039): keys and mouse buttons, from anywhere. */
+  shortcuts: {
+    get(): Promise<ShortcutsState>;
+    /** Takes the next keys or button held together; null if cancelled. */
+    record(action: ShortcutAction): Promise<ShortcutsState | null>;
+    cancel(): Promise<void>;
+    clear(action: ShortcutAction): Promise<ShortcutsState>;
+    onFire(cb: (event: ShortcutEvent) => void): () => void;
   };
   sources: {
     list(fresh?: boolean): Promise<SourceInfo[]>;

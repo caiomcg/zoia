@@ -19,8 +19,7 @@ import {
   type CueSettings,
 } from '../sounds/cues';
 import { setSoundSettings, useSoundSettings } from '../sounds/settings';
-import { setVoiceSettings, useVoiceSettings, type NoiseSuppression } from '../voice/settings';
-import { useCameraDevices } from '../livekit/useCamera';
+import VoiceSettingsSection from './VoiceSettings';
 import { playCue } from '../sounds/synth';
 import ReleaseNotesDialog from './ReleaseNotesDialog';
 import { useExit } from '../presence';
@@ -178,7 +177,7 @@ export default function SettingsDialog({
                 hardwareAvailable={hardwareAvailable ?? false}
               />
             )}
-            {section === 'voice' && <VoiceSection />}
+            {section === 'voice' && <VoiceSettingsSection />}
             {section === 'general' && <GeneralSection />}
             {section === 'sounds' && <SoundsSection />}
             {section === 'updates' && <UpdatesSection />}
@@ -428,83 +427,6 @@ function BroadcastSection({
         freezes, encoder errors, or legacy GPU incompatibilities, turn this off to use standard CPU
         broadcasting.
       </p>
-    </>
-  );
-}
-
-const NOISE_MODES: NoiseSuppression[] = ['off', 'standard'];
-
-/**
- * How your microphone is captured for voice (ADR 0039). Each change reaches
- * the live microphone at once, so it can be tried while someone listens.
- */
-function VoiceSection() {
-  const t = useT();
-  const settings = useVoiceSettings();
-  const { devices } = useCameraDevices();
-
-  return (
-    <>
-      <h3>{t('settings.nav.voice')}</h3>
-      <p className="muted settings-note">{t('voiceSettings.live')}</p>
-
-      <label className="settings-field">
-        <span>{t('voiceSettings.microphone')}</span>
-        <select
-          className="settings-select"
-          value={settings.microphoneId}
-          onChange={(event) => setVoiceSettings({ ...settings, microphoneId: event.target.value })}
-        >
-          <option value="">{t('voiceSettings.systemDefault')}</option>
-          {devices.microphones.map((m) => (
-            <option key={m.deviceId} value={m.deviceId}>
-              {m.label}
-            </option>
-          ))}
-        </select>
-      </label>
-
-      <div className="settings-field">
-        <span>{t('voiceSettings.noise')}</span>
-        <div className="sound-styles" role="radiogroup" aria-label={t('voiceSettings.noise')}>
-          {NOISE_MODES.map((mode) => (
-            <button
-              key={mode}
-              type="button"
-              role="radio"
-              aria-checked={settings.noiseSuppression === mode}
-              className={settings.noiseSuppression === mode ? 'active' : undefined}
-              onClick={() => setVoiceSettings({ ...settings, noiseSuppression: mode })}
-            >
-              {t(`voiceSettings.noise.${mode}`)}
-            </button>
-          ))}
-        </div>
-        <span className="muted">{t('voiceSettings.noiseHint')}</span>
-      </div>
-
-      <label className="settings-check">
-        <input
-          type="checkbox"
-          checked={settings.echoCancellation}
-          onChange={(event) =>
-            setVoiceSettings({ ...settings, echoCancellation: event.target.checked })
-          }
-        />
-        {t('voiceSettings.echo')}
-      </label>
-      <p className="muted settings-note">{t('voiceSettings.echoHint')}</p>
-
-      <label className="settings-check">
-        <input
-          type="checkbox"
-          checked={settings.autoGainControl}
-          onChange={(event) =>
-            setVoiceSettings({ ...settings, autoGainControl: event.target.checked })
-          }
-        />
-        {t('voiceSettings.agc')}
-      </label>
     </>
   );
 }

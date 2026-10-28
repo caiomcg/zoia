@@ -25,6 +25,8 @@ import { handleMediaScheme, registerMediaScheme, saveMedia } from './chat-media'
 import { getCloseToTray, installTray, setCloseToTray, showWindow } from './tray';
 import { isDevToolsEnabled, openDevTools, setDevToolsEnabled } from './devtools';
 import * as language from './language';
+import * as shortcuts from './shortcuts';
+import { SHORTCUT_ACTIONS, type ShortcutAction } from '../shared/shortcuts';
 import { isLanguagePreference } from '../shared/i18n';
 import { CHAT_MEDIA_MAX_BYTES, IDLE_AWAY_MS, IPC, PRESENCES } from '../shared/ipc';
 import type { ChatSendExtras, GpuStatus } from '../shared/ipc';
@@ -430,6 +432,21 @@ function registerIpc(): void {
   app.on('browser-window-created', (_event, window) => {
     if (deafened) window.webContents.setAudioMuted(true);
   });
+  // Push to talk, mute and deafen from anywhere (ADR 0039). The main window
+  // is where voice lives, so it is the one told.
+  shortcuts.initShortcuts((event) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send(IPC.shortcutsFire, event);
+    }
+  });
+  ipcMain.handle(IPC.shortcutsGet, () => shortcuts.state());
+  ipcMain.handle(IPC.shortcutsRecord, (_event, action: ShortcutAction) =>
+    SHORTCUT_ACTIONS.includes(action) ? shortcuts.record(action) : null,
+  );
+  ipcMain.handle(IPC.shortcutsCancel, () => shortcuts.cancelRecording());
+  ipcMain.handle(IPC.shortcutsClear, (_event, action: ShortcutAction) =>
+    SHORTCUT_ACTIONS.includes(action) ? shortcuts.clear(action) : shortcuts.state(),
+  );
 
   ipcMain.handle(IPC.sourcesList, (_event, fresh?: boolean) => sources.listSources(fresh === true));
   ipcMain.handle(IPC.sourcesInstant, () => sources.instantSources());

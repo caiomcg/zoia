@@ -17,13 +17,14 @@ import {
   RoomEvent,
   Track,
   type LocalAudioTrack,
-  type Participant,
   type Room,
   type TrackPublishOptions,
 } from 'livekit-client';
 import type { ConnectionState } from '../livekit/useRoom';
 import { tNow } from '../i18n';
 import { captureOptions, getVoiceSettings, subscribeVoiceSettings } from './settings';
+import { VOICE_SAMPLE_RATE, VoiceProcessor } from './pipeline';
+import { useSpeaking } from './speaking';
 
 export type VoiceState = 'off' | 'joining' | 'on';
 
@@ -70,6 +71,12 @@ function rememberMuted(muted: boolean) {
   }
 }
 
+/** What a restart is needed for: the capture, and which suppression runs after it. */
+function processingKey(): string {
+  const settings = getVoiceSettings();
+  return JSON.stringify([captureOptions(settings), settings.noiseSuppression]);
+}
+
 function mayPublishMicrophone(room: Room): boolean {
   const permissions = room.localParticipant.permissions;
   if (!permissions?.canPublish) return false;
@@ -100,16 +107,21 @@ export function useVoice(roomRef: RefObject<Room | null>, connection: Connection
   const [state, setState] = useState<VoiceState>('off');
   const [muted, setMutedState] = useState(rememberedMuted);
   const [deafened, setDeafenedState] = useState(false);
-  const [speaking, setSpeaking] = useState<ReadonlySet<string>>(new Set());
+  // Who is speaking, worked out from the sound itself (speaking.ts).
+  const speaking = useSpeaking();
   const [error, setError] = useState<string | null>(null);
 
   const trackRef = useRef<LocalAudioTrack | null>(null);
+  // The 48 kHz context the processing runs in, for as long as voice is on.
+  const contextRef = useRef<AudioContext | null>(null);
   // The room voice was joined in. Another room, or none, means it is over.
   const voiceRoomRef = useRef<Room | null>(null);
   const mutedRef = useRef(muted);
   const deafenedRef = useRef(false);
   // What mute was before deafening, so undeafening puts it back.
   const mutedBeforeDeafenRef = useRef(false);
+  // The capture options last applied, to tell a change worth a restart.
+  const captureRef = useRef(processingKey());
 
   const applyMuted = useCallback(async (next: boolean) => {
     mutedRef.current = next;
@@ -130,7 +142,10 @@ export function useVoice(roomRef: RefObject<Room | null>, connection: Connection
     const track = trackRef.current;
     trackRef.current = null;
     voiceRoomRef.current = null;
+    await track?.stopProcessor().catch(() => {});
     track?.stop();
+    void contextRef.current?.close().catch(() => {});
+    contextRef.current = null;
     setState('off');
     // Deafen is part of being in voice: left on outside it, nothing would
     // play and there would be no button to say why.
@@ -145,6 +160,20 @@ export function useVoice(roomRef: RefObject<Room | null>, connection: Connection
       return;
     }
     trackRef.current = track;
+    // Noise suppression and the sensitivity gate, between capture and encoder.
+    contextRef.current ??= new AudioContext({ sampleRate: VOICE_SAMPLE_RATE });
+    track.setAudioContext(contextRef.current);
+    // Without it, the microphone still goes out as captured: being heard with
+    // the noise beats not being heard at all.
+    await track
+      .setProcessor(new VoiceProcessor(room.localParticipant.identity))
+      .catch((err: unknown) =>
+        setError(
+          tNow('voice.processingFailed', {
+            error: err instanceof Error ? err.message : String(err),
+          }),
+        ),
+      );
     if (mutedRef.current) await track.mute();
     await room.localParticipant.publishTrack(track, PUBLISH_OPTIONS);
   }, []);
@@ -209,16 +238,10 @@ export function useVoice(roomRef: RefObject<Room | null>, connection: Connection
     if (gone) void teardown();
   }, [connection, roomRef, teardown]);
 
-  // Who is speaking, for the rings in the channel list. Only while connected:
-  // each connection is a new Room.
+  // Each connection is a new Room, so this is set up again on every one.
   useEffect(() => {
     const room = roomRef.current;
-    if (!room || connection !== 'connected') {
-      setSpeaking(new Set());
-      return;
-    }
-    const onSpeakers = (speakers: Participant[]) =>
-      setSpeaking(new Set(speakers.map((p) => p.identity)));
+    if (!room || connection !== 'connected') return;
     // A full reconnect is a new session, which starts without the grant and
     // the attribute. Asking again is harmless after a mere resume.
     const onReconnected = () => {
@@ -236,10 +259,8 @@ export function useVoice(roomRef: RefObject<Room | null>, connection: Connection
         }
       })();
     };
-    room.on(RoomEvent.ActiveSpeakersChanged, onSpeakers);
     room.on(RoomEvent.Reconnected, onReconnected);
     return () => {
-      room.off(RoomEvent.ActiveSpeakersChanged, onSpeakers);
       room.off(RoomEvent.Reconnected, onReconnected);
     };
   }, [connection, roomRef, publish, teardown]);
@@ -251,6 +272,11 @@ export function useVoice(roomRef: RefObject<Room | null>, connection: Connection
     () =>
       subscribeVoiceSettings(() => {
         const track = trackRef.current;
+        const options = processingKey();
+        // Sensitivity is read live by the gate; the capture and the
+        // suppression need a restart, which rebuilds the processing too.
+        if (options === captureRef.current) return;
+        captureRef.current = options;
         if (!track) return;
         void track
           .restartTrack(captureOptions(getVoiceSettings()))

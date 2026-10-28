@@ -10,7 +10,16 @@
 import { useSyncExternalStore } from 'react';
 import type { AudioCaptureOptions } from 'livekit-client';
 
-export type NoiseSuppression = 'off' | 'standard';
+/**
+ * Off; Standard, Chromium's own, good on steady hum; Enhanced, RNNoise, which
+ * also takes keyboards, clicks and voices in the room (pipeline.ts).
+ */
+export type NoiseSuppression = 'off' | 'standard' | 'enhanced';
+
+const NOISE_MODES: readonly NoiseSuppression[] = ['off', 'standard', 'enhanced'];
+
+/** Sending whenever you speak above the sensitivity, or only while a shortcut is held. */
+export type InputMode = 'voiceActivity' | 'pushToTalk';
 
 export interface VoiceSettings {
   /** Empty: whatever the system calls the default. */
@@ -18,6 +27,32 @@ export interface VoiceSettings {
   noiseSuppression: NoiseSuppression;
   echoCancellation: boolean;
   autoGainControl: boolean;
+  /**
+   * Input sensitivity, in dBFS: quieter than this and nothing is sent, as
+   * Discord's slider. SENSITIVITY_MIN sends everything.
+   */
+  sensitivity: number;
+  inputMode: InputMode;
+}
+
+/** What getUserMedia is asked for; the rest applies to the captured sound. */
+export type CaptureSettings = Pick<
+  VoiceSettings,
+  'microphoneId' | 'noiseSuppression' | 'echoCancellation' | 'autoGainControl'
+>;
+
+/** The slider's range. Its quiet end is no gate at all. */
+export const SENSITIVITY_MIN = -70;
+export const SENSITIVITY_MAX = 0;
+
+/** A peak sample, 0 to 1, in dBFS, floored at the slider's quiet end. */
+export function levelToDb(level: number): number {
+  return level > 0 ? Math.max(SENSITIVITY_MIN, 20 * Math.log10(level)) : SENSITIVITY_MIN;
+}
+
+/** Where a dBFS value sits on the slider, 0 to 1. */
+export function dbFraction(db: number): number {
+  return (db - SENSITIVITY_MIN) / (SENSITIVITY_MAX - SENSITIVITY_MIN);
 }
 
 const STORAGE_KEY = 'zoia.voice';
@@ -25,9 +60,11 @@ export const MICROPHONE_KEY = 'zoia.microphoneId';
 
 const DEFAULTS: VoiceSettings = {
   microphoneId: '',
-  noiseSuppression: 'standard',
+  noiseSuppression: 'enhanced',
   echoCancellation: true,
   autoGainControl: true,
+  sensitivity: SENSITIVITY_MIN,
+  inputMode: 'voiceActivity',
 };
 
 export function parseVoiceSettings(raw: string | null, microphoneId: string | null): VoiceSettings {
@@ -41,7 +78,7 @@ export function parseVoiceSettings(raw: string | null, microphoneId: string | nu
   return {
     microphoneId: microphoneId ?? DEFAULTS.microphoneId,
     noiseSuppression:
-      stored.noiseSuppression === 'off' || stored.noiseSuppression === 'standard'
+      stored.noiseSuppression && NOISE_MODES.includes(stored.noiseSuppression)
         ? stored.noiseSuppression
         : DEFAULTS.noiseSuppression,
     echoCancellation:
@@ -52,6 +89,11 @@ export function parseVoiceSettings(raw: string | null, microphoneId: string | nu
       typeof stored.autoGainControl === 'boolean'
         ? stored.autoGainControl
         : DEFAULTS.autoGainControl,
+    sensitivity:
+      typeof stored.sensitivity === 'number' && Number.isFinite(stored.sensitivity)
+        ? Math.min(SENSITIVITY_MAX, Math.max(SENSITIVITY_MIN, stored.sensitivity))
+        : DEFAULTS.sensitivity,
+    inputMode: stored.inputMode === 'pushToTalk' ? 'pushToTalk' : 'voiceActivity',
   };
 }
 
@@ -100,11 +142,12 @@ export function useVoiceSettings(): VoiceSettings {
  * cancellation is on by default: whatever is being watched plays out of the
  * same speakers the microphone hears.
  */
-export function captureOptions(settings: VoiceSettings): AudioCaptureOptions {
+export function captureOptions(settings: CaptureSettings): AudioCaptureOptions {
   return {
     deviceId: settings.microphoneId ? { exact: settings.microphoneId } : undefined,
     echoCancellation: settings.echoCancellation,
-    noiseSuppression: settings.noiseSuppression !== 'off',
+    // Enhanced replaces Chromium's suppression rather than stacking on it.
+    noiseSuppression: settings.noiseSuppression === 'standard',
     autoGainControl: settings.autoGainControl,
     channelCount: 1,
   };

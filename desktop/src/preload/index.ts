@@ -15,6 +15,7 @@ import type {
   ChatEvent,
 } from '../shared/ipc';
 import type { ZoiaBridge } from './index.d';
+import type { ShortcutEvent } from '../shared/shortcuts';
 
 // The native video frame channel. contextBridge cannot carry a MessagePort,
 // so it is handed to the page with window.postMessage, which can; the page
@@ -75,6 +76,17 @@ const bridge: ZoiaBridge = {
     join: () => ipcRenderer.invoke(IPC.voiceJoin),
     leave: () => ipcRenderer.invoke(IPC.voiceLeave),
     deafen: (deafened) => ipcRenderer.invoke(IPC.voiceDeafen, deafened),
+  },
+  shortcuts: {
+    get: () => ipcRenderer.invoke(IPC.shortcutsGet),
+    record: (action) => ipcRenderer.invoke(IPC.shortcutsRecord, action),
+    cancel: () => ipcRenderer.invoke(IPC.shortcutsCancel),
+    clear: (action) => ipcRenderer.invoke(IPC.shortcutsClear, action),
+    onFire: (cb) => {
+      const listener = (_event: unknown, event: ShortcutEvent) => cb(event);
+      ipcRenderer.on(IPC.shortcutsFire, listener);
+      return () => ipcRenderer.removeListener(IPC.shortcutsFire, listener);
+    },
   },
   sources: {
     list: (fresh?: boolean) => ipcRenderer.invoke(IPC.sourcesList, fresh),

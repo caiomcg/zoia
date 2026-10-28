@@ -24,6 +24,9 @@ import { WHIP_SUFFIX, useRoom, type RoomMember } from './livekit/useRoom';
 import { useGpuBroadcast } from './livekit/useGpuBroadcast';
 import { useVoice } from './voice/useVoice';
 import VoiceAudio from './voice/VoiceAudio';
+import { setPushToTalk } from './voice/pipeline';
+import { playVoiceCue, VOICE_CUE_MS } from './sounds/synth';
+import { getSoundSettings } from './sounds/settings';
 import { useSoundCues } from './sounds/useSoundCues';
 import { LAST_VERSION_STORAGE_KEY, shouldShowReleaseNotes } from './whats-new';
 import { useExit } from './presence';
@@ -170,6 +173,36 @@ export default function App() {
     // A camera already on gives up its own microphone to voice's.
     void dropCameraMicrophone().then(joinVoice);
   }, [room.state, dropCameraMicrophone, joinVoice]);
+  // The global shortcuts (ADR 0039), from main's input hook. Read through a
+  // ref: the listener stays put while mute and deafen change under it.
+  const voiceRef = useRef(voice);
+  voiceRef.current = voice;
+  useEffect(
+    () =>
+      window.zoia.shortcuts.onFire(({ action, pressed }) => {
+        const current = voiceRef.current;
+        if (action === 'pushToTalk') {
+          setPushToTalk(pressed);
+          return;
+        }
+        // Outside voice there is nothing to mute: no cue for nothing done.
+        if (!pressed || current.state !== 'on') return;
+        // A cue says it happened, since Zoia may well be out of sight.
+        const volume = getSoundSettings().volume;
+        if (action === 'toggleMute') {
+          playVoiceCue(current.muted ? 'unmute' : 'mute', volume);
+          void current.setMuted(!current.muted);
+        } else if (action === 'toggleDeafen' && current.deafened) {
+          void current.setDeafened(false).then(() => playVoiceCue('undeafen', volume));
+        } else if (action === 'toggleDeafen') {
+          // Deafening silences every Zoia sound, its own cue included, so
+          // the cue plays out first.
+          playVoiceCue('deafen', volume);
+          setTimeout(() => void voiceRef.current.setDeafened(true), VOICE_CUE_MS);
+        }
+      }),
+    [],
+  );
   const [sidebarCollapsed, setSidebarCollapsed] = useSidebarCollapsed();
   const gpuCast = useGpuBroadcast();
   const { setRemoteFocus, setRemotePaused } = room;

@@ -1154,7 +1154,8 @@ button.danger {
 .settings-body {
   display: grid;
   flex: 1;
-  grid-template-columns: 180px 1fr;
+  /* minmax: a long device name must not widen the pane past the dialog. */
+  grid-template-columns: 180px minmax(0, 1fr);
   min-height: 0;
 }
 
@@ -2960,6 +2961,278 @@ button.danger {
 
 .sidebar.collapsed .member-voice {
   display: none;
+}
+
+/* ---- Settings › Voice ---------------------------------------------------- */
+
+/* A group of related settings, as the sound cues have them. */
+.voice-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 16px 16px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.voice-card h4 {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.voice-card .settings-field .settings-select {
+  min-width: 0;
+  text-overflow: ellipsis;
+}
+
+.voice-card-note {
+  margin: -4px 0 0;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+/* A label on the left, its control on the right. */
+.voice-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.voice-label {
+  font-size: 13px;
+  color: var(--text);
+}
+
+.voice-value {
+  font-size: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.voice-segmented button {
+  padding: 5px 12px;
+  cursor: pointer;
+}
+
+.voice-segmented button:not(.active):hover {
+  color: var(--text);
+}
+
+.voice-meter-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* The level, with the sensitivity marker over it. */
+.voice-level {
+  position: relative;
+  height: 28px;
+}
+
+.voice-meter {
+  height: 100%;
+  justify-content: space-between;
+  align-items: stretch;
+  padding: 0;
+}
+
+.voice-meter .level-seg {
+  flex: 1;
+  width: auto;
+  height: auto;
+  border-radius: 2px;
+}
+
+/* Sound under the sensitivity: heard here, never sent. */
+.voice-meter .level-seg.gated {
+  background: rgb(255 255 255 / 0.08);
+}
+
+.voice-meter .level-seg.gated.on {
+  background: #f5a623;
+  opacity: 0.55;
+}
+
+/* The marker: a range input laid over the bars, with only its thumb shown. */
+.voice-threshold {
+  position: absolute;
+  inset: -4px 0;
+  width: 100%;
+  height: calc(100% + 8px);
+  margin: 0;
+  background: transparent;
+  cursor: ew-resize;
+  appearance: none;
+}
+
+.voice-threshold::-webkit-slider-runnable-track {
+  height: 100%;
+  background: transparent;
+}
+
+.voice-threshold::-webkit-slider-thumb {
+  width: 6px;
+  height: 36px;
+  background: var(--text);
+  border-radius: 3px;
+  box-shadow:
+    0 0 0 2px var(--surface-2),
+    0 1px 4px rgb(0 0 0 / 0.5);
+  appearance: none;
+}
+
+.voice-threshold:focus-visible {
+  outline: none;
+}
+
+.voice-threshold:focus-visible::-webkit-slider-thumb {
+  box-shadow:
+    0 0 0 2px var(--surface-2),
+    0 0 0 4px var(--accent);
+}
+
+/* An on/off setting, with what it does under its name. */
+.voice-toggle {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.voice-toggle > span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.voice-toggle small {
+  font-size: 12px;
+}
+
+.voice-toggle input {
+  position: relative;
+  flex: none;
+  width: 36px;
+  height: 20px;
+  margin: 0;
+  background: var(--border);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background 120ms ease;
+  appearance: none;
+}
+
+.voice-toggle input::after {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 14px;
+  height: 14px;
+  background: #fff;
+  border-radius: 50%;
+  transition: transform 120ms ease;
+  content: '';
+}
+
+.voice-toggle input:checked {
+  background: var(--accent);
+}
+
+.voice-toggle input:checked::after {
+  transform: translateX(16px);
+}
+
+.voice-toggle input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Shortcuts: a name, the keys, and a way to clear them. */
+.voice-shortcuts {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.voice-shortcut {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.voice-shortcut-name {
+  font-size: 13px;
+}
+
+.voice-keybind {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  min-height: 34px;
+  padding: 4px 8px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text);
+  text-align: left;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.voice-keybind:hover {
+  border-color: var(--muted);
+}
+
+.voice-keybind.unset {
+  color: var(--muted);
+}
+
+.voice-keybind.recording {
+  color: var(--text);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+  animation: keybind-listen 1.2s ease-in-out infinite;
+}
+
+@keyframes keybind-listen {
+  50% {
+    border-color: transparent;
+    box-shadow: none;
+  }
+}
+
+.voice-keybind kbd {
+  padding: 2px 6px;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--raised);
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+}
+
+.voice-shortcut-clear:disabled {
+  visibility: hidden;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .voice-keybind.recording {
+    animation: none;
+  }
 }
 
 /* Talking: a ring that comes and goes with the voice. */
@@ -4896,6 +5169,33 @@ button.danger:active:not(:disabled),
   color: #fff;
   background: var(--danger);
   outline: none;
+}
+
+/* Someone's voice, louder or quieter for you alone. */
+.member-menu .member-menu-volume {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 200px;
+  padding: 6px 10px 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.member-menu-volume > span {
+  display: flex;
+  justify-content: space-between;
+}
+
+.member-menu-volume-value {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.member-menu-volume input {
+  width: 100%;
+  accent-color: var(--speaking);
 }
 
 @media (prefers-reduced-motion: reduce) {

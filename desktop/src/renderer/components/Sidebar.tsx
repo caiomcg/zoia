@@ -17,6 +17,7 @@ import Avatar from './Avatar';
 import { IconEye, IconMic } from './Player';
 import StatusMenu from './StatusMenu';
 import type { VoiceState } from '../voice/useVoice';
+import { setVoiceVolume, useVoiceVolume, VOLUME_MAX } from '../voice/volumes';
 import { useT } from '../i18n';
 import { useLeaving } from '../presence';
 import type { PresenceController } from '../chat/usePresence';
@@ -532,11 +533,14 @@ export default function Sidebar({
   const [statusAnchor, setStatusAnchor] = useState<DOMRect | null>(null);
   const closeStatus = useCallback(() => setStatusAnchor(null), []);
 
-  // Right-clicking someone an admin may kick opens what they can do to them.
+  // Right-clicking someone opens what you can do about them: their voice's
+  // volume while you both are in voice, and a kick for an admin.
   const [menu, setMenu] = useState<{
     identity: string;
     name: string;
     role?: AccountRole;
+    volume: boolean;
+    kick: boolean;
     x: number;
     y: number;
   } | null>(null);
@@ -545,12 +549,15 @@ export default function Sidebar({
     identity: string,
     name: string,
     role: AccountRole | undefined,
+    volume = false,
   ) => {
     event.preventDefault();
     event.stopPropagation();
     onHoverBroadcast(null);
-    setMenu({ identity, name, role, x: event.clientX, y: event.clientY });
+    const kick = mayKick(identity);
+    setMenu({ identity, name, role, volume, kick, x: event.clientX, y: event.clientY });
   };
+  const hearing = (m: RoomMember) => voice?.state === 'on' && m.inVoice && !m.isLocal;
 
   const rowProps = {
     viewerIds,
@@ -791,8 +798,9 @@ export default function Sidebar({
                           leaving={leaving}
                           drag={leaving ? {} : dragFrom(m.identity, roleOf(m), c.id)}
                           onContextMenu={
-                            !leaving && mayKick(m.identity)
-                              ? (event) => openMenu(event, m.identity, m.name, roleOf(m))
+                            !leaving && (mayKick(m.identity) || hearing(m))
+                              ? (event) =>
+                                  openMenu(event, m.identity, m.name, roleOf(m), hearing(m))
                               : undefined
                           }
                           {...rowProps}
@@ -994,11 +1002,11 @@ export default function Sidebar({
           onClose={closeStatus}
         />
       )}
-      {menu && onKickMember && (
+      {menu && (
         <MemberMenu
           {...menu}
           onClose={() => setMenu(null)}
-          onKick={() => onKickMember(menu.identity, menu.name)}
+          onKick={menu.kick ? () => onKickMember?.(menu.identity, menu.name) : undefined}
         />
       )}
     </aside>
@@ -1006,13 +1014,15 @@ export default function Sidebar({
 }
 
 /**
- * What an admin may do to someone, at the pointer. Closes on a choice, a
- * click elsewhere, Escape, or the window losing focus.
+ * What you may do about someone, at the pointer: how loud their voice is for
+ * you, and for an admin, a kick. Closes on a choice, a click elsewhere,
+ * Escape, or the window losing focus.
  */
 function MemberMenu({
   identity,
   name,
   role,
+  volume,
   x,
   y,
   onClose,
@@ -1021,10 +1031,11 @@ function MemberMenu({
   identity: string;
   name: string;
   role?: AccountRole;
+  volume: boolean;
   x: number;
   y: number;
   onClose: () => void;
-  onKick: () => void;
+  onKick?: () => void;
 }) {
   const t = useT();
   const ref = useRef<HTMLDivElement>(null);
@@ -1037,7 +1048,7 @@ function MemberMenu({
       left: Math.max(4, Math.min(x, window.innerWidth - box.width - 4)),
       top: Math.max(4, Math.min(y, window.innerHeight - box.height - 4)),
     });
-    ref.current?.querySelector('button')?.focus();
+    ref.current?.querySelector<HTMLElement>('input, button')?.focus();
   }, [x, y]);
   useEffect(() => {
     const onDown = (event: MouseEvent) => {
@@ -1078,12 +1089,42 @@ function MemberMenu({
           {role && <span className="member-menu-role">{t(`account.role.${role}`)}</span>}
         </span>
       </div>
-      <button type="button" role="menuitem" className="member-menu-item" onClick={choose(onKick)}>
-        <IconKick />
-        {t('sidebar.kickAction')}
-      </button>
+      {volume && <VoiceVolume identity={identity} name={name} />}
+      {onKick && (
+        <button type="button" role="menuitem" className="member-menu-item" onClick={choose(onKick)}>
+          <IconKick />
+          {t('sidebar.kickAction')}
+        </button>
+      )}
     </div>,
     document.body,
+  );
+}
+
+/** How loud someone's voice is for you, kept for the next time they talk. */
+function VoiceVolume({ identity, name }: { identity: string; name: string }) {
+  const t = useT();
+  const volume = useVoiceVolume(identity);
+  const percent = Math.round(volume * 100);
+  return (
+    <label className="member-menu-volume">
+      <span>
+        {t('voice.volume')}
+        <span className="member-menu-volume-value">{percent}%</span>
+      </span>
+      <input
+        type="range"
+        min={0}
+        max={VOLUME_MAX * 100}
+        step={5}
+        value={percent}
+        onChange={(event) => setVoiceVolume(identity, Number(event.target.value) / 100)}
+        // Back to as sent, where it is easy to overshoot by a little.
+        onDoubleClick={() => setVoiceVolume(identity, 1)}
+        aria-label={t('voice.volumeOf', { name })}
+        aria-valuetext={`${percent}%`}
+      />
+    </label>
   );
 }
 
