@@ -1263,6 +1263,13 @@ export default function App() {
               : undefined
           }
           presence={presence.enabled ? presence : undefined}
+          peopleOnline={
+            presence.enabled
+              ? chat.people.filter(
+                  (p) => p.id === accountId || (presence.people[p.id] ?? 'offline') !== 'offline',
+                ).length
+              : undefined
+          }
           people={
             presence.enabled
               ? (collapsed) => (

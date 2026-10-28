@@ -3279,6 +3279,88 @@ button.danger {
   margin-left: 0;
 }
 
+/* The sidebar's two areas, channels and chats, and people: one segmented
+   control, its top in line with the main tabs beside it. */
+.sidebar-tabs {
+  display: flex;
+  flex: none;
+  box-sizing: border-box;
+  height: var(--control-height);
+  margin: 12px 10px 6px;
+  padding: 2px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+}
+
+.sidebar-tabs button {
+  display: inline-flex;
+  flex: 1;
+  gap: 6px;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  padding: 0 8px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  background: transparent;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  transition:
+    color 120ms ease,
+    background 120ms ease;
+}
+
+.sidebar-tabs button > span:not(.sidebar-tab-count) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-tabs button svg {
+  flex: none;
+}
+
+.sidebar-tabs button:hover {
+  color: var(--text);
+}
+
+.sidebar-tabs button.active {
+  color: var(--text);
+  background: var(--raised);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.35);
+}
+
+.sidebar-tabs button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* How many are on the server now. */
+.sidebar-tab-count {
+  min-width: 16px;
+  padding: 0 5px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+  color: var(--text);
+  text-align: center;
+  background: var(--border);
+  border-radius: 8px;
+}
+
+.sidebar-tabs button.active .sidebar-tab-count {
+  color: #fff;
+  background: var(--live);
+}
+
+.people-block + .people-block {
+  margin-top: 12px;
+}
+
 /* Voice connected: the channel your voice goes to, and leaving it. */
 .voice-panel {
   display: flex;

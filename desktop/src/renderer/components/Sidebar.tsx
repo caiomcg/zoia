@@ -167,6 +167,28 @@ export function useFolded(key: string): [boolean, () => void, () => void] {
   return [folded, () => save(!folded), () => save(false)];
 }
 
+export type SidebarTab = 'rooms' | 'people';
+
+/** Which of the sidebar's two areas is showing, remembered like the folds. */
+function useSidebarTab(): [SidebarTab, (tab: SidebarTab) => void] {
+  const [tab, setTab] = useState<SidebarTab>(() => {
+    try {
+      return localStorage.getItem('zoia.sidebar.tab') === 'people' ? 'people' : 'rooms';
+    } catch {
+      return 'rooms';
+    }
+  });
+  const choose = (next: SidebarTab) => {
+    setTab(next);
+    try {
+      localStorage.setItem('zoia.sidebar.tab', next);
+    } catch {
+      // Remembering is a convenience; the tab still changes.
+    }
+  };
+  return [tab, choose];
+}
+
 /**
  * A section's title, which folds it, with how many it holds; and for an
  * admin, a + that shows on hover to add one. At the limit the + stays, and
@@ -366,6 +388,7 @@ export default function Sidebar({
   onToggleCamera,
   chats,
   people,
+  peopleOnline,
   presence,
   onKickMember,
   collapsed,
@@ -407,6 +430,8 @@ export default function Sidebar({
   chats?: (collapsed: boolean) => ReactNode;
   /** Everyone on the server and their status (ADR 0038), under the chats. */
   people?: (collapsed: boolean) => ReactNode;
+  /** How many are on the server now, for the People tab. */
+  peopleOnline?: number;
   /** Your status, on your picture in the footer, which is where it is chosen. */
   presence?: PresenceController;
   /** Admins only: takes someone off the server, chat and all (ADR 0037). */
@@ -579,6 +604,11 @@ export default function Sidebar({
   // channel, it follows the button's size and place at once, through a
   // ResizeObserver, since a single measurement mid-animation is stale.
   // Collapsed, the current channel is marked by a ring on its badge instead.
+  // Two areas: where to go (channels and chats) and who is around (people).
+  // Collapsed, both show as pictures in one column, as before.
+  const [tab, setTab] = useSidebarTab();
+  const tabbed = !collapsed && !!people;
+  const onPeople = tabbed && tab === 'people';
   const channelGroupRef = useRef<HTMLElement>(null);
   const [indicator, setIndicator] = useState<{
     top: number;
@@ -627,7 +657,7 @@ export default function Sidebar({
     const observer = new ResizeObserver(measure);
     observer.observe(group);
     return () => observer.disconnect();
-  }, [channels, currentChannel, collapsed, editing, members, channelsFolded]);
+  }, [channels, currentChannel, collapsed, editing, members, channelsFolded, onPeople]);
 
   return (
     <aside
@@ -655,8 +685,36 @@ export default function Sidebar({
           event.preventDefault();
         }}
       />
+      {tabbed && (
+        <div className="sidebar-tabs" role="tablist" aria-label={t('sidebar.areas')}>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === 'rooms'}
+            className={tab === 'rooms' ? 'active' : undefined}
+            onClick={() => setTab('rooms')}
+            title={t('sidebar.tabRoomsHint')}
+          >
+            <IconChannels />
+            <span>{t('sidebar.tabRooms')}</span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === 'people'}
+            className={tab === 'people' ? 'active' : undefined}
+            onClick={() => setTab('people')}
+          >
+            <IconPeople />
+            <span>{t('presence.people')}</span>
+            {peopleOnline !== undefined && peopleOnline > 0 && (
+              <span className="sidebar-tab-count">{peopleOnline}</span>
+            )}
+          </button>
+        </div>
+      )}
       <div className="sidebar-scroll">
-        {channels.length > 0 && (
+        {!onPeople && channels.length > 0 && (
           <section
             className={`member-group channel-group${indicator ? ' has-indicator' : ''}`}
             ref={channelGroupRef}
@@ -866,13 +924,13 @@ export default function Sidebar({
           </section>
         )}
 
-        {chats?.(collapsed)}
+        {!onPeople && chats?.(collapsed)}
 
-        {people?.(collapsed)}
+        {(collapsed || onPeople) && people?.(collapsed)}
 
         {/* Before the first channel poll lands, or against a server without
             channels, the room's people still need a home. */}
-        {channels.length === 0 && (
+        {!onPeople && channels.length === 0 && (
           <section className="member-group">
             <h2 className="member-heading">{t('sidebar.inRoom', { count: liveMembers.length })}</h2>
             {shownMembers.map(({ item: m, key, leaving }) => (
@@ -1250,6 +1308,46 @@ function MemberRow({
 }
 
 /** Headphones: voice. Struck through, deafened. */
+/** A hash, as channels and chats are written: where you go. */
+function IconChannels() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="14"
+      height="14"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M5 9h14M5 15h14M10 4 8 20M16 4l-2 16" />
+    </svg>
+  );
+}
+
+/** Two people: who is around. */
+function IconPeople() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="14"
+      height="14"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <circle cx="9" cy="8" r="3.5" />
+      <path d="M2.5 20c.6-3.4 3.3-5.5 6.5-5.5s5.9 2.1 6.5 5.5" />
+      <path d="M16 4.6a3.5 3.5 0 0 1 0 6.8M18 14.8c2 .7 3.2 2.5 3.5 5.2" />
+    </svg>
+  );
+}
+
 /** Bars rising, as a connection's strength is drawn. */
 function IconSignal() {
   return (

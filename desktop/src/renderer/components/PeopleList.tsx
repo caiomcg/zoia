@@ -2,14 +2,13 @@ import type { ChatPerson, ShownPresence } from '../../shared/ipc';
 import { useAccountAvatar } from '../chat/avatars';
 import { byPresence, type Dot } from '../chat/status';
 import type { PresenceController } from '../chat/usePresence';
-import { SectionHeading, useFolded } from './Sidebar';
 import Avatar from './Avatar';
 import { useT } from '../i18n';
 
 /**
- * Everyone on the server, under the chats in the sidebar (ADR 0038): those
- * there first, with their status, then everyone offline, dimmed. Collapsed,
- * only those there show, as pictures.
+ * Everyone on the server, in the sidebar's People tab (ADR 0038): those
+ * there first, with their status, then everyone offline, dimmed, each under
+ * a heading with how many. Collapsed, only those there show, as pictures.
  */
 export default function PeopleList({
   people,
@@ -25,29 +24,39 @@ export default function PeopleList({
   collapsed: boolean;
 }) {
   const t = useT();
-  const [folded, toggleFolded] = useFolded('people');
   const listed = byPresence(people, presence.people);
-  const there = listed.filter((p) => p.status !== 'offline' || p.id === me).length;
-  const shown = collapsed ? listed.filter((p) => p.status !== 'offline') : folded ? [] : listed;
+  const isThere = (p: (typeof listed)[number]) => p.status !== 'offline' || p.id === me;
+  const groups = [
+    { key: 'online', title: t('presence.online'), people: listed.filter(isThere) },
+    {
+      key: 'offline',
+      title: t('presence.offline'),
+      people: collapsed ? [] : listed.filter((p) => !isThere(p)),
+    },
+  ];
 
   return (
     <section className="member-group people-group">
-      {!collapsed && (
-        <SectionHeading
-          title={t('presence.people')}
-          count={there}
-          folded={folded}
-          onToggle={toggleFolded}
-        />
+      {groups.map(
+        (group) =>
+          group.people.length > 0 && (
+            <div className="people-block" key={group.key}>
+              {!collapsed && (
+                <h2 className="member-heading">
+                  {group.title} — {group.people.length}
+                </h2>
+              )}
+              {group.people.map((p) => (
+                <Person
+                  key={p.id}
+                  person={p}
+                  status={p.id === me ? (presence.own ?? p.status) : p.status}
+                  isMe={p.id === me}
+                />
+              ))}
+            </div>
+          ),
       )}
-      {shown.map((p) => (
-        <Person
-          key={p.id}
-          person={p}
-          status={p.id === me ? (presence.own ?? p.status) : p.status}
-          isMe={p.id === me}
-        />
-      ))}
     </section>
   );
 }
