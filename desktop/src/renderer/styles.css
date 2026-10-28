@@ -2339,7 +2339,8 @@ button.danger {
   display: flex;
   flex: 0 0 auto;
   flex-direction: column;
-  width: 240px;
+  /* Must match OPEN_WIDTH in Sidebar.tsx. */
+  width: 280px;
   background: var(--surface);
   border-left: 1px solid var(--border);
 }
@@ -2706,6 +2707,9 @@ button.danger {
 .sidebar.collapsed .sidebar-footer {
   flex-direction: column;
   justify-content: center;
+  /* Tall enough for the share buttons above your picture while in a channel. */
+  height: auto;
+  min-height: 61px;
   padding: 10px 0;
 }
 
@@ -3361,14 +3365,79 @@ button.danger {
   margin-top: 12px;
 }
 
-/* Voice connected: the channel your voice goes to, and leaving it. */
+/* Voice connected: the channel your voice goes to, leaving it, and what
+   you share there. */
 .voice-panel {
   display: flex;
-  gap: 8px;
-  align-items: center;
-  padding: 8px 10px 8px 12px;
+  flex-direction: column;
+  padding: 8px 10px;
   background: var(--surface-2);
   border-top: 1px solid var(--border);
+}
+
+/* The same 30px buttons 2px apart as the footer's, so camera, screen and
+   leave stand over mute, deafen and settings. */
+.voice-panel-head {
+  display: flex;
+  gap: 2px;
+  align-items: center;
+}
+
+.voice-panel-head .voice-panel-text {
+  margin-right: 6px;
+}
+
+/* Camera and screen, beside leaving and dressed as it: icons, muted until
+   hovered, green while live. */
+.voice-share {
+  display: flex;
+  flex: none;
+  gap: 2px;
+}
+
+.voice-share-button {
+  position: relative;
+  width: 30px;
+  height: 30px;
+  color: var(--muted);
+}
+
+.voice-share-button:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--raised);
+}
+
+.voice-share-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.voice-share-button.live,
+.voice-share-button.live:hover:not(:disabled) {
+  color: var(--live);
+}
+
+.voice-share-dot {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 6px;
+  height: 6px;
+  background: var(--live);
+  border-radius: 50%;
+  animation: share-live-pulse 1.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .voice-share-dot {
+    animation: none;
+  }
+}
+
+/* Collapsed: stacked above your picture. */
+.voice-share.compact {
+  flex-direction: column;
+  gap: 4px;
 }
 
 .voice-panel-text {
@@ -3704,92 +3773,11 @@ button.danger {
 
 /* ---- share controls ------------------------------------------------------ */
 
-/* Screen and camera are independent: either can be lit, and pressing one does
-   not imply anything about the other. */
-/* Two separate, labelled buttons: what they do should not need a tooltip. */
-.share-icons {
-  display: inline-flex;
-  gap: 8px;
-  /* As wide as the open sidebar's content, so the two line up: the sidebar
-     is 240px with 8px inside, and the top bar ends 12px short of the edge.
-     Kept when the sidebar collapses, so the buttons never jump. */
-  width: calc(240px - 8px - 12px);
-  height: var(--control-height);
-}
-
-.share-icons .share-button {
-  flex: 1;
-  justify-content: center;
-  min-width: 0;
-}
-
-.share-button {
-  display: inline-flex;
-  gap: 7px;
-  align-items: center;
-  height: 100%;
-  padding: 0 10px;
-  white-space: nowrap;
-  font: inherit;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text);
-  background: var(--raised);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  cursor: pointer;
-  transition:
-    background 0.15s ease,
-    border-color 0.15s ease;
-}
-
-.share-button svg {
-  flex: 0 0 auto;
-}
-
-/* A label too long for its half of the width ends in an ellipsis rather
-   than spilling out of the button. */
-.share-label {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.share-live-dot {
-  flex: 0 0 auto;
-  width: 7px;
-  height: 7px;
-  background: #fff;
-  border-radius: 50%;
-  animation: share-live-pulse 1.6s ease-in-out infinite;
-}
-
+/* A live share's dot, in the voice bar's camera and screen buttons. */
 @keyframes share-live-pulse {
   50% {
     opacity: 0.35;
   }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .share-live-dot {
-    animation: none;
-  }
-}
-
-.share-button:hover:not(:disabled) {
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 18%, var(--raised));
-}
-
-.share-button:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
-.share-button.active {
-  color: #fff;
-  background: var(--live);
-  border-color: var(--live);
 }
 
 /* ---- camera dialog ------------------------------------------------------- */
@@ -4067,7 +4055,7 @@ button.danger {
 
 /* Mid-hop the share buttons are briefly disabled, but the app is not
  * disconnected in any way a person cares about, so they do not dim. */
-.share-button.hopping:disabled {
+.voice-share-button.hopping:disabled {
   opacity: 1;
 }
 
@@ -4102,7 +4090,7 @@ button.danger {
 /* The main actions press in slightly, so a click is felt. */
 button.primary:active:not(:disabled),
 button.danger:active:not(:disabled),
-.share-button:active:not(:disabled),
+.voice-share-button:active:not(:disabled),
 .sound-preview:active:not(:disabled),
 .channel:active {
   transform: scale(0.97);
@@ -4149,7 +4137,7 @@ button.danger:active:not(:disabled),
 
   button.primary:active:not(:disabled),
   button.danger:active:not(:disabled),
-  .share-button:active:not(:disabled),
+  .voice-share-button:active:not(:disabled),
   .sound-preview:active:not(:disabled),
   .channel:active {
     transform: none;
@@ -5389,6 +5377,58 @@ button.danger:active:not(:disabled),
 .member-menu-volume input {
   width: 100%;
   accent-color: var(--speaking);
+}
+
+/* Managing someone's account from the People tab: plain items, and the
+   one that takes them off the server in red, as the kick is. */
+.person-menu {
+  min-width: 220px;
+  max-width: 280px;
+}
+
+.person-menu .person-menu-item {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+  padding: 6px 10px;
+  font-weight: 500;
+  color: var(--text);
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+}
+
+.person-menu .person-menu-item:hover:not(:disabled),
+.person-menu .person-menu-item:focus-visible {
+  background: var(--raised);
+  outline: none;
+}
+
+.person-menu-note {
+  margin: 0;
+  padding: 4px 10px 6px;
+  font-size: 12px;
+}
+
+/* A reset code, shown once, to be handed on. */
+.person-menu-code {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px 10px 8px;
+  font-size: 12px;
+}
+
+.person-menu-code code {
+  padding: 6px 8px;
+  font-size: 14px;
+  letter-spacing: 0.05em;
+  user-select: all;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
 }
 
 @media (prefers-reduced-motion: reduce) {

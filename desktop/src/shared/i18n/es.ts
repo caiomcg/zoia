@@ -435,6 +435,8 @@ export const es: Messages = {
   'admin.reject': 'Rechazar',
   'admin.disable': 'Revocar acceso',
   'admin.enable': 'Restaurar acceso',
+  'admin.manageHint': 'Clic derecho para gestionar',
+  'admin.cannotManage': 'No puedes gestionar esta cuenta.',
   'admin.reset': 'Restablecer contraseña',
   'admin.makeAdmin': 'Hacer admin',
   'admin.removeAdmin': 'Quitar admin',

@@ -952,55 +952,9 @@ export default function App() {
           ) : null}
         </div>
 
-        <div className="topbar-right">
-          <div className="share-icons" role="group" aria-label={t('top.whatToShare')}>
-            <button
-              className={`share-button${screenLive ? ' active' : ''}${hopping ? ' hopping' : ''}`}
-              disabled={room.state !== 'connected' || isStarting}
-              onClick={() => setPickerOpen(true)}
-              title={screenLive ? t('top.screenTitleLive') : t('top.screenTitle')}
-              aria-label={t('top.screenTitle')}
-            >
-              <svg
-                viewBox="0 0 24 24"
-                width="18"
-                height="18"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-              >
-                <rect x="2.5" y="4" width="19" height="13" rx="2" />
-                <path d="M8 20.5h8" strokeLinecap="round" />
-              </svg>
-              {/* The label stays put when live: green and the dot say so, and
-                  "Compartilhando" did not fit. */}
-              <span className="share-label">{t('top.screen')}</span>
-              {screenLive && <span className="share-live-dot" aria-hidden="true" />}
-            </button>
-
-            <button
-              className={`share-button${cameraLive ? ' active' : ''}${hopping ? ' hopping' : ''}`}
-              disabled={room.state !== 'connected' || isStarting}
-              onClick={() => void toggleCamera()}
-              title={cameraLive ? t('top.cameraTitleLive') : t('top.cameraTitle')}
-              aria-label={t('top.cameraTitle')}
-            >
-              <svg
-                viewBox="0 0 24 24"
-                width="18"
-                height="18"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-              >
-                <rect x="2.5" y="6" width="13" height="12" rx="2" />
-                <path d="M15.5 11l6-3.5v9l-6-3.5z" strokeLinejoin="round" />
-              </svg>
-              <span className="share-label">{t('top.camera')}</span>
-              {cameraLive && <span className="share-live-dot" aria-hidden="true" />}
-            </button>
-          </div>
-        </div>
+        {/* Screen and camera live in the sidebar's voice bar now, with the
+            rest of what you send (ADR 0039). */}
+        <div className="topbar-right" />
       </header>
 
       {roomError && <Banner onDismiss={() => dismiss('room', roomError)}>{roomError}</Banner>}
@@ -1238,6 +1192,14 @@ export default function App() {
             onToggleMute: () => void voice.setMuted(!voice.muted),
             onToggleDeafen: () => void voice.setDeafened(!voice.deafened),
           }}
+          share={{
+            screenLive,
+            cameraLive,
+            disabled: room.state !== 'connected' || isStarting,
+            hopping,
+            onScreen: () => setPickerOpen(true),
+            onCamera: () => void toggleCamera(),
+          }}
           onHoverBroadcast={(target, anchor) => gridRef.current?.hover(target, anchor)}
           onWatchBroadcast={(target) => gridRef.current?.watch(target)}
           onKickMember={
@@ -1277,6 +1239,7 @@ export default function App() {
                     people={chat.people}
                     presence={presence}
                     me={accountId}
+                    myRole={account?.role}
                     collapsed={collapsed}
                   />
                 )

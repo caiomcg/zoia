@@ -434,6 +434,8 @@ export const pt: Messages = {
   'admin.reject': 'Recusar',
   'admin.disable': 'Revogar acesso',
   'admin.enable': 'Restaurar acesso',
+  'admin.manageHint': 'Clique com o botão direito para gerenciar',
+  'admin.cannotManage': 'Você não pode gerenciar esta conta.',
   'admin.reset': 'Redefinir senha',
   'admin.makeAdmin': 'Tornar admin',
   'admin.removeAdmin': 'Remover admin',

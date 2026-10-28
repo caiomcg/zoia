@@ -16,6 +16,7 @@ import type { GridTarget } from './RemoteGrid';
 import Avatar from './Avatar';
 import { IconEye, IconMic } from './Player';
 import StatusMenu from './StatusMenu';
+import { useFloatingMenu } from './useFloatingMenu';
 import type { VoiceState } from '../voice/useVoice';
 import { setVoiceVolume, useVoiceVolume, VOLUME_MAX } from '../voice/volumes';
 import { useT } from '../i18n';
@@ -42,6 +43,18 @@ const COLLAPSED_KEY = 'zoia.sidebarCollapsed';
 
 /** What a person dragged onto a channel carries: their identity. */
 const DRAG_TYPE = 'application/x-zoia-member';
+
+/** Sharing a screen or a camera, from the voice bar beside your voice. */
+export interface SidebarShare {
+  screenLive: boolean;
+  cameraLive: boolean;
+  /** Not connected yet, or a share starting. */
+  disabled: boolean;
+  /** Moving channels: disabled for a moment, but not dimmed (styles.css). */
+  hopping: boolean;
+  onScreen: () => void;
+  onCamera: () => void;
+}
 
 /** Voice in the current channel (ADR 0039), and its controls. */
 export interface SidebarVoice {
@@ -100,7 +113,7 @@ export function useSidebarCollapsed(): [boolean, (collapsed: boolean) => void] {
 }
 
 /** The sidebar's two widths; a drag snaps to the nearer when let go. */
-const OPEN_WIDTH = 240;
+const OPEN_WIDTH = 280;
 const COLLAPSED_WIDTH = 56;
 const SNAP_WIDTH = (OPEN_WIDTH + COLLAPSED_WIDTH) / 2;
 
@@ -389,6 +402,7 @@ export default function Sidebar({
   chats,
   people,
   peopleOnline,
+  share,
   presence,
   onKickMember,
   collapsed,
@@ -432,6 +446,8 @@ export default function Sidebar({
   people?: (collapsed: boolean) => ReactNode;
   /** How many are on the server now, for the People tab. */
   peopleOnline?: number;
+  /** Screen and camera, in the voice bar; absent, no share buttons. */
+  share?: SidebarShare;
   /** Your status, on your picture in the footer, which is where it is chosen. */
   presence?: PresenceController;
   /** Admins only: takes someone off the server, chat and all (ADR 0037). */
@@ -605,7 +621,7 @@ export default function Sidebar({
   // ResizeObserver, since a single measurement mid-animation is stale.
   // Collapsed, the current channel is marked by a ring on its badge instead.
   // Two areas: where to go (channels and chats) and who is around (people).
-  // Collapsed, both show as pictures in one column, as before.
+  // Collapsed, there are no tabs and no people: just the channels and chats.
   const [tab, setTab] = useSidebarTab();
   const tabbed = !collapsed && !!people;
   const onPeople = tabbed && tab === 'people';
@@ -926,7 +942,8 @@ export default function Sidebar({
 
         {!onPeople && chats?.(collapsed)}
 
-        {(collapsed || onPeople) && people?.(collapsed)}
+        {/* Only in its own tab: collapsed, the column is for channels. */}
+        {onPeople && people?.(collapsed)}
 
         {/* Before the first channel poll lands, or against a server without
             channels, the room's people still need a home. */}
@@ -944,27 +961,32 @@ export default function Sidebar({
           above your own card, so your name keeps its room. */}
       {!collapsed && currentChannel !== null && (
         <div className={`voice-panel${voice?.state === 'on' ? ' connected' : ''}`}>
-          <span className="voice-panel-text">
-            <span className="voice-panel-state">
-              <IconSignal />
-              {voice?.state === 'on' ? t('voice.connected') : t('voice.connecting')}
+          <div className="voice-panel-head">
+            <span className="voice-panel-text">
+              <span className="voice-panel-state">
+                <IconSignal />
+                {voice?.state === 'on' ? t('voice.connected') : t('voice.connecting')}
+              </span>
+              <span className="voice-panel-channel" title={currentChannelName}>
+                {currentChannelName}
+              </span>
             </span>
-            <span className="voice-panel-channel" title={currentChannelName}>
-              {currentChannelName}
-            </span>
-          </span>
-          <button
-            className="icon-button sidebar-settings sidebar-leave"
-            onClick={onLeaveChannel}
-            title={t('sidebar.leave')}
-            aria-label={t('sidebar.leave')}
-          >
-            <IconLeave />
-          </button>
+            {share && <ShareButtons share={share} />}
+            <button
+              className="icon-button sidebar-settings sidebar-leave"
+              onClick={onLeaveChannel}
+              title={t('sidebar.leave')}
+              aria-label={t('sidebar.leave')}
+            >
+              <IconLeave />
+            </button>
+          </div>
         </div>
       )}
 
       <div className="sidebar-footer">
+        {/* Collapsed, the voice bar is gone, but sharing must not be. */}
+        {collapsed && currentChannel !== null && share && <ShareButtons share={share} compact />}
         {collapsed ? (
           // Collapsed, your picture is all there is: clicking it opens the
           // sidebar, where leaving and settings are. Sign-ups waiting for an
@@ -1107,35 +1129,7 @@ function MemberMenu({
 }) {
   const t = useT();
   const ref = useRef<HTMLDivElement>(null);
-  // Kept inside the window: measured once drawn, then nudged in.
-  const [place, setPlace] = useState({ left: x, top: y });
-  useLayoutEffect(() => {
-    const box = ref.current?.getBoundingClientRect();
-    if (!box) return;
-    setPlace({
-      left: Math.max(4, Math.min(x, window.innerWidth - box.width - 4)),
-      top: Math.max(4, Math.min(y, window.innerHeight - box.height - 4)),
-    });
-    ref.current?.querySelector<HTMLElement>('input, button')?.focus();
-  }, [x, y]);
-  useEffect(() => {
-    const onDown = (event: MouseEvent) => {
-      if (!ref.current?.contains(event.target as Node)) onClose();
-    };
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
-    };
-    window.addEventListener('mousedown', onDown);
-    window.addEventListener('keydown', onKey);
-    window.addEventListener('blur', onClose);
-    window.addEventListener('resize', onClose);
-    return () => {
-      window.removeEventListener('mousedown', onDown);
-      window.removeEventListener('keydown', onKey);
-      window.removeEventListener('blur', onClose);
-      window.removeEventListener('resize', onClose);
-    };
-  }, [onClose]);
+  const place = useFloatingMenu(ref, x, y, onClose);
   const choose = (action: () => void) => () => {
     onClose();
     action();
@@ -1308,6 +1302,86 @@ function MemberRow({
 }
 
 /** Headphones: voice. Struck through, deafened. */
+/**
+ * Camera and screen, beside leaving and dressed as it: icons. Green with a
+ * dot while live; pressing again is how you stop.
+ */
+function ShareButtons({ share, compact = false }: { share: SidebarShare; compact?: boolean }) {
+  const t = useT();
+  const buttons = [
+    {
+      key: 'camera',
+      live: share.cameraLive,
+      onClick: share.onCamera,
+      title: share.cameraLive ? t('top.cameraTitleLive') : t('top.cameraTitle'),
+      icon: <IconCamera />,
+    },
+    {
+      key: 'screen',
+      live: share.screenLive,
+      onClick: share.onScreen,
+      title: share.screenLive ? t('top.screenTitleLive') : t('top.screenTitle'),
+      icon: <IconScreen />,
+    },
+  ];
+  return (
+    <div
+      className={`voice-share${compact ? ' compact' : ''}`}
+      role="group"
+      aria-label={t('top.whatToShare')}
+    >
+      {buttons.map((b) => (
+        <button
+          key={b.key}
+          className={`icon-button sidebar-settings voice-share-button${b.live ? ' live' : ''}${share.hopping ? ' hopping' : ''}`}
+          disabled={share.disabled}
+          onClick={b.onClick}
+          title={b.title}
+          aria-label={b.title}
+          aria-pressed={b.live}
+        >
+          {b.icon}
+          {b.live && <span className="voice-share-dot" aria-hidden="true" />}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function IconScreen() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="16"
+      height="16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      aria-hidden="true"
+    >
+      <rect x="2.5" y="4" width="19" height="13" rx="2" />
+      <path d="M8 20.5h8" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function IconCamera() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="16"
+      height="16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      aria-hidden="true"
+    >
+      <rect x="2.5" y="6" width="13" height="12" rx="2" />
+      <path d="M15.5 11l6-3.5v9l-6-3.5z" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 /** A hash, as channels and chats are written: where you go. */
 function IconChannels() {
   return (

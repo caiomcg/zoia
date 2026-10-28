@@ -440,6 +440,8 @@ export const en = {
   'admin.reject': 'Reject',
   'admin.disable': 'Revoke access',
   'admin.enable': 'Restore access',
+  'admin.manageHint': 'Right-click to manage',
+  'admin.cannotManage': 'You cannot manage this account.',
   'admin.reset': 'Reset password',
   'admin.makeAdmin': 'Make admin',
   'admin.removeAdmin': 'Remove admin',
