@@ -305,6 +305,8 @@ export const pt: Messages = {
   'voice.volumeOf': 'Volume da voz de {name}',
   'voice.processingFailed':
     'Não foi possível iniciar a supressão de ruído nem a sensibilidade de entrada, então seu microfone é enviado como capturado: {error}',
+  'voice.connected': 'Voz conectada',
+  'voice.connecting': 'Conectando…',
   'voice.mutedInVoice': 'Na voz, microfone desligado',
   'voice.couldNotJoin': 'Não foi possível entrar na voz: {error}',
   'voice.couldNotRestart': 'Não foi possível trocar o microfone: {error}',
@@ -319,6 +321,10 @@ export const pt: Messages = {
   'voiceSettings.mode.pushToTalk': 'Pressionar para falar',
   'voiceSettings.level': 'Nível do microfone',
   'voiceSettings.sensitivity': 'Sensibilidade de entrada',
+  'voiceSettings.sensitivityAuto': 'Automática',
+  'voiceSettings.sensitivityAutoToggle': 'Ajustar a sensibilidade de entrada automaticamente',
+  'voiceSettings.sensitivityAutoHint':
+    'Fale para testar. O Zoia acompanha o ruído ao seu redor e só envia o que passa dele; o marcador mostra onde.',
   'voiceSettings.sensitivityAlways': 'Sempre ligado',
   'voiceSettings.sensitivityDb': '{db} dB',
   'voiceSettings.sensitivityHint':

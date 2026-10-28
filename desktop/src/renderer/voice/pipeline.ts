@@ -18,7 +18,7 @@ import rnnoiseWorkletUrl from '@sapphi-red/web-noise-suppressor/rnnoiseWorklet.j
 // SIMD build is needed. Compiling it is what 'wasm-unsafe-eval' in
 // index.html's policy is for.
 import rnnoiseWasmUrl from '@sapphi-red/web-noise-suppressor/rnnoise_simd.wasm?url&inline';
-import { getVoiceSettings, levelToDb, SENSITIVITY_MIN } from './settings';
+import { getVoiceSettings, levelToDb, NoiseFloor, SENSITIVITY_MIN } from './settings';
 import { watchSpeaking } from './speaking';
 
 /** RNNoise works on 48 kHz frames, and Opus is 48 kHz anyway. */
@@ -123,14 +123,19 @@ export async function buildVoiceGraph(
     const samples = new Float32Array(analyser.fftSize);
     let openUntil = 0;
     let open = true;
+    const floor = new NoiseFloor();
     timer = setInterval(() => {
-      const { sensitivity, inputMode } = getVoiceSettings();
+      const { sensitivity, autoSensitivity, inputMode } = getVoiceSettings();
       const now = performance.now();
+      // Tracked always, so switching to automatic starts from the room as it is.
+      const db = levelToDb(peakOf(analyser, samples));
+      const auto = floor.update(db, now);
       let shouldOpen: boolean;
       if (inputMode === 'pushToTalk') {
         shouldOpen = pushToTalkOpen(now);
       } else {
-        if (sensitivity <= SENSITIVITY_MIN || levelToDb(peakOf(analyser, samples)) >= sensitivity) {
+        const threshold = autoSensitivity ? auto : sensitivity;
+        if ((!autoSensitivity && sensitivity <= SENSITIVITY_MIN) || db >= threshold) {
           openUntil = now + GATE_HOLD_MS;
         }
         shouldOpen = now < openUntil;

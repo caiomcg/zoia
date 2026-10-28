@@ -312,6 +312,8 @@ export const en = {
   'voice.volumeOf': '{name}’s voice volume',
   'voice.processingFailed':
     'Noise suppression and input sensitivity could not start, so your microphone is sent as captured: {error}',
+  'voice.connected': 'Voice connected',
+  'voice.connecting': 'Connecting…',
   'voice.mutedInVoice': 'In voice, microphone off',
   'voice.couldNotJoin': 'Could not join voice: {error}',
   'voice.couldNotRestart': 'Could not change the microphone: {error}',
@@ -326,6 +328,10 @@ export const en = {
   'voiceSettings.mode.pushToTalk': 'Push to talk',
   'voiceSettings.level': 'Microphone level',
   'voiceSettings.sensitivity': 'Input sensitivity',
+  'voiceSettings.sensitivityAuto': 'Automatic',
+  'voiceSettings.sensitivityAutoToggle': 'Set input sensitivity automatically',
+  'voiceSettings.sensitivityAutoHint':
+    'Speak to test. Zoia follows the noise around you and sends only what rises above it; the marker shows where.',
   'voiceSettings.sensitivityAlways': 'Always on',
   'voiceSettings.sensitivityDb': '{db} dB',
   'voiceSettings.sensitivityHint':

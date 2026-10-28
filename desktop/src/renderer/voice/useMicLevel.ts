@@ -9,14 +9,23 @@
  */
 
 import { useEffect, useState } from 'react';
-import { captureOptions, type CaptureSettings } from './settings';
+import { captureOptions, levelToDb, NoiseFloor, type CaptureSettings } from './settings';
 import { buildVoiceGraph, peakOf, VOICE_SAMPLE_RATE, type VoiceGraph } from './pipeline';
 
 /** How much of the level falls away per frame, so the meter settles rather than flickers. */
 const DECAY = 0.92;
 
-export function useMicLevel(settings: CaptureSettings): { level: number; error: string | null } {
+export interface MicLevel {
+  /** 0 to 1, after suppression. */
+  level: number;
+  /** Where automatic sensitivity would cut, in dBFS, from the same sound. */
+  autoThreshold: number;
+  error: string | null;
+}
+
+export function useMicLevel(settings: CaptureSettings): MicLevel {
   const [level, setLevel] = useState(0);
+  const [autoThreshold, setAutoThreshold] = useState(new NoiseFloor().threshold);
   const [error, setError] = useState<string | null>(null);
   const { microphoneId, echoCancellation, noiseSuppression, autoGainControl } = settings;
 
@@ -51,9 +60,12 @@ export function useMicLevel(settings: CaptureSettings): { level: number; error: 
         const samples = new Float32Array(analyser.fftSize);
 
         let shown = 0;
+        const floor = new NoiseFloor();
         const tick = () => {
-          shown = Math.max(peakOf(analyser, samples), shown * DECAY);
+          const peak = peakOf(analyser, samples);
+          shown = Math.max(peak, shown * DECAY);
           setLevel(shown);
+          setAutoThreshold(Math.round(floor.update(levelToDb(peak), performance.now())));
           raf = requestAnimationFrame(tick);
         };
         tick();
@@ -72,5 +84,5 @@ export function useMicLevel(settings: CaptureSettings): { level: number; error: 
     };
   }, [microphoneId, echoCancellation, noiseSuppression, autoGainControl]);
 
-  return { level, error };
+  return { level, autoThreshold, error };
 }

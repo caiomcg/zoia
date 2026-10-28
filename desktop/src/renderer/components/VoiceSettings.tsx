@@ -67,16 +67,23 @@ function Segmented<T extends string>({
  * The level, with the sensitivity as a marker dragged across it: what is
  * left of the marker is dimmed, and never sent. Push to talk has no marker.
  */
-function LevelMeter({ settings, level }: { settings: VoiceSettings; level: number }) {
+function LevelMeter({
+  settings,
+  level,
+  autoThreshold,
+}: {
+  settings: VoiceSettings;
+  level: number;
+  autoThreshold: number;
+}) {
   const t = useT();
   const sensing = settings.inputMode === 'voiceActivity';
-  const always = settings.sensitivity <= SENSITIVITY_MIN;
+  const auto = settings.autoSensitivity;
+  const always = !auto && settings.sensitivity <= SENSITIVITY_MIN;
+  const cut = auto ? autoThreshold : settings.sensitivity;
   const lit = Math.round(dbFraction(levelToDb(level)) * METER_SEGMENTS);
-  const threshold =
-    sensing && !always ? Math.round(dbFraction(settings.sensitivity) * METER_SEGMENTS) : 0;
-  const value = always
-    ? t('voiceSettings.sensitivityAlways')
-    : t('voiceSettings.sensitivityDb', { db: settings.sensitivity });
+  const threshold = sensing && !always ? Math.round(dbFraction(cut) * METER_SEGMENTS) : 0;
+  const value = sensitivityValue(t, settings, autoThreshold);
 
   return (
     <div className="voice-level">
@@ -95,7 +102,15 @@ function LevelMeter({ settings, level }: { settings: VoiceSettings; level: numbe
           />
         ))}
       </div>
-      {sensing && (
+      {/* Automatic: the marker follows the room on its own, and is not dragged. */}
+      {sensing && auto && (
+        <span
+          className="voice-threshold-auto"
+          style={{ left: `${dbFraction(cut) * 100}%` }}
+          aria-hidden="true"
+        />
+      )}
+      {sensing && !auto && (
         <input
           type="range"
           className="voice-threshold"
@@ -113,6 +128,20 @@ function LevelMeter({ settings, level }: { settings: VoiceSettings; level: numbe
       )}
     </div>
   );
+}
+
+/** "Automatic · −42 dB", "Always on" or "−42 dB": where the sensitivity cuts. */
+function sensitivityValue(
+  t: ReturnType<typeof useT>,
+  settings: VoiceSettings,
+  autoThreshold: number,
+): string {
+  if (settings.autoSensitivity) {
+    return `${t('voiceSettings.sensitivityAuto')} · ${t('voiceSettings.sensitivityDb', { db: autoThreshold })}`;
+  }
+  return settings.sensitivity <= SENSITIVITY_MIN
+    ? t('voiceSettings.sensitivityAlways')
+    : t('voiceSettings.sensitivityDb', { db: settings.sensitivity });
 }
 
 /** The shortcuts main holds, and recording a new one. */
@@ -229,7 +258,9 @@ export default function VoiceSettingsSection() {
   const levelHint = mic.error
     ? mic.error
     : sensing
-      ? t('voiceSettings.sensitivityHint')
+      ? settings.autoSensitivity
+        ? t('voiceSettings.sensitivityAutoHint')
+        : t('voiceSettings.sensitivityHint')
       : pushToTalk
         ? t('voiceSettings.pushToTalkHint', { keys: pushToTalk })
         : t('voiceSettings.pushToTalkUnset');
@@ -278,13 +309,24 @@ export default function VoiceSettingsSection() {
             </span>
             {sensing && (
               <span className="voice-value">
-                {settings.sensitivity <= SENSITIVITY_MIN
-                  ? t('voiceSettings.sensitivityAlways')
-                  : t('voiceSettings.sensitivityDb', { db: settings.sensitivity })}
+                {sensitivityValue(t, settings, mic.autoThreshold)}
               </span>
             )}
           </div>
-          <LevelMeter settings={settings} level={mic.level} />
+          <LevelMeter settings={settings} level={mic.level} autoThreshold={mic.autoThreshold} />
+          {sensing && (
+            <label className="voice-toggle voice-toggle-compact">
+              <span>{t('voiceSettings.sensitivityAutoToggle')}</span>
+              <input
+                type="checkbox"
+                role="switch"
+                checked={settings.autoSensitivity}
+                onChange={(event) =>
+                  setVoiceSettings({ ...settings, autoSensitivity: event.target.checked })
+                }
+              />
+            </label>
+          )}
           <p className={`voice-card-note${mic.error ? ' settings-error' : ' muted'}`}>
             {levelHint}
           </p>

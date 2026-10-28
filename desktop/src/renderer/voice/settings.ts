@@ -32,6 +32,8 @@ export interface VoiceSettings {
    * Discord's slider. SENSITIVITY_MIN sends everything.
    */
   sensitivity: number;
+  /** Sensitivity follows the room's noise (NoiseFloor) instead of the slider. */
+  autoSensitivity: boolean;
   inputMode: InputMode;
 }
 
@@ -64,6 +66,7 @@ const DEFAULTS: VoiceSettings = {
   echoCancellation: true,
   autoGainControl: true,
   sensitivity: SENSITIVITY_MIN,
+  autoSensitivity: true,
   inputMode: 'voiceActivity',
 };
 
@@ -93,6 +96,10 @@ export function parseVoiceSettings(raw: string | null, microphoneId: string | nu
       typeof stored.sensitivity === 'number' && Number.isFinite(stored.sensitivity)
         ? Math.min(SENSITIVITY_MAX, Math.max(SENSITIVITY_MIN, stored.sensitivity))
         : DEFAULTS.sensitivity,
+    autoSensitivity:
+      typeof stored.autoSensitivity === 'boolean'
+        ? stored.autoSensitivity
+        : DEFAULTS.autoSensitivity,
     inputMode: stored.inputMode === 'pushToTalk' ? 'pushToTalk' : 'voiceActivity',
   };
 }
@@ -151,4 +158,38 @@ export function captureOptions(settings: CaptureSettings): AudioCaptureOptions {
     autoGainControl: settings.autoGainControl,
     channelCount: 1,
   };
+}
+
+/** Automatic sensitivity: how far above the room's noise a voice must be, in dB. */
+export const AUTO_MARGIN_DB = 15;
+/** Its range: never so low it sends the room, nor so high it eats a quiet voice. */
+export const AUTO_MIN_DB = -58;
+export const AUTO_MAX_DB = -28;
+/** How fast the floor rises, in dB a second: slowly, so talking does not lift it. */
+const FLOOR_RISE_DB_S = 1.5;
+/** How fast it falls to a quieter room, as a share of the gap a second. */
+const FLOOR_FALL_S = 8;
+
+/**
+ * The room's noise, tracked from the level: it falls quickly to anything
+ * quieter, so a pause between words resets it, and rises slowly, so a long
+ * sentence does not drag it up to the voice. The threshold sits a margin
+ * above it.
+ */
+export class NoiseFloor {
+  private floor = AUTO_MIN_DB - AUTO_MARGIN_DB;
+  private last: number | null = null;
+
+  /** Feeds one level, in dBFS, at `now` in ms; returns the threshold. */
+  update(db: number, now: number): number {
+    const dt = this.last === null ? 0 : Math.min(1, Math.max(0, (now - this.last) / 1000));
+    this.last = now;
+    if (db < this.floor) this.floor += (db - this.floor) * Math.min(1, dt * FLOOR_FALL_S);
+    else this.floor = Math.min(db, this.floor + FLOOR_RISE_DB_S * dt);
+    return this.threshold;
+  }
+
+  get threshold(): number {
+    return Math.min(AUTO_MAX_DB, Math.max(AUTO_MIN_DB, this.floor + AUTO_MARGIN_DB));
+  }
 }

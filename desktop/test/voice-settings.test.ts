@@ -7,8 +7,12 @@ import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   captureOptions,
+  AUTO_MARGIN_DB,
+  AUTO_MAX_DB,
+  AUTO_MIN_DB,
   dbFraction,
   levelToDb,
+  NoiseFloor,
   parseVoiceSettings,
   SENSITIVITY_MIN,
 } from '../src/renderer/voice/settings.ts';
@@ -21,6 +25,7 @@ describe('parseVoiceSettings', () => {
       echoCancellation: true,
       autoGainControl: true,
       sensitivity: SENSITIVITY_MIN,
+      autoSensitivity: true,
       inputMode: 'voiceActivity',
     });
   });
@@ -35,6 +40,7 @@ describe('parseVoiceSettings', () => {
       echoCancellation: false,
       autoGainControl: false,
       sensitivity: -40,
+      autoSensitivity: false,
       inputMode: 'pushToTalk',
     });
     assert.deepEqual(parseVoiceSettings(stored, ''), {
@@ -43,6 +49,7 @@ describe('parseVoiceSettings', () => {
       echoCancellation: false,
       autoGainControl: false,
       sensitivity: -40,
+      autoSensitivity: false,
       inputMode: 'pushToTalk',
     });
   });
@@ -105,5 +112,38 @@ describe('the sensitivity scale', () => {
 
   test('half the amplitude is about 6 dB down', () => {
     assert.ok(Math.abs(levelToDb(0.5) + 6.02) < 0.01);
+  });
+});
+
+describe('automatic sensitivity', () => {
+  /** Feeds `db` every 10 ms for `seconds`, as the gate does; returns the threshold. */
+  function hold(floor: NoiseFloor, db: number, seconds: number, from = 0): number {
+    let threshold = floor.threshold;
+    for (let ms = from; ms <= from + seconds * 1000; ms += 10) threshold = floor.update(db, ms);
+    return threshold;
+  }
+
+  test('settles a margin above a steady room', () => {
+    const floor = new NoiseFloor();
+    assert.ok(Math.abs(hold(floor, -45, 30) - (-45 + AUTO_MARGIN_DB)) < 0.5);
+  });
+
+  test('a sentence does not drag the threshold up to the voice', () => {
+    const floor = new NoiseFloor();
+    const quiet = hold(floor, -50, 30);
+    const talking = hold(floor, -20, 3, 30_000);
+    assert.ok(talking - quiet < 6, `rose ${talking - quiet} dB in 3 s of talking`);
+    assert.ok(talking < -20, 'the voice stays above it');
+  });
+
+  test('a quieter room brings it back down within a pause', () => {
+    const floor = new NoiseFloor();
+    hold(floor, -35, 30);
+    assert.ok(hold(floor, -55, 0.5, 30_000) <= -55 + AUTO_MARGIN_DB + 1);
+  });
+
+  test('stays inside its range, however loud or silent the room', () => {
+    assert.equal(hold(new NoiseFloor(), -5, 60), AUTO_MAX_DB);
+    assert.equal(hold(new NoiseFloor(), -90, 60), AUTO_MIN_DB);
   });
 });

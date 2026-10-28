@@ -3089,6 +3089,25 @@ button.danger {
   appearance: none;
 }
 
+/* Automatic sensitivity's marker: moved by the room, not by hand. */
+.voice-threshold-auto {
+  position: absolute;
+  top: -4px;
+  bottom: -4px;
+  width: 4px;
+  margin-left: -2px;
+  background: var(--muted);
+  border-radius: 2px;
+  box-shadow: 0 0 0 2px var(--surface-2);
+  transition: left 200ms ease;
+  pointer-events: none;
+}
+
+.voice-toggle-compact {
+  font-size: 12px;
+  color: var(--muted);
+}
+
 .voice-threshold:focus-visible {
   outline: none;
 }
@@ -3258,6 +3277,98 @@ button.danger {
 
 .member-voice + .member-camera {
   margin-left: 0;
+}
+
+/* Voice connected: the channel your voice goes to, and leaving it. */
+.voice-panel {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 10px 8px 12px;
+  background: var(--surface-2);
+  border-top: 1px solid var(--border);
+}
+
+.voice-panel-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.25;
+}
+
+.voice-panel-state {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--warn);
+}
+
+.voice-panel.connected .voice-panel-state {
+  color: var(--live);
+}
+
+.voice-panel-channel {
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.voice-panel .sidebar-leave {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  color: var(--muted);
+}
+
+.voice-panel .sidebar-leave:hover {
+  color: var(--danger);
+  background: var(--raised);
+}
+
+/* You, as one card: the name gets every pixel the buttons leave. */
+.sidebar-footer .sidebar-me-card {
+  display: flex;
+  flex: 1;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+  margin: -4px 0 -4px -4px;
+  padding: 4px;
+  font: inherit;
+  color: var(--text);
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.sidebar-footer .sidebar-me-card:not(:disabled):hover,
+.sidebar-footer .sidebar-me-card:focus-visible {
+  background: var(--raised);
+}
+
+.sidebar-footer .sidebar-me-card:disabled {
+  cursor: default;
+}
+
+.sidebar-me-card .sidebar-name {
+  flex: none;
+}
+
+/* Three buttons beside your name, kept narrow so the name is not. */
+.sidebar-footer .sidebar-settings {
+  width: 30px;
+  height: 30px;
+}
+
+.sidebar-footer:has(.sidebar-me-card) {
+  gap: 2px;
 }
 
 /* Your microphone or your sound, off. */

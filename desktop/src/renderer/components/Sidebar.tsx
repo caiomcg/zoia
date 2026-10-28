@@ -496,6 +496,7 @@ export default function Sidebar({
       : {};
 
   // Someone who leaves fades out rather than vanishing; see presence.ts.
+  const currentChannelName = channels.find((c) => c.id === currentChannel)?.name ?? '';
   const shownMembers = useLeaving(liveMembers, (m) => m.identity, currentChannel ?? '');
 
   // The width while the edge is being dragged; null otherwise.
@@ -881,6 +882,30 @@ export default function Sidebar({
         )}
       </div>
 
+      {/* Where your voice is going, and the way out of it, as Discord has it:
+          above your own card, so your name keeps its room. */}
+      {!collapsed && currentChannel !== null && (
+        <div className={`voice-panel${voice?.state === 'on' ? ' connected' : ''}`}>
+          <span className="voice-panel-text">
+            <span className="voice-panel-state">
+              <IconSignal />
+              {voice?.state === 'on' ? t('voice.connected') : t('voice.connecting')}
+            </span>
+            <span className="voice-panel-channel" title={currentChannelName}>
+              {currentChannelName}
+            </span>
+          </span>
+          <button
+            className="icon-button sidebar-settings sidebar-leave"
+            onClick={onLeaveChannel}
+            title={t('sidebar.leave')}
+            aria-label={t('sidebar.leave')}
+          >
+            <IconLeave />
+          </button>
+        </div>
+      )}
+
       <div className="sidebar-footer">
         {collapsed ? (
           // Collapsed, your picture is all there is: clicking it opens the
@@ -905,36 +930,32 @@ export default function Sidebar({
               </span>
             )}
           </button>
-        ) : presence?.chosen ? (
-          // Your status is chosen from your picture, as in most chat apps.
+        ) : (
+          // You: picture, name and status as one card, which chooses your
+          // status, as in most chat apps.
           <button
-            className="sidebar-me"
+            className="sidebar-me-card"
             onClick={(event) => setStatusAnchor(event.currentTarget.getBoundingClientRect())}
-            title={t('presence.choose')}
-            aria-label={t('presence.choose')}
-            aria-haspopup="menu"
-            aria-expanded={statusAnchor !== null}
+            disabled={!presence?.chosen}
+            title={presence?.chosen ? `${myName}\n${t('presence.choose')}` : myName}
+            aria-label={presence?.chosen ? t('presence.choose') : myName}
+            aria-haspopup={presence?.chosen ? 'menu' : undefined}
+            aria-expanded={presence?.chosen ? statusAnchor !== null : undefined}
           >
             <Avatar
               name={myName}
               identity={myIdentity}
               live={false}
               role={myRole}
-              status={presence.own}
+              status={presence?.own}
             />
-          </button>
-        ) : (
-          <Avatar name={myName} identity={myIdentity} live={false} role={myRole} />
-        )}
-        {!collapsed && (
-          <span className="sidebar-who">
-            <span className="sidebar-name" title={myName}>
-              {myName}
+            <span className="sidebar-who">
+              <span className="sidebar-name">{myName}</span>
+              {presence?.own && (
+                <span className="sidebar-status">{t(`presence.${presence.own}`)}</span>
+              )}
             </span>
-            {presence?.own && (
-              <span className="sidebar-status">{t(`presence.${presence.own}`)}</span>
-            )}
-          </span>
+          </button>
         )}
         {/* In voice, as Discord has them: your microphone, and every sound. */}
         {!collapsed && voice && voice.state === 'on' && (
@@ -958,17 +979,6 @@ export default function Sidebar({
               <IconHeadset off={voice.deafened} />
             </button>
           </>
-        )}
-        {/* Only while in a channel: outside one there is nothing to leave. */}
-        {!collapsed && currentChannel !== null && (
-          <button
-            className="icon-button sidebar-settings sidebar-leave"
-            onClick={onLeaveChannel}
-            title={t('sidebar.leave')}
-            aria-label={t('sidebar.leave')}
-          >
-            <IconLeave />
-          </button>
         )}
         {!collapsed && (
           <button
@@ -1240,6 +1250,20 @@ function MemberRow({
 }
 
 /** Headphones: voice. Struck through, deafened. */
+/** Bars rising, as a connection's strength is drawn. */
+function IconSignal() {
+  return (
+    <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+      <path
+        d="M4 20v-3M9 20v-7M14 20V9M19 20V4"
+        stroke="currentColor"
+        strokeWidth="2.4"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
 function IconHeadset({ off = false }: { off?: boolean }) {
   return (
     <svg
