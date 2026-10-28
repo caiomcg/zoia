@@ -26,6 +26,8 @@ import type {
   ChatPerson,
   ChatSendExtras,
   ChatEvent,
+  Presence,
+  PresenceState,
 } from '../shared/ipc';
 
 export interface ZoiaBridge {
@@ -191,6 +193,11 @@ export interface ZoiaBridge {
     onEvent(cb: (event: ChatEvent) => void): () => void;
     /** An author's picture as a data: URL, or null when they have none. */
     avatar(accountId: string, version: string): Promise<string | null>;
+  };
+  /** Who is on the server (ADR 0038); changes arrive through chat.onEvent. */
+  presence: {
+    get(): Promise<ActionOutcome<PresenceState>>;
+    set(status: Presence): Promise<ActionOutcome<{ status: Presence }>>;
   };
   /** Sends a renderer-side failure to the server. */
   report(entry: { kind: string; message: string; stack?: string; context?: string }): void;

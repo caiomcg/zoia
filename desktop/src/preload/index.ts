@@ -133,6 +133,10 @@ const bridge: ZoiaBridge = {
     },
     avatar: (accountId, version) => ipcRenderer.invoke(IPC.chatAvatar, accountId, version),
   },
+  presence: {
+    get: () => ipcRenderer.invoke(IPC.presenceGet),
+    set: (status) => ipcRenderer.invoke(IPC.presenceSet, status),
+  },
   report: (entry) => ipcRenderer.send(IPC.report, entry),
   gpu: {
     status: () => ipcRenderer.invoke(IPC.gpuStatus),

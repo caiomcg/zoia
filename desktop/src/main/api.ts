@@ -29,6 +29,8 @@ import type {
   ChatAuthor,
   ChatPerson,
   ChatSendExtras,
+  Presence,
+  PresenceState,
 } from '../shared/ipc';
 import { getServerUrl } from './config';
 
@@ -464,6 +466,26 @@ export function chatRead(chatId: string, messageId: string) {
       body: JSON.stringify({ messageId }),
     }).then(() => undefined),
   );
+}
+
+// ---- presence (ADR 0038) ---------------------------------------------------
+
+export function presenceGet() {
+  return attempt(call<PresenceState>('/api/presence'));
+}
+
+export function presenceSet(status: Presence) {
+  return attempt(
+    call<{ status: Presence }>('/api/presence', {
+      method: 'PUT',
+      body: JSON.stringify({ status }),
+    }),
+  );
+}
+
+/** Whether this machine has gone untouched; thrown away if it cannot be said. */
+export async function presenceIdle(idle: boolean): Promise<void> {
+  await call('/api/presence/idle', { method: 'POST', body: JSON.stringify({ idle }) });
 }
 
 /** An author's picture by account, as fetchAvatar does it by device. */

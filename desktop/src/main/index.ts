@@ -5,6 +5,7 @@ import {
   Menu,
   MessageChannelMain,
   type MessagePortMain,
+  powerMonitor,
   screen,
   session,
   shell,
@@ -19,12 +20,13 @@ import * as audioCapture from './audio';
 import * as encoder from './encoder';
 import * as capture from './capture';
 import { createChatStream } from './chat-stream';
+import { createIdleWatch } from './idle-watch';
 import { handleMediaScheme, registerMediaScheme, saveMedia } from './chat-media';
 import { getCloseToTray, installTray, setCloseToTray, showWindow } from './tray';
 import { isDevToolsEnabled, openDevTools, setDevToolsEnabled } from './devtools';
 import * as language from './language';
 import { isLanguagePreference } from '../shared/i18n';
-import { CHAT_MEDIA_MAX_BYTES, IPC } from '../shared/ipc';
+import { CHAT_MEDIA_MAX_BYTES, IDLE_AWAY_MS, IPC, PRESENCES } from '../shared/ipc';
 import type { ChatSendExtras, GpuStatus } from '../shared/ipc';
 import {
   checkForUpdate,
@@ -444,9 +446,21 @@ function registerIpc(): void {
       : null,
   );
 
+  // Whether this machine has gone untouched, which makes its person away
+  // (ADR 0038). Watched while the chat's stream runs, since that stream is
+  // what puts them on the server at all.
+  const idleWatch = createIdleWatch({
+    idleMs: () => powerMonitor.getSystemIdleTime() * 1000,
+    report: (idle) => api.presenceIdle(idle),
+    thresholdMs: IDLE_AWAY_MS,
+  });
+  powerMonitor.on('lock-screen', () => idleWatch.setLocked(true));
+  powerMonitor.on('unlock-screen', () => idleWatch.setLocked(false));
+
   // Text chat (ADR 0036). The stream runs while the window asks for it; it
   // ends with the session, which signing out ends.
   const chatStream = createChatStream((event) => {
+    if (event.type === 'stream' && event.connected) idleWatch.connected();
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(IPC.chatEvent, event);
   });
   ipcMain.handle(IPC.chatList, () => api.chatList());
@@ -501,16 +515,30 @@ function registerIpc(): void {
     api.chatRead(String(chatId), String(messageId)),
   );
   ipcMain.handle(IPC.chatListen, (_event, on: unknown) => {
-    if (on) chatStream.start();
-    else chatStream.stop();
+    if (on) {
+      chatStream.start();
+      idleWatch.start();
+    } else {
+      chatStream.stop();
+      idleWatch.stop();
+    }
   });
+  ipcMain.handle(IPC.presenceGet, () => api.presenceGet());
+  ipcMain.handle(IPC.presenceSet, (_event, status: unknown) =>
+    PRESENCES.find((p) => p === status)
+      ? api.presenceSet(status as (typeof PRESENCES)[number])
+      : { ok: false, error: 'invalid_presence' },
+  );
   ipcMain.handle(IPC.chatAvatar, (_event, accountId: unknown, version: unknown) =>
     typeof accountId === 'string' && typeof version === 'string'
       ? api.fetchAccountAvatar(accountId, version)
       : null,
   );
   pairing.onStatusChange((status) => {
-    if (!status.paired) chatStream.stop();
+    if (!status.paired) {
+      chatStream.stop();
+      idleWatch.stop();
+    }
   });
 
   ipcMain.handle(

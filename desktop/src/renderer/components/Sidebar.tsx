@@ -15,8 +15,10 @@ import type { AccountRole, RoomInfo } from '../../shared/ipc';
 import type { GridTarget } from './RemoteGrid';
 import Avatar from './Avatar';
 import { IconEye } from './Player';
+import StatusMenu from './StatusMenu';
 import { useT } from '../i18n';
 import { useLeaving } from '../presence';
+import type { PresenceController } from '../chat/usePresence';
 
 /**
  * Who is in the room, and who is sharing. Your own name sits in the footer,
@@ -350,6 +352,8 @@ export default function Sidebar({
   onWatchBroadcast,
   onToggleCamera,
   chats,
+  people,
+  presence,
   onKickMember,
   collapsed,
   onCollapsedChange,
@@ -385,6 +389,10 @@ export default function Sidebar({
   onToggleCamera: (identity: string) => void;
   /** The text chats (ADR 0036), listed under the channels. */
   chats?: (collapsed: boolean) => ReactNode;
+  /** Everyone on the server and their status (ADR 0038), under the chats. */
+  people?: (collapsed: boolean) => ReactNode;
+  /** Your status, on your picture in the footer, which is where it is chosen. */
+  presence?: PresenceController;
   /** Admins only: takes someone off the server, chat and all (ADR 0037). */
   onKickMember?: (identity: string, name: string) => void;
   /** Down to avatars, names in tooltips. */
@@ -504,6 +512,10 @@ export default function Sidebar({
   const [channelsFolded, toggleChannelsFolded, unfoldChannels] = useFolded('channels');
   const shownChannels =
     collapsed || !channelsFolded ? channels : channels.filter((c) => c.id === currentChannel);
+
+  // Your picture in the footer opens your status, from where it sits.
+  const [statusAnchor, setStatusAnchor] = useState<DOMRect | null>(null);
+  const closeStatus = useCallback(() => setStatusAnchor(null), []);
 
   // Right-clicking someone an admin may kick opens what they can do to them.
   const [menu, setMenu] = useState<{
@@ -831,6 +843,8 @@ export default function Sidebar({
 
         {chats?.(collapsed)}
 
+        {people?.(collapsed)}
+
         {/* Before the first channel poll lands, or against a server without
             channels, the room's people still need a home. */}
         {channels.length === 0 && (
@@ -854,19 +868,48 @@ export default function Sidebar({
             title={`${myName}\n${t('sidebar.expand')}`}
             aria-label={t('sidebar.expand')}
           >
-            <Avatar name={myName} identity={myIdentity} live={false} role={myRole} />
+            <Avatar
+              name={myName}
+              identity={myIdentity}
+              live={false}
+              role={myRole}
+              status={presence?.own}
+            />
             {settingsBadge > 0 && (
               <span className="settings-dot" aria-hidden="true">
                 {settingsBadge}
               </span>
             )}
           </button>
+        ) : presence?.chosen ? (
+          // Your status is chosen from your picture, as in most chat apps.
+          <button
+            className="sidebar-me"
+            onClick={(event) => setStatusAnchor(event.currentTarget.getBoundingClientRect())}
+            title={t('presence.choose')}
+            aria-label={t('presence.choose')}
+            aria-haspopup="menu"
+            aria-expanded={statusAnchor !== null}
+          >
+            <Avatar
+              name={myName}
+              identity={myIdentity}
+              live={false}
+              role={myRole}
+              status={presence.own}
+            />
+          </button>
         ) : (
           <Avatar name={myName} identity={myIdentity} live={false} role={myRole} />
         )}
         {!collapsed && (
-          <span className="sidebar-name" title={myName}>
-            {myName}
+          <span className="sidebar-who">
+            <span className="sidebar-name" title={myName}>
+              {myName}
+            </span>
+            {presence?.own && (
+              <span className="sidebar-status">{t(`presence.${presence.own}`)}</span>
+            )}
           </span>
         )}
         {/* Only while in a channel: outside one there is nothing to leave. */}
@@ -904,6 +947,14 @@ export default function Sidebar({
           </button>
         )}
       </div>
+      {statusAnchor && presence?.chosen && (
+        <StatusMenu
+          anchor={statusAnchor}
+          chosen={presence.chosen}
+          onChoose={(status) => void presence.choose(status)}
+          onClose={closeStatus}
+        />
+      )}
       {menu && onKickMember && (
         <MemberMenu
           {...menu}

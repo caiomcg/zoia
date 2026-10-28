@@ -242,8 +242,29 @@ export type ChatEvent =
       on: boolean;
       reactor: ChatAuthor;
     }
+  /** Someone's status changed (ADR 0038). */
+  | { type: 'presence'; accountId: string; status: ShownPresence }
   /** The stream itself: connected, or lost and retrying. */
   | { type: 'stream'; connected: boolean };
+
+/**
+ * The status a person chooses for themselves (ADR 0038). Must match
+ * PRESENCES in server/src/accounts.js.
+ */
+export type Presence = 'online' | 'busy' | 'away' | 'invisible';
+export const PRESENCES: readonly Presence[] = ['online', 'busy', 'away', 'invisible'];
+
+/** How someone is shown to everyone else: invisible is offline. */
+export type ShownPresence = 'online' | 'busy' | 'away' | 'offline';
+
+/** Your chosen status, and everyone not offline, by account id. */
+export interface PresenceState {
+  status: Presence;
+  people: Record<string, ShownPresence>;
+}
+
+/** How long the machine goes untouched before someone online shows as away. */
+export const IDLE_AWAY_MS = 5 * 60_000;
 
 export interface TokenResult {
   token: string;
@@ -491,6 +512,8 @@ export const IPC = {
   chatDeleteMessage: 'zoia:chat:deleteMessage',
   chatReact: 'zoia:chat:react',
   chatSaveMedia: 'zoia:chat:saveMedia',
+  presenceGet: 'zoia:presence:get',
+  presenceSet: 'zoia:presence:set',
   stageGet: 'zoia:stage:get',
   stageClaim: 'zoia:stage:claim',
   stageRelease: 'zoia:stage:release',

@@ -12,7 +12,9 @@ import RemoteGrid, {
 import Sidebar, { useSidebarCollapsed } from './components/Sidebar';
 import ChatList from './components/ChatList';
 import ChatView from './components/ChatView';
+import PeopleList from './components/PeopleList';
 import { useChat } from './chat/useChat';
+import { usePresence } from './chat/usePresence';
 import SourcePicker from './components/SourcePicker';
 import SettingsDialog, { type Section as SettingsSection } from './components/SettingsDialog';
 import ReleaseNotesDialog from './components/ReleaseNotesDialog';
@@ -628,6 +630,8 @@ export default function App() {
     visible: chatShownIfEnabled && focused,
   });
   const chatShown = chat.enabled && chatShownIfEnabled;
+  // Who is on the server (ADR 0038), told on the chat's stream.
+  const presence = usePresence({ usable: usable && chat.enabled, me: accountId });
 
   if (!status) return <Splash />;
   if (!status.paired) return <AuthScreen status={status} onSignedIn={setStatus} />;
@@ -1190,6 +1194,19 @@ export default function App() {
                       setView('chat');
                     }}
                     onError={(code) => setChatError(chatErrorText(code))}
+                  />
+                )
+              : undefined
+          }
+          presence={presence.enabled ? presence : undefined}
+          people={
+            presence.enabled
+              ? (collapsed) => (
+                  <PeopleList
+                    people={chat.people}
+                    presence={presence}
+                    me={accountId}
+                    collapsed={collapsed}
                   />
                 )
               : undefined
