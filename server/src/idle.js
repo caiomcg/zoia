@@ -39,9 +39,11 @@ export async function kick(stage, identity, reason, { graceMs = KICK_GRACE_MS } 
 
 /**
  * Kicks whoever has been in a channel for `idleMs` neither sharing (a screen,
- * a camera, a hardware broadcast) nor watching anyone's picture. Watching is
- * read from the attribute each app announces (src/watching in the desktop),
- * since LiveKit tells nobody who subscribes to what.
+ * a camera, a hardware broadcast), nor talking, nor watching anyone's
+ * picture. Watching and voice are read from attributes on the participant,
+ * since LiveKit tells nobody who subscribes to what. Everyone in a channel is
+ * in voice (ADR 0039), so being in it is no activity: talking is having the
+ * microphone on while someone else in voice could hear it.
  *
  * Timers live in memory: a restart gives everyone a fresh `idleMs`, which errs
  * towards keeping people rather than dropping them.
@@ -75,11 +77,13 @@ export function createIdleSweeper({
         const sharing = new Set(
           participants.filter((p) => p.publishing).map((p) => ownerOf(p.identity)),
         );
+        const inVoice = participants.filter((p) => p.voice).length;
         for (const p of participants) {
+          const talking = p.audible && inVoice > 1;
           if (ownerOf(p.identity) !== p.identity) continue;
           const key = `${channel.id}\n${p.identity}`;
           seen.add(key);
-          if (sharing.has(p.identity) || p.watching || !lastActive.has(key)) {
+          if (sharing.has(p.identity) || p.watching || talking || !lastActive.has(key)) {
             lastActive.set(key, now());
           } else if (now() - lastActive.get(key) >= idleMs) {
             lastActive.delete(key);

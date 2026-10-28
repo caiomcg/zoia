@@ -93,7 +93,7 @@ source; match on "not `MICROPHONE`" instead.
 | `server/src/database.js` | The SQLite database: schema, migrations, transactions, JSON import |
 | `server/src/stores.js` | Opens the database and every store in it, for the server and keytool |
 | `server/src/token.js` | LiveKit AccessToken minting — subscribe-only, always |
-| `server/src/stage.js` | Who may broadcast right now — **the security boundary** |
+| `server/src/stage.js` | Who may broadcast, and who is in voice, right now — **the security boundary** |
 | `server/src/config.js` | Env parsing and validation, fail-fast on startup |
 | `server/src/idle.js` | Disconnecting a machine from its channel, and the sweep that does it to the idle (ADR 0037) |
 | `server/src/devices.js` | One credential per machine signed in to an account |
@@ -113,7 +113,9 @@ source; match on "not `MICROPHONE`" instead.
 1. **Join tokens must never carry `canPublish: true`.** There is one tier of user and nobody
    is a broadcaster by default. Publishing is granted at runtime by `stage.js`, independently
    per participant and only for that participant's slot. `server/test/token.test.js` and
-   `server/test/stage.test.js` guard this.
+   `server/test/stage.test.js` guard this. Voice is granted the same way and covers the
+   microphone alone (`canPublishSources: [MICROPHONE]`, ADR 0039); a microphone-only grant is
+   not a broadcast slot, so never decide who holds one from `canPublish` by itself.
 2. **Never log a secret or an email** — no password, device credential or reset code, and no
    email address — not in the app, not in an error message, not in a debug branch. Log the
    account or device id instead; it is safe and identifies the person.

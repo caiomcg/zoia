@@ -6,7 +6,9 @@
 import { test, describe, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { createStage } from '../src/stage.js';
+import { TrackSource } from 'livekit-server-sdk';
+
+import { createStage, VOICE_ATTRIBUTE } from '../src/stage.js';
 
 let participants;
 let updates;
@@ -14,19 +16,50 @@ let rooms;
 let stage;
 let clock;
 
-function participant(identity, { canPublish = false, name = identity, tracks = [] } = {}) {
-  return { identity, name, permission: { canPublish, canSubscribe: true }, tracks };
+function participant(
+  identity,
+  { canPublish = false, name = identity, tracks = [], sources, voice = false } = {},
+) {
+  return {
+    identity,
+    name,
+    permission: {
+      canPublish,
+      canSubscribe: true,
+      ...(sources ? { canPublishSources: sources } : {}),
+    },
+    tracks,
+    attributes: voice ? { [VOICE_ATTRIBUTE]: '1' } : {},
+  };
 }
+
+/** In voice and holding nothing else: what joinVoice leaves behind. */
+function speaker(identity, options = {}) {
+  return participant(identity, {
+    canPublish: true,
+    sources: [TrackSource.MICROPHONE],
+    voice: true,
+    ...options,
+  });
+}
+
+const microphone = { source: TrackSource.MICROPHONE };
 
 beforeEach(() => {
   participants = [];
   updates = [];
   rooms = {
     listParticipants: async () => participants,
+    // As LiveKit does: a permission replaces the old one whole, while
+    // attributes merge key by key and an empty value removes one.
     updateParticipant: async (room, identity, options) => {
-      updates.push({ identity, permission: options.permission });
+      updates.push({ identity, permission: options.permission, attributes: options.attributes });
       const p = participants.find((x) => x.identity === identity);
-      if (p) p.permission = { ...p.permission, ...options.permission };
+      if (p && options.permission) p.permission = { ...options.permission };
+      if (p && options.attributes) {
+        p.attributes = { ...p.attributes, ...options.attributes };
+        for (const [k, v] of Object.entries(p.attributes)) if (v === '') delete p.attributes[k];
+      }
       return p;
     },
   };
@@ -182,5 +215,99 @@ describe('reporting', () => {
     );
     assert.equal(list[0].publishing, true);
     assert.equal(list[1].canPublish, false);
+  });
+});
+
+describe('voice', () => {
+  test('joining grants the microphone and nothing else', async () => {
+    participants = [participant('alice')];
+    const result = await stage.joinVoice({ id: 'alice', name: 'Alice' });
+
+    assert.equal(result.ok, true);
+    const { permission, attributes } = updates.at(-1);
+    assert.equal(permission.canPublish, true);
+    assert.deepEqual(permission.canPublishSources, [TrackSource.MICROPHONE]);
+    assert.equal(permission.canUpdateMetadata, true, 'renames must survive joining voice');
+    assert.equal(attributes[VOICE_ATTRIBUTE], '1');
+  });
+
+  test('joining from outside the room is refused', async () => {
+    participants = [];
+    const result = await stage.joinVoice({ id: 'alice', name: 'Alice' });
+    assert.equal(result.ok, false);
+    assert.equal(result.reason, 'not_in_room');
+    assert.equal(updates.length, 0);
+  });
+
+  test('someone in voice does not hold a broadcast slot', async () => {
+    participants = [speaker('alice', { tracks: [microphone] })];
+    assert.deepEqual(await stage.broadcasters(), []);
+    assert.equal(await stage.isBroadcaster('alice'), false);
+
+    const [alice] = await stage.participants();
+    assert.equal(alice.canPublish, false);
+    assert.equal(alice.publishing, false, 'a voice is not a broadcast');
+    assert.equal(alice.voice, true);
+  });
+
+  test('claiming from voice lifts the source limit', async () => {
+    participants = [speaker('alice', { tracks: [microphone] })];
+    const result = await stage.claim({ id: 'alice', name: 'Alice' });
+
+    assert.equal(result.ok, true);
+    assert.equal(updates.at(-1).permission.canPublish, true);
+    assert.deepEqual(updates.at(-1).permission.canPublishSources ?? [], []);
+    assert.equal(await stage.isBroadcaster('alice'), true);
+  });
+
+  test('releasing the stage keeps the microphone of someone in voice', async () => {
+    participants = [participant('alice', { canPublish: true, voice: true, tracks: [{}] })];
+    const result = await stage.release({ id: 'alice', name: 'Alice' });
+
+    assert.equal(result.released, true);
+    assert.equal(updates.at(-1).permission.canPublish, true);
+    assert.deepEqual(updates.at(-1).permission.canPublishSources, [TrackSource.MICROPHONE]);
+  });
+
+  test('releasing the stage outside voice still revokes everything', async () => {
+    participants = [participant('alice', { canPublish: true, tracks: [{}] })];
+    await stage.release({ id: 'alice', name: 'Alice' });
+    assert.equal(updates.at(-1).permission.canPublish, false);
+  });
+
+  test('joining voice mid-broadcast does not narrow the broadcast', async () => {
+    participants = [participant('alice', { canPublish: true, tracks: [{}] })];
+    await stage.joinVoice({ id: 'alice', name: 'Alice' });
+
+    assert.equal(updates.at(-1).permission, undefined, 'the broadcast permission must stand');
+    assert.equal(updates.at(-1).attributes[VOICE_ATTRIBUTE], '1');
+  });
+
+  test('leaving voice takes the microphone away', async () => {
+    participants = [speaker('alice')];
+    await stage.leaveVoice({ id: 'alice', name: 'Alice' });
+
+    assert.equal(updates.at(-1).permission.canPublish, false);
+    assert.equal(updates.at(-1).attributes[VOICE_ATTRIBUTE], '');
+    assert.equal((await stage.participants())[0].voice, false);
+  });
+
+  test('leaving voice mid-broadcast leaves the broadcast alone', async () => {
+    participants = [participant('alice', { canPublish: true, voice: true, tracks: [{}] })];
+    await stage.leaveVoice({ id: 'alice', name: 'Alice' });
+
+    assert.equal(updates.at(-1).permission, undefined);
+    assert.equal(await stage.isBroadcaster('alice'), true);
+  });
+
+  test('a camera with its microphone is still a broadcast', async () => {
+    participants = [
+      participant('alice', {
+        canPublish: true,
+        tracks: [{ source: TrackSource.CAMERA }, microphone],
+      }),
+    ];
+    const [alice] = await stage.broadcasters();
+    assert.equal(alice.publishing, true);
   });
 });

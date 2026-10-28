@@ -33,13 +33,27 @@ const VIEW_PERMISSION = {
   canUpdateMetadata: true,
 };
 
+/*
+ * In voice: the microphone and nothing else. LiveKit enforces the source
+ * list, so a voice participant cannot publish a screen or a camera, and
+ * holding it is not holding a broadcast slot. A full claim replaces it,
+ * since PUBLISH_PERMISSION lists no sources and so allows them all.
+ */
+const VOICE_PERMISSION = {
+  canSubscribe: true,
+  canPublish: true,
+  canPublishSources: [TrackSource.MICROPHONE],
+  canPublishData: true,
+  canUpdateMetadata: true,
+};
+
 /**
  * How long a claimed slot may sit without publishing before it is considered
  * stale. This covers the window between claiming and choosing a source.
  */
 const STALE_CLAIM_MS = 20_000;
 
-import { DataPacket_Kind } from 'livekit-server-sdk';
+import { DataPacket_Kind, TrackSource } from 'livekit-server-sdk';
 import { isWhipIdentity, ownerOf, WHIP_SUFFIX } from './whip.js';
 import { AVATAR_ATTRIBUTE } from './avatars.js';
 
@@ -48,6 +62,47 @@ import { AVATAR_ATTRIBUTE } from './avatars.js';
  * Must match WATCHING_ATTRIBUTE in desktop/src/renderer/livekit/watching.ts.
  */
 const WATCHING_ATTRIBUTE = 'zoia.watching';
+
+/**
+ * Who is in voice. The server sets it together with the voice permission, so
+ * nothing is kept here and a participant who leaves takes it with them. The
+ * participant could set it themselves (canUpdateMetadata), which gains them
+ * nothing: a release then grants the microphone, as joining voice would.
+ */
+export const VOICE_ATTRIBUTE = 'zoia.voice';
+
+/** May publish the microphone and nothing else: in voice, not on the stage. */
+function microphoneOnly(permission) {
+  const sources = permission?.canPublishSources ?? [];
+  return sources.length > 0 && sources.every((s) => s === TrackSource.MICROPHONE);
+}
+
+/** Holds a broadcast slot: may publish, and more than a microphone. */
+function holdsSlot(p) {
+  return Boolean(p?.permission?.canPublish) && !microphoneOnly(p.permission);
+}
+
+/**
+ * Sends something other than a voice. A WHIP participant is all broadcast,
+ * since WHIP may label its audio a microphone; a person's own microphone is
+ * either voice or a camera's, and a camera has its own track.
+ */
+function sharing(p) {
+  const tracks = p.tracks ?? [];
+  if (isWhipIdentity(p.identity)) return tracks.length > 0;
+  return tracks.some((t) => t.source !== TrackSource.MICROPHONE);
+}
+
+function inVoice(p) {
+  return p?.attributes?.[VOICE_ATTRIBUTE] === '1';
+}
+
+/** In voice with the microphone on: could be heard right now. */
+function audible(p) {
+  return (
+    inVoice(p) && (p.tracks ?? []).some((t) => t.source === TrackSource.MICROPHONE && !t.muted)
+  );
+}
 
 export function createStage({ rooms, roomName, logger = console, now = () => Date.now() }) {
   // Claim times are a hint for the staleness check only. Losing them (a
@@ -79,7 +134,10 @@ export function createStage({ rooms, roomName, logger = console, now = () => Dat
    * participant only counts as proof they are publishing.
    */
   async function broadcasters() {
-    const participants = await listParticipants();
+    return broadcastersAmong(await listParticipants());
+  }
+
+  function broadcastersAmong(participants) {
     const identities = new Set(
       participants
         .filter((p) => !isWhipIdentity(p.identity))
@@ -94,8 +152,7 @@ export function createStage({ rooms, roomName, logger = console, now = () => Dat
       .map((identity) => {
         const owner = participants.find((p) => p.identity === identity);
         const related = participants.filter((p) => ownerOf(p.identity) === identity);
-        const permitted = Boolean(owner?.permission?.canPublish);
-        const publishing = related.some((p) => (p.tracks ?? []).length > 0);
+        const permitted = holdsSlot(owner);
         const whipPublishing = related.some(
           (p) => isWhipIdentity(p.identity) && (p.tracks ?? []).length > 0,
         );
@@ -103,7 +160,7 @@ export function createStage({ rooms, roomName, logger = console, now = () => Dat
         return {
           identity,
           name: owner?.name || related[0]?.name || identity,
-          publishing: publishing || whipPublishing,
+          publishing: related.some(sharing),
         };
       })
       .filter(Boolean);
@@ -124,6 +181,13 @@ export function createStage({ rooms, roomName, logger = console, now = () => Dat
 
   async function setPermission(identity, permission) {
     await rooms.updateParticipant(roomName, identity, { permission });
+  }
+
+  async function setVoice(identity, joined, permission) {
+    await rooms.updateParticipant(roomName, identity, {
+      ...(permission ? { permission } : {}),
+      attributes: { [VOICE_ATTRIBUTE]: joined ? '1' : '' },
+    });
   }
 
   return {
@@ -179,8 +243,11 @@ export function createStage({ rooms, roomName, logger = console, now = () => Dat
         return {
           identity: p.identity,
           name: p.name || p.identity,
-          canPublish: Boolean(p.permission?.canPublish),
-          publishing: (p.tracks ?? []).length > 0,
+          // Holds a broadcast slot; a voice participant's microphone is not one.
+          canPublish: holdsSlot(p),
+          publishing: sharing(p),
+          voice: inVoice(p),
+          audible: audible(p),
           joinedAt: Number(p.joinedAt ?? 0),
           // Watching someone's picture, for the idle sweep (src/idle.js).
           watching: Boolean(p.attributes?.[WATCHING_ATTRIBUTE]),
@@ -211,17 +278,44 @@ export function createStage({ rooms, roomName, logger = console, now = () => Dat
     async release(user) {
       claimedAt.delete(user.id);
 
+      let voice = false;
       try {
-        const active = (await broadcasters()).some((b) => b.identity === user.id);
+        const participants = await listParticipants();
+        const active = broadcastersAmong(participants).some((b) => b.identity === user.id);
         if (!active) return { ok: true, released: false };
+        voice = inVoice(participants.find((p) => p.identity === user.id));
       } catch {
         // Still attempt the revoke: leaving a permission behind is worse than
-        // an idempotent update against a participant that already left.
+        // an idempotent update against a participant that already left. Not
+        // knowing whether they are in voice, they lose the microphone too.
       }
-      await setPermission(user.id, VIEW_PERMISSION).catch(() => {});
+      // Someone in voice keeps their microphone when they stop sharing.
+      await setPermission(user.id, voice ? VOICE_PERMISSION : VIEW_PERMISSION).catch(() => {});
       await dropWhip(user.id);
       logger.info(`[stage] ${user.name} (${user.id}) released their broadcast slot`);
       return { ok: true, released: true };
+    },
+
+    /**
+     * Joins voice: the microphone, and the attribute that says so. Someone
+     * holding a slot may already publish it, and narrowing them to the
+     * microphone would end their broadcast, so they only get the attribute.
+     */
+    async joinVoice(user) {
+      const current = (await listParticipants()).find((p) => p.identity === user.id);
+      if (!current) return { ok: false, reason: 'not_in_room' };
+      await setVoice(user.id, true, holdsSlot(current) ? null : VOICE_PERMISSION);
+      logger.info(`[voice] ${user.name} (${user.id}) joined voice`);
+      return { ok: true };
+    },
+
+    /** Leaves voice. A broadcast goes on; otherwise the microphone goes. */
+    async leaveVoice(user) {
+      const current = (await listParticipants()).find((p) => p.identity === user.id);
+      if (!current) return { ok: true };
+      await setVoice(user.id, false, holdsSlot(current) ? null : VIEW_PERMISSION);
+      logger.info(`[voice] ${user.name} (${user.id}) left voice`);
+      return { ok: true };
     },
 
     /** Used when a participant leaves without releasing. */

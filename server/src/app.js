@@ -842,6 +842,30 @@ export function createApp({
     }
   });
 
+  // Voice grants the microphone alone, at runtime like the stage; the join
+  // token still publishes nothing. See ADR 0039.
+  app.post('/api/voice/join', requireSession, async (req, res, next) => {
+    try {
+      const channel = await channelOf(req, res);
+      if (!channel) return;
+      const result = await channel.stage.joinVoice(req.user);
+      if (!result.ok) return res.status(409).json({ error: result.reason });
+      res.json({ ok: true });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  app.post('/api/voice/leave', requireSession, async (req, res, next) => {
+    try {
+      const channel = await channelOf(req, res);
+      if (!channel) return;
+      res.json(await channel.stage.leaveVoice(req.user));
+    } catch (err) {
+      next(err);
+    }
+  });
+
   // ---- hardware-encoded publishing ---------------------------------------
   // The desktop app asks for somewhere to push NVENC output, because
   // Chromium's own WebRTC encoder is software-only on Windows. Claiming the
