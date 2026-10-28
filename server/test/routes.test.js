@@ -4,6 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import request from 'supertest';
+import { TrackSource } from 'livekit-server-sdk';
 
 import { createApp } from '../src/app.js';
 import { PASSWORD, signIn, testStores } from './people.js';
@@ -34,7 +35,8 @@ function buildApp(config = {}) {
     listParticipants: async () => roomsStub.participants,
     updateParticipant: async (_room, identity, options) => {
       const p = roomsStub.participants.find((x) => x.identity === identity);
-      if (p) p.permission = { ...p.permission, ...options.permission };
+      if (p && options.permission) p.permission = { ...options.permission };
+      if (p && options.attributes) p.attributes = { ...p.attributes, ...options.attributes };
       return p;
     },
     removeParticipant: async (_room, identity) => {
@@ -267,6 +269,53 @@ describe('the stage', () => {
     assert.equal(res.status, 200);
     assert.equal(res.body.broadcasters[0].name, 'Alice');
     assert.equal(res.body.participants.length, 2);
+  });
+});
+
+describe('voice', () => {
+  async function signedIn(name) {
+    const { agent, record } = await member(name);
+    roomsStub.participants.push({
+      identity: record.id,
+      name,
+      permission: { canPublish: false, canSubscribe: true },
+      tracks: [],
+    });
+    return { agent, record };
+  }
+
+  const state = (record) => roomsStub.participants.find((p) => p.identity === record.id);
+
+  test('requires a session', async () => {
+    assert.equal((await request(app).post('/api/voice/join')).status, 401);
+    assert.equal((await request(app).post('/api/voice/leave')).status, 401);
+  });
+
+  test('joining grants the microphone only, and is no broadcast', async () => {
+    const { agent, record } = await signedIn('Alice');
+    assert.equal((await agent.post('/api/voice/join')).status, 200);
+
+    const { permission } = state(record);
+    assert.equal(permission.canPublish, true);
+    assert.deepEqual(permission.canPublishSources, [TrackSource.MICROPHONE]);
+    assert.deepEqual((await agent.get('/api/stage')).body.broadcasters, []);
+  });
+
+  test('leaving takes it away again', async () => {
+    const { agent, record } = await signedIn('Alice');
+    await agent.post('/api/voice/join');
+    assert.equal((await agent.post('/api/voice/leave')).status, 200);
+    assert.equal(state(record).permission.canPublish, false);
+  });
+
+  test('stopping a broadcast in voice keeps the microphone', async () => {
+    const { agent, record } = await signedIn('Alice');
+    await agent.post('/api/voice/join');
+    await agent.post('/api/stage/claim');
+    assert.deepEqual(state(record).permission.canPublishSources ?? [], []);
+
+    await agent.post('/api/stage/release');
+    assert.deepEqual(state(record).permission.canPublishSources, [TrackSource.MICROPHONE]);
   });
 });
 

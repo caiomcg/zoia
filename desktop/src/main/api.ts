@@ -29,6 +29,8 @@ import type {
   ChatAuthor,
   ChatPerson,
   ChatSendExtras,
+  Presence,
+  PresenceState,
 } from '../shared/ipc';
 import { getServerUrl } from './config';
 
@@ -384,6 +386,26 @@ export function stageRelease() {
   });
 }
 
+// ---- voice (ADR 0039) -----------------------------------------------------
+
+/** The microphone alone, granted at runtime like the stage. False: not in the room yet. */
+export async function voiceJoin(): Promise<boolean> {
+  try {
+    await call('/api/voice/join', { method: 'POST', body: JSON.stringify({ room: currentRoom }) });
+    return true;
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 409) return false;
+    throw err;
+  }
+}
+
+export function voiceLeave() {
+  return call<{ ok: boolean }>('/api/voice/leave', {
+    method: 'POST',
+    body: JSON.stringify({ room: currentRoom }),
+  });
+}
+
 // ---- text chat (ADR 0036) -------------------------------------------------
 
 const chatPath = (id: string, rest = '') => `/api/chats/${encodeURIComponent(id)}${rest}`;
@@ -464,6 +486,26 @@ export function chatRead(chatId: string, messageId: string) {
       body: JSON.stringify({ messageId }),
     }).then(() => undefined),
   );
+}
+
+// ---- presence (ADR 0038) ---------------------------------------------------
+
+export function presenceGet() {
+  return attempt(call<PresenceState>('/api/presence'));
+}
+
+export function presenceSet(status: Presence) {
+  return attempt(
+    call<{ status: Presence }>('/api/presence', {
+      method: 'PUT',
+      body: JSON.stringify({ status }),
+    }),
+  );
+}
+
+/** Whether this machine has gone untouched; thrown away if it cannot be said. */
+export async function presenceIdle(idle: boolean): Promise<void> {
+  await call('/api/presence/idle', { method: 'POST', body: JSON.stringify({ idle }) });
 }
 
 /** An author's picture by account, as fetchAvatar does it by device. */

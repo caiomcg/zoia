@@ -12,7 +12,9 @@ import RemoteGrid, {
 import Sidebar, { useSidebarCollapsed } from './components/Sidebar';
 import ChatList from './components/ChatList';
 import ChatView from './components/ChatView';
+import PeopleList from './components/PeopleList';
 import { useChat } from './chat/useChat';
+import { usePresence } from './chat/usePresence';
 import SourcePicker from './components/SourcePicker';
 import SettingsDialog, { type Section as SettingsSection } from './components/SettingsDialog';
 import ReleaseNotesDialog from './components/ReleaseNotesDialog';
@@ -20,6 +22,11 @@ import Splash from './components/Splash';
 import StatusLight, { type StatusStat, type StatusTone } from './components/StatusLight';
 import { WHIP_SUFFIX, useRoom, type RoomMember } from './livekit/useRoom';
 import { useGpuBroadcast } from './livekit/useGpuBroadcast';
+import { useVoice } from './voice/useVoice';
+import VoiceAudio from './voice/VoiceAudio';
+import { setPushToTalk } from './voice/pipeline';
+import { playVoiceCue, VOICE_CUE_MS } from './sounds/synth';
+import { getSoundSettings } from './sounds/settings';
 import { useSoundCues } from './sounds/useSoundCues';
 import { LAST_VERSION_STORAGE_KEY, shouldShowReleaseNotes } from './whats-new';
 import { useExit } from './presence';
@@ -90,6 +97,10 @@ function hopMembers(
       isIngress: false,
       broadcastSource: null,
       avatar: p.avatar,
+      // The room says, as soon as it connects; until then, nobody is.
+      inVoice: false,
+      voiceMuted: true,
+      voiceDeafened: false,
     }));
   return me
     ? [
@@ -153,6 +164,55 @@ export default function App() {
   };
 
   const room = useRoom();
+  const voice = useVoice(room.room, room.state);
+  // Being in a channel is being in its voice (ADR 0039). Leaving the channel
+  // leaves voice with it: the server forgets the participant.
+  const { join: joinVoice } = voice;
+  useEffect(() => {
+    if (room.state === 'connected') void joinVoice();
+  }, [room.state, joinVoice]);
+  // Mute and deafen, from the footer's buttons or the global shortcuts (ADR
+  // 0039), each with a tone to say it happened: from a shortcut Zoia may well
+  // be out of sight. Read through a ref, so the shortcut listener stays put
+  // while mute and deafen change under it.
+  const voiceRef = useRef(voice);
+  voiceRef.current = voice;
+  const toggleMute = useCallback(() => {
+    const current = voiceRef.current;
+    if (current.state !== 'on') return;
+    const volume = getSoundSettings().volume;
+    if (current.muted) {
+      // Unmuting while deafened undeafens too, which would silence a tone
+      // played first: it plays once you can hear again.
+      void current.setMuted(false).then(() => playVoiceCue('unmute', volume));
+    } else {
+      playVoiceCue('mute', volume);
+      void current.setMuted(true);
+    }
+  }, []);
+  const toggleDeafen = useCallback(() => {
+    const current = voiceRef.current;
+    if (current.state !== 'on') return;
+    const volume = getSoundSettings().volume;
+    if (current.deafened) {
+      void current.setDeafened(false).then(() => playVoiceCue('undeafen', volume));
+    } else {
+      // Deafening silences every Zoia sound, its own tone included, so the
+      // tone plays out first.
+      playVoiceCue('deafen', volume);
+      setTimeout(() => void voiceRef.current.setDeafened(true), VOICE_CUE_MS);
+    }
+  }, []);
+  useEffect(
+    () =>
+      window.zoia.shortcuts.onFire(({ action, pressed }) => {
+        if (action === 'pushToTalk') setPushToTalk(pressed);
+        else if (!pressed) return;
+        else if (action === 'toggleMute') toggleMute();
+        else if (action === 'toggleDeafen') toggleDeafen();
+      }),
+    [toggleMute, toggleDeafen],
+  );
   const [sidebarCollapsed, setSidebarCollapsed] = useSidebarCollapsed();
   const gpuCast = useGpuBroadcast();
   const { setRemoteFocus, setRemotePaused } = room;
@@ -591,9 +651,8 @@ export default function App() {
   );
 
   // ---- text chat (ADR 0036) -----------------------------------------------
-  // The main area shows the broadcasts while you watch something, and the
-  // chat otherwise. Tabs switch between them; starting to watch brings the
-  // stage forward, and watching nothing any more brings the chat back.
+  // The main area shows the broadcasts or the chat. Tabs switch between them;
+  // starting to watch brings the stage forward, and nothing else moves you.
   const [view, setView] = useState<'stage' | 'chat'>('chat');
   const [focused, setFocused] = useState(() => document.hasFocus());
   useEffect(() => {
@@ -615,10 +674,11 @@ export default function App() {
     if (watchingSomething && !wasWatching.current) setView('stage');
     wasWatching.current = watchingSomething;
   }, [watchingSomething]);
-  // Joining a channel is to share or to watch: its stage comes first, whether
-  // or not anyone is live yet. Out of every channel there is only the chat.
+  // Joining or changing channels leaves you where you were: being in one is
+  // being in its voice, not a wish to look at its stage. Out of every channel
+  // there is only the chat.
   useEffect(() => {
-    setView(channel === null ? 'chat' : 'stage');
+    if (channel === null) setView('chat');
   }, [channel]);
   const [chatError, setChatError] = useState<string | null>(null);
   const chatShownIfEnabled = channel === null || view === 'chat';
@@ -628,6 +688,8 @@ export default function App() {
     visible: chatShownIfEnabled && focused,
   });
   const chatShown = chat.enabled && chatShownIfEnabled;
+  // Who is on the server (ADR 0038), told on the chat's stream.
+  const presence = usePresence({ usable: usable && chat.enabled, me: accountId });
 
   if (!status) return <Splash />;
   if (!status.paired) return <AuthScreen status={status} onSignedIn={setStatus} />;
@@ -824,6 +886,7 @@ export default function App() {
   const broadcastError = show('broadcast', room.broadcastError);
   const gpuError = show('gpu', gpuCast.error);
   const audioWarning = show('audio', room.audioWarning);
+  const voiceMessage = show('voice', voice.error);
   const stageMessage = show('stage', stageError);
   const channelMessage = show('channel', channelError);
   const chatMessage = show('chat', chatError);
@@ -899,58 +962,19 @@ export default function App() {
           ) : null}
         </div>
 
-        <div className="topbar-right">
-          <div className="share-icons" role="group" aria-label={t('top.whatToShare')}>
-            <button
-              className={`share-button${screenLive ? ' active' : ''}${hopping ? ' hopping' : ''}`}
-              disabled={room.state !== 'connected' || isStarting}
-              onClick={() => setPickerOpen(true)}
-              title={screenLive ? t('top.screenTitleLive') : t('top.screenTitle')}
-              aria-label={t('top.screenTitle')}
-            >
-              <svg
-                viewBox="0 0 24 24"
-                width="18"
-                height="18"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-              >
-                <rect x="2.5" y="4" width="19" height="13" rx="2" />
-                <path d="M8 20.5h8" strokeLinecap="round" />
-              </svg>
-              {/* The label stays put when live: green and the dot say so, and
-                  "Compartilhando" did not fit. */}
-              <span className="share-label">{t('top.screen')}</span>
-              {screenLive && <span className="share-live-dot" aria-hidden="true" />}
-            </button>
-
-            <button
-              className={`share-button${cameraLive ? ' active' : ''}${hopping ? ' hopping' : ''}`}
-              disabled={room.state !== 'connected' || isStarting}
-              onClick={() => void toggleCamera()}
-              title={cameraLive ? t('top.cameraTitleLive') : t('top.cameraTitle')}
-              aria-label={t('top.cameraTitle')}
-            >
-              <svg
-                viewBox="0 0 24 24"
-                width="18"
-                height="18"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-              >
-                <rect x="2.5" y="6" width="13" height="12" rx="2" />
-                <path d="M15.5 11l6-3.5v9l-6-3.5z" strokeLinejoin="round" />
-              </svg>
-              <span className="share-label">{t('top.camera')}</span>
-              {cameraLive && <span className="share-live-dot" aria-hidden="true" />}
-            </button>
-          </div>
-        </div>
+        {/* Screen and camera live in the sidebar's voice bar now, with the
+            rest of what you send (ADR 0039). */}
+        <div className="topbar-right" />
       </header>
 
       {roomError && <Banner onDismiss={() => dismiss('room', roomError)}>{roomError}</Banner>}
+      {voiceMessage && (
+        <Banner tone="warn" onDismiss={() => dismiss('voice', voiceMessage)}>
+          {voiceMessage}
+        </Banner>
+      )}
+      {/* Everyone else in voice, heard while you are in it. */}
+      <VoiceAudio tracks={voice.state === 'on' ? room.voiceTracks : []} />
       {roomNotice && (
         <Banner tone="warn" onDismiss={() => dismiss('room-notice', roomNotice)}>
           {roomNotice}
@@ -1088,14 +1112,6 @@ export default function App() {
                                     }
                                   : undefined
                               }
-                              mic={
-                                room.sendingMic
-                                  ? {
-                                      muted: room.micMuted,
-                                      onToggle: () => void room.setMicMuted(!room.micMuted),
-                                    }
-                                  : undefined
-                              }
                               onStop={() => void stopMain()}
                               onSwitch={() => setPickerOpen(true)}
                             />
@@ -1170,6 +1186,22 @@ export default function App() {
             localWatched: stage.localWatched,
           }}
           onToggleCamera={(identity) => gridRef.current?.toggleCamera(identity)}
+          voice={{
+            state: voice.state,
+            muted: voice.muted,
+            deafened: voice.deafened,
+            speaking: voice.speaking,
+            onToggleMute: toggleMute,
+            onToggleDeafen: toggleDeafen,
+          }}
+          share={{
+            screenLive,
+            cameraLive,
+            disabled: room.state !== 'connected' || isStarting,
+            hopping,
+            onScreen: () => setPickerOpen(true),
+            onCamera: () => void toggleCamera(),
+          }}
           onHoverBroadcast={(target, anchor) => gridRef.current?.hover(target, anchor)}
           onWatchBroadcast={(target) => gridRef.current?.watch(target)}
           onKickMember={
@@ -1194,6 +1226,27 @@ export default function App() {
                 )
               : undefined
           }
+          presence={presence.enabled ? presence : undefined}
+          peopleOnline={
+            presence.enabled
+              ? chat.people.filter(
+                  (p) => p.id === accountId || (presence.people[p.id] ?? 'offline') !== 'offline',
+                ).length
+              : undefined
+          }
+          people={
+            presence.enabled
+              ? (collapsed) => (
+                  <PeopleList
+                    people={chat.people}
+                    presence={presence}
+                    me={accountId}
+                    myRole={account?.role}
+                    collapsed={collapsed}
+                  />
+                )
+              : undefined
+          }
         />
       </div>
 
@@ -1213,13 +1266,13 @@ export default function App() {
       {camera.mounted && (
         <CameraDialog
           closing={camera.closing}
-          onStart={(constraints, muteMicrophone) => {
+          onStart={(constraints) => {
             setCameraOpen(false);
             // A camera always goes through the Chromium path: there is no
             // window for the hardware encoder to capture, and the frame is
             // small enough that it does not need one. Whatever screen is
             // shared stays shared; the camera joins it.
-            void room.startCamera(constraints, muteMicrophone);
+            void room.startCamera(constraints);
           }}
           onCancel={() => setCameraOpen(false)}
         />

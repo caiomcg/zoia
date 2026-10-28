@@ -35,13 +35,21 @@ function fakeRoom() {
   return r;
 }
 
-function enter(identity, { watching = '', tracks = [] } = {}) {
+/** TrackSource.MICROPHONE: a voice, which is no share. */
+function microphone({ muted = false } = {}) {
+  return { source: 2, muted };
+}
+
+function enter(identity, { watching = '', tracks = [], voice = false } = {}) {
   room.participants.push({
     identity,
     name: identity,
     permission: {},
     tracks,
-    attributes: watching ? { 'zoia.watching': watching } : {},
+    attributes: {
+      ...(watching ? { 'zoia.watching': watching } : {}),
+      ...(voice ? { 'zoia.voice': '1' } : {}),
+    },
   });
 }
 
@@ -93,6 +101,21 @@ describe('the idle sweep', () => {
     assert.deepEqual(room.removed, []);
     await at(40);
     assert.deepEqual(room.removed, ['watcher', 'watcher-gpu']);
+  });
+
+  test('talking to someone keeps the talker; being in voice alone keeps nobody', async () => {
+    enter('talker', { voice: true, tracks: [microphone()] });
+    enter('listener', { voice: true, tracks: [microphone({ muted: true })] });
+    await at(0);
+    await at(10);
+    assert.deepEqual(room.removed, ['listener', 'listener-gpu']);
+
+    // Nobody left to hear: the microphone on is no longer activity.
+    room.participants = room.participants.filter((p) => p.identity === 'talker');
+    await at(19);
+    assert.deepEqual(room.removed, ['listener', 'listener-gpu']);
+    await at(20);
+    assert.deepEqual(room.removed, ['listener', 'listener-gpu', 'talker', 'talker-gpu']);
   });
 
   test('leaving and coming back starts afresh', async () => {

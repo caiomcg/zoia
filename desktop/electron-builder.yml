@@ -33,6 +33,8 @@ asarUnpack:
   - 'native/**'
   - '**/node_modules/loopback-capture/**'
   - '**/node_modules/node-window-manager/**'
+  # The input hook for voice's shortcuts, dlopen'd like the others.
+  - '**/node_modules/uiohook-napi/**'
 
 # Only what the shared build/ directory actually contains is used; a missing
 # icon.ico is a warning from electron-builder, not a failure — it falls back

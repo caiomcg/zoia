@@ -47,6 +47,8 @@ export const TABLES = {
       avatarChangedAt: 'text',
       // A reset code's salt, hash and expiry; never the code.
       code: 'json',
+      // The status the person chose (ADR 0038); null is online.
+      presence: 'text',
     },
   },
   devices: {
@@ -151,6 +153,11 @@ const MIGRATIONS = [
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
   ) STRICT;
+  `,
+  `
+  -- The status each person chose for themselves (ADR 0038). Null is online.
+  ALTER TABLE accounts ADD COLUMN presence TEXT
+    CHECK (presence IN ('online', 'busy', 'away', 'invisible'));
   `,
 ];
 

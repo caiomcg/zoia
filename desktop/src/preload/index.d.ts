@@ -1,3 +1,4 @@
+import type { ShortcutAction, ShortcutEvent, ShortcutsState } from '../shared/shortcuts';
 import type {
   PairingStatus,
   RoomsList,
@@ -26,6 +27,8 @@ import type {
   ChatPerson,
   ChatSendExtras,
   ChatEvent,
+  Presence,
+  PresenceState,
 } from '../shared/ipc';
 
 export interface ZoiaBridge {
@@ -82,6 +85,23 @@ export interface ZoiaBridge {
     get(): Promise<StageState>;
     claim(): Promise<ClaimResult>;
     release(): Promise<{ ok: boolean; released?: boolean }>;
+  };
+  /** Voice in the current channel (ADR 0039). */
+  voice: {
+    /** Grants the microphone; false when this machine is not in the room yet. */
+    join(): Promise<boolean>;
+    leave(): Promise<{ ok: boolean }>;
+    /** Silences every sound Zoia plays, in every window, or lets it play again. */
+    deafen(deafened: boolean): Promise<void>;
+  };
+  /** Voice's global shortcuts (ADR 0039): keys and mouse buttons, from anywhere. */
+  shortcuts: {
+    get(): Promise<ShortcutsState>;
+    /** Takes the next keys or button held together; null if cancelled. */
+    record(action: ShortcutAction): Promise<ShortcutsState | null>;
+    cancel(): Promise<void>;
+    clear(action: ShortcutAction): Promise<ShortcutsState>;
+    onFire(cb: (event: ShortcutEvent) => void): () => void;
   };
   sources: {
     list(fresh?: boolean): Promise<SourceInfo[]>;
@@ -191,6 +211,11 @@ export interface ZoiaBridge {
     onEvent(cb: (event: ChatEvent) => void): () => void;
     /** An author's picture as a data: URL, or null when they have none. */
     avatar(accountId: string, version: string): Promise<string | null>;
+  };
+  /** Who is on the server (ADR 0038); changes arrive through chat.onEvent. */
+  presence: {
+    get(): Promise<ActionOutcome<PresenceState>>;
+    set(status: Presence): Promise<ActionOutcome<{ status: Presence }>>;
   };
   /** Sends a renderer-side failure to the server. */
   report(entry: { kind: string; message: string; stack?: string; context?: string }): void;

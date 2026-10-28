@@ -54,11 +54,18 @@ describe('toChatEvent', () => {
         reactor: { name: 'Ana', avatar: null },
       },
     );
+    assert.deepEqual(toChatEvent('presence', '{"accountId":"a","status":"busy"}'), {
+      type: 'presence',
+      accountId: 'a',
+      status: 'busy',
+    });
   });
 
   test('ignores what it does not know, and what is not JSON', () => {
     assert.equal(toChatEvent('mystery', '{}'), null);
     assert.equal(toChatEvent('message', 'not json'), null);
     assert.equal(toChatEvent('read', '{}'), null);
+    // Invisible is never sent to others; a status not known is not guessed at.
+    assert.equal(toChatEvent('presence', '{"accountId":"a","status":"invisible"}'), null);
   });
 });

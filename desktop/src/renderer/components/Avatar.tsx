@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { AccountRole } from '../../shared/ipc';
 import { useAvatarImage } from '../avatars';
+import type { Dot } from '../chat/status';
 import { useT } from '../i18n';
 
 /**
@@ -45,12 +46,35 @@ function Crown({ role }: { role: 'admin' | 'super_admin' }) {
   );
 }
 
+/** Their status (ADR 0038), as a dot on the picture's bottom-right corner. */
+export function StatusDot({ status }: { status: Dot }) {
+  const t = useT();
+  return (
+    <span
+      className={`status-dot ${status}`}
+      role="img"
+      aria-label={t(`presence.${status}`)}
+      title={t(`presence.${status}`)}
+    />
+  );
+}
+
+/**
+ * Sharing a screen or a camera: a tag on the picture's lower edge, as
+ * streaming apps have it, not a ring. Green rings mean speaking (ADR 0039).
+ */
+function LiveTag() {
+  const t = useT();
+  return <span className="avatar-live">{t('avatar.live')}</span>;
+}
+
 export default function Avatar({
   name,
   live,
   image,
   identity,
   role,
+  status,
 }: {
   name: string;
   live: boolean;
@@ -59,6 +83,8 @@ export default function Avatar({
   identity?: string;
   /** An admin or the super admin wears a crown; anyone else nothing. */
   role?: AccountRole;
+  /** Their status, when it is known and worth showing here. */
+  status?: Dot | null;
 }) {
   const stored = useAvatarImage(image ? undefined : identity);
   const src = image ?? stored;
@@ -77,12 +103,15 @@ export default function Avatar({
       )}
     </span>
   );
-  if (role !== 'admin' && role !== 'super_admin') return picture;
+  const crowned = role === 'admin' || role === 'super_admin';
+  if (!crowned && !status && !live) return picture;
   // Outside the circle, which clips whatever is inside it.
   return (
     <span className="avatar-crowned">
       {picture}
-      <Crown role={role} />
+      {crowned && <Crown role={role} />}
+      {status && <StatusDot status={status} />}
+      {live && <LiveTag />}
     </span>
   );
 }

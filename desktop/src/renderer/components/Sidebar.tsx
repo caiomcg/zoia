@@ -14,9 +14,14 @@ import type { RoomMember } from '../livekit/useRoom';
 import type { AccountRole, RoomInfo } from '../../shared/ipc';
 import type { GridTarget } from './RemoteGrid';
 import Avatar from './Avatar';
-import { IconEye } from './Player';
+import { IconEye, IconMic } from './Player';
+import StatusMenu from './StatusMenu';
+import { useFloatingMenu } from './useFloatingMenu';
+import type { VoiceState } from '../voice/useVoice';
+import { setVoiceVolume, useVoiceVolume, VOLUME_MAX } from '../voice/volumes';
 import { useT } from '../i18n';
 import { useLeaving } from '../presence';
+import type { PresenceController } from '../chat/usePresence';
 
 /**
  * Who is in the room, and who is sharing. Your own name sits in the footer,
@@ -38,6 +43,29 @@ const COLLAPSED_KEY = 'zoia.sidebarCollapsed';
 
 /** What a person dragged onto a channel carries: their identity. */
 const DRAG_TYPE = 'application/x-zoia-member';
+
+/** Sharing a screen or a camera, from the voice bar beside your voice. */
+export interface SidebarShare {
+  screenLive: boolean;
+  cameraLive: boolean;
+  /** Not connected yet, or a share starting. */
+  disabled: boolean;
+  /** Moving channels: disabled for a moment, but not dimmed (styles.css). */
+  hopping: boolean;
+  onScreen: () => void;
+  onCamera: () => void;
+}
+
+/** Voice in the current channel (ADR 0039), and its controls. */
+export interface SidebarVoice {
+  state: VoiceState;
+  muted: boolean;
+  deafened: boolean;
+  /** Who is speaking right now, yourself included. */
+  speaking: ReadonlySet<string>;
+  onToggleMute: () => void;
+  onToggleDeafen: () => void;
+}
 
 /** "Room 3" → "R3", "Games" → "GA": what a collapsed sidebar shows. */
 export function shortName(name: string): string {
@@ -85,7 +113,7 @@ export function useSidebarCollapsed(): [boolean, (collapsed: boolean) => void] {
 }
 
 /** The sidebar's two widths; a drag snaps to the nearer when let go. */
-const OPEN_WIDTH = 240;
+const OPEN_WIDTH = 280;
 const COLLAPSED_WIDTH = 56;
 const SNAP_WIDTH = (OPEN_WIDTH + COLLAPSED_WIDTH) / 2;
 
@@ -150,6 +178,28 @@ export function useFolded(key: string): [boolean, () => void, () => void] {
     }
   };
   return [folded, () => save(!folded), () => save(false)];
+}
+
+export type SidebarTab = 'rooms' | 'people';
+
+/** Which of the sidebar's two areas is showing, remembered like the folds. */
+function useSidebarTab(): [SidebarTab, (tab: SidebarTab) => void] {
+  const [tab, setTab] = useState<SidebarTab>(() => {
+    try {
+      return localStorage.getItem('zoia.sidebar.tab') === 'people' ? 'people' : 'rooms';
+    } catch {
+      return 'rooms';
+    }
+  });
+  const choose = (next: SidebarTab) => {
+    setTab(next);
+    try {
+      localStorage.setItem('zoia.sidebar.tab', next);
+    } catch {
+      // Remembering is a convenience; the tab still changes.
+    }
+  };
+  return [tab, choose];
 }
 
 /**
@@ -350,10 +400,17 @@ export default function Sidebar({
   onWatchBroadcast,
   onToggleCamera,
   chats,
+  people,
+  peopleOnline,
+  share,
+  presence,
   onKickMember,
   collapsed,
   onCollapsedChange,
+  voice,
 }: {
+  /** Absent: no voice controls at all. */
+  voice?: SidebarVoice;
   members: RoomMember[];
   myName: string;
   /** Yours, for your own profile picture in the footer. */
@@ -385,6 +442,14 @@ export default function Sidebar({
   onToggleCamera: (identity: string) => void;
   /** The text chats (ADR 0036), listed under the channels. */
   chats?: (collapsed: boolean) => ReactNode;
+  /** Everyone on the server and their status (ADR 0038), under the chats. */
+  people?: (collapsed: boolean) => ReactNode;
+  /** How many are on the server now, for the People tab. */
+  peopleOnline?: number;
+  /** Screen and camera, in the voice bar; absent, no share buttons. */
+  share?: SidebarShare;
+  /** Your status, on your picture in the footer, which is where it is chosen. */
+  presence?: PresenceController;
   /** Admins only: takes someone off the server, chat and all (ADR 0037). */
   onKickMember?: (identity: string, name: string) => void;
   /** Down to avatars, names in tooltips. */
@@ -472,6 +537,7 @@ export default function Sidebar({
       : {};
 
   // Someone who leaves fades out rather than vanishing; see presence.ts.
+  const currentChannelName = channels.find((c) => c.id === currentChannel)?.name ?? '';
   const shownMembers = useLeaving(liveMembers, (m) => m.identity, currentChannel ?? '');
 
   // The width while the edge is being dragged; null otherwise.
@@ -505,11 +571,18 @@ export default function Sidebar({
   const shownChannels =
     collapsed || !channelsFolded ? channels : channels.filter((c) => c.id === currentChannel);
 
-  // Right-clicking someone an admin may kick opens what they can do to them.
+  // Your picture in the footer opens your status, from where it sits.
+  const [statusAnchor, setStatusAnchor] = useState<DOMRect | null>(null);
+  const closeStatus = useCallback(() => setStatusAnchor(null), []);
+
+  // Right-clicking someone opens what you can do about them: their voice's
+  // volume while you both are in voice, and a kick for an admin.
   const [menu, setMenu] = useState<{
     identity: string;
     name: string;
     role?: AccountRole;
+    volume: boolean;
+    kick: boolean;
     x: number;
     y: number;
   } | null>(null);
@@ -518,12 +591,15 @@ export default function Sidebar({
     identity: string,
     name: string,
     role: AccountRole | undefined,
+    volume = false,
   ) => {
     event.preventDefault();
     event.stopPropagation();
     onHoverBroadcast(null);
-    setMenu({ identity, name, role, x: event.clientX, y: event.clientY });
+    const kick = mayKick(identity);
+    setMenu({ identity, name, role, volume, kick, x: event.clientX, y: event.clientY });
   };
+  const hearing = (m: RoomMember) => voice?.state === 'on' && m.inVoice && !m.isLocal;
 
   const rowProps = {
     viewerIds,
@@ -533,6 +609,7 @@ export default function Sidebar({
     onWatch: onWatchBroadcast,
     onToggleCamera,
     collapsed,
+    speaking: voice?.speaking,
   };
   // Which channel is being renamed, or 'new' while one is being named.
   const [editing, setEditing] = useState<string | null>(null);
@@ -543,6 +620,11 @@ export default function Sidebar({
   // channel, it follows the button's size and place at once, through a
   // ResizeObserver, since a single measurement mid-animation is stale.
   // Collapsed, the current channel is marked by a ring on its badge instead.
+  // Two areas: where to go (channels and chats) and who is around (people).
+  // Collapsed, there are no tabs and no people: just the channels and chats.
+  const [tab, setTab] = useSidebarTab();
+  const tabbed = !collapsed && !!people;
+  const onPeople = tabbed && tab === 'people';
   const channelGroupRef = useRef<HTMLElement>(null);
   const [indicator, setIndicator] = useState<{
     top: number;
@@ -591,7 +673,7 @@ export default function Sidebar({
     const observer = new ResizeObserver(measure);
     observer.observe(group);
     return () => observer.disconnect();
-  }, [channels, currentChannel, collapsed, editing, members, channelsFolded]);
+  }, [channels, currentChannel, collapsed, editing, members, channelsFolded, onPeople]);
 
   return (
     <aside
@@ -619,8 +701,36 @@ export default function Sidebar({
           event.preventDefault();
         }}
       />
+      {tabbed && (
+        <div className="sidebar-tabs" role="tablist" aria-label={t('sidebar.areas')}>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === 'rooms'}
+            className={tab === 'rooms' ? 'active' : undefined}
+            onClick={() => setTab('rooms')}
+            title={t('sidebar.tabRoomsHint')}
+          >
+            <IconChannels />
+            <span>{t('sidebar.tabRooms')}</span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === 'people'}
+            className={tab === 'people' ? 'active' : undefined}
+            onClick={() => setTab('people')}
+          >
+            <IconPeople />
+            <span>{t('presence.people')}</span>
+            {peopleOnline !== undefined && peopleOnline > 0 && (
+              <span className="sidebar-tab-count">{peopleOnline}</span>
+            )}
+          </button>
+        </div>
+      )}
       <div className="sidebar-scroll">
-        {channels.length > 0 && (
+        {!onPeople && channels.length > 0 && (
           <section
             className={`member-group channel-group${indicator ? ' has-indicator' : ''}`}
             ref={channelGroupRef}
@@ -763,8 +873,9 @@ export default function Sidebar({
                           leaving={leaving}
                           drag={leaving ? {} : dragFrom(m.identity, roleOf(m), c.id)}
                           onContextMenu={
-                            !leaving && mayKick(m.identity)
-                              ? (event) => openMenu(event, m.identity, m.name, roleOf(m))
+                            !leaving && (mayKick(m.identity) || hearing(m))
+                              ? (event) =>
+                                  openMenu(event, m.identity, m.name, roleOf(m), hearing(m))
                               : undefined
                           }
                           {...rowProps}
@@ -829,11 +940,14 @@ export default function Sidebar({
           </section>
         )}
 
-        {chats?.(collapsed)}
+        {!onPeople && chats?.(collapsed)}
+
+        {/* Only in its own tab: collapsed, the column is for channels. */}
+        {onPeople && people?.(collapsed)}
 
         {/* Before the first channel poll lands, or against a server without
             channels, the room's people still need a home. */}
-        {channels.length === 0 && (
+        {!onPeople && channels.length === 0 && (
           <section className="member-group">
             <h2 className="member-heading">{t('sidebar.inRoom', { count: liveMembers.length })}</h2>
             {shownMembers.map(({ item: m, key, leaving }) => (
@@ -843,7 +957,36 @@ export default function Sidebar({
         )}
       </div>
 
+      {/* Where your voice is going, and the way out of it, as Discord has it:
+          above your own card, so your name keeps its room. */}
+      {!collapsed && currentChannel !== null && (
+        <div className={`voice-panel${voice?.state === 'on' ? ' connected' : ''}`}>
+          <div className="voice-panel-head">
+            <span className="voice-panel-text">
+              <span className="voice-panel-state">
+                <IconSignal />
+                {voice?.state === 'on' ? t('voice.connected') : t('voice.connecting')}
+              </span>
+              <span className="voice-panel-channel" title={currentChannelName}>
+                {currentChannelName}
+              </span>
+            </span>
+            {share && <ShareButtons share={share} />}
+            <button
+              className="icon-button sidebar-settings sidebar-leave"
+              onClick={onLeaveChannel}
+              title={t('sidebar.leave')}
+              aria-label={t('sidebar.leave')}
+            >
+              <IconLeave />
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="sidebar-footer">
+        {/* Collapsed, the voice bar is gone, but sharing must not be. */}
+        {collapsed && currentChannel !== null && share && <ShareButtons share={share} compact />}
         {collapsed ? (
           // Collapsed, your picture is all there is: clicking it opens the
           // sidebar, where leaving and settings are. Sign-ups waiting for an
@@ -854,7 +997,13 @@ export default function Sidebar({
             title={`${myName}\n${t('sidebar.expand')}`}
             aria-label={t('sidebar.expand')}
           >
-            <Avatar name={myName} identity={myIdentity} live={false} role={myRole} />
+            <Avatar
+              name={myName}
+              identity={myIdentity}
+              live={false}
+              role={myRole}
+              status={presence?.own}
+            />
             {settingsBadge > 0 && (
               <span className="settings-dot" aria-hidden="true">
                 {settingsBadge}
@@ -862,23 +1011,54 @@ export default function Sidebar({
             )}
           </button>
         ) : (
-          <Avatar name={myName} identity={myIdentity} live={false} role={myRole} />
-        )}
-        {!collapsed && (
-          <span className="sidebar-name" title={myName}>
-            {myName}
-          </span>
-        )}
-        {/* Only while in a channel: outside one there is nothing to leave. */}
-        {!collapsed && currentChannel !== null && (
+          // You: picture, name and status as one card, which chooses your
+          // status, as in most chat apps.
           <button
-            className="icon-button sidebar-settings sidebar-leave"
-            onClick={onLeaveChannel}
-            title={t('sidebar.leave')}
-            aria-label={t('sidebar.leave')}
+            className="sidebar-me-card"
+            onClick={(event) => setStatusAnchor(event.currentTarget.getBoundingClientRect())}
+            disabled={!presence?.chosen}
+            title={presence?.chosen ? `${myName}\n${t('presence.choose')}` : myName}
+            aria-label={presence?.chosen ? t('presence.choose') : myName}
+            aria-haspopup={presence?.chosen ? 'menu' : undefined}
+            aria-expanded={presence?.chosen ? statusAnchor !== null : undefined}
           >
-            <IconLeave />
+            <Avatar
+              name={myName}
+              identity={myIdentity}
+              live={false}
+              role={myRole}
+              status={presence?.own}
+            />
+            <span className="sidebar-who">
+              <span className="sidebar-name">{myName}</span>
+              {presence?.own && (
+                <span className="sidebar-status">{t(`presence.${presence.own}`)}</span>
+              )}
+            </span>
           </button>
+        )}
+        {/* In voice, as Discord has them: your microphone, and every sound. */}
+        {!collapsed && voice && voice.state === 'on' && (
+          <>
+            <button
+              className={`icon-button sidebar-settings${voice.muted ? ' voice-off' : ''}`}
+              onClick={voice.onToggleMute}
+              aria-pressed={voice.muted}
+              title={voice.muted ? t('voice.unmute') : t('voice.mute')}
+              aria-label={voice.muted ? t('voice.unmute') : t('voice.mute')}
+            >
+              <IconMic muted={voice.muted} />
+            </button>
+            <button
+              className={`icon-button sidebar-settings${voice.deafened ? ' voice-off' : ''}`}
+              onClick={voice.onToggleDeafen}
+              aria-pressed={voice.deafened}
+              title={voice.deafened ? t('voice.undeafen') : t('voice.deafen')}
+              aria-label={voice.deafened ? t('voice.undeafen') : t('voice.deafen')}
+            >
+              <IconHeadset off={voice.deafened} />
+            </button>
+          </>
         )}
         {!collapsed && (
           <button
@@ -904,11 +1084,19 @@ export default function Sidebar({
           </button>
         )}
       </div>
-      {menu && onKickMember && (
+      {statusAnchor && presence?.chosen && (
+        <StatusMenu
+          anchor={statusAnchor}
+          chosen={presence.chosen}
+          onChoose={(status) => void presence.choose(status)}
+          onClose={closeStatus}
+        />
+      )}
+      {menu && (
         <MemberMenu
           {...menu}
           onClose={() => setMenu(null)}
-          onKick={() => onKickMember(menu.identity, menu.name)}
+          onKick={menu.kick ? () => onKickMember?.(menu.identity, menu.name) : undefined}
         />
       )}
     </aside>
@@ -916,13 +1104,15 @@ export default function Sidebar({
 }
 
 /**
- * What an admin may do to someone, at the pointer. Closes on a choice, a
- * click elsewhere, Escape, or the window losing focus.
+ * What you may do about someone, at the pointer: how loud their voice is for
+ * you, and for an admin, a kick. Closes on a choice, a click elsewhere,
+ * Escape, or the window losing focus.
  */
 function MemberMenu({
   identity,
   name,
   role,
+  volume,
   x,
   y,
   onClose,
@@ -931,42 +1121,15 @@ function MemberMenu({
   identity: string;
   name: string;
   role?: AccountRole;
+  volume: boolean;
   x: number;
   y: number;
   onClose: () => void;
-  onKick: () => void;
+  onKick?: () => void;
 }) {
   const t = useT();
   const ref = useRef<HTMLDivElement>(null);
-  // Kept inside the window: measured once drawn, then nudged in.
-  const [place, setPlace] = useState({ left: x, top: y });
-  useLayoutEffect(() => {
-    const box = ref.current?.getBoundingClientRect();
-    if (!box) return;
-    setPlace({
-      left: Math.max(4, Math.min(x, window.innerWidth - box.width - 4)),
-      top: Math.max(4, Math.min(y, window.innerHeight - box.height - 4)),
-    });
-    ref.current?.querySelector('button')?.focus();
-  }, [x, y]);
-  useEffect(() => {
-    const onDown = (event: MouseEvent) => {
-      if (!ref.current?.contains(event.target as Node)) onClose();
-    };
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
-    };
-    window.addEventListener('mousedown', onDown);
-    window.addEventListener('keydown', onKey);
-    window.addEventListener('blur', onClose);
-    window.addEventListener('resize', onClose);
-    return () => {
-      window.removeEventListener('mousedown', onDown);
-      window.removeEventListener('keydown', onKey);
-      window.removeEventListener('blur', onClose);
-      window.removeEventListener('resize', onClose);
-    };
-  }, [onClose]);
+  const place = useFloatingMenu(ref, x, y, onClose);
   const choose = (action: () => void) => () => {
     onClose();
     action();
@@ -988,12 +1151,42 @@ function MemberMenu({
           {role && <span className="member-menu-role">{t(`account.role.${role}`)}</span>}
         </span>
       </div>
-      <button type="button" role="menuitem" className="member-menu-item" onClick={choose(onKick)}>
-        <IconKick />
-        {t('sidebar.kickAction')}
-      </button>
+      {volume && <VoiceVolume identity={identity} name={name} />}
+      {onKick && (
+        <button type="button" role="menuitem" className="member-menu-item" onClick={choose(onKick)}>
+          <IconKick />
+          {t('sidebar.kickAction')}
+        </button>
+      )}
     </div>,
     document.body,
+  );
+}
+
+/** How loud someone's voice is for you, kept for the next time they talk. */
+function VoiceVolume({ identity, name }: { identity: string; name: string }) {
+  const t = useT();
+  const volume = useVoiceVolume(identity);
+  const percent = Math.round(volume * 100);
+  return (
+    <label className="member-menu-volume">
+      <span>
+        {t('voice.volume')}
+        <span className="member-menu-volume-value">{percent}%</span>
+      </span>
+      <input
+        type="range"
+        min={0}
+        max={VOLUME_MAX * 100}
+        step={5}
+        value={percent}
+        onChange={(event) => setVoiceVolume(identity, Number(event.target.value) / 100)}
+        // Back to as sent, where it is easy to overshoot by a little.
+        onDoubleClick={() => setVoiceVolume(identity, 1)}
+        aria-label={t('voice.volumeOf', { name })}
+        aria-valuetext={`${percent}%`}
+      />
+    </label>
   );
 }
 
@@ -1014,7 +1207,10 @@ function MemberRow({
   onToggleCamera,
   collapsed,
   onContextMenu,
+  speaking,
 }: {
+  /** Who is speaking in voice right now. */
+  speaking?: ReadonlySet<string>;
   /** Admins only: opens what they may do to this person. */
   onContextMenu?: (event: ReactMouseEvent) => void;
   member: RoomMember;
@@ -1073,12 +1269,26 @@ function MemberRow({
       onBlur={hoverable ? () => onHover(null) : undefined}
       {...drag}
     >
-      <span className="avatar-wrap">
+      <span
+        className={`avatar-wrap${m.inVoice && !m.voiceMuted && speaking?.has(m.identity) ? ' speaking' : ''}`}
+      >
         <Avatar name={m.name} identity={m.identity} live={live} role={role} />
         {viewerIds.has(m.identity) && <WatchingYou />}
       </span>
       <span className="member-name">{m.name}</span>
       {m.isLocal && <span className="you-tag">{t('common.youTag')}</span>}
+      {/* Everyone here is in voice, so only silence is news: hearing
+          nothing, which also mutes, or just a muted microphone. */}
+      {m.inVoice && (m.voiceDeafened || m.voiceMuted) && (
+        <span
+          className="member-voice"
+          title={m.voiceDeafened ? t('voice.deafenedInVoice') : t('voice.mutedInVoice')}
+          aria-label={m.voiceDeafened ? t('voice.deafenedInVoice') : t('voice.mutedInVoice')}
+          role="img"
+        >
+          {m.voiceDeafened ? <IconHeadset off /> : <IconMic muted />}
+        </span>
+      )}
       {loading && <span className="stream-state">{t('common.loading')}</span>}
       {camera && (
         <CameraToggle
@@ -1089,6 +1299,162 @@ function MemberRow({
         />
       )}
     </div>
+  );
+}
+
+/** Headphones: voice. Struck through, deafened. */
+/**
+ * Camera and screen, beside leaving and dressed as it: icons. Green with a
+ * dot while live; pressing again is how you stop.
+ */
+function ShareButtons({ share, compact = false }: { share: SidebarShare; compact?: boolean }) {
+  const t = useT();
+  const buttons = [
+    {
+      key: 'camera',
+      live: share.cameraLive,
+      onClick: share.onCamera,
+      title: share.cameraLive ? t('top.cameraTitleLive') : t('top.cameraTitle'),
+      icon: <IconCamera />,
+    },
+    {
+      key: 'screen',
+      live: share.screenLive,
+      onClick: share.onScreen,
+      title: share.screenLive ? t('top.screenTitleLive') : t('top.screenTitle'),
+      icon: <IconScreen />,
+    },
+  ];
+  return (
+    <div
+      className={`voice-share${compact ? ' compact' : ''}`}
+      role="group"
+      aria-label={t('top.whatToShare')}
+    >
+      {buttons.map((b) => (
+        <button
+          key={b.key}
+          className={`icon-button sidebar-settings voice-share-button${b.live ? ' live' : ''}${share.hopping ? ' hopping' : ''}`}
+          disabled={share.disabled}
+          onClick={b.onClick}
+          title={b.title}
+          aria-label={b.title}
+          aria-pressed={b.live}
+        >
+          {b.icon}
+          {b.live && <span className="voice-share-dot" aria-hidden="true" />}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function IconScreen() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="16"
+      height="16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      aria-hidden="true"
+    >
+      <rect x="2.5" y="4" width="19" height="13" rx="2" />
+      <path d="M8 20.5h8" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function IconCamera() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="16"
+      height="16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      aria-hidden="true"
+    >
+      <rect x="2.5" y="6" width="13" height="12" rx="2" />
+      <path d="M15.5 11l6-3.5v9l-6-3.5z" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+/** A hash, as channels and chats are written: where you go. */
+function IconChannels() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="14"
+      height="14"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M5 9h14M5 15h14M10 4 8 20M16 4l-2 16" />
+    </svg>
+  );
+}
+
+/** Two people: who is around. */
+function IconPeople() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="14"
+      height="14"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <circle cx="9" cy="8" r="3.5" />
+      <path d="M2.5 20c.6-3.4 3.3-5.5 6.5-5.5s5.9 2.1 6.5 5.5" />
+      <path d="M16 4.6a3.5 3.5 0 0 1 0 6.8M18 14.8c2 .7 3.2 2.5 3.5 5.2" />
+    </svg>
+  );
+}
+
+/** Bars rising, as a connection's strength is drawn. */
+function IconSignal() {
+  return (
+    <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+      <path
+        d="M4 20v-3M9 20v-7M14 20V9M19 20V4"
+        stroke="currentColor"
+        strokeWidth="2.4"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function IconHeadset({ off = false }: { off?: boolean }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="16"
+      height="16"
+      aria-hidden="true"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M4 15v-3a8 8 0 0116 0v3" />
+      <rect x="3" y="14" width="4" height="6" rx="1.5" />
+      <rect x="17" y="14" width="4" height="6" rx="1.5" />
+      {off && <path d="M3 3l18 18" />}
+    </svg>
   );
 }
 

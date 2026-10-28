@@ -3,7 +3,7 @@
  * stream itself, which needs Electron, so it can be tested on its own.
  */
 
-import type { ChatEvent } from '../shared/ipc';
+import type { ChatEvent, ShownPresence } from '../shared/ipc';
 
 /**
  * Splits Server-Sent Events text into events. Returns the ones complete in
@@ -72,5 +72,11 @@ export function toChatEvent(event: string, data: string): ChatEvent | null {
       reactor: (payload.reactor ?? null) as Extract<ChatEvent, { type: 'reaction' }>['reactor'],
     };
   }
+  if (event === 'presence' && typeof payload.accountId === 'string') {
+    const status = SHOWN.find((s) => s === payload.status);
+    return status ? { type: 'presence', accountId: payload.accountId, status } : null;
+  }
   return null;
 }
+
+const SHOWN: readonly ShownPresence[] = ['online', 'busy', 'away', 'offline'];

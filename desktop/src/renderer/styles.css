@@ -11,6 +11,8 @@
   --accent: #5865f2;
   --accent-hover: #4752c4;
   --live: #23a55a;
+  /* Someone talking in voice: brighter than live, which is a share. */
+  --speaking: #57f287;
   --warn: #f0b132;
   --danger: #da373c;
   --radius: 8px;
@@ -1152,7 +1154,8 @@ button.danger {
 .settings-body {
   display: grid;
   flex: 1;
-  grid-template-columns: 180px 1fr;
+  /* minmax: a long device name must not widen the pane past the dialog. */
+  grid-template-columns: 180px minmax(0, 1fr);
   min-height: 0;
 }
 
@@ -1609,7 +1612,8 @@ button.danger {
   color: var(--muted);
 }
 
-.settings-field input {
+.settings-field input,
+.settings-field .settings-select {
   width: 100%;
   box-sizing: border-box;
   padding: 9px 10px;
@@ -2335,7 +2339,8 @@ button.danger {
   display: flex;
   flex: 0 0 auto;
   flex-direction: column;
-  width: 240px;
+  /* Must match OPEN_WIDTH in Sidebar.tsx. */
+  width: 280px;
   background: var(--surface);
   border-left: 1px solid var(--border);
 }
@@ -2702,6 +2707,9 @@ button.danger {
 .sidebar.collapsed .sidebar-footer {
   flex-direction: column;
   justify-content: center;
+  /* Tall enough for the share buttons above your picture while in a channel. */
+  height: auto;
+  min-height: 61px;
   padding: 10px 0;
 }
 
@@ -2813,10 +2821,9 @@ button.danger {
 }
 
 /* On your stage: the live ring turns from green to the accent. */
-.member.watching .avatar.live {
-  box-shadow:
-    0 0 0 2px var(--surface),
-    0 0 0 4px var(--accent);
+/* Someone you are watching: their live tag in the accent, not red. */
+.member.watching .avatar-live {
+  background: var(--accent);
 }
 
 /* A hovered member's thumbnail, beside the channel list (RemoteGrid). */
@@ -2947,10 +2954,591 @@ button.danger {
   border-radius: 50%;
 }
 
-.avatar.live {
+/* Live: a red tag over the picture's lower edge, as streaming apps mark it.
+   Rings are for speaking. */
+.avatar-live {
+  position: absolute;
+  bottom: -5px;
+  left: 50%;
+  padding: 0 3px;
+  font-size: 7.5px;
+  font-weight: 800;
+  line-height: 11px;
+  letter-spacing: 0.04em;
+  color: #fff;
+  white-space: nowrap;
+  background: var(--danger);
+  border-radius: 3px;
+  box-shadow: 0 0 0 2px var(--surface);
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+/* ---- voice (ADR 0039) ---------------------------------------------------- */
+
+.sidebar.collapsed .member-voice {
+  display: none;
+}
+
+/* ---- Settings › Voice ---------------------------------------------------- */
+
+/* A group of related settings, as the sound cues have them. */
+.voice-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 16px 16px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.voice-card h4 {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.voice-card .settings-field .settings-select {
+  min-width: 0;
+  text-overflow: ellipsis;
+}
+
+.voice-card-note {
+  margin: -4px 0 0;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+/* A label on the left, its control on the right. */
+.voice-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.voice-label {
+  font-size: 13px;
+  color: var(--text);
+}
+
+.voice-value {
+  font-size: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.voice-segmented button {
+  padding: 5px 12px;
+  cursor: pointer;
+}
+
+.voice-segmented button:not(.active):hover {
+  color: var(--text);
+}
+
+.voice-meter-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* The level, with the sensitivity marker over it. */
+.voice-level {
+  position: relative;
+  height: 28px;
+}
+
+.voice-meter {
+  height: 100%;
+  justify-content: space-between;
+  align-items: stretch;
+  padding: 0;
+}
+
+.voice-meter .level-seg {
+  flex: 1;
+  width: auto;
+  height: auto;
+  border-radius: 2px;
+}
+
+/* Sound under the sensitivity: heard here, never sent. */
+.voice-meter .level-seg.gated {
+  background: rgb(255 255 255 / 0.08);
+}
+
+.voice-meter .level-seg.gated.on {
+  background: #f5a623;
+  opacity: 0.55;
+}
+
+/* The marker: a range input laid over the bars, with only its thumb shown. */
+.voice-threshold {
+  position: absolute;
+  inset: -4px 0;
+  width: 100%;
+  height: calc(100% + 8px);
+  margin: 0;
+  background: transparent;
+  cursor: ew-resize;
+  appearance: none;
+}
+
+.voice-threshold::-webkit-slider-runnable-track {
+  height: 100%;
+  background: transparent;
+}
+
+.voice-threshold::-webkit-slider-thumb {
+  width: 6px;
+  height: 36px;
+  background: var(--text);
+  border-radius: 3px;
+  box-shadow:
+    0 0 0 2px var(--surface-2),
+    0 1px 4px rgb(0 0 0 / 0.5);
+  appearance: none;
+}
+
+/* Automatic sensitivity's marker: moved by the room, not by hand. */
+.voice-threshold-auto {
+  position: absolute;
+  top: -4px;
+  bottom: -4px;
+  width: 4px;
+  margin-left: -2px;
+  background: var(--muted);
+  border-radius: 2px;
+  box-shadow: 0 0 0 2px var(--surface-2);
+  transition: left 200ms ease;
+  pointer-events: none;
+}
+
+.voice-toggle-compact {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.voice-threshold:focus-visible {
+  outline: none;
+}
+
+.voice-threshold:focus-visible::-webkit-slider-thumb {
+  box-shadow:
+    0 0 0 2px var(--surface-2),
+    0 0 0 4px var(--accent);
+}
+
+/* An on/off setting, with what it does under its name. */
+.voice-toggle {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.voice-toggle > span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.voice-toggle small {
+  font-size: 12px;
+}
+
+.voice-toggle input {
+  position: relative;
+  flex: none;
+  width: 36px;
+  height: 20px;
+  margin: 0;
+  background: var(--border);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background 120ms ease;
+  appearance: none;
+}
+
+.voice-toggle input::after {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 14px;
+  height: 14px;
+  background: #fff;
+  border-radius: 50%;
+  transition: transform 120ms ease;
+  content: '';
+}
+
+.voice-toggle input:checked {
+  background: var(--accent);
+}
+
+.voice-toggle input:checked::after {
+  transform: translateX(16px);
+}
+
+.voice-toggle input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Shortcuts: a name, the keys, and a way to clear them. */
+.voice-shortcuts {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.voice-shortcut {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.voice-shortcut-name {
+  font-size: 13px;
+}
+
+.voice-keybind {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  min-height: 34px;
+  padding: 4px 8px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text);
+  text-align: left;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.voice-keybind:hover {
+  border-color: var(--muted);
+}
+
+.voice-keybind.unset {
+  color: var(--muted);
+}
+
+.voice-keybind.recording {
+  color: var(--text);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+  animation: keybind-listen 1.2s ease-in-out infinite;
+}
+
+@keyframes keybind-listen {
+  50% {
+    border-color: transparent;
+    box-shadow: none;
+  }
+}
+
+.voice-keybind kbd {
+  padding: 2px 6px;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--raised);
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+}
+
+.voice-shortcut-clear:disabled {
+  visibility: hidden;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .voice-keybind.recording {
+    animation: none;
+  }
+}
+
+/* Talking: a ring that comes and goes with the voice. */
+.avatar-wrap.speaking .avatar {
   box-shadow:
     0 0 0 2px var(--surface),
-    0 0 0 4px var(--live);
+    0 0 0 4px var(--speaking);
+  transition: box-shadow 0.1s ease;
+}
+
+.member-voice {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  margin-left: auto;
+  color: var(--danger);
+}
+
+.member-voice svg {
+  width: 14px;
+  height: 14px;
+}
+
+.member-voice + .member-camera {
+  margin-left: 0;
+}
+
+/* The sidebar's two areas, channels and chats, and people: one segmented
+   control, its top in line with the main tabs beside it. */
+.sidebar-tabs {
+  display: flex;
+  flex: none;
+  box-sizing: border-box;
+  height: var(--control-height);
+  margin: 12px 10px 6px;
+  padding: 2px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+}
+
+.sidebar-tabs button {
+  display: inline-flex;
+  flex: 1;
+  gap: 6px;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  padding: 0 8px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  background: transparent;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  transition:
+    color 120ms ease,
+    background 120ms ease;
+}
+
+.sidebar-tabs button > span:not(.sidebar-tab-count) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-tabs button svg {
+  flex: none;
+}
+
+.sidebar-tabs button:hover {
+  color: var(--text);
+}
+
+.sidebar-tabs button.active {
+  color: var(--text);
+  background: var(--raised);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.35);
+}
+
+.sidebar-tabs button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* How many are on the server now. */
+.sidebar-tab-count {
+  min-width: 16px;
+  padding: 0 5px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+  color: var(--text);
+  text-align: center;
+  background: var(--border);
+  border-radius: 8px;
+}
+
+.sidebar-tabs button.active .sidebar-tab-count {
+  color: #fff;
+  background: var(--live);
+}
+
+.people-block + .people-block {
+  margin-top: 12px;
+}
+
+/* Voice connected: the channel your voice goes to, leaving it, and what
+   you share there. */
+.voice-panel {
+  display: flex;
+  flex-direction: column;
+  padding: 8px 10px;
+  background: var(--surface-2);
+  border-top: 1px solid var(--border);
+}
+
+/* The same 30px buttons 2px apart as the footer's, so camera, screen and
+   leave stand over mute, deafen and settings. */
+.voice-panel-head {
+  display: flex;
+  gap: 2px;
+  align-items: center;
+}
+
+.voice-panel-head .voice-panel-text {
+  margin-right: 6px;
+}
+
+/* Camera and screen, beside leaving and dressed as it: icons, muted until
+   hovered, green while live. */
+.voice-share {
+  display: flex;
+  flex: none;
+  gap: 2px;
+}
+
+.voice-share-button {
+  position: relative;
+  width: 30px;
+  height: 30px;
+  color: var(--muted);
+}
+
+.voice-share-button:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--raised);
+}
+
+.voice-share-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.voice-share-button.live,
+.voice-share-button.live:hover:not(:disabled) {
+  color: var(--live);
+}
+
+.voice-share-dot {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 6px;
+  height: 6px;
+  background: var(--live);
+  border-radius: 50%;
+  animation: share-live-pulse 1.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .voice-share-dot {
+    animation: none;
+  }
+}
+
+/* Collapsed: stacked above your picture. */
+.voice-share.compact {
+  flex-direction: column;
+  gap: 4px;
+}
+
+.voice-panel-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.25;
+}
+
+.voice-panel-state {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--warn);
+}
+
+.voice-panel.connected .voice-panel-state {
+  color: var(--live);
+}
+
+.voice-panel-channel {
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.voice-panel .sidebar-leave {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  color: var(--muted);
+}
+
+.voice-panel .sidebar-leave:hover {
+  color: var(--danger);
+  background: var(--raised);
+}
+
+/* You, as one card: the name gets every pixel the buttons leave. */
+.sidebar-footer .sidebar-me-card {
+  display: flex;
+  flex: 1;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+  margin: -4px 0 -4px -4px;
+  padding: 4px;
+  font: inherit;
+  color: var(--text);
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.sidebar-footer .sidebar-me-card:not(:disabled):hover,
+.sidebar-footer .sidebar-me-card:focus-visible {
+  background: var(--raised);
+}
+
+.sidebar-footer .sidebar-me-card:disabled {
+  cursor: default;
+}
+
+.sidebar-me-card .sidebar-name {
+  flex: none;
+}
+
+/* Three buttons beside your name, kept narrow so the name is not. */
+.sidebar-footer .sidebar-settings {
+  width: 30px;
+  height: 30px;
+}
+
+.sidebar-footer:has(.sidebar-me-card) {
+  gap: 2px;
+}
+
+/* Your microphone or your sound, off. */
+.sidebar-footer .voice-off,
+.sidebar-footer .voice-off:hover {
+  color: var(--danger);
 }
 
 /* ---- rename -------------------------------------------------------------- */
@@ -3198,92 +3786,11 @@ button.danger {
 
 /* ---- share controls ------------------------------------------------------ */
 
-/* Screen and camera are independent: either can be lit, and pressing one does
-   not imply anything about the other. */
-/* Two separate, labelled buttons: what they do should not need a tooltip. */
-.share-icons {
-  display: inline-flex;
-  gap: 8px;
-  /* As wide as the open sidebar's content, so the two line up: the sidebar
-     is 240px with 8px inside, and the top bar ends 12px short of the edge.
-     Kept when the sidebar collapses, so the buttons never jump. */
-  width: calc(240px - 8px - 12px);
-  height: var(--control-height);
-}
-
-.share-icons .share-button {
-  flex: 1;
-  justify-content: center;
-  min-width: 0;
-}
-
-.share-button {
-  display: inline-flex;
-  gap: 7px;
-  align-items: center;
-  height: 100%;
-  padding: 0 10px;
-  white-space: nowrap;
-  font: inherit;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text);
-  background: var(--raised);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  cursor: pointer;
-  transition:
-    background 0.15s ease,
-    border-color 0.15s ease;
-}
-
-.share-button svg {
-  flex: 0 0 auto;
-}
-
-/* A label too long for its half of the width ends in an ellipsis rather
-   than spilling out of the button. */
-.share-label {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.share-live-dot {
-  flex: 0 0 auto;
-  width: 7px;
-  height: 7px;
-  background: #fff;
-  border-radius: 50%;
-  animation: share-live-pulse 1.6s ease-in-out infinite;
-}
-
+/* A live share's dot, in the voice bar's camera and screen buttons. */
 @keyframes share-live-pulse {
   50% {
     opacity: 0.35;
   }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .share-live-dot {
-    animation: none;
-  }
-}
-
-.share-button:hover:not(:disabled) {
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 18%, var(--raised));
-}
-
-.share-button:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
-.share-button.active {
-  color: #fff;
-  background: var(--live);
-  border-color: var(--live);
 }
 
 /* ---- camera dialog ------------------------------------------------------- */
@@ -3355,39 +3862,6 @@ button.danger {
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 6px;
-}
-
-/* Label above the bar, matching the device fields above it, so the three
-   controls read as one column rather than the meter being an afterthought. */
-.camera-level {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  font-size: 12px;
-}
-
-.camera-level .level-meter {
-  gap: 3px;
-  align-items: stretch;
-  height: 10px;
-  padding: 0;
-}
-
-.camera-level .level-seg {
-  flex: 1;
-  height: 100%;
-  border-radius: 2px;
-}
-
-.camera-mute-check {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  font-size: 13px;
-}
-
-.camera-mute-check input {
-  accent-color: var(--accent);
 }
 
 .camera-dialog footer {
@@ -3466,9 +3940,10 @@ button.danger {
   }
 }
 
+/* The tag is centred by its transform, so the pop keeps that. */
 @keyframes live-pop {
   40% {
-    transform: scale(1.18);
+    transform: translateX(-50%) scale(1.18);
   }
 }
 
@@ -3528,7 +4003,7 @@ button.danger {
 }
 
 /* Going live: the avatar gives one pulse as its ring appears. */
-.avatar.live {
+.avatar-live {
   animation: live-pop 420ms ease;
 }
 
@@ -3561,7 +4036,7 @@ button.danger {
 
 /* Mid-hop the share buttons are briefly disabled, but the app is not
  * disconnected in any way a person cares about, so they do not dim. */
-.share-button.hopping:disabled {
+.voice-share-button.hopping:disabled {
   opacity: 1;
 }
 
@@ -3596,7 +4071,7 @@ button.danger {
 /* The main actions press in slightly, so a click is felt. */
 button.primary:active:not(:disabled),
 button.danger:active:not(:disabled),
-.share-button:active:not(:disabled),
+.voice-share-button:active:not(:disabled),
 .sound-preview:active:not(:disabled),
 .channel:active {
   transform: scale(0.97);
@@ -3612,7 +4087,7 @@ button.danger:active:not(:disabled),
   .settings-pane,
   .member,
   .member.leaving,
-  .avatar.live,
+  .avatar-live,
   .tile-slot,
   .thumb,
   .thumb-blank.loading,
@@ -3643,7 +4118,7 @@ button.danger:active:not(:disabled),
 
   button.primary:active:not(:disabled),
   button.danger:active:not(:disabled),
-  .share-button:active:not(:disabled),
+  .voice-share-button:active:not(:disabled),
   .sound-preview:active:not(:disabled),
   .channel:active {
     transform: none;
@@ -4039,6 +4514,121 @@ button.danger:active:not(:disabled),
 
 .avatar-crown.super_admin {
   fill: #f2c14e;
+}
+
+/* Someone's status (ADR 0038): a dot on the picture's bottom-right corner,
+   ringed in the sidebar's colour so it reads apart from the picture. Offline
+   and invisible are a hollow ring. */
+.status-dot {
+  display: inline-block;
+  flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  box-sizing: border-box;
+}
+
+.avatar-crowned .status-dot {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--surface);
+  pointer-events: none;
+}
+
+.sidebar-footer .avatar-crowned .status-dot {
+  border-color: var(--surface-2);
+}
+
+.status-dot.online {
+  background: var(--live);
+}
+
+.status-dot.busy {
+  background: var(--danger);
+}
+
+.status-dot.away {
+  background: var(--warn);
+}
+
+.status-dot.offline,
+.status-dot.invisible {
+  background: var(--surface);
+  box-shadow: inset 0 0 0 2px var(--muted);
+}
+
+/* Everyone on the server, under the chats; those not there dimmed. */
+.person.offline {
+  opacity: 0.45;
+}
+
+.person.offline:hover {
+  opacity: 0.8;
+}
+
+/* Your name, and under it your status. */
+.sidebar-who {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.2;
+}
+
+.sidebar-status {
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Choosing your status: plain items, not the admins' red ones. */
+.status-menu {
+  min-width: 220px;
+}
+
+.status-menu .status-menu-item {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  padding: 7px 10px;
+  color: var(--text);
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+}
+
+.status-menu .status-menu-item:hover,
+.status-menu .status-menu-item:focus-visible {
+  background: var(--raised);
+  outline: none;
+}
+
+.status-menu .status-menu-item.chosen {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.status-menu-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.25;
+}
+
+.status-menu-label {
+  font-weight: 600;
+}
+
+.status-menu-hint {
+  max-width: 220px;
+  font-size: 11px;
+  color: var(--muted);
 }
 
 /* What a new password still needs, ticked off while it is typed. */
@@ -4743,6 +5333,85 @@ button.danger:active:not(:disabled),
   outline: none;
 }
 
+/* Someone's voice, louder or quieter for you alone. */
+.member-menu .member-menu-volume {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 200px;
+  padding: 6px 10px 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.member-menu-volume > span {
+  display: flex;
+  justify-content: space-between;
+}
+
+.member-menu-volume-value {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.member-menu-volume input {
+  width: 100%;
+  accent-color: var(--speaking);
+}
+
+/* Managing someone's account from the People tab: plain items, and the
+   one that takes them off the server in red, as the kick is. */
+.person-menu {
+  min-width: 220px;
+  max-width: 280px;
+}
+
+.person-menu .person-menu-item {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+  padding: 6px 10px;
+  font-weight: 500;
+  color: var(--text);
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+}
+
+.person-menu .person-menu-item:hover:not(:disabled),
+.person-menu .person-menu-item:focus-visible {
+  background: var(--raised);
+  outline: none;
+}
+
+.person-menu-note {
+  margin: 0;
+  padding: 4px 10px 6px;
+  font-size: 12px;
+}
+
+/* A reset code, shown once, to be handed on. */
+.person-menu-code {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px 10px 8px;
+  font-size: 12px;
+}
+
+.person-menu-code code {
+  padding: 6px 8px;
+  font-size: 14px;
+  letter-spacing: 0.05em;
+  user-select: all;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .member-menu {
     animation: none;
@@ -5174,6 +5843,80 @@ button.danger:active:not(:disabled),
   background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: 8px;
+}
+
+/* Emoji to put in a message, over the box at its right, where its button is. */
+.chat-emoji.active {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+.chat-emoji-picker {
+  position: absolute;
+  right: 12px;
+  bottom: calc(100% - 4px);
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  width: min(340px, calc(100% - 24px));
+  max-height: 320px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  animation: pop-in 0.12s ease-out;
+}
+
+.chat-emoji-scroll {
+  overflow-y: auto;
+  padding: 4px 6px 6px;
+}
+
+.chat-emoji-group h3 {
+  position: sticky;
+  top: -4px;
+  margin: 0;
+  padding: 6px 4px 4px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  text-transform: uppercase;
+  background: var(--surface-2);
+}
+
+.chat-emoji-picker .emoji-grid {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  border: none;
+}
+
+.chat-emoji-picker .emoji-grid button {
+  font-size: 20px;
+  cursor: pointer;
+}
+
+.chat-emoji-picker .chat-emoji-more {
+  padding: 8px;
+  font-size: 12px;
+  color: var(--muted);
+  background: transparent;
+  border: none;
+  border-top: 1px solid var(--border);
+  border-radius: 0 0 8px 8px;
+  cursor: pointer;
+}
+
+.chat-emoji-picker .chat-emoji-more:hover {
+  color: var(--text);
+  background: var(--raised);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-emoji-picker {
+    animation: none;
+  }
 }
 
 /* People to @mention, over the box while typing. */

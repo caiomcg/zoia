@@ -45,6 +45,8 @@ record that supersedes it, so the history stays legible.
 | [0035](0035-homolog-environment.md) | A homolog environment on a VM of its own | accepted |
 | [0036](0036-text-chat-in-scylladb.md) | Text chat, with its messages in ScyllaDB | proposed |
 | [0037](0037-kicks-and-idle-removal.md) | Kicking someone off the server, and removing the idle | accepted |
+| [0038](0038-presence.md) | Who is on the server, and their status | proposed |
+| [0039](0039-voice-channels.md) | Voice in every channel | proposed |
 
 ## The two that explain the most
 

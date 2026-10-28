@@ -81,6 +81,8 @@ export function createChatHub() {
  * @param {Function} options.requireAdmin
  * @param {(req) => Promise<object | null>} options.recheck the request's
  *   session as it stands now, for a stream that outlives its request
+ * @param {ReturnType<import('./presence.js').createPresence> | null} [options.presence]
+ *   told of each stream, since having one open is being on the server
  */
 export function chatRoutes({
   chats,
@@ -90,6 +92,7 @@ export function chatRoutes({
   requireSession,
   requireAdmin,
   recheck,
+  presence = null,
   hub = createChatHub(),
   heartbeatMs = HEARTBEAT_MS,
   sendLimit = { windowMs: 10_000, limit: 20 },
@@ -299,6 +302,8 @@ export function chatRoutes({
 
     const stream = { accountId, write: (frame) => res.write(frame) };
     const remove = hub.add(stream);
+    // An open stream is the app being open: the person is on the server.
+    const leave = presence?.connect(accountId, req.user.id);
 
     // A stream lives far longer than a session check. Signing the machine out
     // or disabling the account must end it, as it ends every other request.
@@ -312,6 +317,7 @@ export function chatRoutes({
     req.on('close', () => {
       clearInterval(heartbeat);
       remove();
+      leave?.();
     });
   });
 

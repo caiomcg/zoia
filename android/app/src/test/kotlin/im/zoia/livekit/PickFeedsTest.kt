@@ -59,4 +59,28 @@ class PickFeedsTest {
         assertEquals("whip", feeds.screenAudio)
         assertNull(feeds.mic)
     }
+
+    @Test
+    fun `a voice alone is no broadcast`() {
+        val feeds = pickFeeds(
+            video = emptyList<Feed<String>>(),
+            audio = listOf(own(Track.Source.MICROPHONE, "voice")),
+            inVoice = true
+        )
+        assertNull(feeds.screen)
+        assertNull(feeds.camera)
+        assertNull(feeds.screenAudio)
+        assertNull(feeds.mic)
+    }
+
+    @Test
+    fun `a camera shared from voice keeps its picture but not the voice`() {
+        val feeds = pickFeeds(
+            video = listOf(own(Track.Source.CAMERA, "camera")),
+            audio = listOf(own(Track.Source.MICROPHONE, "voice")),
+            inVoice = true
+        )
+        assertEquals("camera", feeds.camera)
+        assertNull(feeds.mic)
+    }
 }

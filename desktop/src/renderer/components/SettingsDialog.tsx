@@ -19,12 +19,21 @@ import {
   type CueSettings,
 } from '../sounds/cues';
 import { setSoundSettings, useSoundSettings } from '../sounds/settings';
+import VoiceSettingsSection from './VoiceSettings';
 import { playCue } from '../sounds/synth';
 import ReleaseNotesDialog from './ReleaseNotesDialog';
 import { useExit } from '../presence';
 
 export type Section =
-  'profile' | 'accounts' | 'server' | 'broadcast' | 'general' | 'sounds' | 'updates' | 'about';
+  | 'profile'
+  | 'accounts'
+  | 'server'
+  | 'broadcast'
+  | 'voice'
+  | 'general'
+  | 'sounds'
+  | 'updates'
+  | 'about';
 
 /** One of the server's limits, for an admin to change. The server checks both. */
 export interface ServerLimit {
@@ -41,6 +50,7 @@ const SECTIONS: { id: Section; label: MessageKey; adminOnly?: boolean }[] = [
   { id: 'accounts', label: 'settings.nav.accounts', adminOnly: true },
   { id: 'server', label: 'settings.nav.server', adminOnly: true },
   { id: 'broadcast', label: 'settings.nav.broadcast' },
+  { id: 'voice', label: 'settings.nav.voice' },
   { id: 'general', label: 'settings.nav.general' },
   { id: 'sounds', label: 'settings.nav.sounds' },
   { id: 'updates', label: 'settings.nav.updates' },
@@ -167,6 +177,7 @@ export default function SettingsDialog({
                 hardwareAvailable={hardwareAvailable ?? false}
               />
             )}
+            {section === 'voice' && <VoiceSettingsSection />}
             {section === 'general' && <GeneralSection />}
             {section === 'sounds' && <SoundsSection />}
             {section === 'updates' && <UpdatesSection />}

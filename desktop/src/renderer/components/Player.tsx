@@ -108,7 +108,6 @@ export default function Player({
   mirrored = false,
   gpuBroadcasting = false,
   sendAudio,
-  mic,
   onStop,
   onSwitch,
   onClose,
@@ -145,8 +144,6 @@ export default function Player({
     canSetVolume: boolean;
     onChange: (next: SendAudio) => void;
   };
-  /** Present while the camera sends a microphone, which can only be muted. */
-  mic?: { muted: boolean; onToggle: () => void };
   onStop: () => void;
   onSwitch: () => void;
   /** Leave the large view. Sits to the right of fullscreen, as on a watched tile. */
@@ -200,10 +197,7 @@ export default function Player({
   );
   const audio = sendAudio?.value;
   // Viewers hear nothing only when every audio you send is off.
-  const silent =
-    Boolean(sendAudio || mic) &&
-    (!audio || audio.muted || audio.volume === 0) &&
-    (!mic || mic.muted);
+  const silent = Boolean(sendAudio) && (!audio || audio.muted || audio.volume === 0);
 
   return (
     <section className="stage" ref={stageRef}>
@@ -240,7 +234,7 @@ export default function Player({
           <span className="remote-tile-label">
             <span className="remote-tile-name">{name}</span>
             <small className="stream-source">
-              {!sendAudio && !mic
+              {!sendAudio
                 ? t('player.withoutAudio')
                 : silent
                   ? t('player.viewersHearNothing')
@@ -293,17 +287,6 @@ export default function Player({
                 />
               )}
             </>
-          )}
-          {mic && (
-            <button
-              className="icon-button"
-              onClick={mic.onToggle}
-              aria-pressed={mic.muted}
-              title={mic.muted ? t('player.unmuteMic') : t('player.muteMic')}
-              aria-label={mic.muted ? t('player.unmuteMic') : t('player.muteMic')}
-            >
-              <IconMic muted={mic.muted} />
-            </button>
           )}
           <button
             className="icon-button"
