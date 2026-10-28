@@ -296,6 +296,29 @@ export const es: Messages = {
   'camera.muteMic': 'Silenciar el micrófono al compartir la cámara',
   'camera.share': 'Compartir cámara',
 
+  // ---- voz (ADR 0039)
+  'voice.mute': 'Silenciar micrófono',
+  'voice.unmute': 'Activar micrófono',
+  'voice.deafen': 'Ensordecer: silenciar todo el sonido',
+  'voice.undeafen': 'Dejar de ensordecer',
+  'voice.mutedInVoice': 'En la voz, micrófono apagado',
+  'voice.couldNotJoin': 'No se pudo unir a la voz: {error}',
+  'voice.couldNotRestart': 'No se pudo cambiar el micrófono: {error}',
+  'voice.noGrant': 'el servidor no permitió el micrófono a tiempo',
+  'voice.deviceLost': 'Tu micrófono se desconectó. Se usa el predeterminado del sistema.',
+  'settings.nav.voice': 'Voz',
+  'voiceSettings.microphone': 'Micrófono',
+  'voiceSettings.systemDefault': 'Predeterminado del sistema',
+  'voiceSettings.noise': 'Supresión de ruido',
+  'voiceSettings.noise.off': 'Desactivada',
+  'voiceSettings.noise.standard': 'Estándar',
+  'voiceSettings.noiseHint':
+    'Elimina el ruido de fondo constante, como un ventilador o un zumbido.',
+  'voiceSettings.echo': 'Cancelación de eco',
+  'voiceSettings.echoHint': 'Evita que lo que suena en tus altavoces entre en tu micrófono.',
+  'voiceSettings.agc': 'Ajustar el volumen del micrófono automáticamente',
+  'voiceSettings.live': 'Los cambios se aplican a tu micrófono al instante, incluso en la voz.',
+
   'pair.error.removed':
     'Se cerró la sesión en esta máquina. Inicia sesión de nuevo para continuar.',
   'pair.error.disabled': 'Tu cuenta está desactivada. Habla con un admin si es un error.',

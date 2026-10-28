@@ -68,7 +68,7 @@ internal fun watchingValue(onScreen: Iterable<String>): String = onScreen.sorted
 internal fun ownerIdentity(identity: String): String = identity.removeSuffix(WHIP_SUFFIX)
 
 /**
- * Who is in voice (ADR 0038), set by the server; must match VOICE_ATTRIBUTE
+ * Who is in voice (ADR 0039), set by the server; must match VOICE_ATTRIBUTE
  * in server/src/stage.js. This app does not join voice, so a voice is never
  * a broadcast here, and never played.
  */

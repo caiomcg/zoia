@@ -295,6 +295,8 @@ export interface StageState {
     canPublish: boolean;
     publishing: boolean;
     joinedAt: number;
+    /** In voice (ADR 0039); absent from servers before it. */
+    voice?: boolean;
   }>;
 }
 
@@ -517,6 +519,9 @@ export const IPC = {
   stageGet: 'zoia:stage:get',
   stageClaim: 'zoia:stage:claim',
   stageRelease: 'zoia:stage:release',
+  voiceJoin: 'zoia:voice:join',
+  voiceLeave: 'zoia:voice:leave',
+  voiceDeafen: 'zoia:voice:deafen',
   sourcesList: 'zoia:sources:list',
   sourcesInstant: 'zoia:sources:instant',
   sourcesSelect: 'zoia:sources:select',

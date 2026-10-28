@@ -71,6 +71,11 @@ const bridge: ZoiaBridge = {
     claim: () => ipcRenderer.invoke(IPC.stageClaim),
     release: () => ipcRenderer.invoke(IPC.stageRelease),
   },
+  voice: {
+    join: () => ipcRenderer.invoke(IPC.voiceJoin),
+    leave: () => ipcRenderer.invoke(IPC.voiceLeave),
+    deafen: (deafened) => ipcRenderer.invoke(IPC.voiceDeafen, deafened),
+  },
   sources: {
     list: (fresh?: boolean) => ipcRenderer.invoke(IPC.sourcesList, fresh),
     instant: () => ipcRenderer.invoke(IPC.sourcesInstant),

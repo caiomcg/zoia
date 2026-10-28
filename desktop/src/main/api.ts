@@ -386,6 +386,26 @@ export function stageRelease() {
   });
 }
 
+// ---- voice (ADR 0039) -----------------------------------------------------
+
+/** The microphone alone, granted at runtime like the stage. False: not in the room yet. */
+export async function voiceJoin(): Promise<boolean> {
+  try {
+    await call('/api/voice/join', { method: 'POST', body: JSON.stringify({ room: currentRoom }) });
+    return true;
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 409) return false;
+    throw err;
+  }
+}
+
+export function voiceLeave() {
+  return call<{ ok: boolean }>('/api/voice/leave', {
+    method: 'POST',
+    body: JSON.stringify({ room: currentRoom }),
+  });
+}
+
 // ---- text chat (ADR 0036) -------------------------------------------------
 
 const chatPath = (id: string, rest = '') => `/api/chats/${encodeURIComponent(id)}${rest}`;

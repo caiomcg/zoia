@@ -85,6 +85,14 @@ export interface ZoiaBridge {
     claim(): Promise<ClaimResult>;
     release(): Promise<{ ok: boolean; released?: boolean }>;
   };
+  /** Voice in the current channel (ADR 0039). */
+  voice: {
+    /** Grants the microphone; false when this machine is not in the room yet. */
+    join(): Promise<boolean>;
+    leave(): Promise<{ ok: boolean }>;
+    /** Silences every sound Zoia plays, in every window, or lets it play again. */
+    deafen(deafened: boolean): Promise<void>;
+  };
   sources: {
     list(fresh?: boolean): Promise<SourceInfo[]>;
     /** Screens with their pictures and every window open right now without one. */

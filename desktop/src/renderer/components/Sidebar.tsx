@@ -14,8 +14,9 @@ import type { RoomMember } from '../livekit/useRoom';
 import type { AccountRole, RoomInfo } from '../../shared/ipc';
 import type { GridTarget } from './RemoteGrid';
 import Avatar from './Avatar';
-import { IconEye } from './Player';
+import { IconEye, IconMic } from './Player';
 import StatusMenu from './StatusMenu';
+import type { VoiceState } from '../voice/useVoice';
 import { useT } from '../i18n';
 import { useLeaving } from '../presence';
 import type { PresenceController } from '../chat/usePresence';
@@ -40,6 +41,17 @@ const COLLAPSED_KEY = 'zoia.sidebarCollapsed';
 
 /** What a person dragged onto a channel carries: their identity. */
 const DRAG_TYPE = 'application/x-zoia-member';
+
+/** Voice in the current channel (ADR 0039), and its controls. */
+export interface SidebarVoice {
+  state: VoiceState;
+  muted: boolean;
+  deafened: boolean;
+  /** Who is speaking right now, yourself included. */
+  speaking: ReadonlySet<string>;
+  onToggleMute: () => void;
+  onToggleDeafen: () => void;
+}
 
 /** "Room 3" → "R3", "Games" → "GA": what a collapsed sidebar shows. */
 export function shortName(name: string): string {
@@ -357,7 +369,10 @@ export default function Sidebar({
   onKickMember,
   collapsed,
   onCollapsedChange,
+  voice,
 }: {
+  /** Absent: no voice controls at all. */
+  voice?: SidebarVoice;
   members: RoomMember[];
   myName: string;
   /** Yours, for your own profile picture in the footer. */
@@ -545,6 +560,7 @@ export default function Sidebar({
     onWatch: onWatchBroadcast,
     onToggleCamera,
     collapsed,
+    speaking: voice?.speaking,
   };
   // Which channel is being renamed, or 'new' while one is being named.
   const [editing, setEditing] = useState<string | null>(null);
@@ -912,6 +928,29 @@ export default function Sidebar({
             )}
           </span>
         )}
+        {/* In voice, as Discord has them: your microphone, and every sound. */}
+        {!collapsed && voice && voice.state === 'on' && (
+          <>
+            <button
+              className={`icon-button sidebar-settings${voice.muted ? ' voice-off' : ''}`}
+              onClick={voice.onToggleMute}
+              aria-pressed={voice.muted}
+              title={voice.muted ? t('voice.unmute') : t('voice.mute')}
+              aria-label={voice.muted ? t('voice.unmute') : t('voice.mute')}
+            >
+              <IconMic muted={voice.muted} />
+            </button>
+            <button
+              className={`icon-button sidebar-settings${voice.deafened ? ' voice-off' : ''}`}
+              onClick={voice.onToggleDeafen}
+              aria-pressed={voice.deafened}
+              title={voice.deafened ? t('voice.undeafen') : t('voice.deafen')}
+              aria-label={voice.deafened ? t('voice.undeafen') : t('voice.deafen')}
+            >
+              <IconHeadset off={voice.deafened} />
+            </button>
+          </>
+        )}
         {/* Only while in a channel: outside one there is nothing to leave. */}
         {!collapsed && currentChannel !== null && (
           <button
@@ -1065,7 +1104,10 @@ function MemberRow({
   onToggleCamera,
   collapsed,
   onContextMenu,
+  speaking,
 }: {
+  /** Who is speaking in voice right now. */
+  speaking?: ReadonlySet<string>;
   /** Admins only: opens what they may do to this person. */
   onContextMenu?: (event: ReactMouseEvent) => void;
   member: RoomMember;
@@ -1124,12 +1166,25 @@ function MemberRow({
       onBlur={hoverable ? () => onHover(null) : undefined}
       {...drag}
     >
-      <span className="avatar-wrap">
+      <span
+        className={`avatar-wrap${m.inVoice && !m.voiceMuted && speaking?.has(m.identity) ? ' speaking' : ''}`}
+      >
         <Avatar name={m.name} identity={m.identity} live={live} role={role} />
         {viewerIds.has(m.identity) && <WatchingYou />}
       </span>
       <span className="member-name">{m.name}</span>
       {m.isLocal && <span className="you-tag">{t('common.youTag')}</span>}
+      {/* Everyone here is in voice, so only a silenced microphone is news. */}
+      {m.inVoice && m.voiceMuted && (
+        <span
+          className="member-voice"
+          title={t('voice.mutedInVoice')}
+          aria-label={t('voice.mutedInVoice')}
+          role="img"
+        >
+          <IconMic muted />
+        </span>
+      )}
       {loading && <span className="stream-state">{t('common.loading')}</span>}
       {camera && (
         <CameraToggle
@@ -1140,6 +1195,28 @@ function MemberRow({
         />
       )}
     </div>
+  );
+}
+
+/** Headphones: voice. Struck through, deafened. */
+function IconHeadset({ off = false }: { off?: boolean }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="16"
+      height="16"
+      aria-hidden="true"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M4 15v-3a8 8 0 0116 0v3" />
+      <rect x="3" y="14" width="4" height="6" rx="1.5" />
+      <rect x="17" y="14" width="4" height="6" rx="1.5" />
+      {off && <path d="M3 3l18 18" />}
+    </svg>
   );
 }
 

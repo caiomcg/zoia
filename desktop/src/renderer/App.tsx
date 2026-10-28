@@ -22,6 +22,8 @@ import Splash from './components/Splash';
 import StatusLight, { type StatusStat, type StatusTone } from './components/StatusLight';
 import { WHIP_SUFFIX, useRoom, type RoomMember } from './livekit/useRoom';
 import { useGpuBroadcast } from './livekit/useGpuBroadcast';
+import { useVoice } from './voice/useVoice';
+import VoiceAudio from './voice/VoiceAudio';
 import { useSoundCues } from './sounds/useSoundCues';
 import { LAST_VERSION_STORAGE_KEY, shouldShowReleaseNotes } from './whats-new';
 import { useExit } from './presence';
@@ -92,6 +94,9 @@ function hopMembers(
       isIngress: false,
       broadcastSource: null,
       avatar: p.avatar,
+      // The room says, as soon as it connects; until then, nobody is.
+      inVoice: false,
+      voiceMuted: true,
     }));
   return me
     ? [
@@ -155,6 +160,16 @@ export default function App() {
   };
 
   const room = useRoom();
+  const voice = useVoice(room.room, room.state);
+  // Being in a channel is being in its voice (ADR 0039). Leaving the channel
+  // leaves voice with it: the server forgets the participant.
+  const { join: joinVoice } = voice;
+  const { dropCameraMicrophone } = room;
+  useEffect(() => {
+    if (room.state !== 'connected') return;
+    // A camera already on gives up its own microphone to voice's.
+    void dropCameraMicrophone().then(joinVoice);
+  }, [room.state, dropCameraMicrophone, joinVoice]);
   const [sidebarCollapsed, setSidebarCollapsed] = useSidebarCollapsed();
   const gpuCast = useGpuBroadcast();
   const { setRemoteFocus, setRemotePaused } = room;
@@ -828,6 +843,7 @@ export default function App() {
   const broadcastError = show('broadcast', room.broadcastError);
   const gpuError = show('gpu', gpuCast.error);
   const audioWarning = show('audio', room.audioWarning);
+  const voiceMessage = show('voice', voice.error);
   const stageMessage = show('stage', stageError);
   const channelMessage = show('channel', channelError);
   const chatMessage = show('chat', chatError);
@@ -955,6 +971,13 @@ export default function App() {
       </header>
 
       {roomError && <Banner onDismiss={() => dismiss('room', roomError)}>{roomError}</Banner>}
+      {voiceMessage && (
+        <Banner tone="warn" onDismiss={() => dismiss('voice', voiceMessage)}>
+          {voiceMessage}
+        </Banner>
+      )}
+      {/* Everyone else in voice, heard while you are in it. */}
+      <VoiceAudio tracks={voice.state === 'on' ? room.voiceTracks : []} />
       {roomNotice && (
         <Banner tone="warn" onDismiss={() => dismiss('room-notice', roomNotice)}>
           {roomNotice}
@@ -1174,6 +1197,14 @@ export default function App() {
             localWatched: stage.localWatched,
           }}
           onToggleCamera={(identity) => gridRef.current?.toggleCamera(identity)}
+          voice={{
+            state: voice.state,
+            muted: voice.muted,
+            deafened: voice.deafened,
+            speaking: voice.speaking,
+            onToggleMute: () => void voice.setMuted(!voice.muted),
+            onToggleDeafen: () => void voice.setDeafened(!voice.deafened),
+          }}
           onHoverBroadcast={(target, anchor) => gridRef.current?.hover(target, anchor)}
           onWatchBroadcast={(target) => gridRef.current?.watch(target)}
           onKickMember={

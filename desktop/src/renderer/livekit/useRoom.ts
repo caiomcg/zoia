@@ -35,6 +35,8 @@ import { WATCHING_ATTRIBUTE, isWatching, watchingValue } from './watching';
 import { AVATAR_ATTRIBUTE, avatarVersion } from '../avatars';
 import { createNativeVideo, type NativeVideo } from './native-video';
 import { tNow } from '../i18n';
+import { inVoice, isVoiceMicrophone } from '../voice/voice-room';
+import type { VoiceTrack } from '../voice/VoiceAudio';
 
 /**
  * macOS shares differently: audio from ScreenCaptureKit's loopback and a
@@ -146,6 +148,7 @@ function applyRemoteMediaSettings(
   paused: ReadonlySet<string>,
 ): void {
   const ownIngress = `${room.localParticipant.identity}${WHIP_SUFFIX}`;
+  const listening = inVoice(room.localParticipant);
   for (const participant of room.remoteParticipants.values()) {
     if (participant.identity === ownIngress) {
       // Audio of own ingress must NEVER be subscribed (would cause audio feedback loop).
@@ -187,7 +190,10 @@ function applyRemoteMediaSettings(
     }
     for (const publication of participant.audioTrackPublications.values()) {
       try {
-        publication.setSubscribed(subscribed);
+        // A voice is heard by everyone in voice, whatever they watch.
+        publication.setSubscribed(
+          isVoiceMicrophone(participant, publication) ? listening : subscribed,
+        );
       } catch {
         // The participant may leave while settings are being applied.
       }
@@ -360,6 +366,10 @@ export interface RoomMember {
   broadcastSource: string | null;
   /** The version of their profile picture, when they have one. */
   avatar?: string;
+  /** In voice (ADR 0039). */
+  inVoice: boolean;
+  /** In voice with their microphone muted, or not sending one yet. */
+  voiceMuted: boolean;
 }
 
 function broadcastMetadata(participant: Participant): {
@@ -549,6 +559,7 @@ export function useRoom() {
   // The server is kicking this machine off altogether, not just the room.
   const [kicked, setKicked] = useState<KickReason | null>(null);
   const [remoteScreens, setRemoteScreens] = useState<RemoteScreen[]>([]);
+  const [voiceTracks, setVoiceTracks] = useState<VoiceTrack[]>([]);
   const selectedRemoteIdsRef = useRef<Set<string>>(new Set());
   const pausedRemoteIdsRef = useRef<ReadonlySet<string>>(new Set());
   const focusedRemoteIdsRef = useRef<ReadonlySet<string> | null>(null);
@@ -707,7 +718,9 @@ export function useRoom() {
       const screenPub = ingressVideo ?? humanVideo;
       const videoPub = screenPub ?? (camera?.track ? camera : undefined);
       const audioTrack = ingressAudio?.track ?? humanAudio?.track ?? null;
-      const micTrack = mic?.track ?? null;
+      // Someone in voice is heard through voice, by everyone in it; their
+      // microphone is not a broadcast's sound, and alone it is no broadcast.
+      const micTrack = inVoice(human) ? null : (mic?.track ?? null);
       if (!videoPub?.track && !audioTrack && !micTrack) continue;
 
       // A WHIP publisher carries the name it joined with, so a later rename
@@ -761,7 +774,11 @@ export function useRoom() {
         for (const participant of room.remoteParticipants.values()) {
           const owner = ownerIdentity(participant.identity);
           if (owner === room.localParticipant.identity) continue;
-          if (participant.trackPublications.size > 0) publishing.add(owner);
+          // A voice is not a broadcast, and must not open one by itself.
+          const shared = [...participant.trackPublications.values()].some(
+            (pub) => !isVoiceMicrophone(participant, pub),
+          );
+          if (shared) publishing.add(owner);
         }
         const nextSelected = new Set<string>();
         for (const id of publishing) {
@@ -781,6 +798,14 @@ export function useRoom() {
           pausedRemoteIdsRef.current,
         );
         setRemoteScreens(findRemoteScreens(room));
+        setVoiceTracks(
+          [...room.remoteParticipants.values()].flatMap((participant) => {
+            const pub = participant.getTrackPublication(Track.Source.Microphone);
+            return pub?.track && isVoiceMicrophone(participant, pub)
+              ? [{ identity: participant.identity, track: pub.track }]
+              : [];
+          }),
+        );
         setParticipantCount(room.remoteParticipants.size);
         announceWatching(room);
 
@@ -843,6 +868,8 @@ export function useRoom() {
             broadcastMetadata(p).sourceKind,
           ),
           avatar: avatarVersion(p.attributes?.[AVATAR_ATTRIBUTE]),
+          inVoice: inVoice(p),
+          voiceMuted: p.getTrackPublication(Track.Source.Microphone)?.isMuted ?? true,
         });
 
         const all = [
@@ -896,6 +923,9 @@ export function useRoom() {
         .on(RoomEvent.TrackUnpublished, () => refresh())
         .on(RoomEvent.TrackSubscribed, () => refresh())
         .on(RoomEvent.TrackUnsubscribed, () => refresh())
+        // Mute shows in the list, beside someone's name, for voice.
+        .on(RoomEvent.TrackMuted, () => refresh())
+        .on(RoomEvent.TrackUnmuted, () => refresh())
         .on(RoomEvent.ParticipantConnected, () => refresh())
         // A move or a kick is only taken from the server: anything another
         // participant sends carries them as its sender, and is ignored here.
@@ -1031,6 +1061,7 @@ export function useRoom() {
     setIsReconnecting(false);
     setRoomNotice(null);
     setRemoteScreens([]);
+    setVoiceTracks([]);
     knownBroadcastersRef.current = new Set();
     pausedRemoteIdsRef.current = new Set();
     focusedRemoteIdsRef.current = null;
@@ -1206,7 +1237,12 @@ export function useRoom() {
       try {
         const claim = await window.zoia.stage.claim();
         if (!claim.ok) throw new Error(tNow('room.couldNotStart'));
-        stream = await navigator.mediaDevices.getUserMedia(constraints);
+        // In voice, the camera has the voice's microphone, and opening a
+        // second would send the same voice twice (ADR 0039).
+        const voice = inVoice(roomRef.current?.localParticipant);
+        stream = await navigator.mediaDevices.getUserMedia(
+          voice ? { ...constraints, audio: false } : constraints,
+        );
         const [videoTrack] = stream.getVideoTracks();
         if (!videoTrack) throw new Error(tNow('room.cameraNoVideo'));
 
@@ -1252,7 +1288,7 @@ export function useRoom() {
           });
           setMicMutedState(muteMicrophone);
           setSendingMic(true);
-        } else {
+        } else if (!voice) {
           setAudioWarning(tNow('room.noMicrophone'));
         }
 
@@ -1702,6 +1738,8 @@ export function useRoom() {
     state,
     error,
     remoteScreens,
+    /** Everyone else's voice, for someone in voice to hear. */
+    voiceTracks,
     selectedRemoteIds,
     isReconnecting,
     roomNotice,
@@ -1767,6 +1805,20 @@ export function useRoom() {
     /** Present while the camera sends a microphone. */
     sendingMic,
     micMuted,
+    /**
+     * Stops the camera's own microphone, leaving its picture: on joining
+     * voice, whose microphone takes its place.
+     */
+    dropCameraMicrophone: useCallback(async () => {
+      const camera = cameraRef.current;
+      const mic = camera?.mic;
+      if (!camera || !mic) return;
+      camera.mic = null;
+      setSendingMic(false);
+      setMicMutedState(false);
+      await roomRef.current?.localParticipant.unpublishTrack(mic, true).catch(() => {});
+      mic.mediaStreamTrack.stop();
+    }, []),
     /** Mutes the camera's microphone for viewers; it keeps capturing, so unmuting is instant. */
     setMicMuted: useCallback(async (muted: boolean) => {
       const mic = cameraRef.current?.mic;

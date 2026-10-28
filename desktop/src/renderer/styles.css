@@ -11,6 +11,8 @@
   --accent: #5865f2;
   --accent-hover: #4752c4;
   --live: #23a55a;
+  /* Someone talking in voice: brighter than live, which is a share. */
+  --speaking: #57f287;
   --warn: #f0b132;
   --danger: #da373c;
   --radius: 8px;
@@ -1609,7 +1611,8 @@ button.danger {
   color: var(--muted);
 }
 
-.settings-field input {
+.settings-field input,
+.settings-field .settings-select {
   width: 100%;
   box-sizing: border-box;
   padding: 9px 10px;
@@ -2951,6 +2954,43 @@ button.danger {
   box-shadow:
     0 0 0 2px var(--surface),
     0 0 0 4px var(--live);
+}
+
+/* ---- voice (ADR 0039) ---------------------------------------------------- */
+
+.sidebar.collapsed .member-voice {
+  display: none;
+}
+
+/* Talking: a ring that comes and goes with the voice. */
+.avatar-wrap.speaking .avatar {
+  box-shadow:
+    0 0 0 2px var(--surface),
+    0 0 0 4px var(--speaking);
+  transition: box-shadow 0.1s ease;
+}
+
+.member-voice {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  margin-left: auto;
+  color: var(--danger);
+}
+
+.member-voice svg {
+  width: 14px;
+  height: 14px;
+}
+
+.member-voice + .member-camera {
+  margin-left: 0;
+}
+
+/* Your microphone or your sound, off. */
+.sidebar-footer .voice-off,
+.sidebar-footer .voice-off:hover {
+  color: var(--danger);
 }
 
 /* ---- rename -------------------------------------------------------------- */

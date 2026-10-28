@@ -303,6 +303,28 @@ export const en = {
   'camera.muteMic': 'Mute microphone when sharing the camera',
   'camera.share': 'Share camera',
 
+  // ---- voice (ADR 0039)
+  'voice.mute': 'Mute microphone',
+  'voice.unmute': 'Unmute microphone',
+  'voice.deafen': 'Deafen: silence every sound',
+  'voice.undeafen': 'Undeafen',
+  'voice.mutedInVoice': 'In voice, microphone off',
+  'voice.couldNotJoin': 'Could not join voice: {error}',
+  'voice.couldNotRestart': 'Could not change the microphone: {error}',
+  'voice.noGrant': 'the server did not allow the microphone in time',
+  'voice.deviceLost': 'Your microphone was disconnected. Using the system default instead.',
+  'settings.nav.voice': 'Voice',
+  'voiceSettings.microphone': 'Microphone',
+  'voiceSettings.systemDefault': 'System default',
+  'voiceSettings.noise': 'Noise suppression',
+  'voiceSettings.noise.off': 'Off',
+  'voiceSettings.noise.standard': 'Standard',
+  'voiceSettings.noiseHint': 'Removes steady background noise, like a fan or hum.',
+  'voiceSettings.echo': 'Echo cancellation',
+  'voiceSettings.echoHint': 'Keeps what you hear from your speakers out of your microphone.',
+  'voiceSettings.agc': 'Adjust my microphone volume automatically',
+  'voiceSettings.live': 'Changes apply to your microphone right away, even in voice.',
+
   // ---- pairing
   'pair.error.removed': 'This machine was signed out. Sign in again to continue.',
   'pair.error.disabled': 'Your account is disabled. Ask an admin if this is a mistake.',

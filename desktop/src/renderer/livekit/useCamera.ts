@@ -8,6 +8,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
+import { getVoiceSettings, MICROPHONE_KEY, setVoiceSettings } from '../voice/settings';
 
 export interface MediaDeviceChoice {
   deviceId: string;
@@ -20,7 +21,8 @@ export interface Devices {
 }
 
 const CAMERA_KEY = 'zoia.cameraId';
-const MIC_KEY = 'zoia.microphoneId';
+// One microphone for the camera and voice; the voice settings keep it.
+const MIC_KEY = MICROPHONE_KEY;
 
 /**
  * Labels are hidden until a capture permission has been granted at least
@@ -96,7 +98,7 @@ export function useCameraDevices() {
 
   const chooseMicrophone = useCallback((id: string) => {
     setMicrophoneId(id);
-    localStorage.setItem(MIC_KEY, id);
+    setVoiceSettings({ ...getVoiceSettings(), microphoneId: id });
   }, []);
 
   /** An empty id means "whatever Windows considers the default". */
