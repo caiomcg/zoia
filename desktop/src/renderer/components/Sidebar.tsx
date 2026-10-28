@@ -1277,15 +1277,16 @@ function MemberRow({
       </span>
       <span className="member-name">{m.name}</span>
       {m.isLocal && <span className="you-tag">{t('common.youTag')}</span>}
-      {/* Everyone here is in voice, so only a silenced microphone is news. */}
-      {m.inVoice && m.voiceMuted && (
+      {/* Everyone here is in voice, so only silence is news: hearing
+          nothing, which also mutes, or just a muted microphone. */}
+      {m.inVoice && (m.voiceDeafened || m.voiceMuted) && (
         <span
           className="member-voice"
-          title={t('voice.mutedInVoice')}
-          aria-label={t('voice.mutedInVoice')}
+          title={m.voiceDeafened ? t('voice.deafenedInVoice') : t('voice.mutedInVoice')}
+          aria-label={m.voiceDeafened ? t('voice.deafenedInVoice') : t('voice.mutedInVoice')}
           role="img"
         >
-          <IconMic muted />
+          {m.voiceDeafened ? <IconHeadset off /> : <IconMic muted />}
         </span>
       )}
       {loading && <span className="stream-state">{t('common.loading')}</span>}

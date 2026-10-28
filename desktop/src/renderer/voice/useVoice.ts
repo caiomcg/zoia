@@ -25,6 +25,7 @@ import { tNow } from '../i18n';
 import { captureOptions, getVoiceSettings, subscribeVoiceSettings } from './settings';
 import { VOICE_SAMPLE_RATE, VoiceProcessor } from './pipeline';
 import { useSpeaking } from './speaking';
+import { DEAFENED_ATTRIBUTE } from './voice-room';
 
 export type VoiceState = 'off' | 'joining' | 'on';
 
@@ -69,6 +70,16 @@ function rememberMuted(muted: boolean) {
   } catch {
     // Remembering is a convenience; the mute still applies this session.
   }
+}
+
+/**
+ * Tells everyone else whether you are hearing them (DEAFENED_ATTRIBUTE), for
+ * the icon by your name. Best effort: deafening works without it.
+ */
+async function announceDeafened(room: Room | null, deafened: boolean) {
+  await room?.localParticipant
+    .setAttributes({ [DEAFENED_ATTRIBUTE]: deafened ? '1' : '' })
+    .catch(() => {});
 }
 
 /** What a restart is needed for: the capture, and which suppression runs after it. */
@@ -134,7 +145,10 @@ export function useVoice(roomRef: RefObject<Room | null>, connection: Connection
     if (deafenedRef.current === next) return;
     deafenedRef.current = next;
     setDeafenedState(next);
-    await window.zoia.voice.deafen(next).catch(() => {});
+    await Promise.all([
+      window.zoia.voice.deafen(next).catch(() => {}),
+      announceDeafened(voiceRoomRef.current, next),
+    ]);
   }, []);
 
   /** Ends voice here, without telling the server: for a room that is already gone. */
@@ -249,6 +263,8 @@ export function useVoice(roomRef: RefObject<Room | null>, connection: Connection
       void (async () => {
         try {
           if (!(await window.zoia.voice.join())) return;
+          // A new session starts without what this app said of itself.
+          if (deafenedRef.current) await announceDeafened(room, true);
           if (!room.localParticipant.getTrackPublication(Track.Source.Microphone)) {
             trackRef.current?.stop();
             trackRef.current = null;

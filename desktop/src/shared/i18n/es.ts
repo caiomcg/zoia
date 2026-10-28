@@ -178,6 +178,7 @@ export const es: Messages = {
   'chat.photoGone': 'Esta foto ya no está disponible.',
   'chat.videoGone': 'Este video ya no está disponible.',
 
+  'avatar.live': 'EN VIVO',
   'player.youreLive': 'Estás en vivo',
   'player.previewHidden':
     'Tu vista previa está oculta. Los espectadores ven tu transmisión normalmente.',
@@ -194,8 +195,6 @@ export const es: Messages = {
   'player.muteAudio': 'Silenciar tu audio',
   'player.unmuteAudio': 'Activar tu audio',
   'player.sendVolume': 'Qué tan fuerte oyen tu audio los espectadores',
-  'player.muteMic': 'Silenciar tu micrófono para los espectadores',
-  'player.unmuteMic': 'Activar tu micrófono',
   'player.switchTitle': 'Compartir otra cosa sin detener',
   'player.switch': 'Cambiar lo que compartes',
 
@@ -252,7 +251,6 @@ export const es: Messages = {
   'room.couldNotStart': 'No se pudo iniciar tu transmisión.',
   'room.cameraNoVideo': 'Esa cámara no devolvió video.',
   'room.notConnected': 'No estás conectado a la sala.',
-  'room.noMicrophone': 'No había micrófono disponible, así que la cámara se comparte sin sonido.',
   'room.noVideoTrack': 'Esa fuente no devolvió ninguna pista de video.',
   'room.windowNoAudio':
     'No se pudo identificar el audio de esa ventana, así que se comparte sin sonido.',
@@ -294,9 +292,6 @@ export const es: Messages = {
 
   'camera.title': 'Compartir tu cámara',
   'camera.camera': 'Cámara',
-  'camera.microphone': 'Micrófono',
-  'camera.micLevel': 'Nivel del micrófono',
-  'camera.muteMic': 'Silenciar el micrófono al compartir la cámara',
   'camera.share': 'Compartir cámara',
 
   // ---- voz (ADR 0039)
@@ -310,6 +305,7 @@ export const es: Messages = {
     'No se pudo iniciar la supresión de ruido ni la sensibilidad de entrada, así que tu micrófono se envía tal cual: {error}',
   'voice.connected': 'Voz conectada',
   'voice.connecting': 'Conectando…',
+  'voice.deafenedInVoice': 'En la voz, sin escuchar',
   'voice.mutedInVoice': 'En la voz, micrófono apagado',
   'voice.couldNotJoin': 'No se pudo unir a la voz: {error}',
   'voice.couldNotRestart': 'No se pudo cambiar el micrófono: {error}',

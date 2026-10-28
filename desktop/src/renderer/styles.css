@@ -2821,10 +2821,9 @@ button.danger {
 }
 
 /* On your stage: the live ring turns from green to the accent. */
-.member.watching .avatar.live {
-  box-shadow:
-    0 0 0 2px var(--surface),
-    0 0 0 4px var(--accent);
+/* Someone you are watching: their live tag in the accent, not red. */
+.member.watching .avatar-live {
+  background: var(--accent);
 }
 
 /* A hovered member's thumbnail, beside the channel list (RemoteGrid). */
@@ -2955,10 +2954,24 @@ button.danger {
   border-radius: 50%;
 }
 
-.avatar.live {
-  box-shadow:
-    0 0 0 2px var(--surface),
-    0 0 0 4px var(--live);
+/* Live: a red tag over the picture's lower edge, as streaming apps mark it.
+   Rings are for speaking. */
+.avatar-live {
+  position: absolute;
+  bottom: -5px;
+  left: 50%;
+  padding: 0 3px;
+  font-size: 7.5px;
+  font-weight: 800;
+  line-height: 11px;
+  letter-spacing: 0.04em;
+  color: #fff;
+  white-space: nowrap;
+  background: var(--danger);
+  border-radius: 3px;
+  box-shadow: 0 0 0 2px var(--surface);
+  transform: translateX(-50%);
+  pointer-events: none;
 }
 
 /* ---- voice (ADR 0039) ---------------------------------------------------- */
@@ -3851,39 +3864,6 @@ button.danger {
   border-radius: 6px;
 }
 
-/* Label above the bar, matching the device fields above it, so the three
-   controls read as one column rather than the meter being an afterthought. */
-.camera-level {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  font-size: 12px;
-}
-
-.camera-level .level-meter {
-  gap: 3px;
-  align-items: stretch;
-  height: 10px;
-  padding: 0;
-}
-
-.camera-level .level-seg {
-  flex: 1;
-  height: 100%;
-  border-radius: 2px;
-}
-
-.camera-mute-check {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  font-size: 13px;
-}
-
-.camera-mute-check input {
-  accent-color: var(--accent);
-}
-
 .camera-dialog footer {
   display: flex;
   gap: 8px;
@@ -3960,9 +3940,10 @@ button.danger {
   }
 }
 
+/* The tag is centred by its transform, so the pop keeps that. */
 @keyframes live-pop {
   40% {
-    transform: scale(1.18);
+    transform: translateX(-50%) scale(1.18);
   }
 }
 
@@ -4022,7 +4003,7 @@ button.danger {
 }
 
 /* Going live: the avatar gives one pulse as its ring appears. */
-.avatar.live {
+.avatar-live {
   animation: live-pop 420ms ease;
 }
 
@@ -4106,7 +4087,7 @@ button.danger:active:not(:disabled),
   .settings-pane,
   .member,
   .member.leaving,
-  .avatar.live,
+  .avatar-live,
   .tile-slot,
   .thumb,
   .thumb-blank.loading,

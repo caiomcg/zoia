@@ -100,6 +100,7 @@ function hopMembers(
       // The room says, as soon as it connects; until then, nobody is.
       inVoice: false,
       voiceMuted: true,
+      voiceDeafened: false,
     }));
   return me
     ? [
@@ -167,41 +168,50 @@ export default function App() {
   // Being in a channel is being in its voice (ADR 0039). Leaving the channel
   // leaves voice with it: the server forgets the participant.
   const { join: joinVoice } = voice;
-  const { dropCameraMicrophone } = room;
   useEffect(() => {
-    if (room.state !== 'connected') return;
-    // A camera already on gives up its own microphone to voice's.
-    void dropCameraMicrophone().then(joinVoice);
-  }, [room.state, dropCameraMicrophone, joinVoice]);
-  // The global shortcuts (ADR 0039), from main's input hook. Read through a
-  // ref: the listener stays put while mute and deafen change under it.
+    if (room.state === 'connected') void joinVoice();
+  }, [room.state, joinVoice]);
+  // Mute and deafen, from the footer's buttons or the global shortcuts (ADR
+  // 0039), each with a tone to say it happened: from a shortcut Zoia may well
+  // be out of sight. Read through a ref, so the shortcut listener stays put
+  // while mute and deafen change under it.
   const voiceRef = useRef(voice);
   voiceRef.current = voice;
+  const toggleMute = useCallback(() => {
+    const current = voiceRef.current;
+    if (current.state !== 'on') return;
+    const volume = getSoundSettings().volume;
+    if (current.muted) {
+      // Unmuting while deafened undeafens too, which would silence a tone
+      // played first: it plays once you can hear again.
+      void current.setMuted(false).then(() => playVoiceCue('unmute', volume));
+    } else {
+      playVoiceCue('mute', volume);
+      void current.setMuted(true);
+    }
+  }, []);
+  const toggleDeafen = useCallback(() => {
+    const current = voiceRef.current;
+    if (current.state !== 'on') return;
+    const volume = getSoundSettings().volume;
+    if (current.deafened) {
+      void current.setDeafened(false).then(() => playVoiceCue('undeafen', volume));
+    } else {
+      // Deafening silences every Zoia sound, its own tone included, so the
+      // tone plays out first.
+      playVoiceCue('deafen', volume);
+      setTimeout(() => void voiceRef.current.setDeafened(true), VOICE_CUE_MS);
+    }
+  }, []);
   useEffect(
     () =>
       window.zoia.shortcuts.onFire(({ action, pressed }) => {
-        const current = voiceRef.current;
-        if (action === 'pushToTalk') {
-          setPushToTalk(pressed);
-          return;
-        }
-        // Outside voice there is nothing to mute: no cue for nothing done.
-        if (!pressed || current.state !== 'on') return;
-        // A cue says it happened, since Zoia may well be out of sight.
-        const volume = getSoundSettings().volume;
-        if (action === 'toggleMute') {
-          playVoiceCue(current.muted ? 'unmute' : 'mute', volume);
-          void current.setMuted(!current.muted);
-        } else if (action === 'toggleDeafen' && current.deafened) {
-          void current.setDeafened(false).then(() => playVoiceCue('undeafen', volume));
-        } else if (action === 'toggleDeafen') {
-          // Deafening silences every Zoia sound, its own cue included, so
-          // the cue plays out first.
-          playVoiceCue('deafen', volume);
-          setTimeout(() => void voiceRef.current.setDeafened(true), VOICE_CUE_MS);
-        }
+        if (action === 'pushToTalk') setPushToTalk(pressed);
+        else if (!pressed) return;
+        else if (action === 'toggleMute') toggleMute();
+        else if (action === 'toggleDeafen') toggleDeafen();
       }),
-    [],
+    [toggleMute, toggleDeafen],
   );
   const [sidebarCollapsed, setSidebarCollapsed] = useSidebarCollapsed();
   const gpuCast = useGpuBroadcast();
@@ -641,9 +651,8 @@ export default function App() {
   );
 
   // ---- text chat (ADR 0036) -----------------------------------------------
-  // The main area shows the broadcasts while you watch something, and the
-  // chat otherwise. Tabs switch between them; starting to watch brings the
-  // stage forward, and watching nothing any more brings the chat back.
+  // The main area shows the broadcasts or the chat. Tabs switch between them;
+  // starting to watch brings the stage forward, and nothing else moves you.
   const [view, setView] = useState<'stage' | 'chat'>('chat');
   const [focused, setFocused] = useState(() => document.hasFocus());
   useEffect(() => {
@@ -665,10 +674,11 @@ export default function App() {
     if (watchingSomething && !wasWatching.current) setView('stage');
     wasWatching.current = watchingSomething;
   }, [watchingSomething]);
-  // Joining a channel is to share or to watch: its stage comes first, whether
-  // or not anyone is live yet. Out of every channel there is only the chat.
+  // Joining or changing channels leaves you where you were: being in one is
+  // being in its voice, not a wish to look at its stage. Out of every channel
+  // there is only the chat.
   useEffect(() => {
-    setView(channel === null ? 'chat' : 'stage');
+    if (channel === null) setView('chat');
   }, [channel]);
   const [chatError, setChatError] = useState<string | null>(null);
   const chatShownIfEnabled = channel === null || view === 'chat';
@@ -1102,14 +1112,6 @@ export default function App() {
                                     }
                                   : undefined
                               }
-                              mic={
-                                room.sendingMic
-                                  ? {
-                                      muted: room.micMuted,
-                                      onToggle: () => void room.setMicMuted(!room.micMuted),
-                                    }
-                                  : undefined
-                              }
                               onStop={() => void stopMain()}
                               onSwitch={() => setPickerOpen(true)}
                             />
@@ -1189,8 +1191,8 @@ export default function App() {
             muted: voice.muted,
             deafened: voice.deafened,
             speaking: voice.speaking,
-            onToggleMute: () => void voice.setMuted(!voice.muted),
-            onToggleDeafen: () => void voice.setDeafened(!voice.deafened),
+            onToggleMute: toggleMute,
+            onToggleDeafen: toggleDeafen,
           }}
           share={{
             screenLive,
@@ -1264,13 +1266,13 @@ export default function App() {
       {camera.mounted && (
         <CameraDialog
           closing={camera.closing}
-          onStart={(constraints, muteMicrophone) => {
+          onStart={(constraints) => {
             setCameraOpen(false);
             // A camera always goes through the Chromium path: there is no
             // window for the hardware encoder to capture, and the frame is
             // small enough that it does not need one. Whatever screen is
             // shared stays shared; the camera joins it.
-            void room.startCamera(constraints, muteMicrophone);
+            void room.startCamera(constraints);
           }}
           onCancel={() => setCameraOpen(false)}
         />

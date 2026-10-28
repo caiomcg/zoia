@@ -66,16 +66,16 @@ smoothed active speakers.
 **Each listener sets each voice's volume** for themselves, up to twice as sent, kept per
 person on their machine.
 
-**One microphone per person.** In voice, a camera shares the voice microphone instead of
-opening another. Everyone in voice hears everyone in voice without turning them on; ADR
-0034's "off until you turn it on" stays for the microphone of a camera shared by someone
-not in voice.
+**One microphone per person: the voice's.** A camera sends a picture only; its own
+microphone, and the camera dialog's choice of one, are gone, since everyone in a channel
+is in voice. Everyone in voice hears everyone in voice without turning them on. ADR 0034's
+"off until you turn it on" stays only for a camera microphone from an older app.
 
 **Shortcuts work while Zoia is in the background:** push-to-talk, mute and deafen, bound to
 keys, combinations or mouse buttons. Electron's global shortcuts take keys only and have no
 key-up, so main uses a native input hook (`uiohook-napi`), loaded optionally like the WASAPI
-capture and running only while something is bound. A short tone confirms a mute or deafen
-done from a shortcut.
+capture and running only while something is bound. A short tone confirms every mute and
+deafen, from a button or a shortcut.
 
 **Android listens.** It plays everyone in voice and publishes nothing.
 

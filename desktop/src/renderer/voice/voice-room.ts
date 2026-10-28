@@ -1,8 +1,10 @@
 /**
- * Who is in voice, read from the room (ADR 0039).
+ * Who is in voice, and who has stopped listening, read from the room (ADR
+ * 0039).
  *
- * The server sets the attribute together with the microphone-only permission,
- * so it is the one record of who joined, and it leaves with the participant.
+ * The server sets the voice attribute together with the microphone-only
+ * permission, so it is the one record of who joined, and it leaves with the
+ * participant. Deafened is set by the app itself, since only it knows.
  */
 
 import { Track, type Participant, type TrackPublication } from 'livekit-client';
@@ -14,10 +16,17 @@ export function inVoice(participant: Participant | null | undefined): boolean {
   return participant?.attributes?.[VOICE_ATTRIBUTE] === '1';
 }
 
+/** Hearing nothing: deafened. Set by each app on its own participant. */
+export const DEAFENED_ATTRIBUTE = 'zoia.deafened';
+
+export function isDeafened(participant: Participant | null | undefined): boolean {
+  return participant?.attributes?.[DEAFENED_ATTRIBUTE] === '1';
+}
+
 /**
- * A microphone that belongs to voice rather than to a camera. Someone in
- * voice has one microphone, and a camera they share uses it, so every
- * microphone of theirs is voice.
+ * A microphone that belongs to voice rather than to a camera. A camera sends
+ * no microphone of its own any more, so every microphone of someone in voice
+ * is voice; an older app's camera microphone is the exception this tells.
  */
 export function isVoiceMicrophone(
   participant: Participant,

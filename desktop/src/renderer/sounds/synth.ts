@@ -123,7 +123,7 @@ const VOICE_CUE_NOTES: Record<VoiceCue, Note[]> = {
 /** How long a voice cue lasts: deafening waits for it, or it would silence itself. */
 export const VOICE_CUE_MS = 280;
 
-/** Confirms a shortcut's mute or deafen, at the overall cue volume. */
+/** Confirms a mute or deafen, from a button or a shortcut, at the overall cue volume. */
 export function playVoiceCue(cue: VoiceCue, overall: number): void {
   playNotes(VOICE_CUE_VOICE, VOICE_CUE_NOTES[cue], overall);
 }

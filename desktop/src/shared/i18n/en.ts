@@ -185,6 +185,7 @@ export const en = {
   'chat.videoGone': 'This video is no longer available.',
 
   // ---- your own share
+  'avatar.live': 'LIVE',
   'player.youreLive': 'You’re live',
   'player.previewHidden': 'Your preview is hidden. Viewers see your broadcast as normal.',
   'player.gpuTitle': 'Sharing your screen',
@@ -200,8 +201,6 @@ export const en = {
   'player.muteAudio': 'Mute your audio',
   'player.unmuteAudio': 'Unmute your audio',
   'player.sendVolume': 'How loud viewers hear your audio',
-  'player.muteMic': 'Mute your microphone for viewers',
-  'player.unmuteMic': 'Unmute your microphone',
   'player.switchTitle': 'Share something else without stopping',
   'player.switch': 'Switch what you are sharing',
 
@@ -259,7 +258,6 @@ export const en = {
   'room.couldNotStart': 'Could not start your broadcast.',
   'room.cameraNoVideo': 'That camera returned no video.',
   'room.notConnected': 'Not connected to the room.',
-  'room.noMicrophone': 'No microphone was available, so the camera is being shared silently.',
   'room.noVideoTrack': 'No video track was returned for that source.',
   'room.windowNoAudio':
     'That window’s audio could not be identified, so it is being shared silently.',
@@ -301,9 +299,6 @@ export const en = {
   // ---- camera
   'camera.title': 'Share your camera',
   'camera.camera': 'Camera',
-  'camera.microphone': 'Microphone',
-  'camera.micLevel': 'Microphone level',
-  'camera.muteMic': 'Mute microphone when sharing the camera',
   'camera.share': 'Share camera',
 
   // ---- voice (ADR 0039)
@@ -317,6 +312,7 @@ export const en = {
     'Noise suppression and input sensitivity could not start, so your microphone is sent as captured: {error}',
   'voice.connected': 'Voice connected',
   'voice.connecting': 'Connecting…',
+  'voice.deafenedInVoice': 'In voice, not listening',
   'voice.mutedInVoice': 'In voice, microphone off',
   'voice.couldNotJoin': 'Could not join voice: {error}',
   'voice.couldNotRestart': 'Could not change the microphone: {error}',

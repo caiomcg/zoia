@@ -59,6 +59,15 @@ export function StatusDot({ status }: { status: Dot }) {
   );
 }
 
+/**
+ * Sharing a screen or a camera: a tag on the picture's lower edge, as
+ * streaming apps have it, not a ring. Green rings mean speaking (ADR 0039).
+ */
+function LiveTag() {
+  const t = useT();
+  return <span className="avatar-live">{t('avatar.live')}</span>;
+}
+
 export default function Avatar({
   name,
   live,
@@ -95,13 +104,14 @@ export default function Avatar({
     </span>
   );
   const crowned = role === 'admin' || role === 'super_admin';
-  if (!crowned && !status) return picture;
+  if (!crowned && !status && !live) return picture;
   // Outside the circle, which clips whatever is inside it.
   return (
     <span className="avatar-crowned">
       {picture}
       {crowned && <Crown role={role} />}
       {status && <StatusDot status={status} />}
+      {live && <LiveTag />}
     </span>
   );
 }

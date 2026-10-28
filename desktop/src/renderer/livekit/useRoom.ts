@@ -35,7 +35,7 @@ import { WATCHING_ATTRIBUTE, isWatching, watchingValue } from './watching';
 import { AVATAR_ATTRIBUTE, avatarVersion } from '../avatars';
 import { createNativeVideo, type NativeVideo } from './native-video';
 import { tNow } from '../i18n';
-import { inVoice, isVoiceMicrophone } from '../voice/voice-room';
+import { inVoice, isDeafened, isVoiceMicrophone } from '../voice/voice-room';
 import type { VoiceTrack } from '../voice/VoiceAudio';
 
 /**
@@ -370,6 +370,8 @@ export interface RoomMember {
   inVoice: boolean;
   /** In voice with their microphone muted, or not sending one yet. */
   voiceMuted: boolean;
+  /** In voice and hearing nothing: deafened. */
+  voiceDeafened: boolean;
 }
 
 function broadcastMetadata(participant: Participant): {
@@ -657,13 +659,9 @@ export function useRoom() {
   // The camera is published beside the screen, not instead of it, so it keeps
   // its own state (ADR 0034). Either may run alone, or both together; the
   // stage is given back only once neither does.
-  const cameraRef = useRef<{ video: LocalVideoTrack | null; mic: LocalAudioTrack | null } | null>(
-    null,
-  );
+  const cameraRef = useRef<{ video: LocalVideoTrack | null } | null>(null);
   const [cameraState, setCameraState] = useState<BroadcastState>('idle');
   const [cameraTrack, setCameraTrack] = useState<LocalVideoTrack | null>(null);
-  const [sendingMic, setSendingMic] = useState(false);
-  const [micMuted, setMicMutedState] = useState(false);
   // From the moment a screen share starts until it stops, on either path.
   // The hardware path runs outside this hook, so App reports it (setGpuScreen).
   const screenActiveRef = useRef(false);
@@ -870,6 +868,7 @@ export function useRoom() {
           avatar: avatarVersion(p.attributes?.[AVATAR_ATTRIBUTE]),
           inVoice: inVoice(p),
           voiceMuted: p.getTrackPublication(Track.Source.Microphone)?.isMuted ?? true,
+          voiceDeafened: isDeafened(p),
         });
 
         const all = [
@@ -1006,10 +1005,8 @@ export function useRoom() {
           const camera = cameraRef.current;
           cameraRef.current = null;
           camera?.video?.mediaStreamTrack.stop();
-          camera?.mic?.mediaStreamTrack.stop();
           setCameraState('idle');
           setCameraTrack(null);
-          setSendingMic(false);
         });
 
       try {
@@ -1191,20 +1188,18 @@ export function useRoom() {
   }, [stopPublishing, releaseStage]);
 
   /**
-   * Ends the camera and its microphone. The stage is given back only if no
-   * screen is being shared alongside.
+   * Ends the camera. The stage is given back only if no screen is being
+   * shared alongside.
    */
   const stopCamera = useCallback(async () => {
     const camera = cameraRef.current;
     cameraRef.current = null;
     setCameraState('idle');
     setCameraTrack(null);
-    setSendingMic(false);
-    setMicMutedState(false);
     if (!camera) return;
     const room = roomRef.current;
-    for (const track of [camera.video, camera.mic]) {
-      if (!track) continue;
+    const track = camera.video;
+    if (track) {
       if (room) await room.localParticipant.unpublishTrack(track, true).catch(() => {});
       track.mediaStreamTrack.stop();
     }
@@ -1214,35 +1209,27 @@ export function useRoom() {
   }, [screenActive]);
 
   /**
-   * Publishes a camera and microphone, beside whatever screen is shared.
+   * Publishes a camera, beside whatever screen is shared.
    *
    * Kept separate from screen sharing on purpose: there is no window to
-   * capture, the audio is a microphone rather than an application, and the
-   * frame is small enough that the hardware encoder buys nothing. They
-   * publish as Camera and Microphone, which is how a viewer tells them from
-   * the screen and shows the camera as a picture of its own (ADR 0034).
+   * capture, and the frame is small enough that the hardware encoder buys
+   * nothing. It publishes as Camera, which is how a viewer tells it from the
+   * screen and shows it as a picture of its own (ADR 0034). A picture only:
+   * what you say goes out through voice (ADR 0039).
    */
   const startCamera = useCallback(
-    async (constraints: MediaStreamConstraints, muteMicrophone = false) => {
+    async (constraints: MediaStreamConstraints) => {
       setBroadcastError(null);
       setCameraState('starting');
       // Held from here, so a screen stopping meanwhile keeps the stage.
-      const camera: { video: LocalVideoTrack | null; mic: LocalAudioTrack | null } = {
-        video: null,
-        mic: null,
-      };
+      const camera: { video: LocalVideoTrack | null } = { video: null };
       cameraRef.current = camera;
       let stream: MediaStream | null = null;
 
       try {
         const claim = await window.zoia.stage.claim();
         if (!claim.ok) throw new Error(tNow('room.couldNotStart'));
-        // In voice, the camera has the voice's microphone, and opening a
-        // second would send the same voice twice (ADR 0039).
-        const voice = inVoice(roomRef.current?.localParticipant);
-        stream = await navigator.mediaDevices.getUserMedia(
-          voice ? { ...constraints, audio: false } : constraints,
-        );
+        stream = await navigator.mediaDevices.getUserMedia({ ...constraints, audio: false });
         const [videoTrack] = stream.getVideoTracks();
         if (!videoTrack) throw new Error(tNow('room.cameraNoVideo'));
 
@@ -1273,24 +1260,6 @@ export function useRoom() {
         videoTrack.addEventListener('ended', () => {
           if (cameraRef.current === camera) void stopCamera();
         });
-
-        const [micTrack] = stream.getAudioTracks();
-        if (micTrack) {
-          const audioTrack = new LocalAudioTrack(micTrack, undefined, false);
-          audioTrack.source = Track.Source.Microphone;
-          camera.mic = audioTrack;
-          // The camera dialog's choice is the footer's mute too, so the two
-          // never disagree about what viewers hear.
-          if (muteMicrophone) await audioTrack.mute();
-          await room.localParticipant.publishTrack(audioTrack, {
-            source: Track.Source.Microphone,
-            stream: 'camera',
-          });
-          setMicMutedState(muteMicrophone);
-          setSendingMic(true);
-        } else if (!voice) {
-          setAudioWarning(tNow('room.noMicrophone'));
-        }
 
         setCameraTrack(local);
         setCameraState('live');
@@ -1802,29 +1771,5 @@ export function useRoom() {
     cameraTrack,
     startCamera,
     stopCamera,
-    /** Present while the camera sends a microphone. */
-    sendingMic,
-    micMuted,
-    /**
-     * Stops the camera's own microphone, leaving its picture: on joining
-     * voice, whose microphone takes its place.
-     */
-    dropCameraMicrophone: useCallback(async () => {
-      const camera = cameraRef.current;
-      const mic = camera?.mic;
-      if (!camera || !mic) return;
-      camera.mic = null;
-      setSendingMic(false);
-      setMicMutedState(false);
-      await roomRef.current?.localParticipant.unpublishTrack(mic, true).catch(() => {});
-      mic.mediaStreamTrack.stop();
-    }, []),
-    /** Mutes the camera's microphone for viewers; it keeps capturing, so unmuting is instant. */
-    setMicMuted: useCallback(async (muted: boolean) => {
-      const mic = cameraRef.current?.mic;
-      if (!mic) return;
-      setMicMutedState(muted);
-      await (muted ? mic.mute() : mic.unmute());
-    }, []),
   };
 }

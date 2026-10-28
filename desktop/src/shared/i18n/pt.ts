@@ -177,6 +177,7 @@ export const pt: Messages = {
   'chat.photoGone': 'Esta foto não está mais disponível.',
   'chat.videoGone': 'Este vídeo não está mais disponível.',
 
+  'avatar.live': 'AO VIVO',
   'player.youreLive': 'Você está ao vivo',
   'player.previewHidden':
     'Sua pré-visualização está oculta. Quem assiste vê sua transmissão normalmente.',
@@ -193,8 +194,6 @@ export const pt: Messages = {
   'player.muteAudio': 'Silenciar seu áudio',
   'player.unmuteAudio': 'Ativar seu áudio',
   'player.sendVolume': 'O volume com que quem assiste ouve seu áudio',
-  'player.muteMic': 'Silenciar seu microfone para quem assiste',
-  'player.unmuteMic': 'Ativar seu microfone',
   'player.switchTitle': 'Compartilhar outra coisa sem parar',
   'player.switch': 'Trocar o que você compartilha',
 
@@ -251,8 +250,6 @@ export const pt: Messages = {
   'room.couldNotStart': 'Não foi possível iniciar sua transmissão.',
   'room.cameraNoVideo': 'Essa câmera não retornou vídeo.',
   'room.notConnected': 'Você não está conectado à sala.',
-  'room.noMicrophone':
-    'Nenhum microfone estava disponível, então a câmera está sendo compartilhada sem som.',
   'room.noVideoTrack': 'Essa fonte não retornou nenhuma faixa de vídeo.',
   'room.windowNoAudio':
     'Não foi possível identificar o áudio dessa janela, então ela está sendo compartilhada sem som.',
@@ -294,9 +291,6 @@ export const pt: Messages = {
 
   'camera.title': 'Compartilhar sua câmera',
   'camera.camera': 'Câmera',
-  'camera.microphone': 'Microfone',
-  'camera.micLevel': 'Nível do microfone',
-  'camera.muteMic': 'Silenciar o microfone ao compartilhar a câmera',
   'camera.share': 'Compartilhar câmera',
 
   // ---- voz (ADR 0039)
@@ -310,6 +304,7 @@ export const pt: Messages = {
     'Não foi possível iniciar a supressão de ruído nem a sensibilidade de entrada, então seu microfone é enviado como capturado: {error}',
   'voice.connected': 'Voz conectada',
   'voice.connecting': 'Conectando…',
+  'voice.deafenedInVoice': 'Na voz, sem ouvir',
   'voice.mutedInVoice': 'Na voz, microfone desligado',
   'voice.couldNotJoin': 'Não foi possível entrar na voz: {error}',
   'voice.couldNotRestart': 'Não foi possível trocar o microfone: {error}',

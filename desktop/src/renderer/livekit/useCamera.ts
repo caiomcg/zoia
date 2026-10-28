@@ -1,14 +1,14 @@
 /**
  * Camera and microphone devices.
  *
- * A webcam is nothing like a screen share: there is no window to capture, the
- * audio comes from a microphone rather than an application, and the frame is
- * small enough that software encoding is a non-issue. So it publishes through
- * LiveKit directly rather than through the hardware encoder.
+ * A webcam is nothing like a screen share: there is no window to capture, and
+ * the frame is small enough that software encoding is a non-issue. So it
+ * publishes through LiveKit directly rather than through the hardware
+ * encoder. It sends a picture only: what you say goes out through voice
+ * (ADR 0039), whose settings choose the microphone from the list here.
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import { getVoiceSettings, MICROPHONE_KEY, setVoiceSettings } from '../voice/settings';
 
 export interface MediaDeviceChoice {
   deviceId: string;
@@ -21,8 +21,6 @@ export interface Devices {
 }
 
 const CAMERA_KEY = 'zoia.cameraId';
-// One microphone for the camera and voice; the voice settings keep it.
-const MIC_KEY = MICROPHONE_KEY;
 
 /**
  * Labels are hidden until a capture permission has been granted at least
@@ -61,7 +59,6 @@ async function enumerateWithLabels(): Promise<Devices> {
 export function useCameraDevices() {
   const [devices, setDevices] = useState<Devices>({ cameras: [], microphones: [] });
   const [cameraId, setCameraId] = useState(() => localStorage.getItem(CAMERA_KEY) ?? '');
-  const [microphoneId, setMicrophoneId] = useState(() => localStorage.getItem(MIC_KEY) ?? '');
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
@@ -75,9 +72,6 @@ export function useCameraDevices() {
       // someone expects from "my webcam".
       setCameraId((current) =>
         current && !next.cameras.some((c) => c.deviceId === current) ? '' : current,
-      );
-      setMicrophoneId((current) =>
-        current && !next.microphones.some((m) => m.deviceId === current) ? '' : current,
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -96,26 +90,19 @@ export function useCameraDevices() {
     localStorage.setItem(CAMERA_KEY, id);
   }, []);
 
-  const chooseMicrophone = useCallback((id: string) => {
-    setMicrophoneId(id);
-    setVoiceSettings({ ...getVoiceSettings(), microphoneId: id });
-  }, []);
-
   /** An empty id means "whatever Windows considers the default". */
   const constraints = useCallback(
     (): MediaStreamConstraints => ({
       video: cameraId ? { deviceId: { exact: cameraId } } : true,
-      audio: microphoneId ? { deviceId: { exact: microphoneId } } : true,
+      audio: false,
     }),
-    [cameraId, microphoneId],
+    [cameraId],
   );
 
   return {
     devices,
     cameraId,
-    microphoneId,
     chooseCamera,
-    chooseMicrophone,
     constraints,
     error,
     refresh,
