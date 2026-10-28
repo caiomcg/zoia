@@ -30,7 +30,9 @@ import {
   splitMentions,
   type MentionQuery,
 } from '../chat/mentions';
+import { insertText, pushRecent } from '../chat/emoji';
 import Avatar from './Avatar';
+import EmojiPicker from './EmojiPicker';
 import MediaViewer from './MediaViewer';
 import { splitLinks } from '../chat/links';
 import { IconTrash } from './Sidebar';
@@ -39,6 +41,18 @@ import { useLanguage, useT } from '../i18n';
 
 /** Must match MESSAGE_MAX in server/src/messages.js. */
 const MESSAGE_MAX = 4000;
+
+/** The emoji you put in messages last; a convenience, kept per machine. */
+const RECENT_EMOJI_KEY = 'zoia.chat.recentEmoji';
+
+function readRecentEmoji(): string[] {
+  try {
+    const stored: unknown = JSON.parse(localStorage.getItem(RECENT_EMOJI_KEY) ?? '[]');
+    return Array.isArray(stored) ? stored.filter((e): e is string => typeof e === 'string') : [];
+  } catch {
+    return [];
+  }
+}
 
 /** Within this many pixels of the bottom counts as reading the latest. */
 const STICK_PX = 80;
@@ -104,6 +118,10 @@ export default function ChatView({
   const textRef = useRef<HTMLTextAreaElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // The emoji beside the message box, and the button that opens them.
+  const [picking, setPicking] = useState(false);
+  const [recentEmoji, setRecentEmoji] = useState(readRecentEmoji);
+  const emojiButtonRef = useRef<HTMLButtonElement>(null);
   const stickRef = useRef(true);
   // Clears a failed reaction's message; set while one is showing.
   const reactErrorRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -207,6 +225,32 @@ export default function ChatView({
     setReplyingTo(null);
     setPicked([]);
     setMention(null);
+    setPicking(false);
+  }
+
+  /** Puts an emoji where the caret is, replacing any selection, and remembers it. */
+  function addEmoji(emoji: string) {
+    const box = textRef.current;
+    const next = insertText(
+      draft,
+      emoji,
+      box?.selectionStart ?? draft.length,
+      box?.selectionEnd ?? draft.length,
+      MESSAGE_MAX,
+    );
+    if (!next) return;
+    setDraft(next.text);
+    const recent = pushRecent(recentEmoji, emoji);
+    setRecentEmoji(recent);
+    try {
+      localStorage.setItem(RECENT_EMOJI_KEY, JSON.stringify(recent));
+    } catch {
+      // Remembering is a convenience; the emoji is in the message all the same.
+    }
+    requestAnimationFrame(() => {
+      box?.focus();
+      box?.setSelectionRange(next.caret, next.caret);
+    });
   }
 
   // Who the @query at the caret may mean; none shown, none to pick.
@@ -520,6 +564,19 @@ export default function ChatView({
             </button>
           </div>
         )}
+        {picking && chat.available && (
+          <EmojiPicker
+            recent={recentEmoji}
+            onPick={addEmoji}
+            onMore={() => {
+              setPicking(false);
+              textRef.current?.focus();
+              void window.zoia.app.emojiPanel();
+            }}
+            onClose={() => setPicking(false)}
+            toggle={emojiButtonRef}
+          />
+        )}
         <div className="chat-composer-row">
           <textarea
             ref={textRef}
@@ -546,6 +603,33 @@ export default function ChatView({
             onKeyDown={onKeyDown}
             onPaste={onPaste}
           />
+          {/* Kept from taking the focus, so the emoji goes where the caret is. */}
+          <button
+            ref={emojiButtonRef}
+            type="button"
+            className={`chat-attach chat-emoji${picking ? ' active' : ''}`}
+            disabled={!chat.available}
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => setPicking((open) => !open)}
+            aria-expanded={picking}
+            aria-label={t('chat.emoji')}
+            title={t('chat.emoji')}
+          >
+            <svg
+              viewBox="0 0 24 24"
+              width="18"
+              height="18"
+              aria-hidden="true"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <circle cx="12" cy="12" r="9" />
+              <path d="M8.5 14.5a4.5 4.5 0 007 0M9 9.5h.01M15 9.5h.01" />
+            </svg>
+          </button>
           {/* Beside send, where the eye ends up after typing. */}
           <button
             type="button"
