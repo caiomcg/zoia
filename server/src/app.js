@@ -19,6 +19,7 @@ import { AVATAR_MAX_BYTES, imageType, isAvatarId } from './avatars.js';
 import { canManage, isAdmin } from './accounts.js';
 import { chatRoutes, createChatHub } from './chat-routes.js';
 import { KICK_GRACE_MS, kick } from './idle.js';
+import { createPresence } from './presence.js';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -47,6 +48,13 @@ export function createApp({
   chatHub = createChatHub(),
   kickGraceMs = KICK_GRACE_MS,
   logger = console,
+  // Who is on the server, told on the chat's stream (ADR 0038).
+  presence = createPresence({
+    chosen: (id) => accountStore.get(id),
+    publish: (event, data) => chatHub.publish(event, data),
+    offlineGraceMs: config.presence?.offlineGraceMs,
+    logger,
+  }),
 }) {
   const app = express();
 
@@ -999,6 +1007,40 @@ export function createApp({
     res.send(picture.bytes);
   }
 
+  // ---- presence (ADR 0038) ------------------------------------------------
+  // Who is on the server is read from the chat's stream, so it is only there
+  // with chat. What each person chose is theirs to set, and only theirs.
+
+  app.get('/api/presence', requireSession, async (req, res, next) => {
+    try {
+      const account = await accountStore.get(req.user.accountId);
+      res.json({ status: account?.presence ?? 'online', people: presence.snapshot() });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  app.put('/api/presence', requireSession, async (req, res, next) => {
+    try {
+      const result = await accountStore.setPresence(req.user.accountId, req.body?.status);
+      if (result.reason === 'invalid_presence')
+        return res.status(400).json({ error: result.reason });
+      if (!result.ok) return res.status(404).json({ error: 'unknown_account' });
+      await presence.changed(req.user.accountId);
+      res.json({ status: result.presence });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // The app says when its machine has gone untouched for a while, and when
+  // it is used again. Per machine: someone is only away when all of theirs are.
+  app.post('/api/presence/idle', requireSession, (req, res) => {
+    if (typeof req.body?.idle !== 'boolean') return res.status(400).json({ error: 'invalid_idle' });
+    presence.setIdle(req.user.accountId, req.user.id, req.body.idle);
+    res.json({ ok: true });
+  });
+
   // ---- text chat (ADR 0036) ------------------------------------------------
 
   if (chatStore) {
@@ -1012,6 +1054,7 @@ export function createApp({
         requireSession,
         requireAdmin,
         recheck: sessionUser,
+        presence,
         hub: chatHub,
         // Tests shorten these; undefined keeps the defaults.
         sendLimit: config.chat?.sendLimit,

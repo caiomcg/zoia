@@ -57,6 +57,9 @@ export function isValidPassword(password) {
 
 export const isAdmin = (account) => account?.role === 'admin' || account?.role === 'super_admin';
 
+/** What a person may set themselves to; see ADR 0038 and src/presence.js. */
+export const PRESENCES = ['online', 'busy', 'away', 'invisible'];
+
 /**
  * Whether `actor` may disable, re-enable or reset `target`. Nobody may touch
  * the super admin from the app; only the super admin may touch an admin.
@@ -257,6 +260,17 @@ export function createAccountStore({ db, maxPending = 20, logger = console }) {
         else delete record.avatar;
         record.avatarChangedAt = new Date().toISOString();
         return safe(record);
+      });
+    },
+
+    /** The status the person chose for themselves; online is stored as none. */
+    async setPresence(id, presence) {
+      if (!PRESENCES.includes(presence)) return { ok: false, reason: 'invalid_presence' };
+      return store.mutate((records) => {
+        const record = findLive(records, id);
+        if (!record) return { ok: false, reason: 'unknown_account' };
+        record.presence = presence === 'online' ? null : presence;
+        return { ok: true, presence };
       });
     },
 
