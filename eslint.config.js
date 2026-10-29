@@ -7,7 +7,13 @@ export default [
   { ignores: ['node_modules/', 'coverage/', 'server/public/vendor/', 'desktop/', 'android/'] },
   js.configs.recommended,
   {
-    files: ['server/src/**/*.js', 'server/bin/**/*.js', 'server/test/**/*.js', 'scripts/**/*.js'],
+    files: [
+      'server/src/**/*.js',
+      'server/bin/**/*.js',
+      'server/test/**/*.js',
+      'scripts/**/*.js',
+      'addon-host/**/*.js',
+    ],
     languageOptions: {
       ecmaVersion: 2024,
       sourceType: 'module',

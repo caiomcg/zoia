@@ -79,11 +79,38 @@ services:
     volumes:
       # The key store lives on the server and survives redeploys.
       - ./server/data:/app/server/data
+    # The default network, and the one addon containers are on, where they
+    # reach the app as http://app:3000 and nothing else of ours (ADR 0041).
+    networks:
+      - default
+      - addons
     # Not waiting for scylla to be healthy: if it is down, chat is down and
     # broadcasting carries on. The app connects when it comes up.
     depends_on:
       - livekit
       - scylla
+
+  # Runs addon containers (ADR 0041). The only service with the Docker
+  # socket: on the compose network, no published port, answering the app
+  # alone by ADDON_HOST_SECRET. Off unless COMPOSE_PROFILES includes addons.
+  addon-host:
+    build: ./addon-host
+    profiles: ['addons']
+    restart: unless-stopped
+    environment:
+      ADDON_HOST_SECRET: ${ADDON_HOST_SECRET:-}
+      ADDON_NETWORK: zoia-addons
+      ZOIA_INTERNAL_URL: http://app:3000
+      ZOIA_LIVEKIT_URL: ws://host.docker.internal:7880
+    expose:
+      - '3100'
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+
+networks:
+  # Addon containers join this by name, which the host passes to Docker.
+  addons:
+    name: zoia-addons
 
 volumes:
   caddy_data:
