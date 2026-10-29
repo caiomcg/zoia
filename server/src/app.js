@@ -21,7 +21,7 @@ import { chatRoutes, createChatHub } from './chat-routes.js';
 import { addonRoutes } from './addon-routes.js';
 import { addonAdminRoutes } from './addon-admin.js';
 import { createAddonHostClient } from './addon-host.js';
-import { isBotIdentity } from './token.js';
+import { BOT_PREFIX, isBotIdentity } from './token.js';
 import { KICK_GRACE_MS, kick } from './idle.js';
 import { createPresence } from './presence.js';
 import { fileURLToPath } from 'node:url';
@@ -629,8 +629,33 @@ export function createApp({
   // it. Any admin may disconnect anyone else, other admins and the super
   // admin included: keeping order in a channel is not about rank. It is not
   // a ban: the person can join a channel again.
+  /**
+   * An addon's bot is not a machine and has no app to tell: any admin may
+   * take it out of its channel, as they may anyone. Its addon sees the room
+   * close and stops playing there (ADR 0041). Answers whether it was a bot.
+   */
+  async function removeBot(req, res, answer) {
+    const identity = req.params.id;
+    if (!isBotIdentity(identity)) return false;
+    const bot = await accountStore.get(identity.slice(BOT_PREFIX.length));
+    if (!bot?.addonId) {
+      adminRefuse(res, 'unknown_account');
+      return true;
+    }
+    const from = (await whereAll()).get(identity);
+    if (!from) {
+      adminRefuse(res, 'not_connected');
+      return true;
+    }
+    await from.stage.disconnect([identity]);
+    logger.info(`[admin] ${req.user.accountId} removed bot ${bot.id} from ${from.id}`);
+    res.json(answer);
+    return true;
+  }
+
   app.post('/api/admin/devices/:id/disconnect', requireAdmin, async (req, res, next) => {
     try {
+      if (await removeBot(req, res, { disconnected: true })) return;
       const device = await deviceStore.getActive(req.params.id);
       const target = device?.accountId ? await accountStore.get(device.accountId) : null;
       if (!target) return adminRefuse(res, 'unknown_account');
@@ -653,6 +678,7 @@ export function createApp({
   // it. The same rules as a disconnect; not a ban either. See ADR 0037.
   app.post('/api/admin/devices/:id/kick', requireAdmin, async (req, res, next) => {
     try {
+      if (await removeBot(req, res, { kicked: true })) return;
       const device = await deviceStore.getActive(req.params.id);
       const target = device?.accountId ? await accountStore.get(device.accountId) : null;
       if (!target) return adminRefuse(res, 'unknown_account');

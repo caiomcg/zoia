@@ -247,6 +247,23 @@ describe('bots', () => {
     assert.equal(payload.attributes['zoia.bot'], 'Tester');
   });
 
+  test('an admin takes a bot out of its channel from the member menu; a user cannot', async () => {
+    const { as } = await addon();
+    const { body } = await as('post', '/bots').send({ name: 'Zouve' }).expect(201);
+    const identity = `bot-${body.bot.id}`;
+    rooms.participants = [
+      { identity, name: 'Zouve', attributes: { 'zoia.voice': '1' }, tracks: [] },
+    ];
+    const ana = await signIn(app, stores.accounts, 'Ana');
+    await ana.agent.post(`/api/admin/devices/${identity}/disconnect`).expect(403);
+    const bia = await signIn(app, stores.accounts, 'Bia', { role: 'admin' });
+    const res = await bia.agent.post(`/api/admin/devices/${identity}/kick`).expect(200);
+    assert.equal(res.body.kicked, true);
+    assert.deepEqual(rooms.participants, []);
+    await bia.agent.post(`/api/admin/devices/${identity}/disconnect`).expect(409);
+    await bia.agent.post('/api/admin/devices/bot-deadbeef/kick').expect(404);
+  });
+
   test('a channel that does not exist gets no token', async () => {
     const { as } = await addon();
     const { body } = await as('post', '/bots').send({ name: 'Zouve' }).expect(201);
