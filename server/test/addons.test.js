@@ -139,7 +139,11 @@ describe('the token', () => {
     const { addon, token } = await install();
     assert.match(token, /^zaddon_[0-9a-f]{8}_/);
     assert.equal((await addons.authenticate(token)).id, addon.id);
-    assert.equal(JSON.stringify(await addons.list()).includes(token.split('_').pop()), false);
+    // The whole secret: it is base64url, which may hold an underscore, so splitting
+    // on one could leave a fragment short enough to turn up anywhere.
+    const secret = token.slice(`zaddon_${addon.id}_`.length);
+    assert.ok(secret.length >= 32);
+    assert.equal(JSON.stringify(await addons.list()).includes(secret), false);
     assert.equal((await addons.get(addon.id)).hash, undefined);
   });
 
