@@ -10,10 +10,14 @@ import {
   bindingLabel,
   BindingRecorder,
   ChordTracker,
+  isShortcutAction,
   keyCode,
   keyName,
+  MAX_SOUND_SHORTCUTS,
   mouseCode,
   parseBindings,
+  shortcutSound,
+  soundShortcut,
 } from '../src/shared/shortcuts.ts';
 
 const CTRL = keyCode(29);
@@ -90,6 +94,44 @@ describe('bindings', () => {
       { pushToTalk: [CTRL, M], toggleMute: null, toggleDeafen: null },
     );
     assert.deepEqual(parseBindings(null), none);
+  });
+
+  test('a favourite has a binding of its own, which voice can take from it', () => {
+    const bruh = soundShortcut('bruh');
+    let next = assign(none, bruh, [CTRL, M]);
+    assert.deepEqual(next[bruh], [CTRL, M]);
+    next = assign(next, 'toggleMute', [CTRL, M]);
+    assert.deepEqual(next.toggleMute, [CTRL, M]);
+    assert.ok(!(bruh in next));
+    // And a sound with nothing bound is no entry at all.
+    assert.ok(!(bruh in assign(assign(none, bruh, [M]), bruh, null)));
+  });
+
+  test('favourites are read back, at most as many as there may be', () => {
+    const stored: Record<string, unknown> = { 'sound:bad slug': [M], 'other:x': [M] };
+    for (let i = 0; i < MAX_SOUND_SHORTCUTS + 5; i++) stored[`sound:s${i}`] = [keyCode(2 + i)];
+    const parsed = parseBindings(stored);
+    const sounds = Object.keys(parsed).filter((action) => action.startsWith('sound:'));
+    assert.equal(sounds.length, MAX_SOUND_SHORTCUTS);
+    assert.ok(!('sound:bad slug' in parsed));
+    assert.ok(!('other:x' in parsed));
+  });
+
+  test('a favourite fires like any shortcut, and lets go when it is unbound', () => {
+    const bruh = soundShortcut('bruh');
+    const tracker = new ChordTracker({ ...none, [bruh]: [MOUSE4] });
+    assert.deepEqual(tracker.down(MOUSE4), [{ action: bruh, pressed: true }]);
+    assert.deepEqual(tracker.setBindings(none), [{ action: bruh, pressed: false }]);
+  });
+
+  test('what may be bound: voice and sounds, nothing else', () => {
+    assert.ok(isShortcutAction('toggleMute'));
+    assert.ok(isShortcutAction('sound:fbi-open-up-491'));
+    assert.ok(!isShortcutAction('sound:'));
+    assert.ok(!isShortcutAction('sound:../x'));
+    assert.ok(!isShortcutAction('quit'));
+    assert.equal(shortcutSound('sound:bruh'), 'bruh');
+    assert.equal(shortcutSound('pushToTalk'), null);
   });
 
   test('labels read as keys do', () => {

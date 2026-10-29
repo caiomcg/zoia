@@ -1,19 +1,45 @@
 /**
- * Voice's global shortcuts (ADR 0039): push to talk, toggle mute, toggle
- * deafen. A binding is what has to be held at once, keys and mouse buttons
- * alike, so "Ctrl+Shift+M" and "Mouse 4" are the same kind of thing.
+ * The global shortcuts: voice's push to talk, toggle mute and toggle deafen
+ * (ADR 0039), and one for each soundboard pad (ADR 0040). A binding is what
+ * has to be held at once, keys and mouse buttons alike, so "Ctrl+Shift+M" and
+ * "Mouse 4" are the same kind of thing.
  *
  * Main feeds every press and release it sees (src/main/shortcuts.ts) through
  * the pure pieces here, which is what the tests exercise.
  */
 
-export type ShortcutAction = 'pushToTalk' | 'toggleMute' | 'toggleDeafen';
+export type VoiceShortcut = 'pushToTalk' | 'toggleMute' | 'toggleDeafen';
 
-export const SHORTCUT_ACTIONS: readonly ShortcutAction[] = [
+/** Voice's own, always there to be bound, in the order Settings › Voice lists them. */
+export const SHORTCUT_ACTIONS: readonly VoiceShortcut[] = [
   'pushToTalk',
   'toggleMute',
   'toggleDeafen',
 ];
+
+/** Plays a soundboard pad, named by its Myinstants slug. */
+export type SoundShortcut = `sound:${string}`;
+
+export type ShortcutAction = VoiceShortcut | SoundShortcut;
+
+/** As many as there may be pads: one each. Must match MAX_PADS. */
+export const MAX_SOUND_SHORTCUTS = 10;
+
+const SOUND_SHORTCUT = /^sound:[A-Za-z0-9_-]{1,120}$/;
+
+export const soundShortcut = (slug: string): SoundShortcut => `sound:${slug}`;
+
+/** The slug a sound shortcut plays, or null for any other action. */
+export function shortcutSound(action: ShortcutAction): string | null {
+  return action.startsWith('sound:') ? action.slice('sound:'.length) : null;
+}
+
+export function isShortcutAction(value: unknown): value is ShortcutAction {
+  return (
+    typeof value === 'string' &&
+    ((SHORTCUT_ACTIONS as readonly string[]).includes(value) || SOUND_SHORTCUT.test(value))
+  );
+}
 
 /**
  * An input, as text so a binding is plain JSON: `k` and a uiohook keycode,
@@ -24,7 +50,9 @@ export type InputCode = string;
 /** Everything held together, in a stable order: modifiers first, mouse last. */
 export type Binding = InputCode[];
 
-export type Bindings = Record<ShortcutAction, Binding | null>;
+/** Voice's three always, and whichever pads have one. */
+export type Bindings = Record<VoiceShortcut, Binding | null> &
+  Partial<Record<SoundShortcut, Binding | null>>;
 
 /** A binding and how to show it, as main sends it. */
 export interface BoundShortcut {
@@ -35,7 +63,8 @@ export interface BoundShortcut {
 export interface ShortcutsState {
   /** False where the input hook could not load: no shortcuts at all. */
   available: boolean;
-  bindings: Record<ShortcutAction, BoundShortcut | null>;
+  bindings: Record<VoiceShortcut, BoundShortcut | null> &
+    Partial<Record<SoundShortcut, BoundShortcut | null>>;
 }
 
 export interface ShortcutEvent {
@@ -78,25 +107,48 @@ function validBinding(value: unknown): Binding | null {
   return normalize(value as string[]);
 }
 
+/** Every action with a binding or a place for one: voice's first, then the sounds. */
+export function boundActions(bindings: Bindings): ShortcutAction[] {
+  return Object.keys(bindings).filter(isShortcutAction);
+}
+
 /** What was saved, with anything unreadable as never set. */
 export function parseBindings(raw: unknown): Bindings {
   const stored = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
-  return {
+  const bindings: Bindings = {
     pushToTalk: validBinding(stored.pushToTalk),
     toggleMute: validBinding(stored.toggleMute),
     toggleDeafen: validBinding(stored.toggleDeafen),
   };
+  let sounds = 0;
+  for (const [action, value] of Object.entries(stored)) {
+    if (sounds >= MAX_SOUND_SHORTCUTS || !isShortcutAction(action)) continue;
+    if (!shortcutSound(action)) continue;
+    const binding = validBinding(value);
+    if (!binding) continue;
+    bindings[action as SoundShortcut] = binding;
+    sounds++;
+  }
+  return bindings;
 }
 
 /**
  * Sets one action's binding. One binding does one thing, so another action
  * holding the same is cleared.
  */
-export function assign(bindings: Bindings, action: ShortcutAction, binding: Binding | null) {
-  const next = { ...bindings, [action]: binding };
+export function assign(
+  bindings: Bindings,
+  action: ShortcutAction,
+  binding: Binding | null,
+): Bindings {
+  const next: Bindings = { ...bindings, [action]: binding };
+  // A sound without a binding is no entry at all, so the file keeps only what is bound.
+  if (!binding && shortcutSound(action)) delete next[action as SoundShortcut];
   if (binding) {
-    for (const other of SHORTCUT_ACTIONS) {
-      if (other !== action && sameBinding(next[other], binding)) next[other] = null;
+    for (const other of boundActions(next)) {
+      if (other === action || !sameBinding(next[other] ?? null, binding)) continue;
+      if (shortcutSound(other)) delete next[other as SoundShortcut];
+      else next[other as VoiceShortcut] = null;
     }
   }
   return next;
@@ -138,7 +190,9 @@ export class ChordTracker {
 
   private settle(): ShortcutEvent[] {
     const events: ShortcutEvent[] = [];
-    for (const action of SHORTCUT_ACTIONS) {
+    // One held when its binding went away is let go, so it never sticks.
+    const actions = new Set([...boundActions(this.bindings), ...this.active]);
+    for (const action of actions) {
       const binding = this.bindings[action];
       const down = !!binding && binding.every((code) => this.held.has(code));
       if (down === this.active.has(action)) continue;

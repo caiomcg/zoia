@@ -30,6 +30,7 @@ import type {
   Presence,
   PresenceState,
 } from '../shared/ipc';
+import type { SoundPage } from '../shared/soundboard';
 
 export interface ZoiaBridge {
   pairing: {
@@ -94,7 +95,10 @@ export interface ZoiaBridge {
     /** Silences every sound Zoia plays, in every window, or lets it play again. */
     deafen(deafened: boolean): Promise<void>;
   };
-  /** Voice's global shortcuts (ADR 0039): keys and mouse buttons, from anywhere. */
+  /**
+   * The global shortcuts: voice's (ADR 0039) and the soundboard pads'
+   * (ADR 0040). Keys and mouse buttons, from anywhere.
+   */
   shortcuts: {
     get(): Promise<ShortcutsState>;
     /** Takes the next keys or button held together; null if cancelled. */
@@ -102,6 +106,13 @@ export interface ZoiaBridge {
     cancel(): Promise<void>;
     clear(action: ShortcutAction): Promise<ShortcutsState>;
     onFire(cb: (event: ShortcutEvent) => void): () => void;
+  };
+  /** Sounds from Myinstants (ADR 0040), read by main and kept on this machine. */
+  soundboard: {
+    /** One page of a search, from 1; null when Myinstants could not be reached. */
+    search(query: string, page: number): Promise<SoundPage | null>;
+    /** A sound's file; null for a link that is not Myinstants' or cannot be fetched. */
+    sound(url: string): Promise<Uint8Array | null>;
   };
   sources: {
     list(fresh?: boolean): Promise<SourceInfo[]>;

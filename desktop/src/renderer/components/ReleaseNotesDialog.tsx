@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { ReleaseInfo } from '../../shared/ipc';
 import { tNow, useT } from '../i18n';
 import Markdown from './Markdown';
@@ -53,7 +54,11 @@ export default function ReleaseNotesDialog({
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  return (
+  // On the page itself, not inside whatever opened it: Settings' panel keeps
+  // the transform of its entrance, which makes it the box a fixed backdrop is
+  // placed in, and it clips. Taller than that panel, as in a maximised window,
+  // these notes were cut off at the top and bottom.
+  return createPortal(
     <div className={`picker-backdrop${closing ? ' closing' : ''}`} onClick={onClose}>
       <section
         className="picker release-dialog"
@@ -111,6 +116,7 @@ export default function ReleaseNotesDialog({
           </button>
         </div>
       </section>
-    </div>
+    </div>,
+    document.body,
   );
 }

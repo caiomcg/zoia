@@ -535,7 +535,7 @@ export const pt: Messages = {
   'about.madeBy': 'Feito por',
   'about.role.caio': 'Criou o Zoia: captura, canais e o servidor.',
   'about.role.nycholas':
-    'A codificação por hardware em AMD e uma transmissão por GPU que se recupera sozinha, atualizações, troca automática do League e várias transmissões.',
+    'A codificação por hardware em AMD e uma transmissão por GPU que se recupera sozinha, atualizações, troca automática do League, várias transmissões e o painel sonoro, com sons do Myinstants.',
   'about.role.victor':
     'Levou o Zoia para o Mac: o app para macOS, o compartilhamento com o áudio do sistema e a tela codificada por hardware.',
   'about.role.flavia':
@@ -579,6 +579,49 @@ export const pt: Messages = {
   'sounds.style.soft': 'Suave',
   'sounds.pitch': 'Tom',
   'sounds.preview': 'Ouvir',
+
+  // ---- painel sonoro (ADR 0040)
+  'soundboard.title': 'Painel sonoro',
+  'soundboard.settingsIntro':
+    'Sons que as pessoas do seu canal tocam pelo painel sonoro, encontrados no Myinstants. O volume deles é escolha sua.',
+  'soundboard.volume': 'Volume dos efeitos sonoros',
+  'soundboard.mute': 'Mutar efeitos sonoros',
+  'soundboard.unmute': 'Desmutar efeitos sonoros',
+  'soundboard.muteAll': 'Mutar todos os efeitos sonoros',
+  'soundboard.search': 'Buscar no Myinstants',
+  'soundboard.searching': 'Buscando…',
+  'soundboard.searchFailed':
+    'Não foi possível falar com o Myinstants. Tente de novo daqui a pouco.',
+  'soundboard.noResults': 'Nenhum som encontrado.',
+  'soundboard.more': 'Carregar mais',
+  'soundboard.pad': 'Seu pad · {count}/{max}',
+  'soundboard.empty': 'Busque um som e adicione ao seu pad.',
+  'soundboard.find': 'Adicionar som',
+  'soundboard.addPad': 'Adicionar ao seu pad',
+  'soundboard.removePad': 'Remover do seu pad',
+  'soundboard.padFull': 'Seu pad comporta até {max} sons',
+  'soundboard.edit': 'Editar “{name}”',
+  'soundboard.editTitle': 'Editar pad',
+  'soundboard.back': 'Voltar ao seu pad',
+  'soundboard.name': 'Nome',
+  'soundboard.emoji': 'Emoji',
+  'soundboard.shortcutLabel': 'Atalho',
+  'soundboard.save': 'Salvar',
+  'soundboard.recents': 'Recentes',
+  'soundboard.removeRecent': 'Remover dos recentes',
+  'soundboard.play': 'Tocar “{name}” para o canal',
+  'soundboard.preview': 'Ouvir “{name}”: só você escuta',
+  'soundboard.previewFailed': 'Não foi possível carregar “{name}”.',
+  'soundboard.shortcut': 'Definir atalho',
+  'soundboard.shortcutOf': 'Atalho de “{name}”: {shortcut}. Clique para trocar.',
+  'soundboard.shortcutRecording': 'Pressione as teclas…',
+  'soundboard.shortcutClear': 'Remover atalho',
+  'soundboard.notInVoice': 'Entre na voz para tocar sons.',
+  'soundboard.micMuted': 'Ligue o microfone para tocar sons.',
+  'soundboard.effectsMuted': 'Os efeitos sonoros estão mutados. Desmute para tocar sons.',
+  'soundboard.playing': 'Tocando “{sound}”',
+  'soundboard.mutePerson': 'Mutar os efeitos sonoros desta pessoa',
+  'soundboard.from': 'Sons do Myinstants',
 
   // ---- what's new
   'changelog.title': 'Novidades',

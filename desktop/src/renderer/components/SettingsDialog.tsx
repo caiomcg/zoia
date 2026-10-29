@@ -19,6 +19,12 @@ import {
   type CueSettings,
 } from '../sounds/cues';
 import { setSoundSettings, useSoundSettings } from '../sounds/settings';
+import {
+  soundboardSettings,
+  stepSoundboardVolume,
+  useSoundboardSettings,
+} from '../soundboard/library';
+import { useWheelRange } from './useWheelRange';
 import VoiceSettingsSection from './VoiceSettings';
 import { playCue } from '../sounds/synth';
 import ReleaseNotesDialog from './ReleaseNotesDialog';
@@ -698,6 +704,48 @@ function SoundsSection() {
           {t('updates.restoreDefaults')}
         </button>
       </div>
+
+      <SoundboardSettingsSection />
+    </>
+  );
+}
+
+/** The soundboard's own volume and mute (ADR 0040), the same ones its panel has. */
+function SoundboardSettingsSection() {
+  const t = useT();
+  const settings = useSoundboardSettings();
+  const percent = Math.round(settings.volume * 100);
+  const volumeRef = useWheelRange(stepSoundboardVolume);
+  return (
+    <>
+      <h3>{t('soundboard.title')}</h3>
+      <p className="muted settings-note">{t('soundboard.settingsIntro')}</p>
+      <label className="settings-check">
+        <input
+          type="checkbox"
+          checked={settings.muted}
+          onChange={(event) => soundboardSettings.set({ ...settings, muted: event.target.checked })}
+        />
+        {t('soundboard.muteAll')}
+      </label>
+      <label className="settings-field">
+        <span>
+          {t('soundboard.volume')} · {percent}%
+        </span>
+        <input
+          ref={volumeRef}
+          className="settings-range"
+          type="range"
+          min={0}
+          max={100}
+          step={1}
+          value={percent}
+          disabled={settings.muted}
+          onChange={(event) =>
+            soundboardSettings.set({ ...settings, volume: Number(event.target.value) / 100 })
+          }
+        />
+      </label>
     </>
   );
 }

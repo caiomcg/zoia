@@ -297,7 +297,7 @@ describe('messages', () => {
     assert.deepEqual(res.body.message.mentions, [{ id: bia.account.id, name: 'Bia Souza' }]);
   });
 
-  test('everyone let in can be mentioned, by name and picture, never email', async () => {
+  test('everyone let in can be mentioned, by name, picture and role, never email', async () => {
     const ana = await signIn(app, stores.accounts, 'Ana');
     await signIn(app, stores.accounts, 'Bia');
     await stores.accounts.signup({ email: 'waiting@example.com', password: PASSWORD });
@@ -307,7 +307,7 @@ describe('messages', () => {
       people.map((p) => p.name),
       ['Ana', 'Bia'],
     );
-    assert.deepEqual(Object.keys(people[0]).sort(), ['avatar', 'id', 'name']);
+    assert.deepEqual(Object.keys(people[0]).sort(), ['avatar', 'id', 'name', 'role']);
     await request(app).get('/api/chats/people').expect(401);
   });
 

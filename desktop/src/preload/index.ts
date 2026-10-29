@@ -88,6 +88,10 @@ const bridge: ZoiaBridge = {
       return () => ipcRenderer.removeListener(IPC.shortcutsFire, listener);
     },
   },
+  soundboard: {
+    search: (query, page) => ipcRenderer.invoke(IPC.soundboardSearch, query, page),
+    sound: (url) => ipcRenderer.invoke(IPC.soundboardSound, url),
+  },
   sources: {
     list: (fresh?: boolean) => ipcRenderer.invoke(IPC.sourcesList, fresh),
     instant: () => ipcRenderer.invoke(IPC.sourcesInstant),

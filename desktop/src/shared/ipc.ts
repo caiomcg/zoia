@@ -184,6 +184,8 @@ export interface ChatPerson {
   id: string;
   name: string;
   avatar: string | null;
+  /** Crowns admins in the People tab; absent from older servers. */
+  role?: AccountRole;
 }
 
 /** What may go with a message beside its text. */
@@ -527,6 +529,8 @@ export const IPC = {
   shortcutsCancel: 'zoia:shortcuts:cancel',
   shortcutsClear: 'zoia:shortcuts:clear',
   shortcutsFire: 'zoia:shortcuts:fire',
+  soundboardSearch: 'zoia:soundboard:search',
+  soundboardSound: 'zoia:soundboard:sound',
   sourcesList: 'zoia:sources:list',
   sourcesInstant: 'zoia:sources:instant',
   sourcesSelect: 'zoia:sources:select',

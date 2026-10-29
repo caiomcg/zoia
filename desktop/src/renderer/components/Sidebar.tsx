@@ -15,10 +15,16 @@ import type { AccountRole, RoomInfo } from '../../shared/ipc';
 import type { GridTarget } from './RemoteGrid';
 import Avatar from './Avatar';
 import { IconEye, IconMic } from './Player';
+import StatusLight, { type StatusStat, type StatusTone } from './StatusLight';
 import StatusMenu from './StatusMenu';
 import { useFloatingMenu } from './useFloatingMenu';
 import type { VoiceState } from '../voice/useVoice';
 import { setVoiceVolume, useVoiceVolume, VOLUME_MAX } from '../voice/volumes';
+import SoundboardPanel, { IconNote, TOGGLE_ATTRIBUTE } from './SoundboardPanel';
+import type { SoundboardControls } from '../soundboard/useSoundboard';
+import { soundboardSettings, usePersonMuted } from '../soundboard/library';
+import { setPersonMuted } from '../soundboard/model';
+import { usePlayingSound } from '../soundboard/player';
 import { useT } from '../i18n';
 import { useLeaving } from '../presence';
 import type { PresenceController } from '../chat/usePresence';
@@ -403,14 +409,18 @@ export default function Sidebar({
   people,
   peopleOnline,
   share,
+  connection,
   presence,
   onKickMember,
   collapsed,
   onCollapsedChange,
   voice,
+  soundboard,
 }: {
   /** Absent: no voice controls at all. */
   voice?: SidebarVoice;
+  /** The soundboard (ADR 0040), beside your microphone; absent, no button for it. */
+  soundboard?: SoundboardControls;
   members: RoomMember[];
   myName: string;
   /** Yours, for your own profile picture in the footer. */
@@ -448,6 +458,8 @@ export default function Sidebar({
   peopleOnline?: number;
   /** Screen and camera, in the voice bar; absent, no share buttons. */
   share?: SidebarShare;
+  /** The link to the server: the voice bar's colour and its hover card. */
+  connection?: { tone: StatusTone; label: string; stats: StatusStat[] };
   /** Your status, on your picture in the footer, which is where it is chosen. */
   presence?: PresenceController;
   /** Admins only: takes someone off the server, chat and all (ADR 0037). */
@@ -574,6 +586,14 @@ export default function Sidebar({
   // Your picture in the footer opens your status, from where it sits.
   const [statusAnchor, setStatusAnchor] = useState<DOMRect | null>(null);
   const closeStatus = useCallback(() => setStatusAnchor(null), []);
+
+  // The soundboard opens above its button in the footer, while in voice.
+  const [soundboardAnchor, setSoundboardAnchor] = useState<DOMRect | null>(null);
+  const closeSoundboard = useCallback(() => setSoundboardAnchor(null), []);
+  const inVoice = !collapsed && voice?.state === 'on';
+  useEffect(() => {
+    if (!inVoice) setSoundboardAnchor(null);
+  }, [inVoice]);
 
   // Right-clicking someone opens what you can do about them: their voice's
   // volume while you both are in voice, and a kick for an admin.
@@ -963,15 +983,22 @@ export default function Sidebar({
         <div className={`voice-panel${voice?.state === 'on' ? ' connected' : ''}`}>
           <div className="voice-panel-head">
             <span className="voice-panel-text">
-              <span className="voice-panel-state">
-                <IconSignal />
-                {voice?.state === 'on' ? t('voice.connected') : t('voice.connecting')}
-              </span>
+              {/* The connection, with ping and, while sharing, how your
+                  broadcast is encoding, on its hover card. */}
+              <StatusLight
+                tone={connection?.tone === 'bad' ? 'bad' : voice?.state === 'on' ? 'ok' : 'warn'}
+                label={connection?.label ?? t('voice.connected')}
+                stats={connection?.stats}
+              >
+                <span className="voice-panel-state">
+                  <IconSignal />
+                  {voice?.state === 'on' ? t('voice.connected') : t('voice.connecting')}
+                </span>
+              </StatusLight>
               <span className="voice-panel-channel" title={currentChannelName}>
                 {currentChannelName}
               </span>
             </span>
-            {share && <ShareButtons share={share} />}
             <button
               className="icon-button sidebar-settings sidebar-leave"
               onClick={onLeaveChannel}
@@ -981,6 +1008,29 @@ export default function Sidebar({
               <IconLeave />
             </button>
           </div>
+          {/* What you can do in it, a row of equal buttons under where you are. */}
+          {(share || (soundboard && voice?.state === 'on')) && (
+            <div className="voice-panel-actions">
+              {share && <ShareButtons share={share} wide />}
+              {soundboard && voice?.state === 'on' && (
+                <button
+                  className={`icon-button voice-action${soundboardAnchor ? ' active' : ''}`}
+                  onClick={(event) =>
+                    setSoundboardAnchor(
+                      soundboardAnchor ? null : event.currentTarget.getBoundingClientRect(),
+                    )
+                  }
+                  aria-haspopup="dialog"
+                  aria-expanded={soundboardAnchor !== null}
+                  title={t('soundboard.title')}
+                  aria-label={t('soundboard.title')}
+                  {...{ [TOGGLE_ATTRIBUTE]: '' }}
+                >
+                  <IconNote />
+                </button>
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -1092,6 +1142,13 @@ export default function Sidebar({
           onClose={closeStatus}
         />
       )}
+      {soundboardAnchor && soundboard && (
+        <SoundboardPanel
+          anchor={soundboardAnchor}
+          controls={soundboard}
+          onClose={closeSoundboard}
+        />
+      )}
       {menu && (
         <MemberMenu
           {...menu}
@@ -1152,6 +1209,7 @@ function MemberMenu({
         </span>
       </div>
       {volume && <VoiceVolume identity={identity} name={name} />}
+      {volume && <SoundboardMute identity={identity} />}
       {onKick && (
         <button type="button" role="menuitem" className="member-menu-item" onClick={choose(onKick)}>
           <IconKick />
@@ -1187,6 +1245,39 @@ function VoiceVolume({ identity, name }: { identity: string; name: string }) {
         aria-valuetext={`${percent}%`}
       />
     </label>
+  );
+}
+
+/** Whether you hear someone's soundboard sounds (ADR 0040), kept like their volume. */
+function SoundboardMute({ identity }: { identity: string }) {
+  const t = useT();
+  const muted = usePersonMuted(identity);
+  return (
+    <label className="member-menu-check">
+      <input
+        type="checkbox"
+        checked={muted}
+        onChange={(event) =>
+          soundboardSettings.set(
+            setPersonMuted(soundboardSettings.get(), identity, event.target.checked),
+          )
+        }
+      />
+      {t('soundboard.mutePerson')}
+    </label>
+  );
+}
+
+/** The sound someone is playing for you, beside their name, while it plays. */
+function PlayingSound({ identity }: { identity: string }) {
+  const t = useT();
+  const sound = usePlayingSound(identity);
+  if (!sound) return null;
+  const label = t('soundboard.playing', { sound });
+  return (
+    <span className="member-sound" title={label} aria-label={label} role="img">
+      <IconNote />
+    </span>
   );
 }
 
@@ -1272,11 +1363,13 @@ function MemberRow({
       <span
         className={`avatar-wrap${m.inVoice && !m.voiceMuted && speaking?.has(m.identity) ? ' speaking' : ''}`}
       >
-        <Avatar name={m.name} identity={m.identity} live={live} role={role} />
+        {/* The tag is for anything shared; the row opens a screen only. */}
+        <Avatar name={m.name} identity={m.identity} live={m.isBroadcasting} role={role} />
         {viewerIds.has(m.identity) && <WatchingYou />}
       </span>
       <span className="member-name">{m.name}</span>
       {m.isLocal && <span className="you-tag">{t('common.youTag')}</span>}
+      <PlayingSound identity={m.identity} />
       {/* Everyone here is in voice, so only silence is news: hearing
           nothing, which also mutes, or just a muted microphone. */}
       {m.inVoice && (m.voiceDeafened || m.voiceMuted) && (
@@ -1304,19 +1397,21 @@ function MemberRow({
 
 /** Headphones: voice. Struck through, deafened. */
 /**
- * Camera and screen, beside leaving and dressed as it: icons. Green with a
- * dot while live; pressing again is how you stop.
+ * Screen and camera: icons, green with a dot while live; pressing again is
+ * how you stop. Wide, they are the voice panel's row of equal buttons;
+ * compact, a column above your picture in a collapsed sidebar.
  */
-function ShareButtons({ share, compact = false }: { share: SidebarShare; compact?: boolean }) {
+function ShareButtons({
+  share,
+  compact = false,
+  wide = false,
+}: {
+  share: SidebarShare;
+  compact?: boolean;
+  wide?: boolean;
+}) {
   const t = useT();
   const buttons = [
-    {
-      key: 'camera',
-      live: share.cameraLive,
-      onClick: share.onCamera,
-      title: share.cameraLive ? t('top.cameraTitleLive') : t('top.cameraTitle'),
-      icon: <IconCamera />,
-    },
     {
       key: 'screen',
       live: share.screenLive,
@@ -1324,17 +1419,24 @@ function ShareButtons({ share, compact = false }: { share: SidebarShare; compact
       title: share.screenLive ? t('top.screenTitleLive') : t('top.screenTitle'),
       icon: <IconScreen />,
     },
+    {
+      key: 'camera',
+      live: share.cameraLive,
+      onClick: share.onCamera,
+      title: share.cameraLive ? t('top.cameraTitleLive') : t('top.cameraTitle'),
+      icon: <IconCamera />,
+    },
   ];
   return (
     <div
-      className={`voice-share${compact ? ' compact' : ''}`}
+      className={`voice-share${compact ? ' compact' : ''}${wide ? ' wide' : ''}`}
       role="group"
       aria-label={t('top.whatToShare')}
     >
       {buttons.map((b) => (
         <button
           key={b.key}
-          className={`icon-button sidebar-settings voice-share-button${b.live ? ' live' : ''}${share.hopping ? ' hopping' : ''}`}
+          className={`icon-button ${wide ? 'voice-action' : 'sidebar-settings'} voice-share-button${b.live ? ' live' : ''}${share.hopping ? ' hopping' : ''}`}
           disabled={share.disabled}
           onClick={b.onClick}
           title={b.title}

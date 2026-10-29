@@ -1,5 +1,6 @@
 /**
- * Voice's global shortcuts (ADR 0039), heard while Zoia is in the background.
+ * The global shortcuts, heard while Zoia is in the background: voice's (ADR
+ * 0039) and the soundboard pads' (ADR 0040).
  *
  * Electron's globalShortcut takes keys only, and says nothing of a release,
  * which push to talk is all about. uiohook-napi hooks the keyboard and the
@@ -19,11 +20,11 @@ import {
   assign,
   bindingLabel,
   BindingRecorder,
+  boundActions,
   ChordTracker,
   keyCode,
   mouseCode,
   parseBindings,
-  SHORTCUT_ACTIONS,
   type Binding,
   type Bindings,
   type ShortcutAction,
@@ -124,7 +125,8 @@ function load(): boolean {
 /** Runs the hook exactly while it has something to listen for. */
 function sync() {
   if (!load() || !hook) return;
-  const wanted = !!recording || SHORTCUT_ACTIONS.some((a) => current()[a]);
+  const saved = current();
+  const wanted = !!recording || boundActions(saved).some((a) => saved[a]);
   if (wanted === running) return;
   try {
     if (wanted) hook.start();
@@ -143,14 +145,13 @@ export function state(): ShortcutsState {
   const label = (binding: Binding | null) =>
     binding ? { codes: binding, label: bindingLabel(binding, keyNames) } : null;
   load();
-  return {
-    available: available === true,
-    bindings: {
-      pushToTalk: label(saved.pushToTalk),
-      toggleMute: label(saved.toggleMute),
-      toggleDeafen: label(saved.toggleDeafen),
-    },
+  const bindings: ShortcutsState['bindings'] = {
+    pushToTalk: label(saved.pushToTalk),
+    toggleMute: label(saved.toggleMute),
+    toggleDeafen: label(saved.toggleDeafen),
   };
+  for (const action of boundActions(saved)) bindings[action] = label(saved[action] ?? null);
+  return { available: available === true, bindings };
 }
 
 /** Records the next binding for `action`; null if cancelled or unavailable. */

@@ -1488,8 +1488,9 @@ button.danger {
   border-color: var(--accent);
 }
 
+/* As wide as the pane: a narrower measure broke it into short lines that
+   left most of the pane empty. */
 .about-lede {
-  max-width: 46ch;
   margin: 0;
   font-size: 14px;
   line-height: 1.55;
@@ -2587,6 +2588,12 @@ button.danger {
   padding: 6px 8px 8px 26px;
 }
 
+/* Each face a box of its own, not a line of text: on a line, a crowned face's
+   wrapper sat on the text's baseline and dropped below the rest. */
+.channel-people > span {
+  display: flex;
+}
+
 .channel-people .avatar {
   width: 20px;
   height: 20px;
@@ -3388,8 +3395,7 @@ button.danger {
   border-top: 1px solid var(--border);
 }
 
-/* The same 30px buttons 2px apart as the footer's, so camera, screen and
-   leave stand over mute, deafen and settings. */
+/* Where you are, and leaving it. */
 .voice-panel-head {
   display: flex;
   gap: 2px;
@@ -3400,8 +3406,7 @@ button.danger {
   margin-right: 6px;
 }
 
-/* Camera and screen, beside leaving and dressed as it: icons, muted until
-   hovered, green while live. */
+/* Screen and camera: icons, muted until hovered, green while live. */
 .voice-share {
   display: flex;
   flex: none;
@@ -3453,6 +3458,40 @@ button.danger {
   gap: 4px;
 }
 
+/* Screen, camera and the soundboard: a row of equal buttons under where you
+   are, the whole panel's width. */
+.voice-panel-actions {
+  display: grid;
+  grid-auto-columns: minmax(0, 1fr);
+  grid-auto-flow: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+/* The share buttons sit in the row as if they were its own. */
+.voice-share.wide {
+  display: contents;
+}
+
+.voice-action {
+  position: relative;
+  width: 100%;
+  height: 32px;
+  color: var(--muted);
+  background: var(--raised);
+  border-radius: 6px;
+}
+
+.voice-action:hover:not(:disabled) {
+  color: var(--text);
+  background: color-mix(in srgb, var(--text) 10%, var(--raised));
+}
+
+.voice-action.active {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 18%, var(--raised));
+}
+
 .voice-panel-text {
   display: flex;
   flex: 1;
@@ -3472,6 +3511,24 @@ button.danger {
 
 .voice-panel.connected .voice-panel-state {
   color: var(--live);
+}
+
+/* The state line is the connection's light: no dot, red when it fails, and
+   its card opens upward, the bar being at the sidebar's foot. */
+.voice-panel .status-light {
+  align-self: flex-start;
+  padding: 0;
+}
+
+.voice-panel .status-light.bad .voice-panel-state {
+  color: var(--danger);
+}
+
+.voice-panel .status-card {
+  top: auto;
+  bottom: calc(100% + 8px);
+  left: 0;
+  transform: translateY(4px);
 }
 
 .voice-panel-channel {
@@ -5992,4 +6049,571 @@ button.danger:active:not(:disabled),
   display: flex;
   gap: 8px;
   justify-content: flex-end;
+}
+
+/* ---- soundboard (ADR 0040) ----------------------------------------------- */
+
+/* Above its button in the footer, as your status is, and somewhere to work:
+   your pad, a search and a volume, the list scrolling on its own. Zoia's own
+   surfaces and accent throughout: Myinstants' colours are anyone's choice. */
+.soundboard {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 360px;
+  max-width: calc(100vw - 32px);
+  max-height: min(600px, calc(100vh - 80px));
+  padding: 12px;
+}
+
+.soundboard-head {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 28px;
+}
+
+.soundboard-title {
+  display: inline-flex;
+  flex: none;
+  gap: 8px;
+  align-items: center;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.soundboard-title svg {
+  width: 16px;
+  height: 16px;
+  color: var(--accent);
+}
+
+/* Mute, a short slider and the level, on the title's line. */
+.soundboard-volume {
+  display: flex;
+  flex: 1;
+  gap: 6px;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+.soundboard-volume input {
+  width: 100%;
+  max-width: 120px;
+  min-width: 0;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.soundboard-volume input:disabled {
+  opacity: 0.4;
+}
+
+.soundboard-volume-value {
+  flex: none;
+  width: 34px;
+  font-size: 12px;
+  color: var(--muted);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.soundboard-mute {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  color: var(--muted);
+}
+
+.soundboard-mute svg {
+  width: 16px;
+  height: 16px;
+}
+
+.soundboard-mute:hover:not(:disabled) {
+  color: var(--text);
+}
+
+.soundboard-mute.voice-off {
+  color: var(--danger);
+}
+
+.soundboard-search {
+  display: flex;
+  flex: none;
+  gap: 8px;
+  align-items: center;
+  height: 34px;
+  padding: 0 10px;
+  color: var(--muted);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.soundboard-search:focus-within {
+  border-color: var(--accent);
+}
+
+.soundboard-search svg {
+  flex: none;
+}
+
+.soundboard-search input {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  font: inherit;
+  color: var(--text);
+  background: transparent;
+  border: none;
+  outline: none;
+}
+
+.soundboard-note {
+  margin: 0 2px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* A hairline that empties over the two seconds before the next sound may
+   play; empty space, keeping its place, the rest of the time. */
+.soundboard-cooldown {
+  flex: none;
+  height: 2px;
+  margin: -6px 2px -4px;
+  overflow: hidden;
+  border-radius: 1px;
+}
+
+.soundboard-cooldown span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transform-origin: left;
+  animation: soundboard-cooldown linear forwards;
+}
+
+@keyframes soundboard-cooldown {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+
+.soundboard-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 0;
+  margin: 0 -4px;
+  padding: 0 4px;
+  overflow-y: auto;
+}
+
+.soundboard-heading {
+  margin: 0 2px 6px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.soundboard-heading:not(:first-child) {
+  margin-top: 14px;
+}
+
+/* ---- the soundpad: your sounds as pads, three to a row. */
+.soundpad {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.soundpad-cell {
+  position: relative;
+  min-width: 0;
+}
+
+.soundpad-pad {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 72px;
+  padding: 8px;
+  font: inherit;
+  color: var(--text);
+  background: var(--raised);
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition:
+    background 0.12s ease,
+    border-color 0.12s ease,
+    transform 0.08s ease;
+}
+
+.soundpad-pad:hover:not(:disabled),
+.soundpad-pad:focus-visible {
+  background: color-mix(in srgb, var(--accent) 14%, var(--raised));
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  outline: none;
+}
+
+.soundpad-pad:active:not(:disabled) {
+  transform: scale(0.96);
+  background: color-mix(in srgb, var(--accent) 28%, var(--raised));
+}
+
+.soundpad-pad:disabled {
+  cursor: default;
+}
+
+.soundpad-pad:disabled > * {
+  opacity: 0.45;
+}
+
+.soundpad-emoji {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 24px;
+  font-size: 22px;
+  line-height: 1;
+  color: var(--muted);
+}
+
+.soundpad-emoji svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* One line: the pad is a button, not a paragraph. Hovering shows it whole. */
+.soundpad-name {
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 16px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* Its shortcut, small, in the top-left corner. */
+.soundpad-key {
+  position: absolute;
+  top: 5px;
+  left: 5px;
+  max-width: calc(100% - 10px);
+  overflow: hidden;
+  padding: 0 4px;
+  font: inherit;
+  font-size: 9px;
+  line-height: 14px;
+  color: var(--muted);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  background: var(--surface);
+  border-radius: 3px;
+  pointer-events: none;
+}
+
+/* Preview and edit, in the top-right corner while the pad is hovered. */
+.soundpad-tools {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.soundpad-cell:hover .soundpad-tools,
+.soundpad-cell:focus-within .soundpad-tools {
+  opacity: 1;
+}
+
+.soundpad-tool {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  color: var(--muted);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.soundpad-tool:hover:not(:disabled) {
+  color: var(--text);
+}
+
+.soundpad-tool:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* The last cell: a place for another sound, which goes to the search. */
+.soundpad-add {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
+  justify-content: center;
+  height: 72px;
+  padding: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
+  background: transparent;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+}
+
+.soundpad-add:hover {
+  color: var(--text);
+  border-color: var(--muted);
+}
+
+/* With no pads yet it is the whole row, and says what to do. */
+.soundpad-add.empty {
+  grid-column: 1 / -1;
+  flex-direction: row;
+  gap: 8px;
+  height: 56px;
+}
+
+/* ---- search results and recent sounds: a row each, the sound itself playing it. */
+.soundboard-row {
+  display: flex;
+  gap: 2px;
+  align-items: center;
+}
+
+.soundboard-play {
+  display: flex;
+  flex: 1;
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
+  height: 34px;
+  padding: 0 8px;
+  font: inherit;
+  color: var(--text);
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.soundboard-play svg {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  color: var(--muted);
+}
+
+.soundboard-play:hover:not(:disabled),
+.soundboard-play:focus-visible {
+  background: var(--raised);
+  outline: none;
+}
+
+.soundboard-play:disabled {
+  color: var(--muted);
+  cursor: default;
+}
+
+.soundboard-name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.soundboard-icon {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  color: var(--muted);
+}
+
+.soundboard-icon:hover:not(:disabled) {
+  color: var(--text);
+}
+
+.soundboard-add.on {
+  color: var(--accent);
+}
+
+.soundboard-more {
+  align-self: center;
+  margin: 4px 0;
+  padding: 6px 14px;
+  font-size: 13px;
+}
+
+/* ---- editing a pad, where the pad was. */
+.soundpad-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.soundpad-editor-head {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  margin-left: -4px;
+}
+
+.soundpad-editor-fields {
+  display: flex;
+  gap: 6px;
+}
+
+.soundpad-editor-fields input {
+  height: 40px;
+  font: inherit;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  outline: none;
+}
+
+.soundpad-editor-fields input:focus {
+  border-color: var(--accent);
+}
+
+/* The pad's emoji, large, in a square of its own. */
+.soundpad-editor-fields .soundpad-emoji-input {
+  flex: none;
+  width: 40px;
+  padding: 0;
+  font-size: 20px;
+  text-align: center;
+  background: var(--raised);
+  caret-color: transparent;
+}
+
+.soundpad-editor-fields .soundpad-emoji-input::placeholder {
+  opacity: 0.35;
+  filter: grayscale(1);
+}
+
+.soundpad-editor-fields .soundpad-name-input {
+  flex: 1;
+  min-width: 0;
+  padding: 0 10px;
+}
+
+.soundpad-emoji-grid {
+  grid-template-columns: repeat(10, 1fr);
+  margin: 0;
+}
+
+.soundpad-emoji-grid button.chosen {
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.soundpad-editor-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.soundpad-editor-label {
+  flex: none;
+  min-width: 64px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.soundpad-editor-row .voice-keybind {
+  flex: 1;
+  min-width: 0;
+  min-height: 32px;
+}
+
+.soundpad-editor-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.soundpad-editor-actions button:not(.icon-button) {
+  padding: 6px 14px;
+  font-size: 13px;
+}
+
+.soundpad-editor-actions button.danger {
+  color: var(--danger);
+  background: transparent;
+  border-color: color-mix(in srgb, var(--danger) 45%, transparent);
+}
+
+.soundpad-editor-actions button.danger:hover {
+  color: #fff;
+  background: var(--danger);
+}
+
+.soundpad-editor-spacer {
+  flex: 1;
+}
+
+.soundboard-from {
+  margin: -2px 2px 0;
+  font-size: 11px;
+  color: var(--muted);
+  opacity: 0.7;
+}
+
+/* Someone playing a sound, beside their name while it plays. */
+.member-sound {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  margin-left: auto;
+  color: var(--speaking);
+}
+
+.member-sound svg {
+  width: 14px;
+  height: 14px;
+}
+
+.member-sound + .member-voice,
+.member-sound + .member-camera {
+  margin-left: 4px;
+}
+
+/* Not hearing someone's sounds, on their menu under their voice's volume. */
+.member-menu .member-menu-check {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 10px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  cursor: pointer;
 }
