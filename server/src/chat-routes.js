@@ -275,12 +275,12 @@ export function chatRoutes({
       .catch((err) => logger.warn(`[chat] media of ${result.chat.id} not deleted: ${err.message}`));
   });
 
-  // Who can be @mentioned: everyone let in, by name and picture, never by
-  // email. Before /:id, like /events.
+  // Who can be @mentioned: everyone let in, by name, picture and role (the
+  // People tab crowns admins), never by email. Before /:id, like /events.
   router.get('/people', requireSession, async (_req, res) => {
     const people = (await accountStore.list())
       .filter((a) => a.status === 'active' && a.name)
-      .map((a) => ({ id: a.id, name: a.name, avatar: a.avatar ?? null }))
+      .map((a) => ({ id: a.id, name: a.name, avatar: a.avatar ?? null, role: a.role }))
       .sort((a, b) => a.name.localeCompare(b.name));
     res.json({ people });
   });

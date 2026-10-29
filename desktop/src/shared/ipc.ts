@@ -184,6 +184,8 @@ export interface ChatPerson {
   id: string;
   name: string;
   avatar: string | null;
+  /** Crowns admins in the People tab; absent from older servers. */
+  role?: AccountRole;
 }
 
 /** What may go with a message beside its text. */
