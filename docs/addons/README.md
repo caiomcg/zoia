@@ -37,7 +37,7 @@ never touch an admin.
    your latest GitHub release and its `zoia-addon.json`, and shows what the addon is and asks
    for. On their yes, it records the addon, mints its token, and has the addon host pull your
    image by digest and start it.
-2. **Run.** Your container starts with two variables:
+2. **Run.** Your container starts with three variables:
    - `ZOIA_URL`: where Zoia is, from inside (`http://app:3000`).
    - `ZOIA_ADDON_TOKEN`: your addon's token. Send it as `Authorization: Bearer …`.
    - `ZOIA_LIVEKIT_URL`: where LiveKit is, from inside, for joining voice.
