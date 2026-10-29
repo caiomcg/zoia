@@ -20,6 +20,7 @@ import StatusMenu from './StatusMenu';
 import { useFloatingMenu } from './useFloatingMenu';
 import type { VoiceState } from '../voice/useVoice';
 import { setVoiceVolume, useVoiceVolume, VOLUME_MAX } from '../voice/volumes';
+import { useWheelRange } from './useWheelRange';
 import SoundboardPanel, { IconNote, TOGGLE_ATTRIBUTE } from './SoundboardPanel';
 import type { SoundboardControls } from '../soundboard/useSoundboard';
 import { soundboardSettings, usePersonMuted } from '../soundboard/library';
@@ -1226,6 +1227,8 @@ function VoiceVolume({ identity, name }: { identity: string; name: string }) {
   const t = useT();
   const volume = useVoiceVolume(identity);
   const percent = Math.round(volume * 100);
+  // One percent a notch, as the slider steps.
+  const ref = useWheelRange((direction) => setVoiceVolume(identity, (percent + direction) / 100));
   return (
     <label className="member-menu-volume">
       <span>
@@ -1233,10 +1236,11 @@ function VoiceVolume({ identity, name }: { identity: string; name: string }) {
         <span className="member-menu-volume-value">{percent}%</span>
       </span>
       <input
+        ref={ref}
         type="range"
         min={0}
         max={VOLUME_MAX * 100}
-        step={5}
+        step={1}
         value={percent}
         onChange={(event) => setVoiceVolume(identity, Number(event.target.value) / 100)}
         // Back to as sent, where it is easy to overshoot by a little.
