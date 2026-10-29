@@ -538,7 +538,7 @@ export const es: Messages = {
   'about.madeBy': 'Hecho por',
   'about.role.caio': 'Creó Zoia: captura, canales y el servidor.',
   'about.role.nycholas':
-    'La codificación por hardware en AMD y una transmisión por GPU que se recupera sola, actualizaciones, el cambio automático de League y la vista de varias transmisiones.',
+    'La codificación por hardware en AMD y una transmisión por GPU que se recupera sola, actualizaciones, el cambio automático de League, la vista de varias transmisiones y el panel de sonidos, con sonidos de Myinstants.',
   'about.role.victor':
     'Llevó Zoia al Mac: la app para macOS, compartir con el audio del sistema y la pantalla codificada por hardware.',
   'about.role.flavia':

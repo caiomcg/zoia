@@ -541,7 +541,7 @@ export const en = {
   'about.madeBy': 'Made by',
   'about.role.caio': 'Started Zoia: capture, channels and the server.',
   'about.role.nycholas':
-    'AMD hardware encoding and a GPU broadcast that recovers on its own, updates, League hand-off and multi-stream viewing.',
+    'AMD hardware encoding and a GPU broadcast that recovers on its own, updates, League hand-off, multi-stream viewing and the soundboard, with sounds from Myinstants.',
   'about.role.victor':
     "Brought Zoia to the Mac: the macOS app, sharing with the system's audio, and hardware-encoded screens.",
   'about.role.flavia':
