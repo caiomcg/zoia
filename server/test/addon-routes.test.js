@@ -285,6 +285,10 @@ describe('chats', () => {
       .send({ bot: body.bot.id, body: 'tocando agora' })
       .expect(201);
     assert.equal(sent.body.message.authorId, body.bot.id);
+    // People reading the chat are told it is a bot's.
+    const ana = await signIn(app, stores.accounts, 'Ana');
+    const page = await ana.agent.get(`/api/chats/${chat.id}/messages`).expect(200);
+    assert.equal(page.body.authors[body.bot.id].bot, true);
     await stores.addons.setBindings(a.id, []);
     const refused = await as('post', `/chats/${chat.id}/messages`)
       .send({ bot: body.bot.id, body: 'oi' })

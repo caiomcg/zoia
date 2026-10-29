@@ -5890,6 +5890,12 @@ button.danger:active:not(:disabled),
   box-shadow: inset 2px 0 0 var(--warn);
 }
 
+/* An addon's bot (ADR 0041): set apart from people at a glance. */
+.chat-message.bot {
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
 /* Above the box while answering: what is being answered, and a ×. */
 .chat-replying {
   display: flex;

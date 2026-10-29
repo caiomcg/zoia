@@ -319,7 +319,12 @@ export const chatMediaUrl = (chatId: string, mediaId: string) =>
   `${CHAT_MEDIA_SCHEME}://file/${chatId}/${mediaId}`;
 
 /** How an author is shown; null for an account that no longer exists. */
-export type ChatAuthor = { name: string; avatar: string | null } | null;
+export type ChatAuthor = {
+  name: string;
+  avatar: string | null;
+  /** An addon's bot (ADR 0041); absent for a person and from older servers. */
+  bot?: boolean;
+} | null;
 
 /** A page of messages, newest first, with who wrote them and who read what. */
 export interface ChatPage {

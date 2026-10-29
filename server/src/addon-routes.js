@@ -398,7 +398,7 @@ export function addonRoutes({
         replyTo,
         mentions: [],
       });
-      const author = { name: bot.name, avatar: bot.avatar ?? null };
+      const author = { name: bot.name, avatar: bot.avatar ?? null, bot: true };
       chatHub.publish('message', { message, author });
       res.status(201).json({ message });
     } catch (err) {

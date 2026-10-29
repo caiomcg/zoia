@@ -138,7 +138,14 @@ export function chatRoutes({
     const authors = {};
     for (const id of new Set(ids)) {
       const account = await accountStore.get(id);
-      authors[id] = account ? { name: account.name, avatar: account.avatar ?? null } : null;
+      authors[id] = account
+        ? {
+            name: account.name,
+            avatar: account.avatar ?? null,
+            // An addon's bot, so the app can set its messages apart (ADR 0041).
+            ...(account.addonId ? { bot: true } : {}),
+          }
+        : null;
     }
     return authors;
   }

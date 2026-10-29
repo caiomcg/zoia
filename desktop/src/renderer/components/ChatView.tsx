@@ -510,7 +510,7 @@ export default function ChatView({
                   newMessages={i === divider}
                   time={time.format(new Date(m.sentAt))}
                   mine={m.authorId === me}
-                  bot={bots.has(m.authorId)}
+                  bot={bots.has(m.authorId) || Boolean(chat.authors[m.authorId]?.bot)}
                   mentionsMe={Boolean(me && m.mentions?.some((x) => x.id === me))}
                   me={me}
                   onMediaLoad={onMediaLoad}
@@ -855,7 +855,7 @@ function MessageRow({
         </li>
       )}
       <li
-        className={`chat-message${grouped && !message.replyTo ? ' grouped' : ''}${mine ? ' mine' : ''}${mentionsMe ? ' mentions-me' : ''}`}
+        className={`chat-message${grouped && !message.replyTo ? ' grouped' : ''}${mine ? ' mine' : ''}${mentionsMe ? ' mentions-me' : ''}${bot ? ' bot' : ''}`}
         data-message-id={message.id}
       >
         {(onReply || onReact || onDelete) && (
