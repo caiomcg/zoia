@@ -48,7 +48,7 @@ fading out.
 `userData/soundboard`, up to 100 MB, those played longest ago going first. A sound played
 again, or by someone else in the channel, starts at once.
 
-**What is kept is per machine:** up to 20 favourites, the last 10 sounds played, the effects'
+**What is kept is per machine:** up to 10 favourites, the last 5 sounds played, the effects'
 volume (up to 100 %, half by default) and mute, and whose sounds are muted. Each favourite
 may have a global shortcut, held by the same input hook as voice's.
 

@@ -12,9 +12,9 @@ import type { Sound } from '../../shared/soundboard';
  * Each favourite may have a shortcut, so there are as many of one as of the
  * other. Must match MAX_SOUND_SHORTCUTS in shared/shortcuts.ts.
  */
-export const MAX_FAVORITES = 20;
+export const MAX_FAVORITES = 10;
 
-export const MAX_RECENTS = 10;
+export const MAX_RECENTS = 5;
 
 /** One sound every two seconds, per person: the sender waits this long. */
 export const SEND_INTERVAL_MS = 2000;

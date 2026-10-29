@@ -153,7 +153,7 @@ describe('favorites and recents', () => {
     assert.deepEqual(removeFavorite(list, 'a'), []);
   });
 
-  test('the latest sound comes first, once, and only the last ten are kept', () => {
+  test('the latest sound comes first, once, and only the last few are kept', () => {
     let list: Sound[] = [];
     for (let i = 0; i < 12; i++) list = addRecent(list, sound(`s${i}`));
     list = addRecent(list, sound('s5'));

@@ -210,7 +210,7 @@ export default function SoundboardPanel({
           type="range"
           min={0}
           max={100}
-          step={5}
+          step={1}
           value={percent}
           disabled={settings.muted}
           onChange={(event) =>
