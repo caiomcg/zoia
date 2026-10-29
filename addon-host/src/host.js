@@ -7,7 +7,7 @@
  * limited the same way, whatever the addon would like:
  *
  *   - on the addons network alone, which reaches the app and the internet;
- *   - 512 MB, one CPU, 256 processes, every capability dropped, no new
+ *   - 512 MB, two CPUs, 256 processes, every capability dropped, no new
  *     privileges, a read-only root with a scratch /tmp;
  *   - no volume, no Docker socket, no host network, nothing published.
  *
@@ -26,7 +26,8 @@ const TOKEN = /^zaddon_[0-9a-f]{8}_[A-Za-z0-9_-]{32,}$/;
 
 export const LIMITS = {
   memory: 512 * 1024 * 1024,
-  nanoCpus: 1_000_000_000,
+  // Two: reading YouTube solves its JavaScript challenges, which is CPU-bound.
+  nanoCpus: 2_000_000_000,
   pids: 256,
 };
 

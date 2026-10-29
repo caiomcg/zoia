@@ -57,7 +57,7 @@ never touch an admin.
 
 Every addon runs under the same limits, whatever it would like:
 
-- 512 MB of memory, one CPU, 256 processes;
+- 512 MB of memory, two CPUs, 256 processes;
 - every Linux capability dropped, no new privileges;
 - a **read-only root filesystem**, with a 256 MB `/tmp`: write caches and downloads there;
 - no volumes: nothing survives a restart but what Zoia keeps for you (settings, bots);

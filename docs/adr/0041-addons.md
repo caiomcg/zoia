@@ -47,7 +47,7 @@ permission not yet granted needs the super admin to grant it.
 listens only on the compose network, answers only the app (a shared secret,
 `ADDON_HOST_SECRET`), and does five things: pull by digest, run, stop, remove, read logs. An
 addon's container gets its token and Zoia's internal address in its environment, a network
-of its own that reaches the app and the internet, 512 MB and one CPU, no new privileges,
+of its own that reaches the app and the internet, 512 MB and two CPUs, no new privileges,
 no Docker socket and no volumes of Zoia's.
 
 **The API** is `/api/addon/v1`, authenticated by `Authorization: Bearer zaddon_<id>_<secret>`.
