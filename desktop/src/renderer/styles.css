@@ -6003,7 +6003,7 @@ button.danger:active:not(:disabled),
   flex-direction: column;
   gap: 6px;
   width: 340px;
-  max-width: calc(100vw - 8px);
+  max-width: calc(100vw - 32px);
   max-height: min(560px, calc(100vh - 80px));
   padding: 8px;
 }

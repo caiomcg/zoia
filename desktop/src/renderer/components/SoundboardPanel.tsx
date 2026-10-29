@@ -23,6 +23,9 @@ import type { SoundboardControls } from '../soundboard/useSoundboard';
 /** Marks the button that opens the panel, which a click outside it does not count. */
 export const TOGGLE_ATTRIBUTE = 'data-soundboard-toggle';
 
+/** How far the panel stays from the window's left and right edges. */
+const EDGE_GAP = 16;
+
 /** How long typing must pause before Myinstants is asked. */
 const SEARCH_DELAY_MS = 300;
 
@@ -70,8 +73,10 @@ export default function SoundboardPanel({
   useLayoutEffect(() => {
     const box = ref.current?.getBoundingClientRect();
     if (!box) return;
+    // Wider than a menu, so kept well clear of the window's edge: right
+    // against it, it reads as cut off.
     setPlace({
-      left: Math.max(4, Math.min(anchor.left, window.innerWidth - box.width - 4)),
+      left: Math.max(EDGE_GAP, Math.min(anchor.left, window.innerWidth - box.width - EDGE_GAP)),
       top: Math.max(4, anchor.top - box.height - 6),
     });
   }, [anchor]);
