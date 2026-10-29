@@ -3474,6 +3474,24 @@ button.danger {
   color: var(--live);
 }
 
+/* The state line is the connection's light: no dot, red when it fails, and
+   its card opens upward, the bar being at the sidebar's foot. */
+.voice-panel .status-light {
+  align-self: flex-start;
+  padding: 0;
+}
+
+.voice-panel .status-light.bad .voice-panel-state {
+  color: var(--danger);
+}
+
+.voice-panel .status-card {
+  top: auto;
+  bottom: calc(100% + 8px);
+  left: 0;
+  transform: translateY(4px);
+}
+
 .voice-panel-channel {
   overflow: hidden;
   font-size: 12px;

@@ -110,7 +110,7 @@ function Person({
       title={`${person.name} · ${t(`presence.${status}`)}${onContextMenu ? `\n${t('admin.manageHint')}` : ''}`}
       onContextMenu={onContextMenu}
     >
-      <Avatar name={person.name} image={image} live={false} status={status} />
+      <Avatar name={person.name} image={image} live={false} status={status} role={person.role} />
       <span className="member-name">{person.name}</span>
       {isMe && <span className="you-tag">{t('common.youTag')}</span>}
     </div>
