@@ -50,6 +50,7 @@ record that supersedes it, so the history stays legible.
 | [0040](0040-soundboard.md) | A soundboard from Myinstants, played by each listener | proposed |
 | [0041](0041-addons.md) | Addons: containers the super admin installs, behind an API of permissions | proposed |
 | [0042](0042-deleted-messages-leave-the-disk.md) | Deleted messages leave the disk an hour later, not ten days | proposed |
+| [0043](0043-editing-messages.md) | Its author edits a message, in place, and everyone sees it was edited | proposed |
 
 ## The two that explain the most
 

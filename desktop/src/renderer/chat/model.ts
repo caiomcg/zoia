@@ -113,3 +113,47 @@ export function applyReaction(
     )
     .filter((r) => r.accountIds.length > 0);
 }
+
+/** How much of the original a reply shows. Must match REPLY_EXCERPT_MAX in server/src/messages.js. */
+const REPLY_EXCERPT_MAX = 200;
+
+/** A message's opening words as a reply quotes them, on one line, as the server cuts them. */
+export function replyExcerpt(body: string): string {
+  const flat = body.replace(/\s+/g, ' ').trim();
+  return flat.length > REPLY_EXCERPT_MAX ? `${flat.slice(0, REPLY_EXCERPT_MAX - 1)}…` : flat;
+}
+
+/**
+ * Messages with an edit applied (ADR 0043): the edited one takes its new
+ * body, mentions and time, and keeps its reactions; replies to it quote the
+ * new words. An edit older than the one already shown changes nothing, so
+ * your own edit and its echo on the stream land once, in either order.
+ */
+export function applyEdit(messages: ChatMessage[], edited: ChatMessage): ChatMessage[] {
+  const shown = messages.find((m) => m.id === edited.id);
+  if (!shown) return messages;
+  if (shown.editedAt && edited.editedAt && Date.parse(shown.editedAt) > Date.parse(edited.editedAt))
+    return messages;
+  return messages.map((m) => {
+    if (m.id === edited.id) {
+      return {
+        ...m,
+        body: edited.body,
+        mentions: edited.mentions ?? [],
+        editedAt: edited.editedAt ?? null,
+      };
+    }
+    if (m.replyTo?.id === edited.id && !m.replyTo.deleted) {
+      return { ...m, replyTo: { ...m.replyTo, body: replyExcerpt(edited.body) } };
+    }
+    return m;
+  });
+}
+
+/** Your newest message, for Up in an empty box to edit; undefined if none is loaded. */
+export function lastOwnMessage(messages: ChatMessage[], me: string): ChatMessage | undefined {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    if (messages[i]!.authorId === me) return messages[i];
+  }
+  return undefined;
+}

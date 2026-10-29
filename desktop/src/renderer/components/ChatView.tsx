@@ -22,7 +22,7 @@ import {
 } from '../../shared/ipc';
 import type { ChatController } from '../chat/useChat';
 import { useAccountAvatar } from '../chat/avatars';
-import { continues, newMessagesIndex, sameDay, seenBy } from '../chat/model';
+import { continues, lastOwnMessage, newMessagesIndex, sameDay, seenBy } from '../chat/model';
 import {
   applyMention,
   matchPeople,
@@ -113,6 +113,8 @@ export default function ChatView({
   const [far, setFar] = useState(false);
   // What the message being written answers, and who was picked to mention.
   const [replyingTo, setReplyingTo] = useState<ChatMessage | null>(null);
+  // The message of yours being edited in place (ADR 0043), if any.
+  const [editingId, setEditingId] = useState<string | null>(null);
   const { confirm, dialog } = useConfirm();
   const [picked, setPicked] = useState<ChatMention[]>([]);
   // The @query at the caret, and which suggestion is highlighted.
@@ -158,6 +160,7 @@ export default function ChatView({
     setError(null);
     setFile(null);
     setReplyingTo(null);
+    setEditingId(null);
     setPicked([]);
     setMention(null);
   }, [thread?.chatId]);
@@ -327,6 +330,46 @@ export default function ChatView({
     else if (replyingTo?.id === message.id) setReplyingTo(null);
   }
 
+  /** Opens a message of yours for editing in place. */
+  function startEdit(message: ChatMessage) {
+    setError(null);
+    setEditingId(message.id);
+  }
+
+  /** Back to the message box, as after sending. */
+  function stopEdit() {
+    setEditingId(null);
+    textRef.current?.focus();
+  }
+
+  /**
+   * Saves an edit (ADR 0043). The mentions still written in the text are
+   * kept; the server checks them again. Emptying a message that is only
+   * text offers to delete it instead. A refusal keeps the editor open.
+   */
+  async function saveEdit(message: ChatMessage, text: string) {
+    const body = text.trim();
+    if (body === message.body.trim()) return stopEdit();
+    if (!body && !message.attachment) {
+      stopEdit();
+      return remove(message);
+    }
+    const mentions = mentionedIn(body, message.mentions ?? []).map((p) => p.id);
+    const refused = await chat.editMessage(message.id, body, mentions);
+    if (refused) {
+      setError(
+        refused === 'invalid_message'
+          ? t('chat.error.invalid')
+          : refused === 'too_many_messages'
+            ? t('chat.error.tooMany')
+            : t('chat.error.editFailed'),
+      );
+      return;
+    }
+    setError(null);
+    stopEdit();
+  }
+
   /**
    * Adds your emoji to a message, or takes it back. A refusal says so for a
    * moment and goes: nothing typed is waiting on it, unlike a failed send.
@@ -411,6 +454,15 @@ export default function ChatView({
         return;
       }
     }
+    // Up in an empty box edits your last message, as in most chat apps.
+    if (event.key === 'ArrowUp' && !draft && !file && me && chat.available) {
+      const own = lastOwnMessage(messages, me);
+      if (own) {
+        event.preventDefault();
+        startEdit(own);
+        return;
+      }
+    }
     if (event.key === 'Escape' && replyingTo) {
       event.preventDefault();
       setReplyingTo(null);
@@ -448,6 +500,7 @@ export default function ChatView({
 
   const time = new Intl.DateTimeFormat(language, { hour: '2-digit', minute: '2-digit' });
   const day = new Intl.DateTimeFormat(language, { weekday: 'long', day: 'numeric', month: 'long' });
+  const moment = new Intl.DateTimeFormat(language, { dateStyle: 'medium', timeStyle: 'short' });
   const dayLabel = (iso: string) => {
     const now = new Date().toISOString();
     if (sameDay(iso, now)) return t('chat.today');
@@ -525,6 +578,11 @@ export default function ChatView({
                       ? () => void remove(m)
                       : undefined
                   }
+                  editedAt={m.editedAt ? moment.format(new Date(m.editedAt)) : null}
+                  onEdit={chat.available && m.authorId === me ? () => startEdit(m) : undefined}
+                  editing={editingId === m.id && chat.available}
+                  onSaveEdit={(text) => saveEdit(m, text)}
+                  onCancelEdit={stopEdit}
                   onJump={jumpTo}
                 />
               );
@@ -794,6 +852,11 @@ function MessageRow({
   onReact,
   nameOf,
   onDelete,
+  editedAt,
+  onEdit,
+  editing,
+  onSaveEdit,
+  onCancelEdit,
   onJump,
 }: {
   message: ChatMessage;
@@ -818,6 +881,14 @@ function MessageRow({
   nameOf: (id: string) => string;
   /** Yours, or anyone's for an admin; absent otherwise. */
   onDelete?: () => void;
+  /** When it was last edited, formatted, or null if never (ADR 0043). */
+  editedAt: string | null;
+  /** Yours alone, never an admin's on someone else's; absent otherwise. */
+  onEdit?: () => void;
+  /** Open for editing in place. */
+  editing: boolean;
+  onSaveEdit: (text: string) => Promise<void>;
+  onCancelEdit: () => void;
   /** Scrolls to the message a reply answers. */
   onJump: (id: string) => void;
 }) {
@@ -858,7 +929,7 @@ function MessageRow({
         className={`chat-message${grouped && !message.replyTo ? ' grouped' : ''}${mine ? ' mine' : ''}${mentionsMe ? ' mentions-me' : ''}${bot ? ' bot' : ''}`}
         data-message-id={message.id}
       >
-        {(onReply || onReact || onDelete) && (
+        {(onReply || onReact || onDelete || onEdit) && !editing && (
           <span className={`chat-actions${picking ? ' open' : ''}`} ref={actionsRef}>
             {picking && onReact && (
               <span className="chat-react-pick" role="menu" aria-label={t('chat.react')}>
@@ -901,6 +972,16 @@ function MessageRow({
                 title={t('chat.reply')}
               >
                 <IconReply />
+              </button>
+            )}
+            {onEdit && (
+              <button
+                type="button"
+                onClick={onEdit}
+                aria-label={t('chat.editMessage')}
+                title={t('chat.editMessage')}
+              >
+                <IconPencil />
               </button>
             )}
             {onDelete && (
@@ -948,7 +1029,9 @@ function MessageRow({
               onView={onView}
             />
           )}
-          {message.body && (
+          {editing ? (
+            <EditBox initial={message.body} onSave={onSaveEdit} onCancel={onCancelEdit} />
+          ) : message.body ? (
             <p className="chat-body">
               {splitMentions(message.body, message.mentions).map((part, i) =>
                 part.mention ? (
@@ -973,7 +1056,14 @@ function MessageRow({
                   )
                 ),
               )}
+              {editedAt && <EditedMark when={editedAt} />}
             </p>
+          ) : (
+            editedAt && (
+              <p className="chat-body">
+                <EditedMark when={editedAt} />
+              </p>
+            )
           )}
           {reactions.length > 0 && (
             <div className="chat-reactions">
@@ -1000,6 +1090,85 @@ function MessageRow({
         </div>
       </li>
     </>
+  );
+}
+
+/** "(edited)" after a message's words, with when on hover (ADR 0043). */
+function EditedMark({ when }: { when: string }) {
+  const t = useT();
+  return (
+    <span className="chat-edited" title={t('chat.editedAt', { when })}>
+      {' '}
+      {t('chat.edited')}
+    </span>
+  );
+}
+
+/**
+ * A message of yours opened for editing in place: Enter saves, Shift+Enter
+ * starts a new line, Escape puts it back as it was.
+ */
+function EditBox({
+  initial,
+  onSave,
+  onCancel,
+}: {
+  initial: string;
+  onSave: (text: string) => Promise<void>;
+  onCancel: () => void;
+}) {
+  const t = useT();
+  const [text, setText] = useState(initial);
+  const [saving, setSaving] = useState(false);
+  const ref = useRef<HTMLTextAreaElement>(null);
+
+  // Opened with the caret at the end, in view, as Up from the box expects.
+  useEffect(() => {
+    const box = ref.current;
+    if (!box) return;
+    box.focus();
+    box.setSelectionRange(box.value.length, box.value.length);
+    box.scrollIntoView({ block: 'nearest' });
+  }, []);
+
+  async function save() {
+    if (saving) return;
+    setSaving(true);
+    await onSave(text);
+    setSaving(false);
+  }
+
+  return (
+    <div className="chat-edit">
+      <textarea
+        ref={ref}
+        value={text}
+        rows={1}
+        maxLength={MESSAGE_MAX}
+        readOnly={saving}
+        aria-label={t('chat.editMessage')}
+        onChange={(event) => setText(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === 'Escape') {
+            event.preventDefault();
+            event.stopPropagation();
+            onCancel();
+          } else if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
+            event.preventDefault();
+            void save();
+          }
+        }}
+      />
+      <span className="chat-edit-hint muted">
+        {t('chat.editHint')}
+        <button type="button" onClick={onCancel}>
+          {t('common.cancel')}
+        </button>
+        <button type="button" className="primary" disabled={saving} onClick={() => void save()}>
+          {t('chat.save')}
+        </button>
+      </span>
+    </div>
   );
 }
 
@@ -1251,6 +1420,25 @@ function IconReply() {
     >
       <path d="M9 14L4 9l5-5" />
       <path d="M4 9h10.5a5.5 5.5 0 010 11H11" />
+    </svg>
+  );
+}
+
+function IconPencil() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="16"
+      height="16"
+      aria-hidden="true"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M12 20h9" />
+      <path d="M16.5 3.5a2.12 2.12 0 013 3L7 19l-4 1 1-4z" />
     </svg>
   );
 }

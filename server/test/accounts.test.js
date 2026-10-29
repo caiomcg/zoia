@@ -21,6 +21,7 @@ import { createTokenIssuer, decodeTokenPayload } from '../src/token.js';
 import { createStage } from '../src/stage.js';
 import { fixedChannels } from '../src/channels.js';
 import { AVATAR_ATTRIBUTE, AVATAR_MAX_BYTES, createAvatarStore } from '../src/avatars.js';
+import { createChatHub } from '../src/chat-routes.js';
 
 const PASSWORD = 'Correct-horse-1';
 
@@ -32,6 +33,8 @@ let app;
 let logLines;
 /** The LiveKit room the app sees, so a test can tell who is still in it. */
 let rooms;
+/** Every frame the chat stream told everyone listening. */
+let frames;
 
 const quiet = () => {
   logLines = [];
@@ -44,12 +47,19 @@ function buildApp({ accounts: accountConfig, rateLimit, channels } = {}) {
   rooms = {
     participants: [],
     listParticipants: async () => rooms.participants,
-    updateParticipant: async () => {},
+    updates: [],
+    updateParticipant: async (room, identity, options) => {
+      rooms.updates.push({ room, identity, ...options });
+    },
     removeParticipant: async (_room, identity) => {
       rooms.participants = rooms.participants.filter((p) => p.identity !== identity);
     },
   };
+  frames = [];
+  const chatHub = createChatHub();
+  chatHub.add({ accountId: 'listener', write: (frame) => frames.push(frame) });
   return createApp({
+    chatHub,
     config: {
       sessionSecret: 'test-session-secret-long-enough',
       trustProxy: 1,
@@ -362,6 +372,37 @@ describe('the machines of an account', () => {
     assert.equal((await alice.agent.post('/api/name').send({ name: 'BOB' })).status, 409);
     assert.equal((await alice.agent.post('/api/name').send({ name: 'bób' })).status, 409);
     assert.equal((await alice.agent.post('/api/name').send({ name: 'ALICE' })).status, 200);
+  });
+
+  test('a new name is told to everyone on the chat stream, at once', async () => {
+    const alice = await person('alice@example.com');
+    assert.equal((await alice.agent.post('/api/name').send({ name: 'Alice' })).status, 200);
+    const renamed = frames.filter((f) => f.startsWith('event: renamed\n'));
+    assert.equal(renamed.length, 1);
+    assert.deepEqual(JSON.parse(renamed[0].split('data: ')[1]), {
+      accountId: alice.account.id,
+      name: 'Alice',
+    });
+  });
+
+  test('a new name reaches the room, on every machine of the account in it', async () => {
+    const alice = await person('alice@example.com');
+    const laptop = await login('alice@example.com', PASSWORD, 'Desktop');
+    const bob = await person('bob@example.com');
+    rooms.participants = [{ identity: alice.id }, { identity: laptop.id }, { identity: bob.id }];
+    assert.equal((await alice.agent.post('/api/name').send({ name: 'Alice' })).status, 200);
+    const renamed = rooms.updates.filter((u) => u.name === 'Alice').map((u) => u.identity);
+    assert.deepEqual(renamed.sort(), [alice.id, laptop.id].sort());
+  });
+
+  test('approving someone tells everyone on the chat stream, for the People tab', async () => {
+    const admin = await person('admin@example.com', 'admin');
+    assert.equal((await signup('new@example.com')).status, 201);
+    const pending = (await accounts.list()).find((a) => a.email === 'new@example.com');
+    frames.length = 0;
+    const approved = await admin.agent.post(`/api/admin/accounts/${pending.id}/approve`);
+    assert.equal(approved.status, 200);
+    assert.ok(frames.some((f) => f.startsWith('event: people\n')));
   });
 
   test('an empty or absurdly long name is refused', async () => {

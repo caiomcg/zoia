@@ -233,6 +233,13 @@ export interface ZoiaBridge {
     commands(chatId: string): Promise<ActionOutcome<ChatCommand[]>>;
     /** Deletes a message: your own, or anyone's as an admin. */
     deleteMessage(chatId: string, messageId: string): Promise<ActionOutcome>;
+    /** Edits a message of your own (ADR 0043); mentions are account ids, as when sending. */
+    editMessage(
+      chatId: string,
+      messageId: string,
+      body: string,
+      mentions: string[],
+    ): Promise<ActionOutcome<ChatMessage>>;
     /** Asks where, then saves a chat photo or video there; `saved` is false if not chosen. */
     saveMedia(
       chatId: string,

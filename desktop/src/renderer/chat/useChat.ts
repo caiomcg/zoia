@@ -6,7 +6,8 @@
  * A chat is read when its messages are on screen: `visible` says so, and
  * then the newest message is marked read. Until then a message from someone
  * else counts as unread, and one that @mentions you also counts as a mention,
- * which has a badge of its own and a sound (Settings › Sounds).
+ * which has a badge of its own and a sound (Settings › Sounds), unless this
+ * machine has silenced that chat (see silence.ts).
  *
  * Against a server without chat (older, or no message database configured
  * at all) `enabled` stays false and nothing here shows.
@@ -21,8 +22,10 @@ import type {
   ChatPerson,
   ChatSendExtras,
 } from '../../shared/ipc';
-import { applyReaction, atOrAfter, laterMarker, mergeMessages } from './model';
+import { applyEdit, applyReaction, atOrAfter, laterMarker, mergeMessages } from './model';
 import { playCues } from '../sounds/useSoundCues';
+import { chatMessageCues, shownUnread } from './silence';
+import { isChatSilenced, useSilencedChats } from './silence-store';
 
 export interface ChatThread {
   chatId: string;
@@ -36,6 +39,9 @@ export interface ChatThread {
 
 /** How long "new messages" stays once the chat is on screen. */
 const DIVIDER_SEEN_MS = 3_000;
+
+/** How long after the last deletion of a burst the unread counts are fetched again. */
+const RECOUNT_DELAY_MS = 500;
 
 /** Codes a server without chat answers with: the route is not there. */
 const NO_CHAT = new Set(['http_404', 'http_501']);
@@ -66,6 +72,8 @@ export function useChat({
   // Who can be @mentioned. Read when chat comes up, and again when the list
   // changes, which is when someone new is most likely to have been let in.
   const [people, setPeople] = useState<ChatPerson[]>([]);
+  const peopleRef = useRef(people);
+  peopleRef.current = people;
 
   const openRef = useRef(openId);
   openRef.current = openId;
@@ -76,18 +84,21 @@ export function useChat({
   const threadRef = useRef(thread);
   threadRef.current = thread;
 
+  const loadPeople = useCallback(async () => {
+    const found = await window.zoia.chat.people();
+    if (found.ok) setPeople(found.value);
+  }, []);
+
   const refresh = useCallback(async () => {
     const result = await window.zoia.chat.list();
     if (result.ok) {
       setEnabled(true);
       setList(result.value);
-      void window.zoia.chat.people().then((found) => {
-        if (found.ok) setPeople(found.value);
-      });
+      void loadPeople();
     } else if (NO_CHAT.has(result.error)) {
       setEnabled(false);
     }
-  }, []);
+  }, [loadPeople]);
 
   const loadThread = useCallback(async (chatId: string) => {
     setThread({
@@ -166,6 +177,13 @@ export function useChat({
     );
   }, []);
 
+  /** Shows a message's new words in the open chat, and in the quotes of replies to it. */
+  const editInPlace = useCallback((edited: ChatMessage) => {
+    setThread((t) =>
+      t && t.chatId === edited.chatId ? { ...t, messages: applyEdit(t.messages, edited) } : t,
+    );
+  }, []);
+
   /** Adds or takes off someone's emoji on a message in the open chat. */
   const applyToMessage = useCallback(
     (id: string, emoji: string, accountId: string, on: boolean) => {
@@ -209,6 +227,14 @@ export function useChat({
     [],
   );
 
+  // A burst of deletions (a bot clearing up after itself) recounts once.
+  const recountTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const recountSoon = useCallback(() => {
+    clearTimeout(recountTimer.current);
+    recountTimer.current = setTimeout(() => void refresh(), RECOUNT_DELAY_MS);
+  }, [refresh]);
+  useEffect(() => () => clearTimeout(recountTimer.current), []);
+
   useEffect(
     () =>
       window.zoia.chat.onEvent((event) => {
@@ -239,12 +265,17 @@ export function useChat({
               const mentioned = Boolean(me && message.mentions?.some((m) => m.id === me));
               const more = (n: number) => Math.min(n + 1, 100);
               setUnread(message.chatId, more, mentioned ? more : undefined);
-              if (mentioned) playCues(['mention']);
+              playCues(chatMessageCues(mentioned, isChatSilenced(message.chatId)));
             }
             break;
           }
           case 'deleted':
             if (event.chatId === openRef.current) dropMessage(event.messageId);
+            // It may have been one of the unread: only the server can say.
+            recountSoon();
+            break;
+          case 'edited':
+            if (event.chatId === openRef.current) editInPlace(event.message);
             break;
           case 'reaction':
             if (event.reactor) {
@@ -255,6 +286,22 @@ export function useChat({
               applyToMessage(event.messageId, event.emoji, event.accountId, event.on);
             }
             break;
+          case 'people':
+            void loadPeople();
+            break;
+          case 'renamed': {
+            const { accountId, name } = event;
+            // Someone not in the list yet, named for the first time: read it again.
+            if (!peopleRef.current.some((person) => person.id === accountId)) void loadPeople();
+            setPeople((p) =>
+              p.map((person) => (person.id === accountId ? { ...person, name } : person)),
+            );
+            setAuthors((known) => {
+              const author = known[accountId];
+              return author ? { ...known, [accountId]: { ...author, name } } : known;
+            });
+            break;
+          }
           case 'read':
             if (event.reader) {
               const { reader } = event;
@@ -273,7 +320,16 @@ export function useChat({
             break;
         }
       }),
-    [refresh, loadThread, setUnread, dropMessage, applyToMessage],
+    [
+      refresh,
+      loadThread,
+      loadPeople,
+      setUnread,
+      dropMessage,
+      applyToMessage,
+      editInPlace,
+      recountSoon,
+    ],
   );
 
   // On screen means read, up to the newest message.
@@ -281,7 +337,15 @@ export function useChat({
   const myMarker = me ? readers[me] : undefined;
   useEffect(() => {
     if (!visible || !openId || !latest || !me) return;
-    if (myMarker && atOrAfter(myMarker, latest)) return;
+    if (myMarker && atOrAfter(myMarker, latest)) {
+      // Already read, so a count left over (its messages deleted) is stale.
+      setUnread(
+        openId,
+        () => 0,
+        () => 0,
+      );
+      return;
+    }
     setReaders((r) => ({ ...r, [me]: laterMarker(r[me], latest) }));
     setUnread(
       openId,
@@ -376,6 +440,22 @@ export function useChat({
   );
 
   /**
+   * Edits a message of yours in the open chat (ADR 0043). `mentions` are
+   * account ids, as when sending. Resolves to the server's refusal code, or null.
+   */
+  const editMessage = useCallback(
+    async (id: string, body: string, mentions: string[]): Promise<string | null> => {
+      const chatId = openRef.current;
+      if (!chatId) return 'not_found';
+      const result = await window.zoia.chat.editMessage(chatId, id, body, mentions);
+      if (!result.ok) return result.error;
+      editInPlace(result.value);
+      return null;
+    },
+    [editInPlace],
+  );
+
+  /**
    * Adds your emoji to a message in the open chat, or takes it off with `on`
    * false. Resolves to the server's refusal code, or null.
    */
@@ -403,6 +483,7 @@ export function useChat({
   );
 
   const chats: ChatInfo[] = list?.chats ?? [];
+  const silenced = useSilencedChats();
   return {
     enabled,
     available,
@@ -420,14 +501,15 @@ export function useChat({
     readWhenOpened: showDivider ? readWhenOpened : undefined,
     send,
     deleteMessage,
+    editMessage,
     react,
     loadOlder,
     create: (name: string) => change(window.zoia.chat.create(name)),
     rename: (id: string, name: string) => change(window.zoia.chat.rename(id, name)),
     remove: (id: string) => change(window.zoia.chat.remove(id)),
     setLimit: (max: number) => change(window.zoia.chat.setLimit(max)),
-    /** Unread across every chat, for a badge on the way back to the chat. */
-    totalUnread: chats.reduce((sum, c) => sum + (c.unread ?? 0), 0),
+    /** What every chat shows, summed: a badge on the way back to the chat. */
+    totalUnread: chats.reduce((sum, c) => sum + shownUnread(c, silenced), 0),
     /** Unread that @mention you, across every chat: a badge of its own. */
     totalMentions: chats.reduce((sum, c) => sum + (c.mentions ?? 0), 0),
   };

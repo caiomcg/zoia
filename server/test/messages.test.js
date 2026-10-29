@@ -305,6 +305,31 @@ describe(
       assert.deepEqual(plain.mentions, []);
     });
 
+    test('an edited message keeps its place, with new words and when they changed', async () => {
+      const m = await store.send({ chatId: 'c30', authorId: 'ana00000', body: 'antes' });
+      assert.equal(m.editedAt, null);
+      const mentions = [{ id: 'bia00000', name: 'Bia' }];
+      const editedAt = new Date();
+      assert.equal(
+        await store.edit({ chatId: 'c30', id: m.id, body: 'depois @Bia', mentions, editedAt }),
+        true,
+      );
+      const found = await store.get({ chatId: 'c30', id: m.id });
+      assert.equal(found.body, 'depois @Bia');
+      assert.deepEqual(found.mentions, mentions);
+      assert.equal(found.editedAt, editedAt.toISOString());
+      assert.equal(found.sentAt, m.sentAt);
+      assert.equal(found.authorId, 'ana00000');
+      const [paged] = await store.page({ chatId: 'c30', since });
+      assert.equal(paged.editedAt, editedAt.toISOString());
+
+      // Gone, or never there: nothing is written, not even half a message.
+      await store.remove({ chatId: 'c30', id: m.id });
+      assert.equal(await store.edit({ chatId: 'c30', id: m.id, body: 'zumbi' }), false);
+      assert.equal(await store.edit({ chatId: 'c30', id: 'nope', body: 'x' }), false);
+      assert.deepEqual(await store.page({ chatId: 'c30', since }), []);
+    });
+
     test('a deleted message is gone, and deleting it again is harmless', async () => {
       const m = await store.send({ chatId: 'c12', authorId: 'ana00000', body: 'apaga' });
       await store.remove({ chatId: 'c12', id: m.id });

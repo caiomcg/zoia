@@ -559,6 +559,16 @@ function registerIpc(): void {
     api.chatDeleteMessage(String(chatId), String(messageId)),
   );
   ipcMain.handle(
+    IPC.chatEditMessage,
+    (_event, chatId: unknown, messageId: unknown, body: unknown, mentions: unknown) =>
+      api.chatEditMessage(
+        String(chatId),
+        String(messageId),
+        String(body),
+        sendExtras({ mentions }).mentions ?? [],
+      ),
+  );
+  ipcMain.handle(
     IPC.chatReact,
     (_event, chatId: unknown, messageId: unknown, emoji: unknown, on: unknown) =>
       api.chatReact(String(chatId), String(messageId), String(emoji), on !== false),

@@ -4,6 +4,8 @@
 - **Date:** 2026-10-21
 - **Amends** [ADR 0032](0032-sqlite-for-credentials.md), which argued against a second
   database service
+- **Amended by** [ADR 0043](0043-editing-messages.md): its author may now edit a message,
+  and a reply's snapshot is read back after an edit
 
 ## Context
 

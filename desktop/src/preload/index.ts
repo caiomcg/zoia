@@ -155,6 +155,8 @@ const bridge: ZoiaBridge = {
     commands: (chatId) => ipcRenderer.invoke(IPC.chatCommands, chatId),
     deleteMessage: (chatId, messageId) =>
       ipcRenderer.invoke(IPC.chatDeleteMessage, chatId, messageId),
+    editMessage: (chatId, messageId, body, mentions) =>
+      ipcRenderer.invoke(IPC.chatEditMessage, chatId, messageId, body, mentions),
     saveMedia: (chatId, mediaId, name, type) =>
       ipcRenderer.invoke(IPC.chatSaveMedia, chatId, mediaId, name, type),
     react: (chatId, messageId, emoji, on) =>

@@ -11,14 +11,24 @@ import type { Sound } from '../../shared/soundboard';
 /** Few enough to sit under the pad without pushing it away. */
 export const MAX_RECENTS = 4;
 
-/** One sound every two seconds, per person: the sender waits this long. */
-export const SEND_INTERVAL_MS = 2000;
+/**
+ * Playing locks you out for exactly as long as the sound you played lasts,
+ * from when it starts playing to when it ends, so sounds cannot be sent in a
+ * burst. The longest is MAX_SOUND_SECONDS, where every sound is cut.
+ */
+export const MAX_LOCK_MS = 10_000;
 
 /**
- * What a listener allows between one person's sounds: the sender's two
- * seconds, less what the network may close up between two messages.
+ * What a listener forgives of a sender's lock: what the network may close up
+ * between two of their messages.
  */
-export const RECEIVE_INTERVAL_MS = 1500;
+export const NETWORK_SLACK_MS = 500;
+
+/** How long a sound of `seconds` plays, so how long it locks the player out, in ms. */
+export function lockMs(seconds: number): number {
+  if (!Number.isFinite(seconds) || seconds <= 0) return 0;
+  return Math.min(MAX_LOCK_MS, Math.round(seconds * 1000));
+}
 
 export interface SoundboardSettings {
   /** 0–1, on top of the file's own level. */
@@ -88,21 +98,35 @@ export function removeRecent(recents: readonly Sound[], slug: string): Sound[] {
   return recents.filter((s) => s.slug !== slug);
 }
 
-/** Lets through one event per key every `interval` ms. */
-export class Throttle {
-  private last = new Map<string, number>();
-  private readonly interval: number;
+/**
+ * Holds each key back while its last sound plays: one sound at a time per
+ * person. A sound is taken when it arrives and held, once it starts, until
+ * it ends.
+ */
+export class SoundLock {
+  private held = new Map<string, { at: number; until: number }>();
+  private readonly slack: number;
 
-  constructor(interval: number) {
-    this.interval = interval;
+  /** `slack` ms of each lock are forgiven: a listener's, for the network. */
+  constructor(slack = 0) {
+    this.slack = slack;
   }
 
-  /** Whether `key` may go now; if so, it is counted. */
+  /** Whether `key` may play at `now`; if so, the sound is taken. */
   take(key: string, now: number): boolean {
-    const last = this.last.get(key);
-    if (last !== undefined && now - last < this.interval) return false;
-    this.last.set(key, now);
+    const held = this.held.get(key);
+    if (held && now < held.until - this.slack) return false;
+    this.held.set(key, { at: now, until: now });
     return true;
+  }
+
+  /**
+   * The sound `key` took at `at` plays until `until`: held till then. Ignored
+   * if `key` has taken another since.
+   */
+  hold(key: string, at: number, until: number): void {
+    const held = this.held.get(key);
+    if (held?.at === at) held.until = until;
   }
 }
 
@@ -117,4 +141,41 @@ export function sendBlock(
   if (voice.muted) return 'micMuted';
   if (settings.muted) return 'effectsMuted';
   return null;
+}
+
+/**
+ * Quieter than this (about -40 dB) is silence: what a sound's file holds
+ * before its first sound and after its last.
+ */
+export const SILENCE_LEVEL = 0.01;
+
+/**
+ * Where a decoded sound is heard, in seconds: from its first sample above
+ * SILENCE_LEVEL, on any channel, to just after its last. A file padded with
+ * silence would otherwise lock its player out long after it fell quiet. A
+ * sound that is silence throughout is played, and locks, whole.
+ */
+export function audibleRange(
+  channels: readonly ArrayLike<number>[],
+  sampleRate: number,
+): { from: number; to: number } {
+  const length = Math.max(0, ...channels.map((c) => c.length));
+  let first = -1;
+  let last = -1;
+  for (const samples of channels) {
+    for (let i = 0; i < samples.length; i++) {
+      if (Math.abs(samples[i] ?? 0) > SILENCE_LEVEL) {
+        if (first === -1 || i < first) first = i;
+        break;
+      }
+    }
+    for (let i = samples.length - 1; i > last; i--) {
+      if (Math.abs(samples[i] ?? 0) > SILENCE_LEVEL) {
+        last = i;
+        break;
+      }
+    }
+  }
+  if (first === -1) return { from: 0, to: length / sampleRate };
+  return { from: first / sampleRate, to: (last + 1) / sampleRate };
 }

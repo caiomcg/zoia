@@ -30,12 +30,19 @@ export function memoryMessages() {
         attachment,
         replyTo,
         mentions,
+        editedAt: null,
       };
       sent.push(message);
       return message;
     },
     async get({ chatId, id }) {
       return sent.find((m) => m.chatId === chatId && m.id === id) ?? null;
+    },
+    async edit({ chatId, id, body, mentions = [], editedAt = new Date() }) {
+      const message = sent.find((m) => m.chatId === chatId && m.id === id);
+      if (!message) return false;
+      Object.assign(message, { body, mentions, editedAt: editedAt.toISOString() });
+      return true;
     },
     async remove({ chatId, id }) {
       const at = sent.findIndex((m) => m.chatId === chatId && m.id === id);

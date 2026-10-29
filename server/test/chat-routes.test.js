@@ -235,6 +235,108 @@ describe('messages', () => {
     assert.deepEqual(page.body.messages, []);
   });
 
+  test('only its author edits a message, an admin included', async () => {
+    const ana = await signIn(app, stores.accounts, 'Ana');
+    const bia = await signIn(app, stores.accounts, 'Bia');
+    const boss = await signIn(app, stores.accounts, 'Chefe', { role: 'admin' });
+    const chat = await defaultChat();
+    const mine = (
+      await ana.agent.post(`/api/chats/${chat.id}/messages`).send({ body: 'oi' }).expect(201)
+    ).body.message;
+    assert.equal(mine.editedAt, null);
+    const edit = (who, id, body) =>
+      who.agent.patch(`/api/chats/${chat.id}/messages/${id}`).send(body);
+
+    assert.equal((await edit(bia, mine.id, { body: 'meu' }).expect(403)).body.error, 'forbidden');
+    await edit(boss, mine.id, { body: 'meu' }).expect(403);
+    await request(app)
+      .patch(`/api/chats/${chat.id}/messages/${mine.id}`)
+      .send({ body: 'x' })
+      .expect(401);
+    await edit(ana, TimeUuid.now().toString(), { body: 'x' }).expect(404);
+    await edit(ana, 'nope', { body: 'x' }).expect(404);
+
+    const res = await edit(ana, mine.id, { body: '  oi gente  ' }).expect(200);
+    assert.equal(res.body.message.body, 'oi gente');
+    assert.equal(res.body.message.id, mine.id);
+    assert.ok(Date.parse(res.body.message.editedAt) >= Date.parse(mine.sentAt));
+    const [shown] = (await bia.agent.get(`/api/chats/${chat.id}/messages`)).body.messages;
+    assert.equal(shown.body, 'oi gente');
+    assert.equal(shown.editedAt, res.body.message.editedAt);
+
+    await ana.agent.delete(`/api/chats/${chat.id}/messages/${mine.id}`).expect(200);
+    await edit(ana, mine.id, { body: 'tarde' }).expect(404);
+  });
+
+  test('an edit is held to the rules of sending, and its mentions are read again', async () => {
+    const ana = await signIn(app, stores.accounts, 'Ana');
+    const bia = await signIn(app, stores.accounts, 'Bia');
+    const caio = await signIn(app, stores.accounts, 'Caio');
+    const chat = await defaultChat();
+    const message = (
+      await ana.agent
+        .post(`/api/chats/${chat.id}/messages`)
+        .send({ body: 'oi @Bia', mentions: [bia.account.id] })
+        .expect(201)
+    ).body.message;
+    const edit = (body) =>
+      ana.agent.patch(`/api/chats/${chat.id}/messages/${message.id}`).send(body);
+
+    for (const bad of [
+      {},
+      { body: '' },
+      { body: '   ' },
+      { body: 42 },
+      { body: 'x'.repeat(4001) },
+    ]) {
+      assert.equal((await edit(bad).expect(400)).body.error, 'invalid_message');
+    }
+    // Bia is no longer in the text; Caio now is, and asked for.
+    const res = await edit({
+      body: 'oi @Caio',
+      mentions: [bia.account.id, caio.account.id],
+    }).expect(200);
+    assert.deepEqual(res.body.message.mentions, [{ id: caio.account.id, name: 'Caio' }]);
+    // A mention not asked for is not slipped in.
+    const plain = await edit({ body: 'oi @Bia' }).expect(200);
+    assert.deepEqual(plain.body.message.mentions, []);
+  });
+
+  test('the same words again are not an edit', async () => {
+    const ana = await signIn(app, stores.accounts, 'Ana');
+    const chat = await defaultChat();
+    const message = (
+      await ana.agent.post(`/api/chats/${chat.id}/messages`).send({ body: 'oi' }).expect(201)
+    ).body.message;
+    const res = await ana.agent
+      .patch(`/api/chats/${chat.id}/messages/${message.id}`)
+      .send({ body: ' oi ' })
+      .expect(200);
+    assert.equal(res.body.message.editedAt, null);
+  });
+
+  test('a reply shows what it answers as that message reads now', async () => {
+    const ana = await signIn(app, stores.accounts, 'Ana');
+    const bia = await signIn(app, stores.accounts, 'Bia');
+    const chat = await defaultChat();
+    const original = (
+      await ana.agent.post(`/api/chats/${chat.id}/messages`).send({ body: 'erado' }).expect(201)
+    ).body.message;
+    await bia.agent
+      .post(`/api/chats/${chat.id}/messages`)
+      .send({ body: 'hein?', replyTo: original.id })
+      .expect(201);
+    await ana.agent
+      .patch(`/api/chats/${chat.id}/messages/${original.id}`)
+      .send({ body: 'errado' })
+      .expect(200);
+
+    const [reply] = (await bia.agent.get(`/api/chats/${chat.id}/messages`).expect(200)).body
+      .messages;
+    assert.equal(reply.replyTo.body, 'errado');
+    assert.equal(reply.replyTo.authorName, 'Ana');
+  });
+
   test('a reply to a deleted message keeps nothing of what it said', async () => {
     const ana = await signIn(app, stores.accounts, 'Ana');
     const bia = await signIn(app, stores.accounts, 'Bia');
@@ -448,6 +550,19 @@ describe('photos and videos', () => {
     await bia.agent.get(`/api/chats/${chat.id}/media/${message.attachment.id}`).expect(404);
   });
 
+  test('a photo keeps its file when its caption is edited, or taken off', async () => {
+    const ana = await signIn(app, stores.accounts, 'Ana');
+    const chat = await defaultChat();
+    const { message } = (await upload(ana, chat.id, PNG, '?caption=antes').expect(201)).body;
+    const edit = (body) =>
+      ana.agent.patch(`/api/chats/${chat.id}/messages/${message.id}`).send({ body });
+    assert.equal((await edit('depois').expect(200)).body.message.body, 'depois');
+    const bare = (await edit('').expect(200)).body.message;
+    assert.equal(bare.body, '');
+    assert.deepEqual(bare.attachment, message.attachment);
+    await ana.agent.get(`/api/chats/${chat.id}/media/${message.attachment.id}`).expect(200);
+  });
+
   test('a video can be fetched in ranges, for scrubbing', async () => {
     const ana = await signIn(app, stores.accounts, 'Ana');
     const chat = await defaultChat();
@@ -551,6 +666,34 @@ describe('the live stream', () => {
 
       await bia.agent.patch(`/api/chats/${chat.id}`).send({ name: 'Papo' });
       await until(() => stream.text.includes('event: chats'));
+      stream.req.destroy();
+    } finally {
+      server.close();
+    }
+  });
+
+  test('pushes an edit, so every app shows the new words in place', async () => {
+    const server = app.listen(0);
+    try {
+      const ana = await signIn(app, stores.accounts, 'Ana');
+      const bia = await signIn(app, stores.accounts, 'Bia');
+      const stream = await listen(server, ana);
+      const chat = await defaultChat();
+      const { message } = (
+        await bia.agent.post(`/api/chats/${chat.id}/messages`).send({ body: 'olá' })
+      ).body;
+      await bia.agent
+        .patch(`/api/chats/${chat.id}/messages/${message.id}`)
+        .send({ body: 'olá, gente' })
+        .expect(200);
+      await until(() => stream.text.includes('event: edited'));
+      const frame = stream.text.split('\n\n').find((f) => f.startsWith('event: edited'));
+      const data = JSON.parse(frame.split('\ndata: ')[1]);
+      assert.equal(data.chatId, chat.id);
+      assert.equal(data.message.id, message.id);
+      assert.equal(data.message.body, 'olá, gente');
+      assert.equal(data.message.authorId, bia.account.id);
+      assert.ok(data.message.editedAt);
       stream.req.destroy();
     } finally {
       server.close();

@@ -23,6 +23,9 @@ There are three ways to get a sound to everyone:
 
 ## Decision
 
+In the app it is called **Zumbido**, in every language; "soundboard" stays the name in the
+code, its files, settings keys and the room topic.
+
 **A sound is played by a message, and heard by each listener playing it.** The app sends
 `{slug, name, url}` on the `zoia.soundboard` topic. Every other app in the room checks it,
 fetches the file, and plays it through a gain of its own: the effects' volume, under deafen
@@ -36,8 +39,12 @@ the rules for itself, and ignores a sound unless:
   no way out of `/media/sounds/`, since everyone in the room fetches it;
 - the sender is in voice with their microphone on, read from the server's voice attribute
   and their microphone's mute;
-- the sender played nothing in the last 1.5 seconds. The sender's own app waits two; the
-  half second is what the network may close up between two messages;
+- the sender's last sound has played out: a sound locks its sender out from when it
+  starts playing to when it ends, exactly its decoded length, at most ten seconds (where
+  every sound is cut). While it is still loading, the sender's app plays nothing else; its
+  bar runs over the playing only. A listener holds the sender from when the sound starts
+  playing there until it ends, less half a second, what the network may close up between
+  two messages;
 - the listener has not muted effects, or that person's.
 
 One sound per person: a new one from someone cuts theirs. Every sound stops at ten seconds,
@@ -67,7 +74,13 @@ Myinstants', so the rules above do not change.
   receives it still plays nothing that breaks them. A rule that must hold for everyone needs
   the server, and would mean sending through it.
 - Sounds are whatever people upload to Myinstants, loud or offensive ones included. The
-  ten-second cut, the per-person mute and the two-second interval are the answer, not a
-  filter.
+  ten-second cut, the per-person mute and the lock for a sound's length are the answer,
+  not a filter.
+- The lock was two seconds for every sound until 2026-10-29. A long sound then left the
+  sender free to cut it with the next long before it ended; now one person's sounds follow
+  each other, never overlap. A listener still on the old rule drops a sound sent under a
+  second and a half after the last, which only a sound shorter than that allows. The lock
+  was first counted from the click, which freed the sender before a slow-loading sound
+  ended; it is counted from when the sound starts.
 - Apps before this one ignore the topic, as they ignore anything a participant sends. Android
   plays no sounds until it learns to.

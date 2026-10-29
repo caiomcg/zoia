@@ -154,10 +154,12 @@ export interface ChatMessage {
   body: string;
   sentAt: string;
   attachment?: ChatAttachment | null;
-  /** What it answers, as that message was: messages are never edited. */
+  /** What it answers; the server reads an edit since back into it (ADR 0043). */
   replyTo?: ChatReply | null;
   /** Who it @mentions, by the names written in it. */
   mentions?: ChatMention[];
+  /** When its author last edited it (ADR 0043); null or absent if never. */
+  editedAt?: string | null;
   /** Emoji people reacted with, in the order first used. */
   reactions?: ChatReaction[];
 }
@@ -343,6 +345,8 @@ export type ChatEvent =
   | { type: 'chats' }
   /** A message deleted by its author or an admin. */
   | { type: 'deleted'; chatId: string; messageId: string }
+  /** A message its author edited (ADR 0043): new body, mentions and editedAt. */
+  | { type: 'edited'; chatId: string; message: ChatMessage }
   /** Someone's emoji added to a message, or taken off. */
   | {
       type: 'reaction';
@@ -355,6 +359,10 @@ export type ChatEvent =
     }
   /** Someone's status changed (ADR 0038). */
   | { type: 'presence'; accountId: string; status: ShownPresence }
+  /** Who is in the People tab changed: someone approved, disabled, given a role or picture. */
+  | { type: 'people' }
+  /** Someone changed their display name. */
+  | { type: 'renamed'; accountId: string; name: string }
   /** The stream itself: connected, or lost and retrying. */
   | { type: 'stream'; connected: boolean };
 
@@ -623,6 +631,7 @@ export const IPC = {
   chatAvatar: 'zoia:chat:avatar',
   chatPeople: 'zoia:chat:people',
   chatDeleteMessage: 'zoia:chat:deleteMessage',
+  chatEditMessage: 'zoia:chat:editMessage',
   chatReact: 'zoia:chat:react',
   chatSaveMedia: 'zoia:chat:saveMedia',
   chatCommands: 'zoia:chat:commands',

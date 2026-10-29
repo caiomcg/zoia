@@ -5,8 +5,9 @@
  * Playing is a message to the room on SOUNDBOARD_TOPIC, never audio: each
  * listener fetches the file and plays it at their own volume, or not at all.
  * Nothing on the server takes part, so each listener holds the rules for
- * itself: the sender must be in voice with their microphone on, may play one
- * sound every two seconds, and must not be someone you muted. The sender
+ * itself: the sender must be in voice with their microphone on, may play
+ * again only once their last sound has played out, and must not be someone
+ * you muted. The sender
  * hears their own as they send it, at their own volume, as everyone does.
  */
 
@@ -23,21 +24,21 @@ import {
   type Sound,
 } from '../../shared/soundboard';
 import { pads, recents, soundboardSettings, useSoundboardSettings } from './library';
-import {
-  addRecent,
-  RECEIVE_INTERVAL_MS,
-  SEND_INTERVAL_MS,
-  sendBlock,
-  Throttle,
-  type SendBlock,
-} from './model';
+import { addRecent, lockMs, NETWORK_SLACK_MS, sendBlock, SoundLock, type SendBlock } from './model';
 import { playSound, stopAllSounds, stopSound } from './player';
 
 /** What the panel needs: whether you may play, and the way to. */
 export interface SoundboardControls {
   /** Why playing to the channel is off, or null when it is on. */
   blocked: SendBlock | null;
-  /** Playing was just used: on again when this passes (performance.now()). */
+  /** Your last sound is loading: playing is off, though nothing plays yet. */
+  loading: boolean;
+  /** When your last sound started playing (performance.now()). */
+  lockedAt: number;
+  /**
+   * Playing is on again when this passes (performance.now()): when the sound
+   * that started at `lockedAt` ends.
+   */
   readyAt: number;
   /** Plays `sound` for everyone else in the channel. */
   send(sound: Sound): Promise<void>;
@@ -57,8 +58,9 @@ export function useSoundboard(
   voice: { state: VoiceState; muted: boolean },
 ): SoundboardControls {
   const settings = useSoundboardSettings();
-  const [readyAt, setReadyAt] = useState(0);
-  const sendThrottle = useRef(new Throttle(SEND_INTERVAL_MS));
+  const [lock, setLock] = useState({ loading: false, lockedAt: 0, readyAt: 0 });
+  const loadingRef = useRef(false);
+  const readyAtRef = useRef(0);
   const blocked = sendBlock({ inVoice: voice.state === 'on', muted: voice.muted }, settings);
   const blockedRef = useRef(blocked);
   blockedRef.current = blocked;
@@ -68,7 +70,7 @@ export function useSoundboard(
   useEffect(() => {
     const room = roomRef.current;
     if (!room || connection !== 'connected') return;
-    const throttle = new Throttle(RECEIVE_INTERVAL_MS);
+    const held = new SoundLock(NETWORK_SLACK_MS);
     const onData = (
       payload: Uint8Array,
       participant: RemoteParticipant | undefined,
@@ -81,8 +83,13 @@ export function useSoundboard(
       const { identity } = participant;
       const { muted, mutedPeople } = soundboardSettings.get();
       if (muted || mutedPeople.includes(identity)) return;
-      if (!throttle.take(identity, performance.now())) return;
-      void playSound(identity, sound, true);
+      // Held while the sound plays: the sender's own app waits that long
+      // before the next.
+      const at = performance.now();
+      if (!held.take(identity, at)) return;
+      void playSound(identity, sound, true).then((played) => {
+        if (played) held.hold(identity, at, played.startedAt + lockMs(played.seconds));
+      });
     };
     // Someone leaving takes their sound with them.
     const onLeft = (participant: RemoteParticipant) => stopSound(participant.identity);
@@ -110,12 +117,22 @@ export function useSoundboard(
     async (sound: Sound) => {
       const room = roomRef.current;
       if (!room || blockedRef.current) return;
-      const now = performance.now();
-      if (!sendThrottle.current.take('me', now)) return;
-      setReadyAt(now + SEND_INTERVAL_MS);
+      if (loadingRef.current || performance.now() < readyAtRef.current) return;
+      loadingRef.current = true;
+      setLock((current) => ({ ...current, loading: true }));
       recents.set(addRecent(recents.get(), sound, pads.get()));
       // Yours plays for you as it goes out, beside your name like anyone's.
-      void playSound(room.localParticipant.identity, sound, true);
+      // You are locked out from when it starts to when it ends, no longer.
+      void playSound(room.localParticipant.identity, sound, true).then((played) => {
+        loadingRef.current = false;
+        if (!played) {
+          setLock((current) => ({ ...current, loading: false }));
+          return;
+        }
+        const readyAt = played.startedAt + lockMs(played.seconds);
+        readyAtRef.current = readyAt;
+        setLock({ loading: false, lockedAt: played.startedAt, readyAt });
+      });
       await room.localParticipant
         .publishData(encodeSoundMessage(sound), { reliable: true, topic: SOUNDBOARD_TOPIC })
         .catch(() => {});
@@ -131,5 +148,5 @@ export function useSoundboard(
     [send],
   );
 
-  return { blocked, readyAt, send, sendPad };
+  return { blocked, ...lock, send, sendPad };
 }

@@ -50,7 +50,8 @@ const MIGRATIONS = [
   ],
   [
     // What a message answers, as JSON: a snapshot of the original (its id,
-    // author and opening words), since messages are never edited.
+    // author and opening words) as it was then. An edit since is read back
+    // when the page is (ADR 0043).
     `ALTER TABLE {ks}.messages ADD reply_to text`,
     // Who it @mentions, as JSON: [{ id, name }] as written at the time.
     `ALTER TABLE {ks}.messages ADD mentions text`,
@@ -76,6 +77,11 @@ const MIGRATIONS = [
     // clean up after themselves (ADR 0041), go at the next compaction after.
     `ALTER TABLE {ks}.messages WITH gc_grace_seconds = 3600`,
     `ALTER TABLE {ks}.reactions WITH gc_grace_seconds = 3600`,
+  ],
+  [
+    // When its author last edited a message (ADR 0043); null for one never
+    // edited. The body and mentions are overwritten in place: no history.
+    `ALTER TABLE {ks}.messages ADD edited_at timestamp`,
   ],
 ];
 

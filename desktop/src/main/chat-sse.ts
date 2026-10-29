@@ -58,8 +58,21 @@ export function toChatEvent(event: string, data: string): ChatEvent | null {
     };
   }
   if (event === 'chats') return { type: 'chats' };
+  if (event === 'people') return { type: 'people' };
   if (event === 'deleted' && typeof payload.chatId === 'string') {
     return { type: 'deleted', chatId: payload.chatId, messageId: String(payload.messageId) };
+  }
+  if (
+    event === 'edited' &&
+    typeof payload.chatId === 'string' &&
+    payload.message &&
+    typeof payload.message === 'object'
+  ) {
+    return {
+      type: 'edited',
+      chatId: payload.chatId,
+      message: payload.message as Extract<ChatEvent, { type: 'edited' }>['message'],
+    };
   }
   if (event === 'reaction' && typeof payload.chatId === 'string') {
     return {
@@ -71,6 +84,13 @@ export function toChatEvent(event: string, data: string): ChatEvent | null {
       on: payload.on !== false,
       reactor: (payload.reactor ?? null) as Extract<ChatEvent, { type: 'reaction' }>['reactor'],
     };
+  }
+  if (
+    event === 'renamed' &&
+    typeof payload.accountId === 'string' &&
+    typeof payload.name === 'string'
+  ) {
+    return { type: 'renamed', accountId: payload.accountId, name: payload.name };
   }
   if (event === 'presence' && typeof payload.accountId === 'string') {
     const status = SHOWN.find((s) => s === payload.status);

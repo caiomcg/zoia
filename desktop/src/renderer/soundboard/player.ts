@@ -10,7 +10,7 @@
 import { useSyncExternalStore } from 'react';
 import { MAX_SOUND_SECONDS, type Sound } from '../../shared/soundboard';
 import { soundboardSettings } from './library';
-import { effectsGain } from './model';
+import { audibleRange, effectsGain } from './model';
 
 /** Long enough not to click when a sound is cut, short enough not to be heard as a fade. */
 const FADE_S = 0.15;
@@ -36,6 +36,21 @@ function output(): { context: AudioContext; master: GainNode } {
 }
 
 const decoded = new Map<string, Promise<AudioBuffer | null>>();
+
+/** Each decoded sound's audible part, found once. */
+const audible = new WeakMap<AudioBuffer, { from: number; to: number }>();
+
+function audibleOf(buffer: AudioBuffer): { from: number; to: number } {
+  let range = audible.get(buffer);
+  if (!range) {
+    const channels = Array.from({ length: buffer.numberOfChannels }, (_, i) =>
+      buffer.getChannelData(i),
+    );
+    range = audibleRange(channels, buffer.sampleRate);
+    audible.set(buffer, range);
+  }
+  return range;
+}
 
 function bufferFor(context: AudioContext, url: string): Promise<AudioBuffer | null> {
   let buffer = decoded.get(url);
@@ -98,27 +113,36 @@ export function stopAllSounds() {
 
 /**
  * Plays `sound` as `key`'s: an identity, or "preview" for your own preview.
- * With `show`, the people list shows it beside them while it plays. False if
- * the sound could not be loaded.
+ * With `show`, the people list shows it beside them while it plays. Resolves
+ * to when it started (performance.now()) and how many seconds it plays for
+ * (its audible part, the silence around it skipped, up to MAX_SOUND_SECONDS),
+ * or null if it could not be loaded.
  */
-export async function playSound(key: string, sound: Sound, show: boolean): Promise<boolean> {
+export async function playSound(
+  key: string,
+  sound: Sound,
+  show: boolean,
+): Promise<{ startedAt: number; seconds: number } | null> {
   stopSound(key);
   const mine = generation.get(key) ?? 0;
   const { context, master } = output();
   const buffer = await bufferFor(context, sound.url);
-  if (!buffer) return false;
-  if (generation.get(key) !== mine) return true;
+  if (!buffer) return null;
+  const { from, to } = audibleOf(buffer);
+  const seconds = Math.min(to - from, MAX_SOUND_SECONDS);
+  if (generation.get(key) !== mine) return { startedAt: performance.now(), seconds };
 
   const source = context.createBufferSource();
   source.buffer = buffer;
   const gain = context.createGain();
   source.connect(gain).connect(master);
   const start = context.currentTime;
-  if (buffer.duration > MAX_SOUND_SECONDS) {
+  if (to - from > MAX_SOUND_SECONDS) {
     gain.gain.setValueAtTime(1, start + MAX_SOUND_SECONDS - FADE_S);
     gain.gain.linearRampToValueAtTime(0, start + MAX_SOUND_SECONDS);
   }
-  source.start(start, 0, Math.min(buffer.duration, MAX_SOUND_SECONDS));
+  source.start(start, from, seconds);
+  const startedAt = performance.now();
   const entry: Playing = { source, gain, shown: show ? sound.name : null };
   playing.set(key, entry);
   source.onended = () => {
@@ -129,7 +153,7 @@ export async function playSound(key: string, sound: Sound, show: boolean): Promi
     if (entry.shown) changed();
   };
   if (entry.shown) changed();
-  return true;
+  return { startedAt, seconds };
 }
 
 function subscribe(listener: () => void): () => void {

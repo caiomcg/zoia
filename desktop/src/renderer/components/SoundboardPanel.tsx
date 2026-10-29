@@ -37,7 +37,7 @@ import {
   useRecents,
   useSoundboardSettings,
 } from '../soundboard/library';
-import { removeRecent, SEND_INTERVAL_MS } from '../soundboard/model';
+import { removeRecent } from '../soundboard/model';
 import { useWheelRange } from './useWheelRange';
 import { playSound } from '../soundboard/player';
 import type { SoundboardControls } from '../soundboard/useSoundboard';
@@ -185,7 +185,7 @@ export default function SoundboardPanel({
     });
   };
 
-  // Playing again is held back for two seconds after each sound.
+  // Playing again is held back while the last sound you played plays out.
   const [now, setNow] = useState(() => performance.now());
   useEffect(() => {
     const wait = controls.readyAt - performance.now();
@@ -194,11 +194,11 @@ export default function SoundboardPanel({
     return () => clearTimeout(timer);
   }, [controls.readyAt]);
   const coolingDown = controls.readyAt > now;
-  const playDisabled = !!controls.blocked || coolingDown;
+  const playDisabled = !!controls.blocked || controls.loading || coolingDown;
 
   const preview = async (sound: Sound) => {
     setPreviewFailed(null);
-    if (!(await playSound('preview', sound, false))) setPreviewFailed(sound.name);
+    if ((await playSound('preview', sound, false)) === null) setPreviewFailed(sound.name);
   };
 
   const padFull = padList.length >= MAX_PADS;
@@ -303,10 +303,18 @@ export default function SoundboardPanel({
               {t('soundboard.previewFailed', { name: previewFailed })}
             </p>
           )}
-          {/* Empties over the two seconds before the next sound may play. */}
+          {/*
+            Runs from when the sound you played starts to when it ends: the
+            exact time playing is off. It appears as the sound starts, so it
+            needs no delay; one worked out again on each render would push the
+            running animation ahead and make it jump.
+          */}
           <div className="soundboard-cooldown" aria-hidden="true">
             {coolingDown && (
-              <span key={controls.readyAt} style={{ animationDuration: `${SEND_INTERVAL_MS}ms` }} />
+              <span
+                key={controls.readyAt}
+                style={{ animationDuration: `${controls.readyAt - controls.lockedAt}ms` }}
+              />
             )}
           </div>
 

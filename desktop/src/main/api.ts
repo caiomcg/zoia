@@ -466,6 +466,21 @@ export function chatDeleteMessage(chatId: string, messageId: string) {
   );
 }
 
+/** Edits a message of your own (ADR 0043). The server checks it is yours. */
+export function chatEditMessage(
+  chatId: string,
+  messageId: string,
+  body: string,
+  mentions: string[],
+) {
+  return attempt(
+    call<{ message: ChatMessage }>(chatPath(chatId, `/messages/${encodeURIComponent(messageId)}`), {
+      method: 'PATCH',
+      body: JSON.stringify({ body, mentions }),
+    }).then((r) => r.message),
+  );
+}
+
 /** Adds your `emoji` to a message, or takes it off with `on` false. */
 export function chatReact(chatId: string, messageId: string, emoji: string, on: boolean) {
   return attempt(

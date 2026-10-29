@@ -199,6 +199,22 @@ export function createStage({ rooms, roomName, logger = console, now = () => Dat
      * disabled or a machine signed out: their session is refused on its next
      * request, but a LiveKit connection makes none.
      */
+    /**
+     * Gives these identities a new name in the room, broadcasts and all, so
+     * everyone in it sees the change now rather than when they next join.
+     */
+    async rename(identities, name) {
+      const machines = new Set(identities);
+      for (const p of await listParticipants()) {
+        if (!machines.has(ownerOf(p.identity))) continue;
+        try {
+          await rooms.updateParticipant(roomName, p.identity, { name });
+        } catch {
+          // Left the room in the meantime.
+        }
+      }
+    },
+
     async disconnect(identities) {
       for (const identity of identities) {
         for (const id of [identity, `${identity}${WHIP_SUFFIX}`]) {

@@ -132,6 +132,17 @@ outlive your container, so look in `GET /me` before making one. Answers `201 { "
 Up to 4000 characters, written as the bot, in a chat the addon is bound to. `replyTo` is
 optional. Answers `201 { "message": {…} }`.
 
+### `PATCH /chats/:id/messages/:messageId` (`chat.write`)
+
+```json
+{ "body": "Now playing: …" }
+```
+
+Rewrites a message by **one of your own bots**, in a chat the addon is bound to, under the
+same rules as writing it: a "now playing" kept current instead of sent again. Anyone else's
+message, a person's above all, is `403 forbidden`. Everyone's app shows the new text at once,
+marked as edited. Answers `{ "message": {…} }`, with `editedAt` set.
+
 ### `DELETE /chats/:id/messages/:messageId`
 
 In a chat the addon is bound to, deletes:

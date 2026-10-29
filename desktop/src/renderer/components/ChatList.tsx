@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { AccountRole } from '../../shared/ipc';
 import type { ChatController } from '../chat/useChat';
 import {
@@ -11,6 +12,9 @@ import {
 } from './Sidebar';
 import { useT } from '../i18n';
 import { useConfirm } from './ConfirmDialog';
+import { useFloatingMenu } from './useFloatingMenu';
+import { shownUnread } from '../chat/silence';
+import { setChatSilenced, useSilencedChats } from '../chat/silence-store';
 
 /**
  * The text chats, under the channels in the sidebar (ADR 0036). Clicking one
@@ -18,6 +22,10 @@ import { useConfirm } from './ConfirmDialog';
  * channels; how many there may be is in Settings › Server. The server checks
  * every one of those again. Folded, the list keeps the open chat and any
  * with something unread.
+ *
+ * Right-clicking a chat silences it on this machine, or unsilences it: its
+ * count is only of the messages that @mention you, and nothing in it plays a
+ * sound (see chat/silence.ts). A silenced chat is dimmed, with a crossed-out bell.
  */
 export default function ChatList({
   chat,
@@ -41,10 +49,12 @@ export default function ChatList({
   const canManage = myRole === 'admin' || myRole === 'super_admin';
   const { confirm, dialog } = useConfirm();
   const [folded, toggleFolded, unfold] = useFolded('chats');
+  const silenced = useSilencedChats();
+  const [menu, setMenu] = useState<{ id: string; name: string; x: number; y: number } | null>(null);
   const shown =
     collapsed || !folded
       ? chat.chats
-      : chat.chats.filter((c) => (showing && c.id === chat.openId) || (c.unread ?? 0) > 0);
+      : chat.chats.filter((c) => (showing && c.id === chat.openId) || shownUnread(c, silenced) > 0);
 
   const report = (pending: Promise<string | null>) =>
     void pending.then((code) => {
@@ -89,13 +99,18 @@ export default function ChatList({
             />
           );
         }
-        const unread = c.unread ?? 0;
+        const quiet = silenced.has(c.id);
+        const unread = shownUnread(c, silenced);
         const mentions = c.mentions ?? 0;
         return (
           <div key={c.id} className="channel-row">
             <button
-              className={`channel chat${current ? ' current' : ''}${unread > 0 ? ' unread' : ''}${mentions > 0 ? ' mentioned' : ''}`}
+              className={`channel chat${current ? ' current' : ''}${unread > 0 ? ' unread' : ''}${mentions > 0 ? ' mentioned' : ''}${quiet ? ' silenced' : ''}`}
               onClick={() => onOpen(c.id)}
+              onContextMenu={(event) => {
+                event.preventDefault();
+                setMenu({ id: c.id, name: c.name, x: event.clientX, y: event.clientY });
+              }}
               aria-current={current ? 'true' : undefined}
               title={collapsed ? c.name : undefined}
             >
@@ -106,6 +121,16 @@ export default function ChatList({
                 #
               </span>
               <span className="channel-name">{c.name}</span>
+              {quiet && (
+                <span
+                  className="chat-silenced"
+                  role="img"
+                  aria-label={t('chat.silenced')}
+                  title={t('chat.silenced')}
+                >
+                  <IconBell crossed />
+                </span>
+              )}
               {mentions > 0 && (
                 <span
                   className="chat-mention-badge"
@@ -164,7 +189,88 @@ export default function ChatList({
           }}
         />
       )}
+      {menu && (
+        <ChatMenu
+          name={menu.name}
+          silenced={silenced.has(menu.id)}
+          x={menu.x}
+          y={menu.y}
+          onClose={() => setMenu(null)}
+          onToggle={() => setChatSilenced(menu.id, !silenced.has(menu.id))}
+        />
+      )}
       {dialog}
     </section>
+  );
+}
+
+/** What a right-click on a chat offers: silencing it here, or undoing that. */
+function ChatMenu({
+  name,
+  silenced,
+  x,
+  y,
+  onClose,
+  onToggle,
+}: {
+  name: string;
+  silenced: boolean;
+  x: number;
+  y: number;
+  onClose: () => void;
+  onToggle: () => void;
+}) {
+  const t = useT();
+  const ref = useRef<HTMLDivElement>(null);
+  const place = useFloatingMenu(ref, x, y, onClose);
+  return createPortal(
+    <div
+      ref={ref}
+      className="member-menu person-menu chat-menu"
+      role="menu"
+      aria-label={name}
+      style={place}
+      onContextMenu={(event) => event.preventDefault()}
+    >
+      <div className="member-menu-head">
+        <span className="chat-hash" aria-hidden="true">
+          #
+        </span>
+        <span className="member-menu-name">{name}</span>
+      </div>
+      <button
+        type="button"
+        role="menuitem"
+        className="person-menu-item"
+        onClick={() => {
+          onClose();
+          onToggle();
+        }}
+      >
+        <IconBell crossed={!silenced} />
+        {silenced ? t('chat.unsilence') : t('chat.silence')}
+      </button>
+    </div>,
+    document.body,
+  );
+}
+
+/** A bell, crossed out for silenced. */
+function IconBell({ crossed = false }: { crossed?: boolean }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="14"
+      height="14"
+      aria-hidden="true"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M6 16V11a6 6 0 0112 0v5l2 2H4l2-2zM10 21h4" />
+      {crossed && <path d="M3 3l18 18" />}
+    </svg>
   );
 }

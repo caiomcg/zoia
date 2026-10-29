@@ -115,6 +115,8 @@ function toMessage(chatId, row) {
     attachment: parseJson(row.attachment),
     replyTo: parseJson(row.reply_to),
     mentions: mentionsOf(row),
+    // When its author last changed it (ADR 0043), or null.
+    editedAt: row.edited_at ? row.edited_at.toISOString() : null,
   };
 }
 
@@ -162,7 +164,7 @@ export function groupReactions(rows) {
   return out;
 }
 
-const COLUMNS = 'id, author_id, body, attachment, reply_to, mentions';
+const COLUMNS = 'id, author_id, body, attachment, reply_to, mentions, edited_at';
 
 /**
  * @param {object} options
@@ -223,6 +225,40 @@ export function createMessageStore({ client, keyspace }) {
         prepared,
       );
       return result.rows[0] ? toMessage(chatId, result.rows[0]) : null;
+    },
+
+    /**
+     * Rewrites a message's body and mentions, and stamps when (ADR 0043). The
+     * body must already have passed `cleanBody`, or be empty for a photo or
+     * video. Resolves to whether the message was still there.
+     *
+     * Not `IF EXISTS`: the keyspace uses tablets, which refuse lightweight
+     * transactions. A plain UPDATE on a message deleted meanwhile would leave
+     * a row with only the edited columns, so that is checked for and deleted.
+     */
+    async edit({ chatId, id, body, mentions = [], editedAt = new Date() }) {
+      const uuid = parseMessageId(id);
+      if (!uuid) return false;
+      const key = [chatId, bucketOf(uuid.getDate()), uuid];
+      await client.execute(
+        `UPDATE ${t('messages')} SET body = ?, mentions = ?, edited_at = ?
+         WHERE chat_id = ? AND bucket = ? AND id = ?`,
+        [body, mentions.length > 0 ? JSON.stringify(mentions) : null, editedAt, ...key],
+        prepared,
+      );
+      const after = await client.execute(
+        `SELECT author_id FROM ${t('messages')} WHERE chat_id = ? AND bucket = ? AND id = ?`,
+        key,
+        prepared,
+      );
+      if (after.rows[0]?.author_id) return true;
+      // Deleted while it was being edited: take away what the edit wrote.
+      await client.execute(
+        `DELETE FROM ${t('messages')} WHERE chat_id = ? AND bucket = ? AND id = ?`,
+        key,
+        prepared,
+      );
+      return false;
     },
 
     /** Deletes one message, by its full key; nothing happens if it is not there. */

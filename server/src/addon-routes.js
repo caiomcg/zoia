@@ -289,6 +289,7 @@ export function addonRoutes({
         const result = await accountStore.setStatus(target.id, status, `addon:${req.addon.id}`);
         if (!result.ok) return refuse(res, result.reason);
         if (status === 'disabled') await disconnectAccount(target.id);
+        chatHub.publish('people', {});
         res.json({ user: publicPerson(result.account) });
       } catch (err) {
         next(err);
@@ -336,6 +337,7 @@ export function addonRoutes({
       if (!name) return refuse(res, 'invalid_name');
       const result = await accountStore.createBot({ addonId: req.addon.id, name });
       if (!result.ok) return refuse(res, result.reason);
+      chatHub.publish('people', {});
       res.status(201).json({ bot: publicPerson(result.account) });
     } catch (err) {
       next(err);
@@ -350,6 +352,7 @@ export function addonRoutes({
         await channel.stage.disconnect?.([botIdentity(bot.id)]).catch(() => {});
       }
       await accountStore.removeBot(req.addon.id, bot.id);
+      chatHub.publish('people', {});
       res.json({ ok: true });
     } catch (err) {
       next(err);
@@ -401,6 +404,37 @@ export function addonRoutes({
       const author = { name: bot.name, avatar: bot.avatar ?? null, bot: true };
       chatHub.publish('message', { message, author });
       res.status(201).json({ message });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  /**
+   * Edits a message one of its bots wrote, in a bound chat (ADR 0043): a
+   * "now playing" kept current instead of sent again. Never anyone else's,
+   * a person's above all; the rules are those of writing it.
+   */
+  router.patch('/chats/:id/messages/:messageId', need('chat.write'), async (req, res, next) => {
+    try {
+      const chat = await boundChat(req, res);
+      if (!chat) return;
+      const current = messages();
+      if (!current) return refuse(res, 'chat_unavailable');
+      const message = await current.get({ chatId: chat.id, id: req.params.messageId });
+      if (!message) return refuse(res, 'not_found');
+      const author = await accountStore.get(message.authorId);
+      if (author?.addonId !== req.addon.id) return refuse(res, 'forbidden');
+      const body = cleanBody(req.body?.body);
+      if (!body) return refuse(res, 'invalid_message');
+      if (body === message.body) return res.json({ message });
+
+      const editedAt = new Date();
+      if (!(await current.edit({ chatId: chat.id, id: message.id, body, editedAt }))) {
+        return refuse(res, 'not_found');
+      }
+      const edited = { ...message, body, mentions: [], editedAt: editedAt.toISOString() };
+      chatHub.publish('edited', { chatId: chat.id, message: edited });
+      res.json({ message: edited });
     } catch (err) {
       next(err);
     }

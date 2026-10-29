@@ -167,23 +167,28 @@ export function chatRoutes({
 
   /**
    * A reply keeps the opening words of what it answers. When that message has
-   * since been deleted, its words go with it: the quote only says so. One read
+   * since been deleted, its words go with it: the quote only says so. When it
+   * has been edited, the quote shows it as it reads now (ADR 0043). One read
    * by full key per reply on the page, and none for a page without replies.
    */
-  async function withDeletedReplies(current, chat, list) {
+  async function withCurrentReplies(current, chat, list) {
     const answered = [...new Set(list.filter((m) => m.replyTo).map((m) => m.replyTo.id))];
     if (answered.length === 0) return list;
-    const gone = new Set();
+    const originals = new Map();
     await Promise.all(
       answered.map(async (id) => {
-        if (!(await current.get({ chatId: chat.id, id }))) gone.add(id);
+        originals.set(id, await current.get({ chatId: chat.id, id }));
       }),
     );
-    return list.map((m) =>
-      m.replyTo && gone.has(m.replyTo.id)
-        ? { ...m, replyTo: { id: m.replyTo.id, authorId: m.replyTo.authorId, deleted: true } }
-        : m,
-    );
+    return list.map((m) => {
+      if (!m.replyTo) return m;
+      const original = originals.get(m.replyTo.id);
+      if (!original) {
+        return { ...m, replyTo: { id: m.replyTo.id, authorId: m.replyTo.authorId, deleted: true } };
+      }
+      if (!original.editedAt) return m;
+      return { ...m, replyTo: replySnapshot(original, m.replyTo.authorName) };
+    });
   }
 
   /** Each message with its reactions, as [{ emoji, accountIds }]; none is []. */
@@ -362,7 +367,7 @@ export function chatRoutes({
     const list = await withReactions(
       current,
       chat,
-      await withDeletedReplies(current, chat, page.slice(0, limit)),
+      await withCurrentReplies(current, chat, page.slice(0, limit)),
     );
     const readers = await current.readMarkers(chat.id);
     res.json({
@@ -422,6 +427,41 @@ export function chatRoutes({
         ...(usage ? { usage } : {}),
       })),
     });
+  });
+
+  // Only its author may edit a message, an admin included (ADR 0043): an
+  // admin may take someone's words down, never put others in their mouth.
+  // The new text is held to the rules of sending it, and its mentions are
+  // read again from it. A photo or video stays; its caption may go. Nobody
+  // is notified again: an edit changes what was said, not who was called.
+  router.patch('/:id/messages/:messageId', requireSession, sendLimiter, async (req, res) => {
+    const chat = await chatOf(req, res);
+    if (!chat) return;
+    const current = store(res);
+    if (!current) return;
+    const message = await current.get({ chatId: chat.id, id: req.params.messageId });
+    if (!message) return refuse(res, 'not_found');
+    if (message.authorId !== req.user.accountId) return refuse(res, 'forbidden');
+
+    const asked = req.body?.body;
+    if (typeof asked !== 'string') return refuse(res, 'invalid_message');
+    const body = !asked.trim() && message.attachment ? '' : cleanBody(asked);
+    if (body === null) return refuse(res, 'invalid_message');
+    const mentions = await mentionsOf(req.body?.mentions, body);
+    // The same words again change nothing, and are not marked as an edit.
+    const same = (a, b) =>
+      JSON.stringify(a.map((m) => m.id)) === JSON.stringify(b.map((m) => m.id));
+    if (body === message.body && same(mentions, message.mentions ?? [])) {
+      return res.json({ message });
+    }
+
+    const editedAt = new Date();
+    if (!(await current.edit({ chatId: chat.id, id: message.id, body, mentions, editedAt }))) {
+      return refuse(res, 'not_found');
+    }
+    const edited = { ...message, body, mentions, editedAt: editedAt.toISOString() };
+    hub.publish('edited', { chatId: chat.id, message: edited });
+    res.json({ message: edited });
   });
 
   // Its author may delete a message, and so may any admin, anyone's. The

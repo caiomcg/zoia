@@ -319,6 +319,44 @@ describe('chats', () => {
     assert.deepEqual(left.sort(), ['!play lofi', 'nice song']);
   });
 
+  test('it edits its bots’ messages, and never anyone else’s', async () => {
+    const { as, chat, addon: a } = await addon();
+    const { body } = await as('post', '/bots').send({ name: 'Zouve' }).expect(201);
+    const own = (
+      await as('post', `/chats/${chat.id}/messages`)
+        .send({ bot: body.bot.id, body: 'Now playing: a' })
+        .expect(201)
+    ).body.message;
+    const ana = await signIn(app, stores.accounts, 'Ana');
+    const hers = (await ana.agent.post(`/api/chats/${chat.id}/messages`).send({ body: '!play a' }))
+      .body.message;
+    const edit = (id, text) => as('patch', `/chats/${chat.id}/messages/${id}`).send({ body: text });
+
+    const res = await edit(own.id, 'Now playing: b').expect(200);
+    assert.equal(res.body.message.body, 'Now playing: b');
+    assert.ok(res.body.message.editedAt);
+    await edit(own.id, '').expect(400);
+    // A person's words, even a command typed to it, are theirs.
+    assert.equal((await edit(hers.id, 'x').expect(403)).body.error, 'forbidden');
+    assert.equal((await messages.get({ chatId: chat.id, id: hers.id })).body, '!play a');
+    // And a bot cannot be edited as a person would.
+    await ana.agent
+      .patch(`/api/chats/${chat.id}/messages/${own.id}`)
+      .send({ body: 'hacked' })
+      .expect(403);
+
+    await stores.addons.setBindings(a.id, []);
+    assert.equal((await edit(own.id, 'c').expect(403)).body.error, 'not_bound');
+  });
+
+  test('editing needs chat.write', async () => {
+    const { as, chat } = await addon(['commands', 'bots.create']);
+    const res = await as('patch', `/chats/${chat.id}/messages/whatever`)
+      .send({ body: 'x' })
+      .expect(403);
+    assert.equal(res.body.permission, 'chat.write');
+  });
+
   test('deleting commands needs commands.delete, and a chat it is bound to', async () => {
     const { as, chat, addon: a } = await addon(['commands', 'chat.write', 'bots.create']);
     const ana = await signIn(app, stores.accounts, 'Ana');

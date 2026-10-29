@@ -54,10 +54,22 @@ describe('toChatEvent', () => {
         reactor: { name: 'Ana', avatar: null },
       },
     );
+    const edited = { ...message, body: 'olá', editedAt: '2026-10-29T12:00:00.000Z' };
+    assert.deepEqual(toChatEvent('edited', JSON.stringify({ chatId: 'c', message: edited })), {
+      type: 'edited',
+      chatId: 'c',
+      message: edited,
+    });
     assert.deepEqual(toChatEvent('presence', '{"accountId":"a","status":"busy"}'), {
       type: 'presence',
       accountId: 'a',
       status: 'busy',
+    });
+    assert.deepEqual(toChatEvent('people', '{}'), { type: 'people' });
+    assert.deepEqual(toChatEvent('renamed', '{"accountId":"a","name":"Alice"}'), {
+      type: 'renamed',
+      accountId: 'a',
+      name: 'Alice',
     });
   });
 
@@ -65,7 +77,9 @@ describe('toChatEvent', () => {
     assert.equal(toChatEvent('mystery', '{}'), null);
     assert.equal(toChatEvent('message', 'not json'), null);
     assert.equal(toChatEvent('read', '{}'), null);
+    assert.equal(toChatEvent('edited', '{"chatId":"c"}'), null);
     // Invisible is never sent to others; a status not known is not guessed at.
     assert.equal(toChatEvent('presence', '{"accountId":"a","status":"invisible"}'), null);
+    assert.equal(toChatEvent('renamed', '{"accountId":"a"}'), null);
   });
 });

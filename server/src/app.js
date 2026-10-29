@@ -238,6 +238,21 @@ export function createApp({
     await disconnect(devices.map((d) => d.id).filter((id) => id !== except));
   }
 
+  /**
+   * Who is in the People tab changed: approved, disabled, a new role or
+   * picture. Every app reads the list again.
+   */
+  const peopleChanged = () => chatHub.publish('people', {});
+
+  /** An account's new name, on each of its machines in every channel. */
+  async function renameAccount(accountId, name) {
+    const devices = (await deviceStore.listByAccount(accountId)).map((d) => d.id);
+    if (devices.length === 0) return;
+    for (const channel of await channelSet.list()) {
+      await channel.stage.rename?.(devices, name).catch(() => {});
+    }
+  }
+
   /** What a client is told about who it is signed in as. */
   async function describe(user) {
     return {
@@ -566,6 +581,7 @@ export function createApp({
     try {
       const result = await accountStore.approve(req.params.id, req.user.accountId);
       if (!result.ok) return adminRefuse(res, result.reason);
+      peopleChanged();
       res.json({ account: result.account });
     } catch (err) {
       next(err);
@@ -592,6 +608,7 @@ export function createApp({
         const result = await accountStore.setStatus(req.params.id, status, req.user.accountId);
         if (!result.ok) return adminRefuse(res, result.reason);
         if (status === 'disabled') await disconnectAccount(req.params.id);
+        peopleChanged();
         res.json({ account: result.account });
       } catch (err) {
         next(err);
@@ -715,6 +732,7 @@ export function createApp({
       if (req.params.id === req.user.accountId) return adminRefuse(res, 'forbidden');
       const result = await accountStore.setRole(req.params.id, req.body?.role, req.user.accountId);
       if (!result.ok) return adminRefuse(res, result.reason);
+      peopleChanged();
       res.json({ account: result.account });
     } catch (err) {
       next(err);
@@ -974,7 +992,13 @@ export function createApp({
 
       // No separate session state to update: the name is read back out of
       // the store on every request, so the record *is* the source of truth
-      // and the next token issued carries the new name.
+      // and the next token issued carries the new name. Everyone else's app
+      // shows names it already has, so it is told.
+      chatHub.publish('renamed', { accountId: req.user.accountId, name });
+      // And LiveKit, for the name on every tile and in every channel's list.
+      await renameAccount(req.user.accountId, name).catch((err) =>
+        logger.warn(`[name] could not rename in the channels: ${err.message}`),
+      );
       res.json({ ok: true, name });
     } catch (err) {
       next(err);
@@ -1012,6 +1036,7 @@ export function createApp({
         await avatarStore.remove(owner);
         return res.status(404).json({ error: 'unknown_account' });
       }
+      peopleChanged();
       res.json({ ok: true, avatar });
     } catch (err) {
       next(err);
@@ -1024,6 +1049,7 @@ export function createApp({
       const updated = await accountStore.setAvatar(owner, null);
       if (!updated) return res.status(404).json({ error: 'unknown_account' });
       await avatarStore.remove(owner);
+      peopleChanged();
       res.json({ ok: true });
     } catch (err) {
       next(err);

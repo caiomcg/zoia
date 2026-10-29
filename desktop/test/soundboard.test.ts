@@ -23,17 +23,22 @@ import {
   removePad,
   renamePad,
   searchUrl,
+  MAX_SOUND_SECONDS,
   type Sound,
 } from '../src/shared/soundboard.ts';
 import {
   addRecent,
+  audibleRange,
   removeRecent,
   effectsGain,
   MAX_RECENTS,
   parseSoundboardSettings,
   sendBlock,
   setPersonMuted,
-  Throttle,
+  SoundLock,
+  lockMs,
+  MAX_LOCK_MS,
+  NETWORK_SLACK_MS,
   DEFAULT_SOUNDBOARD_SETTINGS,
 } from '../src/renderer/soundboard/model.ts';
 import { MAX_SOUND_SHORTCUTS } from '../src/shared/shortcuts.ts';
@@ -268,11 +273,63 @@ describe('who may play', () => {
     );
   });
 
-  test('one sound per person per interval, each person counted apart', () => {
-    const throttle = new Throttle(2000);
-    assert.ok(throttle.take('ana', 0));
-    assert.ok(!throttle.take('ana', 1999));
-    assert.ok(throttle.take('bia', 1000));
-    assert.ok(throttle.take('ana', 2000));
+  test('the lock lasts exactly as long as the sound played, no more, no less', () => {
+    assert.equal(lockMs(3.2), 3200);
+    assert.equal(lockMs(1.5), 1500);
+    assert.equal(lockMs(0.05), 50);
+  });
+
+  test('the lock is never longer than a sound may play', () => {
+    assert.equal(lockMs(60), MAX_LOCK_MS);
+    assert.equal(MAX_LOCK_MS, MAX_SOUND_SECONDS * 1000);
+  });
+
+  test('a sound of no length locks for nothing', () => {
+    for (const nothing of [NaN, Infinity, 0, -1]) assert.equal(lockMs(nothing), 0);
+  });
+
+  test('a sound is held from when it starts until it ends, each person apart', () => {
+    const lock = new SoundLock();
+    assert.ok(lock.take('ana', 0));
+    // Loaded and started 800 ms later, 3 s long.
+    lock.hold('ana', 0, 800 + 3000);
+    assert.ok(!lock.take('ana', 3799));
+    assert.ok(lock.take('bia', 1000));
+    assert.ok(lock.take('ana', 3800));
+  });
+
+  test('until it starts, a newer sound from the same person may replace it', () => {
+    const lock = new SoundLock();
+    assert.ok(lock.take('ana', 0));
+    assert.ok(lock.take('ana', 100));
+    // The first one's end arrives late: it was replaced, so it holds nothing.
+    lock.hold('ana', 0, 10_000);
+    assert.ok(lock.take('ana', 200));
+  });
+
+  test("a listener forgives the network's slack of the sender's lock", () => {
+    const lock = new SoundLock(NETWORK_SLACK_MS);
+    assert.ok(lock.take('ana', 0));
+    lock.hold('ana', 0, 3000);
+    assert.ok(!lock.take('ana', 3000 - NETWORK_SLACK_MS - 1));
+    assert.ok(lock.take('ana', 3000 - NETWORK_SLACK_MS));
+  });
+});
+
+describe('audibleRange', () => {
+  const rate = 10;
+  test('skips the silence before and after the sound', () => {
+    const samples = [0, 0, 0.005, 0.5, -0.3, 0.2, 0, 0, 0, 0];
+    assert.deepEqual(audibleRange([samples], rate), { from: 0.3, to: 0.6 });
+  });
+
+  test('a sound on any channel counts', () => {
+    const left = [0, 0, 0, 0, 0.4, 0, 0, 0];
+    const right = [0, 0.4, 0, 0, 0, 0, 0, 0];
+    assert.deepEqual(audibleRange([left, right], rate), { from: 0.1, to: 0.5 });
+  });
+
+  test('silence throughout plays whole', () => {
+    assert.deepEqual(audibleRange([[0, 0, 0, 0]], rate), { from: 0, to: 0.4 });
   });
 });

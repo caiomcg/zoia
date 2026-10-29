@@ -6,12 +6,15 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  applyEdit,
   applyReaction,
   compareIds,
   continues,
+  lastOwnMessage,
   laterMarker,
   mergeMessages,
   newMessagesIndex,
+  replyExcerpt,
   seenBy,
   uuidTime,
 } from '../src/renderer/chat/model.ts';
@@ -123,5 +126,60 @@ describe('reactions', () => {
     const r = [{ emoji: '👍', accountIds: ['ana'] }];
     assert.equal(applyReaction(r, '👍', 'ana', true), r);
     assert.equal(applyReaction(r, '🎉', 'ana', false), r);
+  });
+});
+
+describe('edits', () => {
+  test('the edited message takes its new words, keeping its place and reactions', () => {
+    const a = { ...message(1n, 'ana'), reactions: [{ emoji: '👍', accountIds: ['bia'] }] };
+    const b = message(2n, 'bia');
+    const edited = { ...a, body: 'novo', mentions: [{ id: 'bia', name: 'Bia' }], reactions: [] };
+    const after = applyEdit([a, b], { ...edited, editedAt: '2026-10-29T12:00:00Z' });
+    assert.equal(after[0]!.body, 'novo');
+    assert.deepEqual(after[0]!.mentions, [{ id: 'bia', name: 'Bia' }]);
+    assert.equal(after[0]!.editedAt, '2026-10-29T12:00:00Z');
+    assert.deepEqual(after[0]!.reactions, a.reactions);
+    assert.equal(after[1], b);
+  });
+
+  test('a reply quotes the new words; a message not shown changes nothing', () => {
+    const a = message(1n, 'ana');
+    const reply = {
+      ...message(2n, 'bia'),
+      replyTo: { id: a.id, authorId: 'ana', authorName: 'Ana', body: 'velho' },
+    };
+    const long = `novo ${'x'.repeat(300)}`;
+    const after = applyEdit([a, reply], { ...a, body: long, editedAt: '2026-10-29T12:00:00Z' });
+    assert.equal(after[1]!.replyTo!.body, replyExcerpt(long));
+    assert.equal(after[1]!.replyTo!.authorName, 'Ana');
+    const list = [reply];
+    assert.equal(applyEdit(list, { ...a, body: 'x' }), list);
+  });
+
+  test('an older edit arriving late does not undo a newer one', () => {
+    const a = { ...message(1n, 'ana'), body: 'segunda', editedAt: '2026-10-29T12:00:02Z' };
+    const list = [a];
+    assert.equal(
+      applyEdit(list, { ...a, body: 'primeira', editedAt: '2026-10-29T12:00:01Z' }),
+      list,
+    );
+    assert.equal(
+      applyEdit(list, { ...a, body: 'terceira', editedAt: '2026-10-29T12:00:03Z' })[0]!.body,
+      'terceira',
+    );
+  });
+
+  test('a quote is one line, cut where the server cuts it', () => {
+    assert.equal(replyExcerpt('  oi\n\n  gente '), 'oi gente');
+    const cut = replyExcerpt('y'.repeat(250));
+    assert.equal(cut.length, 200);
+    assert.ok(cut.endsWith('…'));
+  });
+
+  test('Up edits your newest message, whoever wrote after it', () => {
+    const mine = message(1n, 'ana');
+    const list = [message(0n, 'ana'), mine, message(2n, 'bia')];
+    assert.equal(lastOwnMessage(list, 'ana'), mine);
+    assert.equal(lastOwnMessage(list, 'caio'), undefined);
   });
 });
