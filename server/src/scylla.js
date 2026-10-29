@@ -68,6 +68,15 @@ const MIGRATIONS = [
        PRIMARY KEY ((chat_id, bucket), message_id, emoji, account_id)
      )`,
   ],
+  [
+    // A deleted message leaves the disk an hour after, not ten days (ADR
+    // 0042): the keyspace has one replica, so there is no other copy that
+    // could miss the delete and bring the message back, which is all the
+    // default wait guards against. Messages people delete, and those addons
+    // clean up after themselves (ADR 0041), go at the next compaction after.
+    `ALTER TABLE {ks}.messages WITH gc_grace_seconds = 3600`,
+    `ALTER TABLE {ks}.reactions WITH gc_grace_seconds = 3600`,
+  ],
 ];
 
 /**

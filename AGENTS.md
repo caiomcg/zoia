@@ -164,6 +164,11 @@ These each cost hours if forgotten, and all of them fail in ways that look like 
   `caddy/sites/` on the server, which is the homolog and nothing else
   ([ADR 0035](docs/adr/0035-homolog-environment.md)). Adding another widens the public
   surface; that is a decision, not a config tweak.
+- **A deleted chat message frees its space later, not at once.** ScyllaDB writes a
+  tombstone; the row leaves the disk at the first compaction after `gc_grace_seconds`, which
+  the messages and reactions tables set to an hour (ADR 0042). That is only safe because the
+  keyspace has **one replica**: give it more and the setting must go back to at least the
+  repair interval, or deleted messages come back.
 - **The homolog shares production's LiveKit.** Its `ROOM_NAME` (`zoia-homolog`) is all that
   keeps its rooms apart from production's, and production's `LIVEKIT_KEYS` must be a
   `{key: secret, key: secret}` map holding both keys. A comma-separated list does not parse.
