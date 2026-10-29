@@ -57,6 +57,18 @@ export function isValidPassword(password) {
 
 export const isAdmin = (account) => account?.role === 'admin' || account?.role === 'super_admin';
 
+/** A bot user of an addon (ADR 0041): never an admin, and never signs in. */
+export const isBot = (account) => Boolean(account?.addonId);
+
+/** The most bots one addon may have. */
+export const BOTS_PER_ADDON = 5;
+
+/**
+ * A bot's email, which nobody types: the column is required and unique, and
+ * `.invalid` is reserved, so it can never be anyone's real address.
+ */
+const botEmail = (id) => `bot-${id}@addons.invalid`;
+
 /** What a person may set themselves to; see ADR 0038 and src/presence.js. */
 export const PRESENCES = ['online', 'busy', 'away', 'invisible'];
 
@@ -324,6 +336,7 @@ export function createAccountStore({ db, maxPending = 20, logger = console }) {
         const record = findLive(records, id);
         if (!record) return { ok: false, reason: 'unknown_account' };
         if (record.role === 'super_admin') return { ok: false, reason: 'forbidden' };
+        if (isBot(record)) return { ok: false, reason: 'forbidden' };
         if (record.status !== 'active') return { ok: false, reason: 'not_active' };
         record.role = role;
         return { ok: true, account: safe(record) };
@@ -352,6 +365,51 @@ export function createAccountStore({ db, maxPending = 20, logger = console }) {
     },
 
     /**
+     * A bot user for an addon: active at once, a plain user, and with no
+     * password, so no login can ever match it. Its name is unique like
+     * anyone's.
+     */
+    async createBot({ addonId, name }) {
+      return store.mutate((records) => {
+        if (records.filter((r) => r.addonId === addonId).length >= BOTS_PER_ADDON) {
+          return { ok: false, reason: 'bot_limit' };
+        }
+        const id = newId(records);
+        const record = {
+          id,
+          email: botEmail(id),
+          name: freeName(records, name),
+          role: 'user',
+          status: 'active',
+          salt: '',
+          hash: '',
+          createdAt: new Date().toISOString(),
+          lastSeen: null,
+          failedLogins: 0,
+          lockedUntil: null,
+          approvedAt: new Date().toISOString(),
+          addonId,
+        };
+        records.push(record);
+        logger.info(`[account] ${id} created as a bot of addon ${addonId}`);
+        return { ok: true, account: safe(record) };
+      });
+    },
+
+    async botsOf(addonId) {
+      return (await store.all()).filter((r) => r.addonId === addonId).map(safe);
+    },
+
+    async removeBot(addonId, id) {
+      return store.mutate((records) => {
+        const index = records.findIndex((r) => r.id === id && r.addonId === addonId);
+        if (index < 0) return { ok: false, reason: 'not_found' };
+        records.splice(index, 1);
+        return { ok: true };
+      });
+    },
+
+    /**
      * A one-time code to set a forgotten password, which an admin passes on:
      * there is no mail to send a link with. Shown once and stored hashed; a
      * new code replaces any earlier one.
@@ -363,7 +421,8 @@ export function createAccountStore({ db, maxPending = 20, logger = console }) {
       const expiresAt = new Date(Date.now() + ttlMs).toISOString();
       const ok = await store.mutate((records) => {
         const record = findLive(records, id);
-        if (!record) return false;
+        // A bot has no password to set.
+        if (!record || isBot(record)) return false;
         record.code = { salt, hash, expiresAt };
         return true;
       });

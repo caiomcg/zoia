@@ -101,6 +101,11 @@ source; match on "not `MICROPHONE`" instead.
 | `server/src/messages.js` | Chat messages, read markers, replies and mentions, in ScyllaDB |
 | `server/src/chat-routes.js` | The chat API and its live SSE stream |
 | `server/src/chat-media.js` | Chat photos and videos on disk, typed by their bytes, under one cap |
+| `server/src/addons.js` | Installed addons, their manifests, permissions, settings, commands and chats (ADR 0041) |
+| `server/src/addon-routes.js` | The addon API, `/api/addon/v1`, every route behind one permission |
+| `server/src/addon-admin.js` | The super admin's addon routes: install from GitHub, enable, settings |
+| `addon-host/` | The sidecar that runs addon containers, the only holder of the Docker socket |
+| `docs/addons/` | How to write, publish and install an addon |
 | `server/src/scylla.js` | Connects to ScyllaDB, creates the keyspace, applies its schema |
 | `server/bin/keytool.js` | CLI on the server: the super admin, reset codes, devices, backups |
 | `server/public/` | The login page and viewer app (no build step, plain ESM) |
@@ -116,6 +121,10 @@ source; match on "not `MICROPHONE`" instead.
    `server/test/stage.test.js` guard this. Voice is granted the same way and covers the
    microphone alone (`canPublishSources: [MICROPHONE]`, ADR 0039); a microphone-only grant is
    not a broadcast slot, so never decide who holds one from `canPublish` by itself.
+   **The one exception is an addon's bot** (ADR 0041): a bot of an addon granted
+   `voice.publish` gets a token that publishes the microphone alone (plus a camera with
+   `video.publish`), minted by the server for that bot's identity only. A person's join token
+   never changes.
 2. **Never log a secret or an email** — no password, device credential or reset code, and no
    email address — not in the app, not in an error message, not in a debug branch. Log the
    account or device id instead; it is safe and identifies the person.
@@ -132,7 +141,13 @@ source; match on "not `MICROPHONE`" instead.
 6. **`deploy.sh` must keep excluding `server/data`.** It runs `rsync --delete`; dropping that
    exclude would wipe the database and lock out every user, including you. `caddy/sites` is
    excluded for the same reason: it holds the server-local route to the homolog.
-7. **`app.set('trust proxy', ...)` must stay.** Behind Caddy every request otherwise appears to
+7. **An addon never holds more than it was granted.** Every `/api/addon/v1` route requires
+   one permission, re-read from the database on every request; a bot is always `user`,
+   never signs in and never gets a reset code; and no addon response carries an email, a
+   password hash or a device credential (ADR 0041).
+8. **Only the addon host holds the Docker socket**, and it pulls images by digest only.
+   Nothing else in the compose file mounts it.
+9. **`app.set('trust proxy', ...)` must stay.** Behind Caddy every request otherwise appears to
    originate from the proxy, so rate limiting would throttle all users as a single client.
 
 ## Environment gotchas
