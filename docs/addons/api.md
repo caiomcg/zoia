@@ -132,6 +132,19 @@ outlive your container, so look in `GET /me` before making one. Answers `201 { "
 Up to 4000 characters, written as the bot, in a chat the addon is bound to. `replyTo` is
 optional. Answers `201 { "message": {…} }`.
 
+### `DELETE /chats/:id/messages/:messageId`
+
+In a chat the addon is bound to, deletes:
+
+- a message by one of **its own bots**, with `chat.write`;
+- a message that is **one of its commands**, as the command is typed on this server now
+  (after a rename, the old name is someone's words), with `commands.delete`.
+
+Anything else is `403 forbidden`, photos and videos included. Everyone's app removes the
+message at once. Its space on disk is freed about an hour later, at the next compaction
+(see [ADR 0042](../adr/0042-deleted-messages-leave-the-disk.md)), so cleaning up is cheap
+but not instant. Answers `{ "ok": true }`.
+
 ## Voice
 
 ### `POST /voice/token` (`voice.publish`)

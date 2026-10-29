@@ -59,6 +59,7 @@ disabled or uninstalled is refused at once. Every route requires one permission:
 | `chat.read` | Read the chats it is bound to |
 | `chat.write` | Write in them, as one of its bots |
 | `commands` | Its `!` commands in them |
+| `commands.delete` | Delete the `!` commands people typed to it |
 | `channels.read` | The channels and who is in each |
 | `users.read` | Names, roles and pictures; never emails |
 | `users.manage` | Disable, enable and move people who are not admins |
@@ -75,6 +76,12 @@ starts with one of its commands is stored as any other, then sent to the addon a
 `command` event: who wrote it, the arguments, and which voice channel they are in. The
 super admin renames commands for everyone (`!play` to `!p`); autocomplete in the app
 offers the names as they are on the server.
+
+**Deleting.** An addon may delete, in a chat it is bound to, its own bots' messages (with
+`chat.write`), and messages that are one of its own commands as they are typed on the server
+now (with `commands.delete`): nothing anyone wrote besides, and never a photo or a video.
+Zouve uses it to clean up after a session in voice. A delete frees its space an hour later,
+not at once (ADR 0042).
 
 **Bots** are accounts with an `addon_id`: active at once, always `user`, with no password,
 no reset code and no way to be made admin. They go when their addon is uninstalled. A bot

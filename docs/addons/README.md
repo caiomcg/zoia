@@ -18,6 +18,7 @@ The decision behind all this is [ADR 0041](../adr/0041-addons.md).
 | With | It can |
 |---|---|
 | `commands` | Answer `!` commands typed at the start of a message in the chats it is bound to |
+| `commands.delete` | Delete those commands once answered, to keep the chat tidy |
 | `chat.read` | Hear every message in those chats |
 | `chat.write` | Write in them, as one of its bots |
 | `bots.create` | Have up to five bot users: always plain users, never admins, never signing in |

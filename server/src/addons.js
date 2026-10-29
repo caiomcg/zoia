@@ -32,6 +32,7 @@ export const PERMISSIONS = {
   'chat.read': 'Read the messages written in the chats it is bound to',
   'chat.write': 'Write in the chats it is bound to, as one of its bots',
   commands: 'Answer ! commands in the chats it is bound to',
+  'commands.delete': 'Delete the ! commands people typed to it, once it has answered them',
   'channels.read': 'See the channels, and who is in each',
   'users.read': 'See names, roles and pictures of everyone, never their email',
   'users.manage': 'Disable, enable and move people who are not admins',

@@ -296,6 +296,42 @@ describe('chats', () => {
     assert.equal(refused.body.error, 'not_bound');
   });
 
+  test('it deletes its bots’ messages and the commands typed to it, and nothing else', async () => {
+    const { as, chat, addon: a } = await addon();
+    await stores.addons.setCommandNames(a.id, { play: 'p' });
+    const { body } = await as('post', '/bots').send({ name: 'Zouve' }).expect(201);
+    const reply = await as('post', `/chats/${chat.id}/messages`)
+      .send({ bot: body.bot.id, body: 'Now playing' })
+      .expect(201);
+    const ana = await signIn(app, stores.accounts, 'Ana');
+    const send = async (text) =>
+      (await ana.agent.post(`/api/chats/${chat.id}/messages`).send({ body: text })).body.message.id;
+    const command = await send('!p lofi');
+    const oldName = await send('!play lofi');
+    const chatter = await send('nice song');
+
+    await as('delete', `/chats/${chat.id}/messages/${reply.body.message.id}`).expect(200);
+    await as('delete', `/chats/${chat.id}/messages/${command}`).expect(200);
+    // Not a command as it is typed here, and not a command at all: someone's words.
+    await as('delete', `/chats/${chat.id}/messages/${oldName}`).expect(403);
+    await as('delete', `/chats/${chat.id}/messages/${chatter}`).expect(403);
+    const left = (await messages.page({ chatId: chat.id, limit: 10 })).map((m) => m.body);
+    assert.deepEqual(left.sort(), ['!play lofi', 'nice song']);
+  });
+
+  test('deleting commands needs commands.delete, and a chat it is bound to', async () => {
+    const { as, chat, addon: a } = await addon(['commands', 'chat.write', 'bots.create']);
+    const ana = await signIn(app, stores.accounts, 'Ana');
+    const { body } = await ana.agent
+      .post(`/api/chats/${chat.id}/messages`)
+      .send({ body: '!play lofi' });
+    const res = await as('delete', `/chats/${chat.id}/messages/${body.message.id}`).expect(403);
+    assert.equal(res.body.permission, 'commands.delete');
+    await stores.addons.setBindings(a.id, []);
+    const unbound = await as('delete', `/chats/${chat.id}/messages/${body.message.id}`);
+    assert.equal(unbound.body.error, 'not_bound');
+  });
+
   test('people see which commands they may type, under this server’s names', async () => {
     const ana = await signIn(app, stores.accounts, 'Ana');
     const { addon: a, chat } = await addon();

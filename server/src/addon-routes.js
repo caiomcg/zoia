@@ -406,6 +406,42 @@ export function addonRoutes({
     }
   });
 
+  /**
+   * Deletes a message in a bound chat: one of its bots' (with chat.write), or
+   * a ! command of its own that someone typed (with commands.delete), as it
+   * is typed on this server now. Nothing else; never a photo or a video.
+   */
+  router.delete('/chats/:id/messages/:messageId', async (req, res, next) => {
+    try {
+      const chat = await boundChat(req, res);
+      if (!chat) return;
+      const current = messages();
+      if (!current) return refuse(res, 'chat_unavailable');
+      const message = await current.get({ chatId: chat.id, id: req.params.messageId });
+      if (!message) return refuse(res, 'not_found');
+
+      const author = await accountStore.get(message.authorId);
+      const own = author?.addonId === req.addon.id;
+      if (own && !req.addon.granted.includes('chat.write')) {
+        return refuse(res, 'missing_permission', { permission: 'chat.write' });
+      }
+      if (!own) {
+        const mine = (await addons.commandsIn(chat.id)).filter((c) => c.addonId === req.addon.id);
+        if (message.attachment || !parseCommand(message.body, mine))
+          return refuse(res, 'forbidden');
+        if (!req.addon.granted.includes('commands.delete')) {
+          return refuse(res, 'missing_permission', { permission: 'commands.delete' });
+        }
+      }
+
+      await current.remove({ chatId: chat.id, id: message.id });
+      chatHub.publish('deleted', { chatId: chat.id, messageId: message.id });
+      res.json({ ok: true });
+    } catch (err) {
+      next(err);
+    }
+  });
+
   // ---- voice ---------------------------------------------------------------
 
   // A token for one of its bots to be in voice in a channel. The addon joins
