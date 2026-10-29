@@ -1272,7 +1272,8 @@ function MemberRow({
       <span
         className={`avatar-wrap${m.inVoice && !m.voiceMuted && speaking?.has(m.identity) ? ' speaking' : ''}`}
       >
-        <Avatar name={m.name} identity={m.identity} live={live} role={role} />
+        {/* The tag is for anything shared; the row opens a screen only. */}
+        <Avatar name={m.name} identity={m.identity} live={m.isBroadcasting} role={role} />
         {viewerIds.has(m.identity) && <WatchingYou />}
       </span>
       <span className="member-name">{m.name}</span>
