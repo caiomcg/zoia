@@ -18,6 +18,8 @@ import { fixedChannels } from './channels.js';
 import { AVATAR_MAX_BYTES, imageType, isAvatarId } from './avatars.js';
 import { canManage, isAdmin } from './accounts.js';
 import { chatRoutes, createChatHub } from './chat-routes.js';
+import { addonRoutes } from './addon-routes.js';
+import { isBotIdentity } from './token.js';
 import { KICK_GRACE_MS, kick } from './idle.js';
 import { createPresence } from './presence.js';
 import { fileURLToPath } from 'node:url';
@@ -43,6 +45,8 @@ export function createApp({
   chatStore = null,
   messageStore = () => null,
   chatMediaStore = null,
+  // Installed addons (ADR 0041); without it there is no addon API.
+  addonStore = null,
   // Everyone listening to the chat. Passed in so the server can tell them
   // when chat becomes available, once ScyllaDB answers after a start.
   chatHub = createChatHub(),
@@ -525,7 +529,8 @@ export function createApp({
 
   app.get('/api/admin/accounts', requireAdmin, async (_req, res, next) => {
     try {
-      const accounts = await accountStore.list();
+      // Bots are their addon's, managed from it (ADR 0041).
+      const accounts = (await accountStore.list()).filter((a) => !a.addonId);
       const rows = await Promise.all(
         accounts.map(async (a) => {
           const devices = await deviceStore.listByAccount(a.id);
@@ -729,6 +734,8 @@ export function createApp({
                     ...(avatar ? { avatar } : {}),
                     // So everyone can see who the admins are.
                     ...(role ? { role } : {}),
+                    // An addon's bot, which has no device (ADR 0041).
+                    ...(isBotIdentity(identity) ? { bot: true } : {}),
                   };
                 }),
             ),
@@ -1065,6 +1072,29 @@ export function createApp({
     res.json({ ok: true });
   });
 
+  // ---- addons (ADR 0041) ---------------------------------------------------
+
+  const addonApi =
+    addonStore && chatStore
+      ? addonRoutes({
+          addons: addonStore,
+          accountStore,
+          deviceStore,
+          chats: chatStore,
+          messages: messageStore,
+          chatHub,
+          channelSet,
+          tokenIssuer,
+          whereAll,
+          disconnectAccount,
+          serverName: config.serverName ?? config.publicHost ?? 'Zoia',
+          heartbeatMs: config.addons?.heartbeatMs,
+          limit: config.addons?.limit,
+          logger,
+        })
+      : null;
+  if (addonApi) app.use('/api/addon/v1', addonApi.router);
+
   // ---- text chat (ADR 0036) ------------------------------------------------
 
   if (chatStore) {
@@ -1080,6 +1110,9 @@ export function createApp({
         recheck: sessionUser,
         presence,
         hub: chatHub,
+        // Addons hear what is written in the chats they are bound to.
+        onMessage: addonApi?.onMessage,
+        commandsIn: addonStore ? (chatId) => addonStore.commandsIn(chatId) : null,
         // Tests shorten these; undefined keeps the defaults.
         sendLimit: config.chat?.sendLimit,
         heartbeatMs: config.chat?.heartbeatMs,

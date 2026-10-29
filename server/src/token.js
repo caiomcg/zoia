@@ -10,10 +10,24 @@
  * claim call, or edits the page's JavaScript, still cannot publish.
  *
  * Do not add a code path that lets a request influence `canPublish` here.
+ * The one exception is `issueBot`, for an addon's bot (ADR 0041): its grant is
+ * fixed here, a microphone and at most a camera, and the addon routes decide
+ * who may have one from the permissions the super admin granted.
  */
 
-import { AccessToken, RoomServiceClient } from 'livekit-server-sdk';
+import { AccessToken, RoomServiceClient, TrackSource } from 'livekit-server-sdk';
 import { AVATAR_ATTRIBUTE } from './avatars.js';
+import { VOICE_ATTRIBUTE } from './stage.js';
+
+/** A bot's LiveKit identity: never a device id, which is eight hex digits. */
+export const BOT_PREFIX = 'bot-';
+
+/** Set on a bot's participant, to the addon's name, so apps can mark it. */
+export const BOT_ATTRIBUTE = 'zoia.bot';
+
+export const botIdentity = (accountId) => `${BOT_PREFIX}${accountId}`;
+export const isBotIdentity = (identity) =>
+  typeof identity === 'string' && identity.startsWith(BOT_PREFIX);
 
 const TOKEN_TTL = '10m';
 
@@ -89,6 +103,35 @@ export function createTokenIssuer({
         identity: user.id,
         name: user.name,
       };
+    },
+
+    /**
+     * A token for an addon's bot to be in voice in one channel: it publishes
+     * a microphone, and a camera with `video`, and nothing else. It is in
+     * voice from the moment it joins, so everyone hears it as they hear a
+     * person, and it holds no broadcast slot (ADR 0039, 0041).
+     */
+    async issueBot(bot, room, { addonName, video = false } = {}) {
+      await ensureRoom(room);
+      const identity = botIdentity(bot.id);
+      const at = new AccessToken(apiKey, apiSecret, { identity, name: bot.name, ttl: TOKEN_TTL });
+      at.attributes = { [VOICE_ATTRIBUTE]: '1', [BOT_ATTRIBUTE]: String(addonName ?? bot.name) };
+      at.addGrant({
+        roomJoin: true,
+        room,
+        canPublish: true,
+        canPublishSources: video
+          ? [TrackSource.MICROPHONE, TrackSource.CAMERA]
+          : [TrackSource.MICROPHONE],
+        // Nothing to watch: a bot plays, it does not listen. An addon that
+        // must hear the room is a decision for a later permission.
+        canSubscribe: false,
+        canPublishData: false,
+        canUpdateOwnMetadata: false,
+        roomCreate: false,
+        roomAdmin: false,
+      });
+      return { token: await at.toJwt(), wsUrl, room, identity, name: bot.name };
     },
   };
 }
