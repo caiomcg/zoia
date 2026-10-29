@@ -48,7 +48,7 @@ fading out.
 `userData/soundboard`, up to 100 MB, those played longest ago going first. A sound played
 again, or by someone else in the channel, starts at once.
 
-**What is kept is per machine:** a soundpad of up to 20 sounds, the last 4 sounds played,
+**What is kept is per machine:** a soundpad of up to 10 sounds, the last 4 sounds played,
 the effects' volume (up to 100 %, half by default) and mute, and whose sounds are muted. Each
 pad may be renamed, emoji included, be given an emoji to show, and have a global shortcut,
 held by the same input hook as voice's. A pad plays under the name you gave it, its emoji

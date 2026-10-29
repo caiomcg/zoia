@@ -132,7 +132,7 @@ export function decodeSoundMessage(payload: Uint8Array): Sound | null {
  * Each pad may have a shortcut, so there are as many of one as of the
  * other. Must match MAX_SOUND_SHORTCUTS in shortcuts.ts.
  */
-export const MAX_PADS = 20;
+export const MAX_PADS = 10;
 
 /** Longest name you may give a pad: it is a label on a button. */
 export const MAX_PAD_NAME = 40;

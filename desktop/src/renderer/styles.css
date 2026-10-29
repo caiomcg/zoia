@@ -1488,8 +1488,9 @@ button.danger {
   border-color: var(--accent);
 }
 
+/* As wide as the pane: a narrower measure broke it into short lines that
+   left most of the pane empty. */
 .about-lede {
-  max-width: 46ch;
   margin: 0;
   font-size: 14px;
   line-height: 1.55;
@@ -6060,7 +6061,7 @@ button.danger:active:not(:disabled),
   flex-direction: column;
   gap: 10px;
   width: 360px;
-  max-width: calc(100vw - 8px);
+  max-width: calc(100vw - 32px);
   max-height: min(600px, calc(100vh - 80px));
   padding: 12px;
 }

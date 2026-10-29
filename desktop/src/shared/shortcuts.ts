@@ -23,7 +23,7 @@ export type SoundShortcut = `sound:${string}`;
 export type ShortcutAction = VoiceShortcut | SoundShortcut;
 
 /** As many as there may be pads: one each. Must match MAX_PADS. */
-export const MAX_SOUND_SHORTCUTS = 20;
+export const MAX_SOUND_SHORTCUTS = 10;
 
 const SOUND_SHORTCUT = /^sound:[A-Za-z0-9_-]{1,120}$/;
 

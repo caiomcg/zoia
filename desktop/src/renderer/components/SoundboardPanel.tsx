@@ -32,16 +32,21 @@ import {
   pads as padStore,
   recents,
   soundboardSettings,
+  stepSoundboardVolume,
   usePads,
   useRecents,
   useSoundboardSettings,
 } from '../soundboard/library';
 import { removeRecent, SEND_INTERVAL_MS } from '../soundboard/model';
+import { useWheelRange } from './useWheelRange';
 import { playSound } from '../soundboard/player';
 import type { SoundboardControls } from '../soundboard/useSoundboard';
 
 /** Marks the button that opens the panel, which a click outside it does not count. */
 export const TOGGLE_ATTRIBUTE = 'data-soundboard-toggle';
+
+/** How far the panel stays from the window's left and right edges. */
+const EDGE_GAP = 16;
 
 /** How long typing must pause before Myinstants is asked. */
 const SEARCH_DELAY_MS = 300;
@@ -104,12 +109,14 @@ export default function SoundboardPanel({
     const panel = ref.current;
     if (!panel) return;
     // Its laid-out size, not getBoundingClientRect's: that is scaled down while
-    // it pops in, which put it too low until something resized it.
+    // it pops in, which put it too low until something resized it. Wider than
+    // a menu, so kept well clear of the window's edge: right against it, it
+    // reads as cut off.
     const fit = () => {
       const width = panel.offsetWidth;
       const height = panel.offsetHeight;
       setPlace({
-        left: Math.max(4, Math.min(anchor.left, window.innerWidth - width - 4)),
+        left: Math.max(EDGE_GAP, Math.min(anchor.left, window.innerWidth - width - EDGE_GAP)),
         top: Math.max(4, anchor.top - height - 6),
       });
     };
@@ -211,6 +218,7 @@ export default function SoundboardPanel({
 
   const setMuted = (muted: boolean) => soundboardSettings.set({ ...settings, muted });
   const percent = Math.round(settings.volume * 100);
+  const volumeRef = useWheelRange(stepSoundboardVolume);
 
   return createPortal(
     <div
@@ -238,10 +246,11 @@ export default function SoundboardPanel({
             <IconSpeaker muted={settings.muted} />
           </button>
           <input
+            ref={volumeRef}
             type="range"
             min={0}
             max={100}
-            step={5}
+            step={1}
             value={percent}
             disabled={settings.muted}
             onChange={(event) =>
