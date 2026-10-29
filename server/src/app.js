@@ -19,6 +19,8 @@ import { AVATAR_MAX_BYTES, imageType, isAvatarId } from './avatars.js';
 import { canManage, isAdmin } from './accounts.js';
 import { chatRoutes, createChatHub } from './chat-routes.js';
 import { addonRoutes } from './addon-routes.js';
+import { addonAdminRoutes } from './addon-admin.js';
+import { createAddonHostClient } from './addon-host.js';
 import { isBotIdentity } from './token.js';
 import { KICK_GRACE_MS, kick } from './idle.js';
 import { createPresence } from './presence.js';
@@ -47,6 +49,10 @@ export function createApp({
   chatMediaStore = null,
   // Installed addons (ADR 0041); without it there is no addon API.
   addonStore = null,
+  // The addon host's client; null when addons are off. Tests pass a fake.
+  addonHost = config.addons?.host ? createAddonHostClient(config.addons.host) : null,
+  // How GitHub is reached for addon releases. Tests pass a fake.
+  githubFetch = fetch,
   // Everyone listening to the chat. Passed in so the server can tell them
   // when chat becomes available, once ScyllaDB answers after a start.
   chatHub = createChatHub(),
@@ -1093,7 +1099,23 @@ export function createApp({
           logger,
         })
       : null;
-  if (addonApi) app.use('/api/addon/v1', addonApi.router);
+  if (addonApi) {
+    app.use('/api/addon/v1', addonApi.router);
+    app.use(
+      '/api/admin/addons',
+      addonAdminRoutes({
+        addons: addonStore,
+        host: addonHost,
+        hub: addonApi.hub,
+        accountStore,
+        channelSet,
+        requireSession,
+        githubApi: config.addons?.githubApi,
+        fetchImpl: githubFetch,
+        logger,
+      }),
+    );
+  }
 
   // ---- text chat (ADR 0036) ------------------------------------------------
 
