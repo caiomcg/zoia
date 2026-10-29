@@ -1,0 +1,57 @@
+# Copy to .github/workflows/release.yml in your addon's repository.
+#
+# On a v* tag: builds the image, pushes it to ghcr.io under this repository's
+# owner, writes its digest into zoia-addon.json, and publishes a release with
+# that manifest attached. Zoia installs from the latest release.
+name: release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: image
+        run: echo "name=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+
+      - id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64
+          tags: ${{ steps.image.outputs.name }}:${{ github.ref_name }}
+
+      # The manifest names the image by digest, never by tag: what Zoia runs
+      # is exactly this build, whatever is pushed to the tag later.
+      - name: Write the manifest
+        env:
+          IMAGE: ${{ steps.image.outputs.name }}@${{ steps.build.outputs.digest }}
+          VERSION: ${{ github.ref_name }}
+        run: |
+          jq --arg image "$IMAGE" --arg version "${VERSION#v}" \
+            '.image = $image | .version = $version' zoia-addon.json > dist-manifest.json
+          mv dist-manifest.json zoia-addon.json
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: zoia-addon.json
+          generate_release_notes: true
+
+  # ghcr.io makes a new package private. Zoia pulls without credentials, so
+  # make it public once, by hand: the package's settings on GitHub, "Change
+  # visibility". Later versions keep it.

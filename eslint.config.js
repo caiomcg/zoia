@@ -13,6 +13,7 @@ export default [
       'server/test/**/*.js',
       'scripts/**/*.js',
       'addon-host/**/*.js',
+      'docs/addons/example/**/*.js',
     ],
     languageOptions: {
       ecmaVersion: 2024,

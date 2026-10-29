@@ -1,0 +1,10 @@
+{
+  "id": "echo",
+  "name": "Echo",
+  "version": "1.0.0",
+  "description": "Answers !echo with what follows it. A starting point for your own addon.",
+  "image": "ghcr.io/OWNER/zoia-echo@sha256:REPLACED_BY_THE_RELEASE_WORKFLOW",
+  "permissions": ["chat.write", "commands", "bots.create"],
+  "commands": [{ "name": "echo", "description": "Says it back", "usage": "<text>" }],
+  "settings": []
+}
