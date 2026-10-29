@@ -4,7 +4,8 @@
  * its audio; each app fetches the file and plays it itself, at its own volume.
  *
  * Both processes use this: main to search and to fetch, the renderer to read
- * what arrives. A link is checked by both, since it comes from other people.
+ * what arrives and to keep your pad. A link is checked by both, since it comes
+ * from other people.
  *
  * Kept free of imports so `node --test` can load it directly.
  */
@@ -29,7 +30,7 @@ export const MAX_SOUND_BYTES = 5 * 1024 * 1024;
 const MAX_NAME = 80;
 
 export interface Sound {
-  /** Myinstants' own id for it, which favourites and shortcuts are kept by. */
+  /** Myinstants' own id for it, which pads and shortcuts are kept by. */
   slug: string;
   name: string;
   /** The file, on Myinstants. */
@@ -71,7 +72,8 @@ export function parseSound(value: unknown): Sound | null {
   // Myinstants calls the file `sound`; what Zoia keeps and sends calls it `url`.
   const url = raw.url ?? raw.sound;
   if (!isSoundSlug(raw.slug) || !isSoundUrl(url) || typeof raw.name !== 'string') return null;
-  const name = raw.name.trim().slice(0, MAX_NAME);
+  // By code points, so a name ending in an emoji is not cut through it.
+  const name = [...raw.name.trim()].slice(0, MAX_NAME).join('').trim();
   if (!name) return null;
   const color = typeof raw.color === 'string' && COLOR.test(raw.color) ? raw.color : null;
   return { slug: raw.slug, name, url, color };
@@ -121,5 +123,95 @@ export function decodeSoundMessage(payload: Uint8Array): Sound | null {
     return parseSound(JSON.parse(new TextDecoder().decode(payload)));
   } catch {
     return null;
+  }
+}
+
+// ---- your soundpad: the sounds you keep, named as you like.
+
+/**
+ * Each pad may have a shortcut, so there are as many of one as of the
+ * other. Must match MAX_SOUND_SHORTCUTS in shortcuts.ts.
+ */
+export const MAX_PADS = 20;
+
+/** Longest name you may give a pad: it is a label on a button. */
+export const MAX_PAD_NAME = 40;
+
+/**
+ * A sound kept on your soundpad: named as you like, emoji included, with an
+ * emoji of its own to show on the pad. Myinstants' slug and file stay its.
+ */
+export interface Pad extends Sound {
+  emoji: string | null;
+}
+
+export function onPad(pads: readonly Pad[], slug: string): boolean {
+  return pads.some((p) => p.slug === slug);
+}
+
+/** Adds `sound` at the end, unless it is there already or there is no room left. */
+export function addPad(pads: readonly Pad[], sound: Sound): Pad[] {
+  if (onPad(pads, sound.slug) || pads.length >= MAX_PADS) return [...pads];
+  const { slug, name, url, color } = sound;
+  return [...pads, { slug, name: clip(name, MAX_PAD_NAME), url, color, emoji: null }];
+}
+
+export function removePad(pads: readonly Pad[], slug: string): Pad[] {
+  return pads.filter((p) => p.slug !== slug);
+}
+
+/** Names a pad and sets its emoji. An empty name keeps the one it had. */
+export function renamePad(
+  pads: readonly Pad[],
+  slug: string,
+  change: { name: string; emoji: string | null },
+): Pad[] {
+  return pads.map((p) => {
+    if (p.slug !== slug) return p;
+    const name = clip(change.name.trim(), MAX_PAD_NAME) || p.name;
+    return { ...p, name, emoji: padEmoji(change.emoji) };
+  });
+}
+
+/** What a pad plays as, for everyone: its emoji and the name you gave it. */
+export function padSound(pad: Pad): Sound {
+  const { slug, url, color } = pad;
+  return { slug, url, color, name: pad.emoji ? `${pad.emoji} ${pad.name}` : pad.name };
+}
+
+const GRAPHEMES = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+
+/** The first `max` characters, as a person counts them, so no emoji is cut in half. */
+export function clip(text: string, max: number): string {
+  const chars = [...GRAPHEMES.segment(text)].map((g) => g.segment);
+  return chars.length <= max ? text : chars.slice(0, max).join('').trimEnd();
+}
+
+/** One emoji, or null for anything else: a pad shows a picture, not a word. */
+export function padEmoji(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const chars = [...GRAPHEMES.segment(value.trim())].map((g) => g.segment);
+  // The last one typed, so the system's picker replaces what was there.
+  const last = chars[chars.length - 1];
+  if (!last || last.length > 16) return null;
+  return /\p{Extended_Pictographic}|\p{Regional_Indicator}/u.test(last) ? last : null;
+}
+
+/** Your pad as kept, each sound once, at most MAX_PADS. Anything else is an empty pad. */
+export function parsePads(raw: string | null): Pad[] {
+  try {
+    const parsed: unknown = JSON.parse(raw ?? '[]');
+    if (!Array.isArray(parsed)) return [];
+    const pads: Pad[] = [];
+    for (const item of parsed) {
+      if (pads.length >= MAX_PADS) break;
+      const sound = parseSound(item);
+      if (!sound || onPad(pads, sound.slug)) continue;
+      const emoji = padEmoji((item as Record<string, unknown>).emoji);
+      pads.push({ ...sound, name: clip(sound.name, MAX_PAD_NAME), emoji });
+    }
+    return pads;
+  } catch {
+    return [];
   }
 }

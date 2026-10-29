@@ -207,7 +207,7 @@ export default function App() {
   }, []);
   // The soundboard (ADR 0040): what others play, and playing to them.
   const soundboard = useSoundboard(room.room, room.state, voice);
-  const { sendFavorite } = soundboard;
+  const { sendPad } = soundboard;
   useEffect(
     () =>
       window.zoia.shortcuts.onFire(({ action, pressed }) => {
@@ -217,10 +217,10 @@ export default function App() {
         else if (action === 'toggleDeafen') toggleDeafen();
         else {
           const slug = shortcutSound(action);
-          if (slug) sendFavorite(slug);
+          if (slug) sendPad(slug);
         }
       }),
-    [toggleMute, toggleDeafen, sendFavorite],
+    [toggleMute, toggleDeafen, sendPad],
   );
   const [sidebarCollapsed, setSidebarCollapsed] = useSidebarCollapsed();
   const gpuCast = useGpuBroadcast();

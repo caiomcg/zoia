@@ -7,7 +7,7 @@
  * Nothing on the server takes part, so each listener holds the rules for
  * itself: the sender must be in voice with their microphone on, may play one
  * sound every two seconds, and must not be someone you muted. The sender
- * hears nothing of their own; the preview is for that.
+ * hears their own as they send it, at their own volume, as everyone does.
  */
 
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
@@ -18,10 +18,11 @@ import type { VoiceState } from '../voice/useVoice';
 import {
   decodeSoundMessage,
   encodeSoundMessage,
+  padSound,
   SOUNDBOARD_TOPIC,
   type Sound,
 } from '../../shared/soundboard';
-import { favorites, recents, soundboardSettings, useSoundboardSettings } from './library';
+import { pads, recents, soundboardSettings, useSoundboardSettings } from './library';
 import {
   addRecent,
   RECEIVE_INTERVAL_MS,
@@ -40,8 +41,8 @@ export interface SoundboardControls {
   readyAt: number;
   /** Plays `sound` for everyone else in the channel. */
   send(sound: Sound): Promise<void>;
-  /** Plays a favourite, from its shortcut. */
-  sendFavorite(slug: string): void;
+  /** Plays a pad, from its shortcut. */
+  sendPad(slug: string): void;
 }
 
 /** The sender's microphone is on, as voice needs to play a sound. */
@@ -112,7 +113,9 @@ export function useSoundboard(
       const now = performance.now();
       if (!sendThrottle.current.take('me', now)) return;
       setReadyAt(now + SEND_INTERVAL_MS);
-      recents.set(addRecent(recents.get(), sound));
+      recents.set(addRecent(recents.get(), sound, pads.get()));
+      // Yours plays for you as it goes out, beside your name like anyone's.
+      void playSound(room.localParticipant.identity, sound, true);
       await room.localParticipant
         .publishData(encodeSoundMessage(sound), { reliable: true, topic: SOUNDBOARD_TOPIC })
         .catch(() => {});
@@ -120,13 +123,13 @@ export function useSoundboard(
     [roomRef],
   );
 
-  const sendFavorite = useCallback(
+  const sendPad = useCallback(
     (slug: string) => {
-      const sound = favorites.get().find((s) => s.slug === slug);
-      if (sound) void send(sound);
+      const pad = pads.get().find((p) => p.slug === slug);
+      if (pad) void send(padSound(pad));
     },
     [send],
   );
 
-  return { blocked, readyAt, send, sendFavorite };
+  return { blocked, readyAt, send, sendPad };
 }

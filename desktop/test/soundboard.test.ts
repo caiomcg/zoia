@@ -13,17 +13,24 @@ import {
   parseSound,
   parseSoundList,
   parseSoundPage,
+  addPad,
+  clip,
+  MAX_PAD_NAME,
+  MAX_PADS,
+  padEmoji,
+  padSound,
+  parsePads,
+  removePad,
+  renamePad,
   searchUrl,
   type Sound,
 } from '../src/shared/soundboard.ts';
 import {
-  addFavorite,
   addRecent,
+  removeRecent,
   effectsGain,
-  MAX_FAVORITES,
   MAX_RECENTS,
   parseSoundboardSettings,
-  removeFavorite,
   sendBlock,
   setPersonMuted,
   Throttle,
@@ -136,30 +143,81 @@ describe('messages', () => {
   });
 });
 
-describe('favorites and recents', () => {
-  test('as many favourites as there may be shortcuts', () => {
-    assert.equal(MAX_FAVORITES, MAX_SOUND_SHORTCUTS);
+describe('the pad and recents', () => {
+  test('as many pads as there may be shortcuts', () => {
+    assert.equal(MAX_PADS, MAX_SOUND_SHORTCUTS);
   });
 
-  test('a favourite is added once, and not past the limit', () => {
-    let list = addFavorite([], sound('a'));
-    list = addFavorite(list, sound('a'));
-    assert.deepEqual(
-      list.map((s) => s.slug),
-      ['a'],
-    );
-    const full = Array.from({ length: MAX_FAVORITES }, (_, i) => sound(`s${i}`));
-    assert.equal(addFavorite(full, sound('more')).length, MAX_FAVORITES);
-    assert.deepEqual(removeFavorite(list, 'a'), []);
+  test('a sound is added once, without an emoji, and not past the limit', () => {
+    let list = addPad([], sound('a'));
+    list = addPad(list, sound('a'));
+    assert.deepEqual(list, [{ ...sound('a'), emoji: null }]);
+    const full = Array.from({ length: MAX_PADS }, (_, i) => sound(`s${i}`));
+    assert.equal(addPad(parsePads(JSON.stringify(full)), sound('more')).length, MAX_PADS);
+    assert.deepEqual(removePad(list, 'a'), []);
   });
 
-  test('the latest sound comes first, once, and only the last ten are kept', () => {
+  test('a pad is renamed with emoji in its name, and given one of its own', () => {
+    const list = renamePad(addPad([], sound('a')), 'a', { name: '  🎺 Toot 🎉 ', emoji: '📢' });
+    assert.equal(list[0]?.name, '🎺 Toot 🎉');
+    assert.equal(list[0]?.emoji, '📢');
+    // What everyone else is told it is called.
+    assert.equal(padSound(list[0]!).name, '📢 🎺 Toot 🎉');
+    assert.equal(padSound({ ...list[0]!, emoji: null }).name, '🎺 Toot 🎉');
+  });
+
+  test('an empty name keeps the old one; a long one is cut by character, not through an emoji', () => {
+    const list = addPad([], sound('a'));
+    assert.equal(renamePad(list, 'a', { name: '   ', emoji: null })[0]?.name, 'A');
+    const long = 'x'.repeat(MAX_PAD_NAME - 1) + '👍🏽👍🏽';
+    assert.equal(renamePad(list, 'a', { name: long, emoji: null })[0]?.name, long.slice(0, -4));
+    assert.equal(clip('👨‍👩‍👧 family', 1), '👨‍👩‍👧');
+  });
+
+  test("a pad's emoji is one emoji, the last one given, or none", () => {
+    assert.equal(padEmoji('🔥'), '🔥');
+    assert.equal(padEmoji('🔥🚀'), '🚀');
+    assert.equal(padEmoji('👍🏽'), '👍🏽');
+    assert.equal(padEmoji('🇧🇷'), '🇧🇷');
+    assert.equal(padEmoji('a'), null);
+    assert.equal(padEmoji(''), null);
+    assert.equal(padEmoji(7), null);
+  });
+
+  test('a kept pad is read back with its emoji, and anything wrong in it left out', () => {
+    const raw = JSON.stringify([
+      { ...sound('a'), emoji: '🐐' },
+      { ...sound('b'), emoji: 'not one' },
+      { slug: 'x' },
+      sound('a'),
+    ]);
+    assert.deepEqual(parsePads(raw), [
+      { ...sound('a'), emoji: '🐐' },
+      { ...sound('b'), emoji: null },
+    ]);
+    assert.deepEqual(parsePads('{'), []);
+    assert.deepEqual(parsePads(null), []);
+  });
+
+  test('the latest sound comes first, once, and only the last four are kept', () => {
     let list: Sound[] = [];
     for (let i = 0; i < 12; i++) list = addRecent(list, sound(`s${i}`));
     list = addRecent(list, sound('s5'));
     assert.equal(list.length, MAX_RECENTS);
     assert.equal(list[0]?.slug, 's5');
     assert.equal(list.filter((s) => s.slug === 's5').length, 1);
+    assert.deepEqual(
+      removeRecent(list, 's5').map((s) => s.slug),
+      list.slice(1).map((s) => s.slug),
+    );
+  });
+
+  test('a sound on your pad is not recent', () => {
+    const list = addRecent([sound('a')], sound('b'), [{ slug: 'b' }]);
+    assert.deepEqual(
+      list.map((s) => s.slug),
+      ['a'],
+    );
   });
 
   test('a stored list is read back, and anything wrong in it left out', () => {

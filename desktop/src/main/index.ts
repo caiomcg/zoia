@@ -433,7 +433,7 @@ function registerIpc(): void {
   app.on('browser-window-created', (_event, window) => {
     if (deafened) window.webContents.setAudioMuted(true);
   });
-  // Push to talk, mute, deafen and soundboard favourites from anywhere (ADR
+  // Push to talk, mute, deafen and soundboard pads from anywhere (ADR
   // 0039, 0040). The main window is where voice lives, so it is the one told.
   shortcuts.initShortcuts((event) => {
     if (mainWindow && !mainWindow.isDestroyed()) {

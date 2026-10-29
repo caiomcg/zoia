@@ -1,20 +1,15 @@
 /**
  * What the soundboard keeps and decides (ADR 0040), pure so it can be tested
- * without a room or an AudioContext: the settings, the favourites and recent
- * sounds, and how often one person may play.
+ * without a room or an AudioContext: the settings, the recent sounds, and
+ * how often one person may play. Your pad's are in shared/soundboard.ts.
  *
  * Only types are imported, so `node --test` can load it directly.
  */
 
 import type { Sound } from '../../shared/soundboard';
 
-/**
- * Each favourite may have a shortcut, so there are as many of one as of the
- * other. Must match MAX_SOUND_SHORTCUTS in shared/shortcuts.ts.
- */
-export const MAX_FAVORITES = 20;
-
-export const MAX_RECENTS = 10;
+/** Few enough to sit under the pad without pushing it away. */
+export const MAX_RECENTS = 4;
 
 /** One sound every two seconds, per person: the sender waits this long. */
 export const SEND_INTERVAL_MS = 2000;
@@ -76,25 +71,21 @@ export function setPersonMuted(
   return { ...settings, mutedPeople: muted ? [...others, identity] : others };
 }
 
-/** `sound` played just now: first, once, and the oldest past MAX_RECENTS gone. */
-export function addRecent(recents: readonly Sound[], sound: Sound): Sound[] {
+/**
+ * `sound` played just now: first, once, and the oldest past MAX_RECENTS gone.
+ * A sound on your pad is not recent, it is kept: `kept` names the pad's.
+ */
+export function addRecent(
+  recents: readonly Sound[],
+  sound: Sound,
+  kept: readonly { slug: string }[] = [],
+): Sound[] {
+  if (kept.some((k) => k.slug === sound.slug)) return [...recents];
   return [sound, ...recents.filter((s) => s.slug !== sound.slug)].slice(0, MAX_RECENTS);
 }
 
-export function isFavorite(favorites: readonly Sound[], slug: string): boolean {
-  return favorites.some((s) => s.slug === slug);
-}
-
-/** Adds `sound` at the end, unless it is there already or there is no room left. */
-export function addFavorite(favorites: readonly Sound[], sound: Sound): Sound[] {
-  if (isFavorite(favorites, sound.slug) || favorites.length >= MAX_FAVORITES) {
-    return [...favorites];
-  }
-  return [...favorites, sound];
-}
-
-export function removeFavorite(favorites: readonly Sound[], slug: string): Sound[] {
-  return favorites.filter((s) => s.slug !== slug);
+export function removeRecent(recents: readonly Sound[], slug: string): Sound[] {
+  return recents.filter((s) => s.slug !== slug);
 }
 
 /** Lets through one event per key every `interval` ms. */

@@ -26,8 +26,8 @@ There are three ways to get a sound to everyone:
 **A sound is played by a message, and heard by each listener playing it.** The app sends
 `{slug, name, url}` on the `zoia.soundboard` topic. Every other app in the room checks it,
 fetches the file, and plays it through a gain of its own: the effects' volume, under deafen
-like every other Zoia sound. The sender hears nothing of their own; the panel's preview is
-for that.
+like every other Zoia sound. The sender's app plays it too as it sends it, through the same
+gain, so they hear what they played; the panel's preview plays a sound for them alone.
 
 **The server takes no part.** Nothing in it changes, and no grant does. So each listener holds
 the rules for itself, and ignores a sound unless:
@@ -48,9 +48,12 @@ fading out.
 `userData/soundboard`, up to 100 MB, those played longest ago going first. A sound played
 again, or by someone else in the channel, starts at once.
 
-**What is kept is per machine:** up to 20 favourites, the last 10 sounds played, the effects'
-volume (up to 100 %, half by default) and mute, and whose sounds are muted. Each favourite
-may have a global shortcut, held by the same input hook as voice's.
+**What is kept is per machine:** a soundpad of up to 20 sounds, the last 4 sounds played,
+the effects' volume (up to 100 %, half by default) and mute, and whose sounds are muted. Each
+pad may be renamed, emoji included, be given an emoji to show, and have a global shortcut,
+held by the same input hook as voice's. A pad plays under the name you gave it, its emoji
+first: that is the name everyone else sees beside you while it plays. The file is still
+Myinstants', so the rules above do not change.
 
 ## Consequences
 

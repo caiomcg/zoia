@@ -1,6 +1,6 @@
 /**
  * The global shortcuts, heard while Zoia is in the background: voice's (ADR
- * 0039) and the soundboard favourites' (ADR 0040).
+ * 0039) and the soundboard pads' (ADR 0040).
  *
  * Electron's globalShortcut takes keys only, and says nothing of a release,
  * which push to talk is all about. uiohook-napi hooks the keyboard and the

@@ -96,7 +96,7 @@ export interface ZoiaBridge {
     deafen(deafened: boolean): Promise<void>;
   };
   /**
-   * The global shortcuts: voice's (ADR 0039) and the soundboard favourites'
+   * The global shortcuts: voice's (ADR 0039) and the soundboard pads'
    * (ADR 0040). Keys and mouse buttons, from anywhere.
    */
   shortcuts: {

@@ -1,6 +1,25 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+} from 'react';
 import { createPortal } from 'react-dom';
-import type { Sound, SoundPage } from '../../shared/soundboard';
+import {
+  addPad,
+  MAX_PAD_NAME,
+  MAX_PADS,
+  onPad,
+  padEmoji,
+  padSound,
+  removePad,
+  renamePad,
+  type Pad,
+  type Sound,
+  type SoundPage,
+} from '../../shared/soundboard';
 import {
   shortcutSound,
   soundShortcut,
@@ -10,13 +29,14 @@ import {
 import type { MessageKey } from '../../shared/i18n';
 import { useT } from '../i18n';
 import {
-  favorites,
+  pads as padStore,
+  recents,
   soundboardSettings,
-  useFavorites,
+  usePads,
   useRecents,
   useSoundboardSettings,
 } from '../soundboard/library';
-import { addFavorite, isFavorite, MAX_FAVORITES, removeFavorite } from '../soundboard/model';
+import { removeRecent, SEND_INTERVAL_MS } from '../soundboard/model';
 import { playSound } from '../soundboard/player';
 import type { SoundboardControls } from '../soundboard/useSoundboard';
 
@@ -32,6 +52,12 @@ const BLOCK_MESSAGES: Record<NonNullable<SoundboardControls['blocked']>, Message
   effectsMuted: 'soundboard.effectsMuted',
 };
 
+/** What a pad may show, offered when editing it. Any other is a click away. */
+const PAD_EMOJI = (
+  '📢 🎺 🥁 🎸 🎤 🎵 🔔 🚨 💥 💣 🔥 ✨ 😂 🤣 😱 😭 😡 🤡 💀 👻 ' +
+  '🤖 👽 🐐 🐸 🐱 🐶 🦆 🐔 👏 🙌 👀 🍿 🎉 🏆 ❌ ✅ ❓ ⏰ 🚀 💸 🫡'
+).split(' ');
+
 interface Search {
   query: string;
   sounds: Sound[];
@@ -41,10 +67,11 @@ interface Search {
 }
 
 /**
- * The soundboard (ADR 0040), above its button in the sidebar's footer:
- * Myinstants' search, your favourites and recent sounds, the effects' volume,
- * and a shortcut per favourite. Clicking a sound plays it for the channel; the
- * preview plays it for you alone. Closes on a click elsewhere or Escape.
+ * The soundboard (ADR 0040), above its button in the sidebar's footer: your
+ * soundpad, the sounds you played last, Myinstants' search and the effects'
+ * volume. A pad plays its sound for the channel; its own buttons preview it
+ * for you alone and edit it: a name and an emoji of your own, and a
+ * shortcut. Closes on a click elsewhere or Escape.
  */
 export default function SoundboardPanel({
   anchor,
@@ -58,31 +85,52 @@ export default function SoundboardPanel({
 }) {
   const t = useT();
   const ref = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
   const [place, setPlace] = useState({ left: anchor.left, top: anchor.top });
   const settings = useSoundboardSettings();
-  const favoriteList = useFavorites();
-  const recentList = useRecents();
+  const padList = usePads();
+  // What you played that is not on your pad: once added, it is there instead.
+  const recentList = useRecents().filter((s) => !onPad(padList, s.slug));
   const [query, setQuery] = useState('');
   const [search, setSearch] = useState<Search | null>(null);
   const [previewFailed, setPreviewFailed] = useState<string | null>(null);
+  // The pad being edited, by its slug.
+  const [editing, setEditing] = useState<string | null>(null);
   const shortcuts = useSoundShortcuts();
+  const editingPad = editing ? (padList.find((p) => p.slug === editing) ?? null) : null;
 
+  // Kept above its button as it grows and shrinks, from the pad to the editor.
   useLayoutEffect(() => {
-    const box = ref.current?.getBoundingClientRect();
-    if (!box) return;
-    setPlace({
-      left: Math.max(4, Math.min(anchor.left, window.innerWidth - box.width - 4)),
-      top: Math.max(4, anchor.top - box.height - 6),
-    });
+    const panel = ref.current;
+    if (!panel) return;
+    // Its laid-out size, not getBoundingClientRect's: that is scaled down while
+    // it pops in, which put it too low until something resized it.
+    const fit = () => {
+      const width = panel.offsetWidth;
+      const height = panel.offsetHeight;
+      setPlace({
+        left: Math.max(4, Math.min(anchor.left, window.innerWidth - width - 4)),
+        top: Math.max(4, anchor.top - height - 6),
+      });
+    };
+    fit();
+    const observer = new ResizeObserver(fit);
+    observer.observe(panel);
+    return () => observer.disconnect();
   }, [anchor]);
 
   useLayoutEffect(() => {
-    ref.current?.querySelector<HTMLInputElement>('input[type="search"]')?.focus();
+    searchRef.current?.focus();
   }, []);
 
   // Not on the window losing focus, unlike a menu: this is somewhere to work.
-  const recordingRef = useRef(false);
-  recordingRef.current = shortcuts.recording !== null;
+  // Escape leaves the editor first, and a recording cancels before either.
+  const escapeRef = useRef<() => void>(onClose);
+  escapeRef.current = () => {
+    if (shortcuts.recording !== null) return;
+    if (editing) setEditing(null);
+    else onClose();
+  };
   useEffect(() => {
     const onDown = (event: MouseEvent) => {
       const target = event.target as Element;
@@ -91,8 +139,7 @@ export default function SoundboardPanel({
       if (!ref.current?.contains(target)) onClose();
     };
     const onKey = (event: KeyboardEvent) => {
-      // Escape while recording cancels the recording, not the panel.
-      if (event.key === 'Escape' && !recordingRef.current) onClose();
+      if (event.key === 'Escape') escapeRef.current();
     };
     window.addEventListener('mousedown', onDown);
     window.addEventListener('keydown', onKey);
@@ -140,40 +187,30 @@ export default function SoundboardPanel({
     return () => clearTimeout(timer);
   }, [controls.readyAt]);
   const coolingDown = controls.readyAt > now;
+  const playDisabled = !!controls.blocked || coolingDown;
 
   const preview = async (sound: Sound) => {
     setPreviewFailed(null);
     if (!(await playSound('preview', sound, false))) setPreviewFailed(sound.name);
   };
 
-  const toggleFavorite = (sound: Sound) => {
-    const list = favorites.get();
-    if (isFavorite(list, sound.slug)) {
-      favorites.set(removeFavorite(list, sound.slug));
-      // A favourite's shortcut goes with it.
-      if (shortcuts.bound(sound.slug)) void shortcuts.clear(sound.slug);
-    } else {
-      favorites.set(addFavorite(list, sound));
+  const padFull = padList.length >= MAX_PADS;
+  const remove = (slug: string) => {
+    padStore.set(removePad(padStore.get(), slug));
+    // A pad's shortcut goes with it.
+    if (shortcuts.bound(slug)) void shortcuts.clear(slug);
+  };
+  const togglePad = (sound: Sound) => {
+    const list = padStore.get();
+    if (onPad(list, sound.slug)) remove(sound.slug);
+    else {
+      padStore.set(addPad(list, sound));
+      recents.set(removeRecent(recents.get(), sound.slug));
     }
   };
 
   const setMuted = (muted: boolean) => soundboardSettings.set({ ...settings, muted });
   const percent = Math.round(settings.volume * 100);
-
-  const row = (sound: Sound, favorite: boolean) => (
-    <SoundRow
-      key={sound.slug}
-      sound={sound}
-      favorite={favorite}
-      favoritesFull={favoriteList.length >= MAX_FAVORITES}
-      playDisabled={!!controls.blocked || coolingDown}
-      previewDisabled={settings.muted}
-      onPlay={() => void controls.send(sound)}
-      onPreview={() => void preview(sound)}
-      onToggleFavorite={() => toggleFavorite(sound)}
-      shortcut={favorite ? shortcuts : null}
-    />
-  );
 
   return createPortal(
     <div
@@ -183,84 +220,167 @@ export default function SoundboardPanel({
       aria-label={t('soundboard.title')}
       style={place}
     >
+      {/* The title, and beside it how loud everyone's sounds are for you. */}
       <div className="soundboard-head">
-        <span className="soundboard-title">{t('soundboard.title')}</span>
-        <button
-          type="button"
-          className={`icon-button soundboard-mute${settings.muted ? ' voice-off' : ''}`}
-          onClick={() => setMuted(!settings.muted)}
-          aria-pressed={settings.muted}
-          title={settings.muted ? t('soundboard.unmute') : t('soundboard.mute')}
-          aria-label={settings.muted ? t('soundboard.unmute') : t('soundboard.mute')}
-        >
-          <IconSpeaker muted={settings.muted} />
-        </button>
-      </div>
-      <label className="member-menu-volume soundboard-volume">
-        <span>
-          {t('soundboard.volume')}
-          <span className="member-menu-volume-value">{percent}%</span>
+        <span className="soundboard-title">
+          <IconNote />
+          {t('soundboard.title')}
         </span>
-        <input
-          type="range"
-          min={0}
-          max={100}
-          step={5}
-          value={percent}
-          disabled={settings.muted}
-          onChange={(event) =>
-            soundboardSettings.set({ ...settings, volume: Number(event.target.value) / 100 })
-          }
-          aria-valuetext={`${percent}%`}
-        />
-      </label>
-      <input
-        type="search"
-        className="soundboard-search"
-        placeholder={t('soundboard.search')}
-        aria-label={t('soundboard.search')}
-        value={query}
-        onChange={(event) => setQuery(event.target.value)}
-        spellCheck={false}
-      />
-      {controls.blocked && <p className="soundboard-note">{t(BLOCK_MESSAGES[controls.blocked])}</p>}
-      {previewFailed && (
-        <p className="soundboard-note">{t('soundboard.previewFailed', { name: previewFailed })}</p>
-      )}
+        <span className="soundboard-volume">
+          <button
+            type="button"
+            className={`icon-button soundboard-mute${settings.muted ? ' voice-off' : ''}`}
+            onClick={() => setMuted(!settings.muted)}
+            aria-pressed={settings.muted}
+            title={settings.muted ? t('soundboard.unmute') : t('soundboard.mute')}
+            aria-label={settings.muted ? t('soundboard.unmute') : t('soundboard.mute')}
+          >
+            <IconSpeaker muted={settings.muted} />
+          </button>
+          <input
+            type="range"
+            min={0}
+            max={100}
+            step={5}
+            value={percent}
+            disabled={settings.muted}
+            onChange={(event) =>
+              soundboardSettings.set({ ...settings, volume: Number(event.target.value) / 100 })
+            }
+            title={t('soundboard.volume')}
+            aria-label={t('soundboard.volume')}
+            aria-valuetext={`${percent}%`}
+          />
+          <span className="soundboard-volume-value">{percent}%</span>
+        </span>
+      </div>
 
-      <div className="soundboard-list">
-        {search ? (
-          <>
-            {search.sounds.map((sound) => row(sound, isFavorite(favoriteList, sound.slug)))}
-            {search.loading && <p className="soundboard-note">{t('soundboard.searching')}</p>}
-            {search.failed && <p className="soundboard-note">{t('soundboard.searchFailed')}</p>}
-            {!search.loading && !search.failed && search.sounds.length === 0 && (
-              <p className="soundboard-note">{t('soundboard.noResults')}</p>
+      {editingPad ? (
+        <PadEditor
+          key={editingPad.slug}
+          pad={editingPad}
+          shortcut={shortcuts}
+          previewDisabled={settings.muted}
+          onPreview={() => void preview(editingPad)}
+          onSave={(change) => {
+            padStore.set(renamePad(padStore.get(), editingPad.slug, change));
+            setEditing(null);
+          }}
+          onRemove={() => {
+            remove(editingPad.slug);
+            setEditing(null);
+          }}
+          onBack={() => setEditing(null)}
+        />
+      ) : (
+        <>
+          <div className="soundboard-search">
+            <IconSearch />
+            <input
+              ref={searchRef}
+              type="search"
+              placeholder={t('soundboard.search')}
+              aria-label={t('soundboard.search')}
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              spellCheck={false}
+            />
+          </div>
+          {controls.blocked && (
+            <p className="soundboard-note">{t(BLOCK_MESSAGES[controls.blocked])}</p>
+          )}
+          {previewFailed && (
+            <p className="soundboard-note">
+              {t('soundboard.previewFailed', { name: previewFailed })}
+            </p>
+          )}
+          {/* Empties over the two seconds before the next sound may play. */}
+          <div className="soundboard-cooldown" aria-hidden="true">
+            {coolingDown && (
+              <span key={controls.readyAt} style={{ animationDuration: `${SEND_INTERVAL_MS}ms` }} />
             )}
-            {search.next && !search.loading && (
-              <button type="button" className="soundboard-more" onClick={loadMore}>
-                {t('soundboard.more')}
-              </button>
-            )}
-          </>
-        ) : (
-          <>
-            <h3 className="soundboard-heading">
-              {t('soundboard.favorites', { count: favoriteList.length, max: MAX_FAVORITES })}
-            </h3>
-            {favoriteList.length === 0 && (
-              <p className="soundboard-note">{t('soundboard.empty')}</p>
-            )}
-            {favoriteList.map((sound) => row(sound, true))}
-            {recentList.length > 0 && (
+          </div>
+
+          <div className="soundboard-list">
+            {search ? (
               <>
-                <h3 className="soundboard-heading">{t('soundboard.recents')}</h3>
-                {recentList.map((sound) => row(sound, isFavorite(favoriteList, sound.slug)))}
+                {search.sounds.map((sound) => (
+                  <SoundRow
+                    key={sound.slug}
+                    sound={sound}
+                    added={onPad(padList, sound.slug)}
+                    padFull={padFull}
+                    playDisabled={playDisabled}
+                    previewDisabled={settings.muted}
+                    onPlay={() => void controls.send(sound)}
+                    onPreview={() => void preview(sound)}
+                    onTogglePad={() => togglePad(sound)}
+                  />
+                ))}
+                {search.loading && <p className="soundboard-note">{t('soundboard.searching')}</p>}
+                {search.failed && <p className="soundboard-note">{t('soundboard.searchFailed')}</p>}
+                {!search.loading && !search.failed && search.sounds.length === 0 && (
+                  <p className="soundboard-note">{t('soundboard.noResults')}</p>
+                )}
+                {search.next && !search.loading && (
+                  <button type="button" className="soundboard-more" onClick={loadMore}>
+                    {t('soundboard.more')}
+                  </button>
+                )}
+              </>
+            ) : (
+              <>
+                <h3 className="soundboard-heading">
+                  {t('soundboard.pad', { count: padList.length, max: MAX_PADS })}
+                </h3>
+                <div className="soundpad">
+                  {padList.map((pad) => (
+                    <PadButton
+                      key={pad.slug}
+                      pad={pad}
+                      shortcut={shortcuts.available ? shortcuts.bound(pad.slug) : null}
+                      playDisabled={playDisabled}
+                      previewDisabled={settings.muted}
+                      onPlay={() => void controls.send(padSound(pad))}
+                      onPreview={() => void preview(pad)}
+                      onEdit={() => setEditing(pad.slug)}
+                    />
+                  ))}
+                  {!padFull && (
+                    <button
+                      type="button"
+                      className={`soundpad-add${padList.length === 0 ? ' empty' : ''}`}
+                      onClick={() => searchRef.current?.focus()}
+                    >
+                      <IconPlus />
+                      <span>
+                        {padList.length === 0 ? t('soundboard.empty') : t('soundboard.find')}
+                      </span>
+                    </button>
+                  )}
+                </div>
+                {recentList.length > 0 && (
+                  <>
+                    <h3 className="soundboard-heading">{t('soundboard.recents')}</h3>
+                    {recentList.map((sound) => (
+                      <SoundRow
+                        key={sound.slug}
+                        sound={sound}
+                        added={onPad(padList, sound.slug)}
+                        padFull={padFull}
+                        playDisabled={playDisabled}
+                        onPlay={() => void controls.send(sound)}
+                        onTogglePad={() => togglePad(sound)}
+                        onRemove={() => recents.set(removeRecent(recents.get(), sound.slug))}
+                      />
+                    ))}
+                  </>
+                )}
               </>
             )}
-          </>
-        )}
-      </div>
+          </div>
+        </>
+      )}
       <p className="soundboard-from">{t('soundboard.from')}</p>
     </div>,
     document.body,
@@ -274,7 +394,7 @@ function searchFrom(query: string, before: Sound[], page: SoundPage | null): Sea
   return { query, sounds, next: page.next, loading: false, failed: false };
 }
 
-/** The favourites' shortcuts main holds, and recording one. */
+/** The pads' shortcuts main holds, and recording one. */
 function useSoundShortcuts() {
   const [state, setState] = useState<ShortcutsState | null>(null);
   const [recording, setRecording] = useState<SoundShortcut | null>(null);
@@ -335,32 +455,280 @@ function useSoundShortcuts() {
 
 type SoundShortcuts = ReturnType<typeof useSoundShortcuts>;
 
-function SoundRow({
-  sound,
-  favorite,
-  favoritesFull,
+/**
+ * One pad: pressing it plays its sound for the channel, a right-click edits
+ * it. Previewing and editing are its own buttons, in its corner on hover.
+ */
+function PadButton({
+  pad,
+  shortcut,
   playDisabled,
   previewDisabled,
   onPlay,
   onPreview,
-  onToggleFavorite,
-  shortcut,
+  onEdit,
 }: {
-  sound: Sound;
-  favorite: boolean;
-  favoritesFull: boolean;
+  pad: Pad;
+  shortcut: { label: string } | null;
   playDisabled: boolean;
   previewDisabled: boolean;
   onPlay: () => void;
   onPreview: () => void;
-  onToggleFavorite: () => void;
-  /** A favourite's shortcut, when it is one. */
-  shortcut: SoundShortcuts | null;
+  onEdit: () => void;
 }) {
   const t = useT();
-  const starDisabled = !favorite && favoritesFull;
-  const bound = shortcut?.bound(sound.slug) ?? null;
-  const listening = shortcut?.recording === sound.slug;
+  return (
+    <div className="soundpad-cell">
+      <button
+        type="button"
+        className="soundpad-pad"
+        onClick={onPlay}
+        onContextMenu={(event) => {
+          event.preventDefault();
+          onEdit();
+        }}
+        disabled={playDisabled}
+        title={t('soundboard.play', { name: pad.name })}
+      >
+        <span className="soundpad-emoji" aria-hidden="true">
+          {pad.emoji ?? <IconNote />}
+        </span>
+        <span className="soundpad-name">{pad.name}</span>
+        {shortcut && <kbd className="soundpad-key">{shortcut.label}</kbd>}
+      </button>
+      <span className="soundpad-tools">
+        <button
+          type="button"
+          className="soundpad-tool"
+          onClick={onPreview}
+          disabled={previewDisabled}
+          title={t('soundboard.preview', { name: pad.name })}
+          aria-label={t('soundboard.preview', { name: pad.name })}
+        >
+          <IconPreview />
+        </button>
+        <button
+          type="button"
+          className="soundpad-tool"
+          onClick={onEdit}
+          title={t('soundboard.edit', { name: pad.name })}
+          aria-label={t('soundboard.edit', { name: pad.name })}
+        >
+          <IconEdit />
+        </button>
+      </span>
+    </div>
+  );
+}
+
+/**
+ * Editing a pad, in the pad's place: its emoji, its name, which may hold
+ * emoji too, and its shortcut. Saving keeps the name and emoji; a shortcut is
+ * kept as soon as it is recorded, as voice's are.
+ */
+function PadEditor({
+  pad,
+  shortcut,
+  previewDisabled,
+  onPreview,
+  onSave,
+  onRemove,
+  onBack,
+}: {
+  pad: Pad;
+  shortcut: SoundShortcuts;
+  previewDisabled: boolean;
+  onPreview: () => void;
+  onSave: (change: { name: string; emoji: string | null }) => void;
+  onRemove: () => void;
+  onBack: () => void;
+}) {
+  const t = useT();
+  const [name, setName] = useState(pad.name);
+  const [emoji, setEmoji] = useState(pad.emoji ?? '');
+  const nameRef = useRef<HTMLInputElement>(null);
+  const emojiRef = useRef<HTMLInputElement>(null);
+  // Where the system's picker types: the field used last, the name at first.
+  const lastField = useRef<HTMLInputElement | null>(null);
+  const bound = shortcut.bound(pad.slug);
+  const listening = shortcut.recording === pad.slug;
+
+  useLayoutEffect(() => {
+    nameRef.current?.select();
+  }, []);
+
+  const save = () => onSave({ name, emoji: emoji || null });
+  // The grid's buttons must not take the focus from the field being typed in.
+  const keepFocus = (event: ReactMouseEvent) => event.preventDefault();
+
+  return (
+    <div className="soundpad-editor">
+      <div className="soundpad-editor-head">
+        <button
+          type="button"
+          className="icon-button soundboard-icon"
+          onClick={onBack}
+          title={t('soundboard.back')}
+          aria-label={t('soundboard.back')}
+        >
+          <IconBack />
+        </button>
+        <span className="soundboard-title">{t('soundboard.editTitle')}</span>
+      </div>
+
+      <div className="soundpad-editor-fields">
+        <input
+          ref={emojiRef}
+          className="soundpad-emoji-input"
+          value={emoji}
+          placeholder="🔊"
+          aria-label={t('soundboard.emoji')}
+          title={t('soundboard.emoji')}
+          onFocus={(event) => (lastField.current = event.currentTarget)}
+          // Only an emoji goes here: the last one typed or picked, or none.
+          onChange={(event) => {
+            const value = event.target.value;
+            if (!value.trim()) setEmoji('');
+            else {
+              const next = padEmoji(value);
+              if (next) setEmoji(next);
+            }
+          }}
+          onKeyDown={(event) => event.key === 'Enter' && save()}
+        />
+        <input
+          ref={nameRef}
+          className="soundpad-name-input"
+          value={name}
+          placeholder={t('soundboard.name')}
+          aria-label={t('soundboard.name')}
+          // Counted again by character on saving; this only stops a paste of a page.
+          maxLength={MAX_PAD_NAME * 4}
+          spellCheck={false}
+          onFocus={(event) => (lastField.current = event.currentTarget)}
+          onChange={(event) => setName(event.target.value)}
+          onKeyDown={(event) => event.key === 'Enter' && save()}
+        />
+      </div>
+
+      <div
+        className="emoji-grid soundpad-emoji-grid"
+        role="group"
+        aria-label={t('soundboard.emoji')}
+      >
+        {PAD_EMOJI.map((e) => (
+          <button
+            key={e}
+            type="button"
+            className={e === emoji ? 'chosen' : undefined}
+            onMouseDown={keepFocus}
+            onClick={() => setEmoji(e === emoji ? '' : e)}
+            aria-label={e}
+            aria-pressed={e === emoji}
+          >
+            {e}
+          </button>
+        ))}
+        {/* Every other emoji, with search: the system's own picker, which types
+            into the field used last, so into the name as well. */}
+        <button
+          type="button"
+          className="emoji-more"
+          onMouseDown={keepFocus}
+          onClick={() => {
+            (lastField.current ?? nameRef.current)?.focus();
+            void window.zoia.app.emojiPanel();
+          }}
+          title={t('sidebar.moreEmoji')}
+          aria-label={t('sidebar.moreEmoji')}
+        >
+          …
+        </button>
+      </div>
+
+      {shortcut.available && (
+        <div className="soundpad-editor-row">
+          <span className="soundpad-editor-label">{t('soundboard.shortcutLabel')}</span>
+          <button
+            type="button"
+            className={`voice-keybind${listening ? ' recording' : ''}${bound ? '' : ' unset'}`}
+            onClick={() => (listening ? shortcut.cancel() : void shortcut.record(pad.slug))}
+            title={
+              bound
+                ? t('soundboard.shortcutOf', { name: pad.name, shortcut: bound.label })
+                : t('soundboard.shortcut')
+            }
+          >
+            {listening
+              ? t('soundboard.shortcutRecording')
+              : bound
+                ? bound.label.split(' + ').map((key, i) => <kbd key={i}>{key}</kbd>)
+                : t('soundboard.shortcut')}
+          </button>
+          {bound && !listening && (
+            <button
+              type="button"
+              className="icon-button soundboard-icon"
+              onClick={() => void shortcut.clear(pad.slug)}
+              title={t('soundboard.shortcutClear')}
+              aria-label={t('soundboard.shortcutClear')}
+            >
+              <IconClose />
+            </button>
+          )}
+        </div>
+      )}
+
+      <div className="soundpad-editor-actions">
+        <button type="button" className="danger" onClick={onRemove}>
+          {t('soundboard.removePad')}
+        </button>
+        <span className="soundpad-editor-spacer" />
+        <button
+          type="button"
+          className="icon-button soundboard-icon"
+          onClick={onPreview}
+          disabled={previewDisabled}
+          title={t('soundboard.preview', { name: pad.name })}
+          aria-label={t('soundboard.preview', { name: pad.name })}
+        >
+          <IconPreview />
+        </button>
+        <button type="button" className="primary" onClick={save}>
+          {t('soundboard.save')}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * A sound found on Myinstants or played lately: play it, put it on your pad,
+ * and preview a found one or take a recent one off the list.
+ */
+function SoundRow({
+  sound,
+  added,
+  padFull,
+  playDisabled,
+  previewDisabled,
+  onPlay,
+  onPreview,
+  onTogglePad,
+  onRemove,
+}: {
+  sound: Sound;
+  added: boolean;
+  padFull: boolean;
+  playDisabled: boolean;
+  previewDisabled?: boolean;
+  onPlay: () => void;
+  onPreview?: () => void;
+  onTogglePad: () => void;
+  onRemove?: () => void;
+}) {
+  const t = useT();
+  const addDisabled = !added && padFull;
   return (
     <div className="soundboard-row">
       <button
@@ -370,106 +738,124 @@ function SoundRow({
         disabled={playDisabled}
         title={t('soundboard.play', { name: sound.name })}
       >
-        <span
-          className="soundboard-swatch"
-          style={sound.color ? { background: `#${sound.color}` } : undefined}
-          aria-hidden="true"
-        />
+        <IconNote />
         <span className="soundboard-name">{sound.name}</span>
       </button>
-      {shortcut?.available && (
-        <span className="soundboard-shortcut">
-          <button
-            type="button"
-            className={`voice-keybind${listening ? ' recording' : ''}${bound ? '' : ' unset'}`}
-            onClick={() => (listening ? shortcut.cancel() : void shortcut.record(sound.slug))}
-            title={
-              bound
-                ? t('soundboard.shortcutOf', { name: sound.name, shortcut: bound.label })
-                : t('soundboard.shortcut')
-            }
-          >
-            {listening
-              ? t('soundboard.shortcutRecording')
-              : bound
-                ? bound.label.split(' + ').map((key, i) => <kbd key={i}>{key}</kbd>)
-                : '⌨'}
-          </button>
-          {bound && !listening && (
-            <button
-              type="button"
-              className="icon-button soundboard-icon"
-              onClick={() => void shortcut.clear(sound.slug)}
-              title={t('soundboard.shortcutClear')}
-              aria-label={t('soundboard.shortcutClear')}
-            >
-              <svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true">
-                <path
-                  d="M6 6l12 12M18 6L6 18"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                />
-              </svg>
-            </button>
-          )}
-        </span>
+      {onPreview && (
+        <button
+          type="button"
+          className="icon-button soundboard-icon"
+          onClick={onPreview}
+          disabled={previewDisabled}
+          title={t('soundboard.preview', { name: sound.name })}
+          aria-label={t('soundboard.preview', { name: sound.name })}
+        >
+          <IconPreview />
+        </button>
       )}
       <button
         type="button"
-        className="icon-button soundboard-icon"
-        onClick={onPreview}
-        disabled={previewDisabled}
-        title={t('soundboard.preview', { name: sound.name })}
-        aria-label={t('soundboard.preview', { name: sound.name })}
-      >
-        <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
-          <path d="M8 5v14l11-7z" fill="currentColor" />
-        </svg>
-      </button>
-      <button
-        type="button"
-        className={`icon-button soundboard-icon soundboard-star${favorite ? ' on' : ''}`}
-        onClick={onToggleFavorite}
-        disabled={starDisabled}
-        aria-pressed={favorite}
+        className={`icon-button soundboard-icon soundboard-add${added ? ' on' : ''}`}
+        onClick={onTogglePad}
+        disabled={addDisabled}
+        aria-pressed={added}
         title={
-          starDisabled
-            ? t('soundboard.favoritesFull', { max: MAX_FAVORITES })
-            : favorite
-              ? t('soundboard.unfavorite')
-              : t('soundboard.favorite')
+          addDisabled
+            ? t('soundboard.padFull', { max: MAX_PADS })
+            : added
+              ? t('soundboard.removePad')
+              : t('soundboard.addPad')
         }
-        aria-label={favorite ? t('soundboard.unfavorite') : t('soundboard.favorite')}
+        aria-label={added ? t('soundboard.removePad') : t('soundboard.addPad')}
       >
-        <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
-          <path
-            d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9z"
-            fill={favorite ? 'currentColor' : 'none'}
-            stroke="currentColor"
-            strokeWidth="1.8"
-            strokeLinejoin="round"
-          />
-        </svg>
+        {added ? <IconCheck /> : <IconPlus />}
       </button>
+      {onRemove && (
+        <button
+          type="button"
+          className="icon-button soundboard-icon"
+          onClick={onRemove}
+          title={t('soundboard.removeRecent')}
+          aria-label={t('soundboard.removeRecent')}
+        >
+          <IconClose />
+        </button>
+      )}
     </div>
+  );
+}
+
+const ICON = {
+  viewBox: '0 0 24 24',
+  'aria-hidden': true,
+  fill: 'none',
+  stroke: 'currentColor',
+  strokeWidth: 2,
+  strokeLinecap: 'round',
+  strokeLinejoin: 'round',
+} as const;
+
+function IconPreview() {
+  return (
+    <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+      <path d="M8 5v14l11-7z" fill="currentColor" />
+    </svg>
+  );
+}
+
+function IconEdit() {
+  return (
+    <svg {...ICON} width="13" height="13">
+      <path d="M4 20h4L19 9l-4-4L4 16z" />
+    </svg>
+  );
+}
+
+function IconPlus() {
+  return (
+    <svg {...ICON} width="14" height="14">
+      <path d="M12 5v14M5 12h14" />
+    </svg>
+  );
+}
+
+function IconCheck() {
+  return (
+    <svg {...ICON} width="14" height="14">
+      <path d="M5 12.5l4.5 4.5L19 7" />
+    </svg>
+  );
+}
+
+function IconClose() {
+  return (
+    <svg {...ICON} width="12" height="12">
+      <path d="M6 6l12 12M18 6L6 18" />
+    </svg>
+  );
+}
+
+function IconBack() {
+  return (
+    <svg {...ICON} width="16" height="16">
+      <path d="M15 5l-7 7 7 7" />
+    </svg>
+  );
+}
+
+function IconSearch() {
+  return (
+    <svg {...ICON} width="14" height="14">
+      <circle cx="11" cy="11" r="6" />
+      <path d="M20 20l-4.5-4.5" />
+    </svg>
   );
 }
 
 /** A speaker: the soundboard. Struck through, its sounds muted. */
 export function IconSpeaker({ muted = false }: { muted?: boolean }) {
   return (
-    <svg
-      viewBox="0 0 24 24"
-      width="18"
-      height="18"
-      aria-hidden="true"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
+    <svg {...ICON} width="18" height="18">
       <path d="M4 9h4l5-4v14l-5-4H4z" />
       {muted ? (
         <path d="M17 9l4 6M21 9l-4 6" />
@@ -483,17 +869,7 @@ export function IconSpeaker({ muted = false }: { muted?: boolean }) {
 /** A note: the soundboard's button, and someone playing a sound. */
 export function IconNote() {
   return (
-    <svg
-      viewBox="0 0 24 24"
-      width="18"
-      height="18"
-      aria-hidden="true"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
+    <svg {...ICON} width="18" height="18">
       <path d="M9 18V5l11-2v13" />
       <circle cx="6" cy="18" r="3" />
       <circle cx="17" cy="16" r="3" />

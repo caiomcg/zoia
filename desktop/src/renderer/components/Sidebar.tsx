@@ -999,7 +999,6 @@ export default function Sidebar({
                 {currentChannelName}
               </span>
             </span>
-            {share && <ShareButtons share={share} />}
             <button
               className="icon-button sidebar-settings sidebar-leave"
               onClick={onLeaveChannel}
@@ -1009,6 +1008,29 @@ export default function Sidebar({
               <IconLeave />
             </button>
           </div>
+          {/* What you can do in it, a row of equal buttons under where you are. */}
+          {(share || (soundboard && voice?.state === 'on')) && (
+            <div className="voice-panel-actions">
+              {share && <ShareButtons share={share} wide />}
+              {soundboard && voice?.state === 'on' && (
+                <button
+                  className={`icon-button voice-action${soundboardAnchor ? ' active' : ''}`}
+                  onClick={(event) =>
+                    setSoundboardAnchor(
+                      soundboardAnchor ? null : event.currentTarget.getBoundingClientRect(),
+                    )
+                  }
+                  aria-haspopup="dialog"
+                  aria-expanded={soundboardAnchor !== null}
+                  title={t('soundboard.title')}
+                  aria-label={t('soundboard.title')}
+                  {...{ [TOGGLE_ATTRIBUTE]: '' }}
+                >
+                  <IconNote />
+                </button>
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -1068,23 +1090,6 @@ export default function Sidebar({
         {/* In voice, as Discord has them: your microphone, and every sound. */}
         {!collapsed && voice && voice.state === 'on' && (
           <>
-            {soundboard && (
-              <button
-                className={`icon-button sidebar-settings${soundboardAnchor ? ' active' : ''}`}
-                onClick={(event) =>
-                  setSoundboardAnchor(
-                    soundboardAnchor ? null : event.currentTarget.getBoundingClientRect(),
-                  )
-                }
-                aria-haspopup="dialog"
-                aria-expanded={soundboardAnchor !== null}
-                title={t('soundboard.title')}
-                aria-label={t('soundboard.title')}
-                {...{ [TOGGLE_ATTRIBUTE]: '' }}
-              >
-                <IconNote />
-              </button>
-            )}
             <button
               className={`icon-button sidebar-settings${voice.muted ? ' voice-off' : ''}`}
               onClick={voice.onToggleMute}
@@ -1364,7 +1369,7 @@ function MemberRow({
       </span>
       <span className="member-name">{m.name}</span>
       {m.isLocal && <span className="you-tag">{t('common.youTag')}</span>}
-      {!m.isLocal && <PlayingSound identity={m.identity} />}
+      <PlayingSound identity={m.identity} />
       {/* Everyone here is in voice, so only silence is news: hearing
           nothing, which also mutes, or just a muted microphone. */}
       {m.inVoice && (m.voiceDeafened || m.voiceMuted) && (
@@ -1392,19 +1397,21 @@ function MemberRow({
 
 /** Headphones: voice. Struck through, deafened. */
 /**
- * Camera and screen, beside leaving and dressed as it: icons. Green with a
- * dot while live; pressing again is how you stop.
+ * Screen and camera: icons, green with a dot while live; pressing again is
+ * how you stop. Wide, they are the voice panel's row of equal buttons;
+ * compact, a column above your picture in a collapsed sidebar.
  */
-function ShareButtons({ share, compact = false }: { share: SidebarShare; compact?: boolean }) {
+function ShareButtons({
+  share,
+  compact = false,
+  wide = false,
+}: {
+  share: SidebarShare;
+  compact?: boolean;
+  wide?: boolean;
+}) {
   const t = useT();
   const buttons = [
-    {
-      key: 'camera',
-      live: share.cameraLive,
-      onClick: share.onCamera,
-      title: share.cameraLive ? t('top.cameraTitleLive') : t('top.cameraTitle'),
-      icon: <IconCamera />,
-    },
     {
       key: 'screen',
       live: share.screenLive,
@@ -1412,17 +1419,24 @@ function ShareButtons({ share, compact = false }: { share: SidebarShare; compact
       title: share.screenLive ? t('top.screenTitleLive') : t('top.screenTitle'),
       icon: <IconScreen />,
     },
+    {
+      key: 'camera',
+      live: share.cameraLive,
+      onClick: share.onCamera,
+      title: share.cameraLive ? t('top.cameraTitleLive') : t('top.cameraTitle'),
+      icon: <IconCamera />,
+    },
   ];
   return (
     <div
-      className={`voice-share${compact ? ' compact' : ''}`}
+      className={`voice-share${compact ? ' compact' : ''}${wide ? ' wide' : ''}`}
       role="group"
       aria-label={t('top.whatToShare')}
     >
       {buttons.map((b) => (
         <button
           key={b.key}
-          className={`icon-button sidebar-settings voice-share-button${b.live ? ' live' : ''}${share.hopping ? ' hopping' : ''}`}
+          className={`icon-button ${wide ? 'voice-action' : 'sidebar-settings'} voice-share-button${b.live ? ' live' : ''}${share.hopping ? ' hopping' : ''}`}
           disabled={share.disabled}
           onClick={b.onClick}
           title={b.title}

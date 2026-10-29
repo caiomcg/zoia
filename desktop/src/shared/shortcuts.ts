@@ -1,6 +1,6 @@
 /**
  * The global shortcuts: voice's push to talk, toggle mute and toggle deafen
- * (ADR 0039), and a soundboard favourite each (ADR 0040). A binding is what
+ * (ADR 0039), and one for each soundboard pad (ADR 0040). A binding is what
  * has to be held at once, keys and mouse buttons alike, so "Ctrl+Shift+M" and
  * "Mouse 4" are the same kind of thing.
  *
@@ -17,12 +17,12 @@ export const SHORTCUT_ACTIONS: readonly VoiceShortcut[] = [
   'toggleDeafen',
 ];
 
-/** Plays a soundboard favourite, named by its Myinstants slug. */
+/** Plays a soundboard pad, named by its Myinstants slug. */
 export type SoundShortcut = `sound:${string}`;
 
 export type ShortcutAction = VoiceShortcut | SoundShortcut;
 
-/** As many as there may be favourites: one each. Must match MAX_FAVORITES. */
+/** As many as there may be pads: one each. Must match MAX_PADS. */
 export const MAX_SOUND_SHORTCUTS = 20;
 
 const SOUND_SHORTCUT = /^sound:[A-Za-z0-9_-]{1,120}$/;
@@ -50,7 +50,7 @@ export type InputCode = string;
 /** Everything held together, in a stable order: modifiers first, mouse last. */
 export type Binding = InputCode[];
 
-/** Voice's three always, and whichever favourites have one. */
+/** Voice's three always, and whichever pads have one. */
 export type Bindings = Record<VoiceShortcut, Binding | null> &
   Partial<Record<SoundShortcut, Binding | null>>;
 
