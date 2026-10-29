@@ -2587,6 +2587,12 @@ button.danger {
   padding: 6px 8px 8px 26px;
 }
 
+/* Each face a box of its own, not a line of text: on a line, a crowned face's
+   wrapper sat on the text's baseline and dropped below the rest. */
+.channel-people > span {
+  display: flex;
+}
+
 .channel-people .avatar {
   width: 20px;
   height: 20px;
