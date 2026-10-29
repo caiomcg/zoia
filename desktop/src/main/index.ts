@@ -26,7 +26,8 @@ import { getCloseToTray, installTray, setCloseToTray, showWindow } from './tray'
 import { isDevToolsEnabled, openDevTools, setDevToolsEnabled } from './devtools';
 import * as language from './language';
 import * as shortcuts from './shortcuts';
-import { SHORTCUT_ACTIONS, type ShortcutAction } from '../shared/shortcuts';
+import * as soundboard from './soundboard';
+import { isShortcutAction } from '../shared/shortcuts';
 import { isLanguagePreference } from '../shared/i18n';
 import { CHAT_MEDIA_MAX_BYTES, IDLE_AWAY_MS, IPC, PRESENCES } from '../shared/ipc';
 import type { ChatSendExtras, GpuStatus } from '../shared/ipc';
@@ -432,21 +433,30 @@ function registerIpc(): void {
   app.on('browser-window-created', (_event, window) => {
     if (deafened) window.webContents.setAudioMuted(true);
   });
-  // Push to talk, mute and deafen from anywhere (ADR 0039). The main window
-  // is where voice lives, so it is the one told.
+  // Push to talk, mute, deafen and soundboard favourites from anywhere (ADR
+  // 0039, 0040). The main window is where voice lives, so it is the one told.
   shortcuts.initShortcuts((event) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send(IPC.shortcutsFire, event);
     }
   });
   ipcMain.handle(IPC.shortcutsGet, () => shortcuts.state());
-  ipcMain.handle(IPC.shortcutsRecord, (_event, action: ShortcutAction) =>
-    SHORTCUT_ACTIONS.includes(action) ? shortcuts.record(action) : null,
+  ipcMain.handle(IPC.shortcutsRecord, (_event, action: unknown) =>
+    isShortcutAction(action) ? shortcuts.record(action) : null,
   );
   ipcMain.handle(IPC.shortcutsCancel, () => shortcuts.cancelRecording());
-  ipcMain.handle(IPC.shortcutsClear, (_event, action: ShortcutAction) =>
-    SHORTCUT_ACTIONS.includes(action) ? shortcuts.clear(action) : shortcuts.state(),
+  ipcMain.handle(IPC.shortcutsClear, (_event, action: unknown) =>
+    isShortcutAction(action) ? shortcuts.clear(action) : shortcuts.state(),
   );
+  // The soundboard (ADR 0040): Myinstants is read from here, where a page's
+  // CORS does not apply, and its files are kept on this machine.
+  ipcMain.handle(IPC.soundboardSearch, (_event, query: unknown, page: unknown) =>
+    soundboard.search(
+      typeof query === 'string' ? query : '',
+      typeof page === 'number' && Number.isInteger(page) && page > 0 ? page : 1,
+    ),
+  );
+  ipcMain.handle(IPC.soundboardSound, (_event, url: unknown) => soundboard.sound(url));
 
   ipcMain.handle(IPC.sourcesList, (_event, fresh?: boolean) => sources.listSources(fresh === true));
   ipcMain.handle(IPC.sourcesInstant, () => sources.instantSources());

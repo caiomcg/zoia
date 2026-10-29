@@ -28,6 +28,8 @@ import { setPushToTalk } from './voice/pipeline';
 import { playVoiceCue, VOICE_CUE_MS } from './sounds/synth';
 import { getSoundSettings } from './sounds/settings';
 import { useSoundCues } from './sounds/useSoundCues';
+import { useSoundboard } from './soundboard/useSoundboard';
+import { shortcutSound } from '../shared/shortcuts';
 import { LAST_VERSION_STORAGE_KEY, shouldShowReleaseNotes } from './whats-new';
 import { useExit } from './presence';
 import { primeAvatar, publishAvatarVersions, type EncodedAvatar } from './avatars';
@@ -203,6 +205,9 @@ export default function App() {
       setTimeout(() => void voiceRef.current.setDeafened(true), VOICE_CUE_MS);
     }
   }, []);
+  // The soundboard (ADR 0040): what others play, and playing to them.
+  const soundboard = useSoundboard(room.room, room.state, voice);
+  const { sendFavorite } = soundboard;
   useEffect(
     () =>
       window.zoia.shortcuts.onFire(({ action, pressed }) => {
@@ -210,8 +215,12 @@ export default function App() {
         else if (!pressed) return;
         else if (action === 'toggleMute') toggleMute();
         else if (action === 'toggleDeafen') toggleDeafen();
+        else {
+          const slug = shortcutSound(action);
+          if (slug) sendFavorite(slug);
+        }
       }),
-    [toggleMute, toggleDeafen],
+    [toggleMute, toggleDeafen, sendFavorite],
   );
   const [sidebarCollapsed, setSidebarCollapsed] = useSidebarCollapsed();
   const gpuCast = useGpuBroadcast();
@@ -1194,6 +1203,7 @@ export default function App() {
             onToggleMute: toggleMute,
             onToggleDeafen: toggleDeafen,
           }}
+          soundboard={soundboard}
           share={{
             screenLive,
             cameraLive,

@@ -19,6 +19,11 @@ import StatusMenu from './StatusMenu';
 import { useFloatingMenu } from './useFloatingMenu';
 import type { VoiceState } from '../voice/useVoice';
 import { setVoiceVolume, useVoiceVolume, VOLUME_MAX } from '../voice/volumes';
+import SoundboardPanel, { IconNote, TOGGLE_ATTRIBUTE } from './SoundboardPanel';
+import type { SoundboardControls } from '../soundboard/useSoundboard';
+import { soundboardSettings, usePersonMuted } from '../soundboard/library';
+import { setPersonMuted } from '../soundboard/model';
+import { usePlayingSound } from '../soundboard/player';
 import { useT } from '../i18n';
 import { useLeaving } from '../presence';
 import type { PresenceController } from '../chat/usePresence';
@@ -408,9 +413,12 @@ export default function Sidebar({
   collapsed,
   onCollapsedChange,
   voice,
+  soundboard,
 }: {
   /** Absent: no voice controls at all. */
   voice?: SidebarVoice;
+  /** The soundboard (ADR 0040), beside your microphone; absent, no button for it. */
+  soundboard?: SoundboardControls;
   members: RoomMember[];
   myName: string;
   /** Yours, for your own profile picture in the footer. */
@@ -574,6 +582,14 @@ export default function Sidebar({
   // Your picture in the footer opens your status, from where it sits.
   const [statusAnchor, setStatusAnchor] = useState<DOMRect | null>(null);
   const closeStatus = useCallback(() => setStatusAnchor(null), []);
+
+  // The soundboard opens above its button in the footer, while in voice.
+  const [soundboardAnchor, setSoundboardAnchor] = useState<DOMRect | null>(null);
+  const closeSoundboard = useCallback(() => setSoundboardAnchor(null), []);
+  const inVoice = !collapsed && voice?.state === 'on';
+  useEffect(() => {
+    if (!inVoice) setSoundboardAnchor(null);
+  }, [inVoice]);
 
   // Right-clicking someone opens what you can do about them: their voice's
   // volume while you both are in voice, and a kick for an admin.
@@ -1040,6 +1056,23 @@ export default function Sidebar({
         {/* In voice, as Discord has them: your microphone, and every sound. */}
         {!collapsed && voice && voice.state === 'on' && (
           <>
+            {soundboard && (
+              <button
+                className={`icon-button sidebar-settings${soundboardAnchor ? ' active' : ''}`}
+                onClick={(event) =>
+                  setSoundboardAnchor(
+                    soundboardAnchor ? null : event.currentTarget.getBoundingClientRect(),
+                  )
+                }
+                aria-haspopup="dialog"
+                aria-expanded={soundboardAnchor !== null}
+                title={t('soundboard.title')}
+                aria-label={t('soundboard.title')}
+                {...{ [TOGGLE_ATTRIBUTE]: '' }}
+              >
+                <IconNote />
+              </button>
+            )}
             <button
               className={`icon-button sidebar-settings${voice.muted ? ' voice-off' : ''}`}
               onClick={voice.onToggleMute}
@@ -1090,6 +1123,13 @@ export default function Sidebar({
           chosen={presence.chosen}
           onChoose={(status) => void presence.choose(status)}
           onClose={closeStatus}
+        />
+      )}
+      {soundboardAnchor && soundboard && (
+        <SoundboardPanel
+          anchor={soundboardAnchor}
+          controls={soundboard}
+          onClose={closeSoundboard}
         />
       )}
       {menu && (
@@ -1152,6 +1192,7 @@ function MemberMenu({
         </span>
       </div>
       {volume && <VoiceVolume identity={identity} name={name} />}
+      {volume && <SoundboardMute identity={identity} />}
       {onKick && (
         <button type="button" role="menuitem" className="member-menu-item" onClick={choose(onKick)}>
           <IconKick />
@@ -1187,6 +1228,39 @@ function VoiceVolume({ identity, name }: { identity: string; name: string }) {
         aria-valuetext={`${percent}%`}
       />
     </label>
+  );
+}
+
+/** Whether you hear someone's soundboard sounds (ADR 0040), kept like their volume. */
+function SoundboardMute({ identity }: { identity: string }) {
+  const t = useT();
+  const muted = usePersonMuted(identity);
+  return (
+    <label className="member-menu-check">
+      <input
+        type="checkbox"
+        checked={muted}
+        onChange={(event) =>
+          soundboardSettings.set(
+            setPersonMuted(soundboardSettings.get(), identity, event.target.checked),
+          )
+        }
+      />
+      {t('soundboard.mutePerson')}
+    </label>
+  );
+}
+
+/** The sound someone is playing for you, beside their name, while it plays. */
+function PlayingSound({ identity }: { identity: string }) {
+  const t = useT();
+  const sound = usePlayingSound(identity);
+  if (!sound) return null;
+  const label = t('soundboard.playing', { sound });
+  return (
+    <span className="member-sound" title={label} aria-label={label} role="img">
+      <IconNote />
+    </span>
   );
 }
 
@@ -1277,6 +1351,7 @@ function MemberRow({
       </span>
       <span className="member-name">{m.name}</span>
       {m.isLocal && <span className="you-tag">{t('common.youTag')}</span>}
+      {!m.isLocal && <PlayingSound identity={m.identity} />}
       {/* Everyone here is in voice, so only silence is news: hearing
           nothing, which also mutes, or just a muted microphone. */}
       {m.inVoice && (m.voiceDeafened || m.voiceMuted) && (

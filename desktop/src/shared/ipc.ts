@@ -527,6 +527,8 @@ export const IPC = {
   shortcutsCancel: 'zoia:shortcuts:cancel',
   shortcutsClear: 'zoia:shortcuts:clear',
   shortcutsFire: 'zoia:shortcuts:fire',
+  soundboardSearch: 'zoia:soundboard:search',
+  soundboardSound: 'zoia:soundboard:sound',
   sourcesList: 'zoia:sources:list',
   sourcesInstant: 'zoia:sources:instant',
   sourcesSelect: 'zoia:sources:select',

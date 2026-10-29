@@ -584,6 +584,41 @@ export const es: Messages = {
   'sounds.pitch': 'Tono',
   'sounds.preview': 'Escuchar',
 
+  // ---- panel de sonidos (ADR 0040)
+  'soundboard.title': 'Panel de sonidos',
+  'soundboard.settingsIntro':
+    'Sonidos que la gente de tu canal reproduce desde el panel de sonidos, encontrados en Myinstants. Su volumen lo eliges tú.',
+  'soundboard.volume': 'Volumen de los efectos de sonido',
+  'soundboard.mute': 'Silenciar efectos de sonido',
+  'soundboard.unmute': 'Activar efectos de sonido',
+  'soundboard.muteAll': 'Silenciar todos los efectos de sonido',
+  'soundboard.search': 'Buscar en Myinstants',
+  'soundboard.searching': 'Buscando…',
+  'soundboard.searchFailed':
+    'No se pudo conectar con Myinstants. Inténtalo de nuevo en un momento.',
+  'soundboard.noResults': 'No se encontraron sonidos.',
+  'soundboard.more': 'Cargar más',
+  'soundboard.favorites': 'Favoritos · {count}/{max}',
+  'soundboard.recents': 'Recientes',
+  'soundboard.empty': 'Busca un sonido y márcalo con la estrella para guardarlo aquí.',
+  'soundboard.play': 'Reproducir «{name}» para el canal',
+  'soundboard.preview': 'Escuchar «{name}»: solo lo oyes tú',
+  'soundboard.previewFailed': 'No se pudo cargar «{name}».',
+  'soundboard.favorite': 'Añadir a favoritos',
+  'soundboard.unfavorite': 'Quitar de favoritos',
+  'soundboard.favoritesFull': 'Hasta {max} favoritos',
+  'soundboard.shortcut': 'Definir atajo',
+  'soundboard.shortcutOf': 'Atajo de «{name}»: {shortcut}. Haz clic para cambiarlo.',
+  'soundboard.shortcutRecording': 'Pulsa las teclas…',
+  'soundboard.shortcutClear': 'Quitar atajo',
+  'soundboard.notInVoice': 'Entra en la voz para reproducir sonidos.',
+  'soundboard.micMuted': 'Activa el micrófono para reproducir sonidos.',
+  'soundboard.effectsMuted':
+    'Los efectos de sonido están silenciados. Actívalos para reproducir sonidos.',
+  'soundboard.playing': 'Reproduciendo «{sound}»',
+  'soundboard.mutePerson': 'Silenciar sus efectos de sonido',
+  'soundboard.from': 'Sonidos de Myinstants',
+
   // ---- what's new
   'changelog.title': 'Novedades',
   'changelog.titleVersion': 'Novedades de la {version}',

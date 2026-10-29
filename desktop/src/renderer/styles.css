@@ -3525,7 +3525,7 @@ button.danger {
   flex: none;
 }
 
-/* Three buttons beside your name, kept narrow so the name is not. */
+/* Up to four buttons beside your name, kept narrow so the name is not. */
 .sidebar-footer .sidebar-settings {
   width: 30px;
   height: 30px;
@@ -5992,4 +5992,204 @@ button.danger:active:not(:disabled),
   display: flex;
   gap: 8px;
   justify-content: flex-end;
+}
+
+/* ---- soundboard (ADR 0040) ----------------------------------------------- */
+
+/* Above its button in the footer, as your status is, and somewhere to work:
+   a search, a volume and a list, scrolling on its own. */
+.soundboard {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 340px;
+  max-width: calc(100vw - 8px);
+  max-height: min(560px, calc(100vh - 80px));
+  padding: 8px;
+}
+
+.soundboard-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 2px;
+}
+
+.soundboard-title {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.soundboard-mute {
+  width: 30px;
+  height: 30px;
+}
+
+.soundboard-mute.voice-off {
+  color: var(--danger);
+}
+
+.member-menu .soundboard-volume {
+  min-width: 0;
+  padding: 0 2px;
+}
+
+.soundboard-search {
+  box-sizing: border-box;
+  width: 100%;
+  height: 32px;
+  padding: 0 10px;
+  font: inherit;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.soundboard-search:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.soundboard-note {
+  margin: 2px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.soundboard-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.soundboard-heading {
+  margin: 6px 2px 2px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.soundboard-row {
+  display: flex;
+  gap: 2px;
+  align-items: center;
+}
+
+/* The sound itself, which is what plays it for the channel. */
+.soundboard-play {
+  display: flex;
+  flex: 1;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+  height: 32px;
+  padding: 0 8px;
+  font: inherit;
+  color: var(--text);
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.soundboard-play:hover:not(:disabled),
+.soundboard-play:focus-visible {
+  background: var(--raised);
+  outline: none;
+}
+
+.soundboard-play:disabled {
+  color: var(--muted);
+  cursor: default;
+}
+
+/* Its colour on Myinstants, or the accent when it has none. */
+.soundboard-swatch {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  background: var(--accent);
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.25);
+}
+
+.soundboard-play:disabled .soundboard-swatch {
+  opacity: 0.5;
+}
+
+.soundboard-name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.soundboard-icon {
+  flex: none;
+  width: 28px;
+  height: 28px;
+}
+
+.soundboard-star.on {
+  color: var(--warn);
+}
+
+.soundboard-shortcut {
+  display: flex;
+  flex: none;
+  align-items: center;
+}
+
+.soundboard-shortcut .voice-keybind {
+  min-height: 26px;
+  max-width: 120px;
+  padding: 2px 6px;
+}
+
+.soundboard-more {
+  align-self: center;
+  margin: 4px 0;
+}
+
+.soundboard-from {
+  margin: 0 2px;
+  font-size: 11px;
+  color: var(--muted);
+  text-align: right;
+}
+
+/* Someone playing a sound, beside their name while it plays. */
+.member-sound {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  margin-left: auto;
+  color: var(--speaking);
+}
+
+.member-sound svg {
+  width: 14px;
+  height: 14px;
+}
+
+.member-sound + .member-voice,
+.member-sound + .member-camera {
+  margin-left: 4px;
+}
+
+/* Not hearing someone's sounds, on their menu under their voice's volume. */
+.member-menu .member-menu-check {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 10px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  cursor: pointer;
 }
