@@ -1488,8 +1488,9 @@ button.danger {
   border-color: var(--accent);
 }
 
+/* As wide as the pane: a narrower measure broke it into short lines that
+   left most of the pane empty. */
 .about-lede {
-  max-width: 46ch;
   margin: 0;
   font-size: 14px;
   line-height: 1.55;
