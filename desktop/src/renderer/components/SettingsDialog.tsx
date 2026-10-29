@@ -19,7 +19,12 @@ import {
   type CueSettings,
 } from '../sounds/cues';
 import { setSoundSettings, useSoundSettings } from '../sounds/settings';
-import { soundboardSettings, useSoundboardSettings } from '../soundboard/library';
+import {
+  soundboardSettings,
+  stepSoundboardVolume,
+  useSoundboardSettings,
+} from '../soundboard/library';
+import { useWheelRange } from './useWheelRange';
 import VoiceSettingsSection from './VoiceSettings';
 import { playCue } from '../sounds/synth';
 import ReleaseNotesDialog from './ReleaseNotesDialog';
@@ -710,6 +715,7 @@ function SoundboardSettingsSection() {
   const t = useT();
   const settings = useSoundboardSettings();
   const percent = Math.round(settings.volume * 100);
+  const volumeRef = useWheelRange(stepSoundboardVolume);
   return (
     <>
       <h3>{t('soundboard.title')}</h3>
@@ -727,6 +733,7 @@ function SoundboardSettingsSection() {
           {t('soundboard.volume')} · {percent}%
         </span>
         <input
+          ref={volumeRef}
           className="settings-range"
           type="range"
           min={0}

@@ -12,10 +12,12 @@ import { useT } from '../i18n';
 import {
   favorites,
   soundboardSettings,
+  stepSoundboardVolume,
   useFavorites,
   useRecents,
   useSoundboardSettings,
 } from '../soundboard/library';
+import { useWheelRange } from './useWheelRange';
 import { addFavorite, isFavorite, MAX_FAVORITES, removeFavorite } from '../soundboard/model';
 import { playSound } from '../soundboard/player';
 import type { SoundboardControls } from '../soundboard/useSoundboard';
@@ -164,6 +166,7 @@ export default function SoundboardPanel({
 
   const setMuted = (muted: boolean) => soundboardSettings.set({ ...settings, muted });
   const percent = Math.round(settings.volume * 100);
+  const volumeRef = useWheelRange(stepSoundboardVolume);
 
   const row = (sound: Sound, favorite: boolean) => (
     <SoundRow
@@ -207,6 +210,7 @@ export default function SoundboardPanel({
           <span className="member-menu-volume-value">{percent}%</span>
         </span>
         <input
+          ref={volumeRef}
           type="range"
           min={0}
           max={100}

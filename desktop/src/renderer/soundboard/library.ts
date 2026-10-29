@@ -52,6 +52,13 @@ export const favorites = stored('zoia.soundboard.favorites', (raw) =>
 );
 export const recents = stored('zoia.soundboard.recents', (raw) => parseSoundList(raw, MAX_RECENTS));
 
+/** The effects' volume one point up or down, as the mouse wheel moves its slider. */
+export function stepSoundboardVolume(direction: 1 | -1) {
+  const settings = soundboardSettings.get();
+  const percent = Math.min(100, Math.max(0, Math.round(settings.volume * 100) + direction));
+  soundboardSettings.set({ ...settings, volume: percent / 100 });
+}
+
 export function useSoundboardSettings(): SoundboardSettings {
   return useSyncExternalStore(soundboardSettings.subscribe, soundboardSettings.get);
 }
