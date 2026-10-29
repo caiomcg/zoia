@@ -39,6 +39,7 @@ fi
 api_key="API$(openssl rand -hex 6)"
 api_secret="$(openssl rand -base64 36 | tr -d '\n/+=' | head -c 44)"
 session_secret="$(openssl rand -base64 48 | tr -d '\n')"
+addon_host_secret="$(openssl rand -hex 32)"
 
 if [[ -n "$HOMOLOG" ]]; then
   cat >&2 <<EOF
@@ -100,6 +101,11 @@ LIVEKIT_API_SECRET=${api_secret}
 LIVEKIT_KEYS="${api_key}: ${api_secret}"
 
 SESSION_SECRET=${session_secret}
+
+# Addons (docs/adr/0041-addons.md): the addon host runs their containers.
+COMPOSE_PROFILES=addons
+ADDON_HOST_URL=http://addon-host:3100
+ADDON_HOST_SECRET=${addon_host_secret}
 
 # Broadcast quality. Upload needed = MAX_BITRATE x remote viewers.
 MAX_BITRATE=20000000

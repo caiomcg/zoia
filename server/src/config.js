@@ -19,6 +19,12 @@ export function loadConfig(env = process.env) {
     throw new Error('SESSION_SECRET is too short; generate one with: openssl rand -base64 48');
   }
 
+  if (env.ADDON_HOST_URL && (env.ADDON_HOST_SECRET ?? '').length < 32) {
+    throw new Error(
+      'ADDON_HOST_SECRET must be at least 32 characters; generate one with: openssl rand -hex 32',
+    );
+  }
+
   if (env.SCYLLA_KEYSPACE !== undefined && !isKeyspaceName(env.SCYLLA_KEYSPACE)) {
     throw new Error(
       'SCYLLA_KEYSPACE must be lowercase letters, digits and underscores, starting with a letter',
@@ -78,6 +84,15 @@ export function loadConfig(env = process.env) {
           }
         : null,
     },
+    // Addons (ADR 0041): the host that runs their containers. Without it,
+    // addons cannot be installed, and those installed are not run.
+    addons: {
+      host: env.ADDON_HOST_URL ? { url: env.ADDON_HOST_URL, secret: env.ADDON_HOST_SECRET } : null,
+      // Where addon releases are read from; a test points it elsewhere.
+      githubApi: env.ADDON_GITHUB_API ?? 'https://api.github.com',
+    },
+    // What addons are told the server is called.
+    serverName: env.SERVER_NAME ?? null,
     // Minutes someone may sit in a channel neither sharing nor watching before
     // the server kicks them (ADR 0037). 0 turns it off.
     idleKickMinutes: Number(env.IDLE_KICK_MINUTES ?? 30),

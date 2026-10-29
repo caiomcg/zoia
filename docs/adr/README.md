@@ -48,6 +48,8 @@ record that supersedes it, so the history stays legible.
 | [0038](0038-presence.md) | Who is on the server, and their status | proposed |
 | [0039](0039-voice-channels.md) | Voice in every channel | proposed |
 | [0040](0040-soundboard.md) | A soundboard from Myinstants, played by each listener | proposed |
+| [0041](0041-addons.md) | Addons: containers the super admin installs, behind an API of permissions | proposed |
+| [0042](0042-deleted-messages-leave-the-disk.md) | Deleted messages leave the disk an hour later, not ten days | proposed |
 
 ## The two that explain the most
 

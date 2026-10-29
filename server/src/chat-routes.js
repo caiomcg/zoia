@@ -94,6 +94,8 @@ export function chatRoutes({
   recheck,
   presence = null,
   hub = createChatHub(),
+  onMessage = null,
+  commandsIn = null,
   heartbeatMs = HEARTBEAT_MS,
   sendLimit = { windowMs: 10_000, limit: 20 },
   reactLimit = { windowMs: 10_000, limit: 30 },
@@ -136,7 +138,14 @@ export function chatRoutes({
     const authors = {};
     for (const id of new Set(ids)) {
       const account = await accountStore.get(id);
-      authors[id] = account ? { name: account.name, avatar: account.avatar ?? null } : null;
+      authors[id] = account
+        ? {
+            name: account.name,
+            avatar: account.avatar ?? null,
+            // An addon's bot, so the app can set its messages apart (ADR 0041).
+            ...(account.addonId ? { bot: true } : {}),
+          }
+        : null;
     }
     return authors;
   }
@@ -280,7 +289,14 @@ export function chatRoutes({
   router.get('/people', requireSession, async (_req, res) => {
     const people = (await accountStore.list())
       .filter((a) => a.status === 'active' && a.name)
-      .map((a) => ({ id: a.id, name: a.name, avatar: a.avatar ?? null, role: a.role }))
+      .map((a) => ({
+        id: a.id,
+        name: a.name,
+        avatar: a.avatar ?? null,
+        role: a.role,
+        // An addon's bot, so the app can say so (ADR 0041).
+        ...(a.addonId ? { bot: true } : {}),
+      }))
       .sort((a, b) => a.name.localeCompare(b.name));
     res.json({ people });
   });
@@ -388,6 +404,24 @@ export function chatRoutes({
     hub.publish('message', { message, author });
     hub.publish('read', { chatId: chat.id, accountId, messageId: message.id, reader: author });
     res.status(201).json({ message, author });
+    // After answering: an addon's command is the addon's business, not the sender's.
+    void onMessage?.({ chat, message, author, user: req.user });
+  });
+
+  // The ! commands that may be typed in a chat, under this server's names,
+  // for autocomplete (ADR 0041).
+  router.get('/:id/commands', requireSession, async (req, res) => {
+    const chat = await chatOf(req, res);
+    if (!chat) return;
+    const commands = commandsIn ? await commandsIn(chat.id) : [];
+    res.json({
+      commands: commands.map(({ name, description, usage, addon }) => ({
+        name,
+        description,
+        addon,
+        ...(usage ? { usage } : {}),
+      })),
+    });
   });
 
   // Its author may delete a message, and so may any admin, anyone's. The

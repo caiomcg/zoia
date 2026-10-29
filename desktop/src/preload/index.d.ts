@@ -25,8 +25,12 @@ import type {
   ChatMessage,
   ChatAuthor,
   ChatPerson,
+  ChatCommand,
   ChatSendExtras,
   ChatEvent,
+  AddonInfo,
+  AddonOutcome,
+  AddonPreview,
   Presence,
   PresenceState,
 } from '../shared/ipc';
@@ -54,6 +58,26 @@ export interface ZoiaBridge {
     ): Promise<ActionOutcome<{ ok: boolean; signedOut: number }>>;
     devices(): Promise<ActionOutcome<AccountDevice[]>>;
     removeDevice(id: string): Promise<ActionOutcome<{ ok: boolean }>>;
+  };
+  /** Addons (ADR 0041). Only answers for the super admin; the server checks every call. */
+  addons: {
+    list(): Promise<AddonOutcome<{ addons: AddonInfo[]; available: boolean }>>;
+    /** What installing a repository's latest release would mean. Installs nothing. */
+    preview(repo: string): Promise<AddonOutcome<AddonPreview>>;
+    /** Installs the release previewed; refused if it changed since. */
+    install(repo: string, version: string): Promise<AddonOutcome<AddonInfo>>;
+    enable(id: string): Promise<AddonOutcome<AddonInfo>>;
+    disable(id: string): Promise<AddonOutcome<AddonInfo>>;
+    /** To its latest release; `grant` agrees to permissions it adds. */
+    update(id: string, grant: boolean): Promise<AddonOutcome<AddonInfo>>;
+    uninstall(id: string): Promise<AddonOutcome<{ ok: boolean }>>;
+    /** Values by key; a key left out keeps its value, null clears it. */
+    settings(id: string, values: Record<string, unknown>): Promise<AddonOutcome<AddonInfo>>;
+    /** What each command is typed as, for everyone; null puts one back. */
+    commands(id: string, names: Record<string, string | null>): Promise<AddonOutcome<AddonInfo>>;
+    /** The chats it listens to, as a whole. */
+    chats(id: string, chats: string[]): Promise<AddonOutcome<AddonInfo>>;
+    logs(id: string): Promise<AddonOutcome<string>>;
   };
   /** Only answers for admins; the server checks every call. */
   admin: {
@@ -205,6 +229,8 @@ export interface ZoiaBridge {
     ): Promise<ActionOutcome<{ message: ChatMessage; author: ChatAuthor }>>;
     /** Everyone who can be @mentioned. */
     people(): Promise<ActionOutcome<ChatPerson[]>>;
+    /** The ! commands this chat offers, under this server's names (ADR 0041). */
+    commands(chatId: string): Promise<ActionOutcome<ChatCommand[]>>;
     /** Deletes a message: your own, or anyone's as an admin. */
     deleteMessage(chatId: string, messageId: string): Promise<ActionOutcome>;
     /** Asks where, then saves a chat photo or video there; `saved` is false if not chosen. */

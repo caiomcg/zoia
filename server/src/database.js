@@ -49,6 +49,8 @@ export const TABLES = {
       code: 'json',
       // The status the person chose (ADR 0038); null is online.
       presence: 'text',
+      // Set for a bot user, which belongs to this addon (ADR 0041).
+      addonId: 'text',
     },
   },
   devices: {
@@ -79,6 +81,37 @@ export const TABLES = {
       createdAt: 'text',
       createdBy: 'text',
       renamedAt: 'text',
+    },
+  },
+  // Addons the super admin installed (ADR 0041). The token's salt and hash,
+  // never the token.
+  addons: {
+    fields: {
+      id: 'text',
+      key: 'text',
+      repo: 'text',
+      name: 'text',
+      version: 'text',
+      image: 'text',
+      manifest: 'json',
+      granted: 'json',
+      enabled: 'bool',
+      settings: 'json',
+      commands: 'json',
+      salt: 'text',
+      hash: 'text',
+      installedAt: 'text',
+      installedBy: 'text',
+      updatedAt: 'text',
+    },
+  },
+  // Which chats an addon listens to for its commands.
+  addon_bindings: {
+    fields: {
+      id: 'text',
+      addonId: 'text',
+      chatId: 'text',
+      createdAt: 'text',
     },
   },
 };
@@ -158,6 +191,39 @@ const MIGRATIONS = [
   -- The status each person chose for themselves (ADR 0038). Null is online.
   ALTER TABLE accounts ADD COLUMN presence TEXT
     CHECK (presence IN ('online', 'busy', 'away', 'invisible'));
+  `,
+  `
+  -- Addons (ADR 0041), each a container the super admin installed.
+  CREATE TABLE addons (
+    id TEXT PRIMARY KEY,
+    key TEXT NOT NULL UNIQUE,
+    repo TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL,
+    version TEXT NOT NULL,
+    image TEXT NOT NULL,
+    manifest TEXT NOT NULL,
+    granted TEXT NOT NULL,
+    enabled INTEGER NOT NULL DEFAULT 0 CHECK (enabled IN (0, 1)),
+    settings TEXT NOT NULL,
+    commands TEXT NOT NULL,
+    salt TEXT NOT NULL,
+    hash TEXT NOT NULL,
+    installed_at TEXT NOT NULL,
+    installed_by TEXT,
+    updated_at TEXT
+  ) STRICT;
+
+  -- A bot user belongs to an addon, and goes when it is uninstalled.
+  ALTER TABLE accounts ADD COLUMN addon_id TEXT REFERENCES addons (id) ON DELETE CASCADE;
+  CREATE INDEX accounts_by_addon ON accounts (addon_id) WHERE addon_id IS NOT NULL;
+
+  CREATE TABLE addon_bindings (
+    id TEXT PRIMARY KEY,
+    addon_id TEXT NOT NULL REFERENCES addons (id) ON DELETE CASCADE,
+    chat_id TEXT NOT NULL REFERENCES chats (id) ON DELETE CASCADE,
+    created_at TEXT NOT NULL,
+    UNIQUE (addon_id, chat_id)
+  ) STRICT;
   `,
 ];
 

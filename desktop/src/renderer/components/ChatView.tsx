@@ -18,6 +18,7 @@ import {
   type ChatPerson,
   type ChatReaction,
   type ChatReply,
+  type ChatCommand,
 } from '../../shared/ipc';
 import type { ChatController } from '../chat/useChat';
 import { useAccountAvatar } from '../chat/avatars';
@@ -30,6 +31,7 @@ import {
   splitMentions,
   type MentionQuery,
 } from '../chat/mentions';
+import { applyCommand, commandQuery, matchCommands } from '../chat/commands';
 import { insertText, pushRecent } from '../chat/emoji';
 import Avatar from './Avatar';
 import EmojiPicker from './EmojiPicker';
@@ -115,6 +117,10 @@ export default function ChatView({
   const [picked, setPicked] = useState<ChatMention[]>([]);
   // The @query at the caret, and which suggestion is highlighted.
   const [mention, setMention] = useState<{ query: MentionQuery; index: number } | null>(null);
+  // The ! commands this chat offers (ADR 0041), and the one highlighted while
+  // the first word of a message is being typed after a !.
+  const [commands, setCommands] = useState<ChatCommand[]>([]);
+  const [command, setCommand] = useState<{ query: string; index: number } | null>(null);
   const textRef = useRef<HTMLTextAreaElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -255,13 +261,46 @@ export default function ChatView({
 
   // Who the @query at the caret may mean; none shown, none to pick.
   const suggestions = mention ? matchPeople(chat.people, mention.query.query) : [];
+  const commandSuggestions = command ? matchCommands(commands, command.query) : [];
+  // Who among the authors is an addon's bot, to say so beside their name.
+  const bots = new Set(chat.people.filter((p) => p.bot).map((p) => p.id));
 
-  /** Looks for an @query at the caret, after typing or moving it. */
+  // Each chat has its own commands, from the addons bound to it.
+  const chatId = thread?.chatId;
+  useEffect(() => {
+    setCommands([]);
+    setCommand(null);
+    if (!chatId) return;
+    let live = true;
+    void window.zoia.chat.commands(chatId).then((outcome) => {
+      if (live && outcome.ok) setCommands(outcome.value);
+    });
+    return () => {
+      live = false;
+    };
+  }, [chatId]);
+
+  /** Looks for an @query or a !command at the caret, after typing or moving it. */
   function findMention(text: string, caret: number) {
-    const query = mentionQuery(text, caret);
+    const typed = commands.length > 0 ? commandQuery(text, caret) : null;
+    setCommand((current) =>
+      typed ? { query: typed.query, index: current ? current.index : 0 } : null,
+    );
+    const query = typed ? null : mentionQuery(text, caret);
     setMention((current) =>
       query ? { query, index: current?.query.start === query.start ? current.index : 0 } : null,
     );
+  }
+
+  /** Puts the chosen command in place of the message's first word. */
+  function pickCommand(chosen: ChatCommand) {
+    const next = applyCommand(draft, chosen.name);
+    setDraft(next.text);
+    setCommand(null);
+    requestAnimationFrame(() => {
+      textRef.current?.focus();
+      textRef.current?.setSelectionRange(next.caret, next.caret);
+    });
   }
 
   /** Puts the chosen person's name in place of the @query. */
@@ -328,6 +367,28 @@ export default function ChatView({
   }
 
   function onKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (command && commandSuggestions.length > 0) {
+      const count = commandSuggestions.length;
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        event.preventDefault();
+        const by = event.key === 'ArrowDown' ? 1 : -1;
+        setCommand({ ...command, index: (command.index + by + count) % count });
+        return;
+      }
+      // Enter sends a command typed out in full, as it would any message.
+      const chosen = commandSuggestions[Math.min(command.index, count - 1)]!;
+      const complete = chosen.name === command.query;
+      if (event.key === 'Tab' || (event.key === 'Enter' && !complete && !event.shiftKey)) {
+        event.preventDefault();
+        pickCommand(chosen);
+        return;
+      }
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setCommand(null);
+        return;
+      }
+    }
     if (mention && suggestions.length > 0) {
       const move = (by: number) =>
         setMention({
@@ -449,6 +510,7 @@ export default function ChatView({
                   newMessages={i === divider}
                   time={time.format(new Date(m.sentAt))}
                   mine={m.authorId === me}
+                  bot={bots.has(m.authorId) || Boolean(chat.authors[m.authorId]?.bot)}
                   mentionsMe={Boolean(me && m.mentions?.some((x) => x.id === me))}
                   me={me}
                   onMediaLoad={onMediaLoad}
@@ -506,6 +568,32 @@ export default function ChatView({
             </svg>
             {t('chat.jumpToLatest')}
           </button>
+        )}
+        {command && commandSuggestions.length > 0 && (
+          <ul className="chat-suggest commands" role="listbox" aria-label={t('chat.commandList')}>
+            {commandSuggestions.map((c, i) => (
+              <li
+                key={`${c.addon}:${c.name}`}
+                role="option"
+                aria-selected={i === command.index}
+                className={i === command.index ? 'active' : undefined}
+                onMouseEnter={() => setCommand({ ...command, index: i })}
+                // Before the box's blur, which would close the list first.
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  pickCommand(c);
+                }}
+              >
+                <span className="chat-command-name">
+                  !{c.name}
+                  {c.usage && <span className="chat-command-usage"> {c.usage}</span>}
+                </span>
+                <span className="chat-command-about">
+                  {c.description} · {c.addon}
+                </span>
+              </li>
+            ))}
+          </ul>
         )}
         {mention && suggestions.length > 0 && (
           <ul className="chat-suggest" role="listbox" aria-label={t('chat.mentionList')}>
@@ -599,7 +687,10 @@ export default function ChatView({
             onSelect={(event) =>
               findMention(event.currentTarget.value, event.currentTarget.selectionStart)
             }
-            onBlur={() => setMention(null)}
+            onBlur={() => {
+              setMention(null);
+              setCommand(null);
+            }}
             onKeyDown={onKeyDown}
             onPaste={onPaste}
           />
@@ -694,6 +785,7 @@ function MessageRow({
   newMessages,
   time,
   mine,
+  bot = false,
   mentionsMe,
   me,
   onMediaLoad,
@@ -711,6 +803,8 @@ function MessageRow({
   newMessages: boolean;
   time: string;
   mine: boolean;
+  /** Written by an addon's bot (ADR 0041). */
+  bot?: boolean;
   /** It @mentions you: it stands out from the rest. */
   mentionsMe: boolean;
   me: string | null;
@@ -761,7 +855,7 @@ function MessageRow({
         </li>
       )}
       <li
-        className={`chat-message${grouped && !message.replyTo ? ' grouped' : ''}${mine ? ' mine' : ''}${mentionsMe ? ' mentions-me' : ''}`}
+        className={`chat-message${grouped && !message.replyTo ? ' grouped' : ''}${mine ? ' mine' : ''}${mentionsMe ? ' mentions-me' : ''}${bot ? ' bot' : ''}`}
         data-message-id={message.id}
       >
         {(onReply || onReact || onDelete) && (
@@ -842,6 +936,7 @@ function MessageRow({
           {(!grouped || message.replyTo) && (
             <div className="chat-meta">
               <span className="chat-author">{name}</span>
+              {bot && <span className="bot-tag">{t('member.bot')}</span>}
               <time dateTime={message.sentAt}>{time}</time>
             </div>
           )}

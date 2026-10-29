@@ -32,6 +32,7 @@ const {
   devices: deviceStore,
   accounts: accountStore,
   chats: chatStore,
+  addons: addonStore,
 } = openStores({
   databaseFile: config.databaseFile,
   maxPending: config.accounts.maxPending,
@@ -110,6 +111,7 @@ const app = createApp({
   avatarStore,
   accountStore,
   chatStore,
+  addonStore,
   messageStore: () => messageStore,
   chatMediaStore: createMediaStore({
     dir: config.chat.mediaDir,

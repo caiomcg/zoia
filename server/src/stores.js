@@ -7,6 +7,7 @@ import { openDatabase } from './database.js';
 import { createDeviceStore } from './devices.js';
 import { createAccountStore } from './accounts.js';
 import { createChatStore } from './chats.js';
+import { createAddonStore } from './addons.js';
 
 /** Where the database lives, from the environment, as the server resolves it. */
 export function storePaths(env = process.env) {
@@ -20,5 +21,6 @@ export function openStores({ databaseFile, maxPending, defaultChatName, logger =
     devices: createDeviceStore({ db, logger }),
     accounts: createAccountStore({ db, maxPending, logger }),
     chats: createChatStore({ db, defaultName: defaultChatName, logger }),
+    addons: createAddonStore({ db, logger }),
   };
 }
