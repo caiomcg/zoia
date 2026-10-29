@@ -372,7 +372,12 @@ export interface RoomMember {
   voiceMuted: boolean;
   /** In voice and hearing nothing: deafened. */
   voiceDeafened: boolean;
+  /** An addon's bot (ADR 0041): the addon's name, from the server; null for a person. */
+  bot: string | null;
 }
+
+/** Must match BOT_ATTRIBUTE in server/src/token.js. */
+const BOT_ATTRIBUTE = 'zoia.bot';
 
 function broadcastMetadata(participant: Participant): {
   sourceName: string | null;
@@ -866,6 +871,8 @@ export function useRoom() {
             broadcastMetadata(p).sourceKind,
           ),
           avatar: avatarVersion(p.attributes?.[AVATAR_ATTRIBUTE]),
+          // Set in a bot's token by the server, which no person's carries.
+          bot: p.attributes?.[BOT_ATTRIBUTE] || null,
           inVoice: inVoice(p),
           voiceMuted: p.getTrackPublication(Track.Source.Microphone)?.isMuted ?? true,
           voiceDeafened: isDeafened(p),

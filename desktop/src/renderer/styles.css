@@ -6043,6 +6043,8 @@ button.danger:active:not(:disabled),
   margin: 0 0 18px;
   font-size: 14px;
   line-height: 1.45;
+  /* A question may list things, one to a line. */
+  white-space: pre-line;
 }
 
 .confirm-actions {
@@ -6616,4 +6618,203 @@ button.danger:active:not(:disabled),
   font-weight: 500;
   color: var(--text);
   cursor: pointer;
+}
+
+/* ---- addons (ADR 0041) --------------------------------------------------- */
+
+.addon-repo {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+}
+
+.addon-repo .settings-field {
+  flex: 1;
+}
+
+.addon-review {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 12px 14px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.addon-review p {
+  margin: 0;
+}
+
+/* What installing means, said plainly before the button that does it. */
+.addon-trust {
+  font-size: 12px;
+  color: var(--warn);
+}
+
+.addon-permissions {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+}
+
+.addon-permissions code,
+.addon-command code {
+  padding: 1px 5px;
+  color: var(--text);
+  background: var(--bg);
+  border-radius: 4px;
+  font-size: 11px;
+}
+
+.addon-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.addon-card {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.addon-card.off .addon-title {
+  opacity: 0.7;
+}
+
+.addon-head {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.addon-title {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  align-items: baseline;
+  min-width: 0;
+  padding: 0;
+  color: var(--text);
+  text-align: left;
+  background: none;
+  border: none;
+}
+
+.addon-title .muted {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.addon-state.running {
+  color: var(--live);
+}
+
+.addon-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.addon-body h5 {
+  margin: 8px 0 0;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.addon-body p {
+  margin: 0;
+}
+
+.addon-chats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.addon-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.addon-form > button {
+  align-self: flex-start;
+}
+
+.addon-command-input {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  color: var(--muted);
+}
+
+.addon-logs-toggle {
+  align-self: flex-start;
+}
+
+.addon-logs {
+  max-height: 240px;
+  margin: 0;
+  padding: 10px;
+  overflow: auto;
+  font-size: 11px;
+  color: var(--text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+/* A ! command: its name and what follows it, then what it does and whose it is. */
+.chat-suggest.commands li {
+  flex-direction: column;
+  gap: 1px;
+  align-items: flex-start;
+}
+
+.chat-command-name {
+  font-family: ui-monospace, monospace;
+  font-weight: 600;
+}
+
+.chat-command-usage {
+  font-weight: 400;
+  opacity: 0.7;
+}
+
+.chat-command-about {
+  font-size: 11px;
+  opacity: 0.8;
+}
+
+/* An addon's bot (ADR 0041), beside its name: it is not a person. */
+.bot-tag {
+  flex: none;
+  padding: 0 4px;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 14px;
+  letter-spacing: 0.04em;
+  color: #fff;
+  background: var(--accent);
+  border-radius: 3px;
 }

@@ -28,7 +28,12 @@ import type {
   ChatMessage,
   ChatAuthor,
   ChatPerson,
+  ChatCommand,
   ChatSendExtras,
+  AddonInfo,
+  AddonOutcome,
+  AddonPermission,
+  AddonPreview,
   Presence,
   PresenceState,
 } from '../shared/ipc';
@@ -478,6 +483,95 @@ export function chatReact(chatId: string, messageId: string, emoji: string, on: 
 export function chatPeople() {
   return attempt(call<{ people: ChatPerson[] }>('/api/chats/people').then((r) => r.people));
 }
+
+/** The ! commands a chat offers, for autocomplete (ADR 0041). */
+export function chatCommands(chatId: string) {
+  return attempt(
+    call<{ commands: ChatCommand[] }>(`/api/chats/${encodeURIComponent(chatId)}/commands`).then(
+      (r) => r.commands,
+    ),
+  );
+}
+
+// ---- addons (ADR 0041), the super admin's ----------------------------------
+
+/** As `attempt`, keeping what a refusal said besides its code. */
+async function attemptAddon<T>(request: Promise<T>): Promise<AddonOutcome<T>> {
+  try {
+    return { ok: true, value: await request };
+  } catch (err) {
+    if (err instanceof ApiError) {
+      const body = (err.body ?? {}) as {
+        error?: string;
+        added?: AddonPermission[];
+        message?: string | null;
+        field?: string;
+      };
+      return {
+        ok: false,
+        error: body.error ?? `http_${err.status}`,
+        ...(body.added ? { added: body.added } : {}),
+        ...(body.message !== undefined ? { message: body.message } : {}),
+        ...(body.field ? { field: body.field } : {}),
+      };
+    }
+    if (err instanceof NoServerError) return { ok: false, error: 'invalid_server' };
+    return { ok: false, error: 'unreachable' };
+  }
+}
+
+const addonPath = (id: string, rest = '') => `/api/admin/addons/${encodeURIComponent(id)}${rest}`;
+const send = (method: string, body?: unknown): RequestInit => ({
+  method,
+  ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+});
+
+export const addons = {
+  list: () => attemptAddon(call<{ addons: AddonInfo[]; available: boolean }>('/api/admin/addons')),
+  preview: (repo: string) =>
+    attemptAddon(call<AddonPreview>('/api/admin/addons/preview', send('POST', { repo }))),
+  install: (repo: string, version: string) =>
+    attemptAddon(
+      call<{ addon: AddonInfo }>('/api/admin/addons', send('POST', { repo, version })).then(
+        (r) => r.addon,
+      ),
+    ),
+  enable: (id: string) =>
+    attemptAddon(
+      call<{ addon: AddonInfo }>(addonPath(id, '/enable'), send('POST')).then((r) => r.addon),
+    ),
+  disable: (id: string) =>
+    attemptAddon(
+      call<{ addon: AddonInfo }>(addonPath(id, '/disable'), send('POST')).then((r) => r.addon),
+    ),
+  update: (id: string, grant: boolean) =>
+    attemptAddon(
+      call<{ addon: AddonInfo }>(addonPath(id, '/update'), send('POST', { grant })).then(
+        (r) => r.addon,
+      ),
+    ),
+  uninstall: (id: string) => attemptAddon(call<{ ok: boolean }>(addonPath(id), send('DELETE'))),
+  settings: (id: string, values: Record<string, unknown>) =>
+    attemptAddon(
+      call<{ addon: AddonInfo }>(addonPath(id, '/settings'), send('PUT', { values })).then(
+        (r) => r.addon,
+      ),
+    ),
+  commands: (id: string, names: Record<string, string | null>) =>
+    attemptAddon(
+      call<{ addon: AddonInfo }>(addonPath(id, '/commands'), send('PUT', { names })).then(
+        (r) => r.addon,
+      ),
+    ),
+  chats: (id: string, chats: string[]) =>
+    attemptAddon(
+      call<{ addon: AddonInfo }>(addonPath(id, '/chats'), send('PUT', { chats })).then(
+        (r) => r.addon,
+      ),
+    ),
+  logs: (id: string) =>
+    attemptAddon(call<{ logs: string }>(addonPath(id, '/logs?tail=300')).then((r) => r.logs)),
+};
 
 export function chatRead(chatId: string, messageId: string) {
   return attempt(

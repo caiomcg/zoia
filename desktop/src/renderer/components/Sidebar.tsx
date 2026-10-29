@@ -1370,6 +1370,11 @@ function MemberRow({
       <span className="member-name">{m.name}</span>
       {m.isLocal && <span className="you-tag">{t('common.youTag')}</span>}
       <PlayingSound identity={m.identity} />
+      {m.bot && (
+        <span className="bot-tag" title={t('member.botHint', { addon: m.bot })}>
+          {t('member.bot')}
+        </span>
+      )}
       {/* Everyone here is in voice, so only silence is news: hearing
           nothing, which also mutes, or just a muted microphone. */}
       {m.inVoice && (m.voiceDeafened || m.voiceMuted) && (

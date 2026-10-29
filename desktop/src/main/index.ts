@@ -516,6 +516,45 @@ function registerIpc(): void {
     api.chatSend(String(chatId), String(body), sendExtras(extras)),
   );
   ipcMain.handle(IPC.chatPeople, () => api.chatPeople());
+  ipcMain.handle(IPC.chatCommands, (_event, chatId: string) => api.chatCommands(String(chatId)));
+  // The super admin's addons (ADR 0041). One channel, each action checked
+  // here and again by the server, which decides who may.
+  ipcMain.handle(IPC.addons, (_event, action: string, id?: unknown, payload?: unknown) => {
+    const target = String(id ?? '');
+    const record = (value: unknown) =>
+      value && typeof value === 'object' && !Array.isArray(value)
+        ? (value as Record<string, unknown>)
+        : {};
+    switch (action) {
+      case 'list':
+        return api.addons.list();
+      case 'preview':
+        return api.addons.preview(target);
+      case 'install':
+        return api.addons.install(target, String(payload ?? ''));
+      case 'enable':
+        return api.addons.enable(target);
+      case 'disable':
+        return api.addons.disable(target);
+      case 'update':
+        return api.addons.update(target, payload === true);
+      case 'uninstall':
+        return api.addons.uninstall(target);
+      case 'settings':
+        return api.addons.settings(target, record(payload));
+      case 'commands':
+        return api.addons.commands(target, record(payload) as Record<string, string | null>);
+      case 'chats':
+        return api.addons.chats(
+          target,
+          Array.isArray(payload) ? payload.filter((c): c is string => typeof c === 'string') : [],
+        );
+      case 'logs':
+        return api.addons.logs(target);
+      default:
+        return { ok: false, error: 'unknown_action' };
+    }
+  });
   ipcMain.handle(IPC.chatDeleteMessage, (_event, chatId: unknown, messageId: unknown) =>
     api.chatDeleteMessage(String(chatId), String(messageId)),
   );

@@ -96,7 +96,14 @@ export interface RoomInfo {
    * `avatar` is the version of their picture, when they have one; `role` is
    * there for admins and the super admin, from the server's own records.
    */
-  participants: Array<{ identity: string; name: string; avatar?: string; role?: AccountRole }>;
+  participants: Array<{
+    identity: string;
+    name: string;
+    avatar?: string;
+    role?: AccountRole;
+    /** An addon's bot (ADR 0041). */
+    bot?: boolean;
+  }>;
   broadcasters: Array<{ identity: string; name: string }>;
 }
 
@@ -186,7 +193,104 @@ export interface ChatPerson {
   avatar: string | null;
   /** Crowns admins in the People tab; absent from older servers. */
   role?: AccountRole;
+  /** An addon's bot (ADR 0041). */
+  bot?: boolean;
 }
+
+/** A ! command that may be typed in a chat, under this server's name for it. */
+export interface ChatCommand {
+  name: string;
+  description: string;
+  /** The addon that answers it. */
+  addon: string;
+  /** What goes after it, as the addon describes it: "<link or search>". */
+  usage?: string;
+}
+
+// ---- addons (ADR 0041) ---------------------------------------------------
+
+export interface AddonPermission {
+  id: string;
+  /** What it allows, as the super admin reads it before granting it. */
+  description: string;
+}
+
+export type AddonSettingType =
+  'string' | 'secret' | 'number' | 'boolean' | 'select' | 'chat' | 'channel';
+
+/** One field of an addon's settings, as its manifest declares it. */
+export interface AddonSetting {
+  key: string;
+  type: AddonSettingType;
+  label: string;
+  description?: string;
+  required?: boolean;
+  default?: string | number | boolean;
+  options?: { value: string; label: string }[];
+  min?: number;
+  max?: number;
+}
+
+/** A setting's value; a secret is only whether it is set. */
+export type AddonSettingValue = string | number | boolean | { set: boolean };
+
+export interface AddonCommandInfo {
+  /** The name the addon gave it. */
+  command: string;
+  /** What it is typed as on this server. */
+  name: string;
+  description: string;
+  usage?: string;
+}
+
+/** An installed addon, as the super admin manages it. */
+export interface AddonInfo {
+  id: string;
+  key: string;
+  repo: string;
+  name: string;
+  version: string;
+  description: string | null;
+  enabled: boolean;
+  installedAt: string;
+  updatedAt: string | null;
+  permissions: AddonPermission[];
+  commands: AddonCommandInfo[];
+  settings: { schema: AddonSetting[]; values: Record<string, AddonSettingValue> };
+  /** The chats it is bound to. */
+  chats: string[];
+  bots: { id: string; name: string }[];
+  /** Its container, as the addon host sees it; null when addons are off. */
+  state: { installed?: boolean; running?: boolean; status?: string } | null;
+}
+
+/** What installing a repository's latest release would mean. */
+export interface AddonPreview {
+  repo: string;
+  release: { tag: string | null; url: string | null; publishedAt: string | null };
+  addon: {
+    key: string;
+    name: string;
+    version: string;
+    description: string | null;
+    image: string;
+    permissions: AddonPermission[];
+    commands: { name: string; description: string; usage?: string }[];
+  };
+}
+
+/** An addon call's answer: a refusal may say more than its code. */
+export type AddonOutcome<T> =
+  | { ok: true; value: T }
+  | {
+      ok: false;
+      error: string;
+      /** Permissions an update asks for that it does not have yet. */
+      added?: AddonPermission[];
+      /** What the addon host said went wrong. */
+      message?: string | null;
+      field?: string;
+    };
 
 /** What may go with a message beside its text. */
 export interface ChatSendExtras {
@@ -516,6 +620,8 @@ export const IPC = {
   chatDeleteMessage: 'zoia:chat:deleteMessage',
   chatReact: 'zoia:chat:react',
   chatSaveMedia: 'zoia:chat:saveMedia',
+  chatCommands: 'zoia:chat:commands',
+  addons: 'zoia:addons',
   presenceGet: 'zoia:presence:get',
   presenceSet: 'zoia:presence:set',
   stageGet: 'zoia:stage:get',

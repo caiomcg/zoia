@@ -103,6 +103,8 @@ function hopMembers(
       inVoice: false,
       voiceMuted: true,
       voiceDeafened: false,
+      // The poll says a bot is one, not whose; the room says, soon.
+      bot: p.bot ? p.name : null,
     }));
   return me
     ? [

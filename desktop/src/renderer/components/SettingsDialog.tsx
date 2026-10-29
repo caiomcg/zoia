@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AccountInfo, UpdaterConfig } from '../../shared/ipc';
 import AccountPanel from './AccountPanel';
 import AccountsSection from './AccountsSection';
+import AddonsSection from './AddonsSection';
 import Avatar from './Avatar';
 import AvatarCropDialog from './AvatarCropDialog';
 import { encodeAvatar, type AvatarCrop, type EncodedAvatar } from '../avatars';
@@ -34,6 +35,7 @@ export type Section =
   | 'profile'
   | 'accounts'
   | 'server'
+  | 'addons'
   | 'broadcast'
   | 'voice'
   | 'general'
@@ -51,10 +53,12 @@ export interface ServerLimit {
   onChange: (max: number) => void;
 }
 
-const SECTIONS: { id: Section; label: MessageKey; adminOnly?: boolean }[] = [
+const SECTIONS: { id: Section; label: MessageKey; adminOnly?: boolean; superOnly?: boolean }[] = [
   { id: 'profile', label: 'settings.nav.profile' },
   { id: 'accounts', label: 'settings.nav.accounts', adminOnly: true },
   { id: 'server', label: 'settings.nav.server', adminOnly: true },
+  // Installing an addon is trusting its author: the super admin's alone (ADR 0041).
+  { id: 'addons', label: 'settings.nav.addons', superOnly: true },
   { id: 'broadcast', label: 'settings.nav.broadcast' },
   { id: 'voice', label: 'settings.nav.voice' },
   { id: 'general', label: 'settings.nav.general' },
@@ -140,7 +144,9 @@ export default function SettingsDialog({
 
         <div className="settings-body">
           <nav className="settings-nav" aria-label={t('settings.sections')}>
-            {SECTIONS.filter((s) => !s.adminOnly || isAdmin).map((s) => (
+            {SECTIONS.filter(
+              (s) => (!s.adminOnly || isAdmin) && (!s.superOnly || account?.role === 'super_admin'),
+            ).map((s) => (
               <button
                 key={s.id}
                 className={section === s.id ? 'active' : undefined}
@@ -175,6 +181,7 @@ export default function SettingsDialog({
               <AccountsSection me={account} onChanged={() => onAccountsChanged?.()} />
             )}
             {section === 'server' && isAdmin && limits && <ServerSection limits={limits} />}
+            {section === 'addons' && account?.role === 'super_admin' && <AddonsSection />}
             {section === 'broadcast' && (
               <BroadcastSection
                 hardwareDetail={hardwareDetail}

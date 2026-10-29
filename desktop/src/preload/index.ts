@@ -51,6 +51,19 @@ const bridge: ZoiaBridge = {
     devices: () => ipcRenderer.invoke(IPC.accountDevices),
     removeDevice: (id) => ipcRenderer.invoke(IPC.accountRemoveDevice, id),
   },
+  addons: {
+    list: () => ipcRenderer.invoke(IPC.addons, 'list'),
+    preview: (repo) => ipcRenderer.invoke(IPC.addons, 'preview', repo),
+    install: (repo, version) => ipcRenderer.invoke(IPC.addons, 'install', repo, version),
+    enable: (id) => ipcRenderer.invoke(IPC.addons, 'enable', id),
+    disable: (id) => ipcRenderer.invoke(IPC.addons, 'disable', id),
+    update: (id, grant) => ipcRenderer.invoke(IPC.addons, 'update', id, grant),
+    uninstall: (id) => ipcRenderer.invoke(IPC.addons, 'uninstall', id),
+    settings: (id, values) => ipcRenderer.invoke(IPC.addons, 'settings', id, values),
+    commands: (id, names) => ipcRenderer.invoke(IPC.addons, 'commands', id, names),
+    chats: (id, chats) => ipcRenderer.invoke(IPC.addons, 'chats', id, chats),
+    logs: (id) => ipcRenderer.invoke(IPC.addons, 'logs', id),
+  },
   admin: {
     accounts: () => ipcRenderer.invoke(IPC.adminAccounts),
     act: (id, action, options) => ipcRenderer.invoke(IPC.adminAction, id, action, options),
@@ -139,6 +152,7 @@ const bridge: ZoiaBridge = {
     sendMedia: (chatId, bytes, name, caption, extras) =>
       ipcRenderer.invoke(IPC.chatSendMedia, chatId, bytes, name, caption, extras),
     people: () => ipcRenderer.invoke(IPC.chatPeople),
+    commands: (chatId) => ipcRenderer.invoke(IPC.chatCommands, chatId),
     deleteMessage: (chatId, messageId) =>
       ipcRenderer.invoke(IPC.chatDeleteMessage, chatId, messageId),
     saveMedia: (chatId, mediaId, name, type) =>
