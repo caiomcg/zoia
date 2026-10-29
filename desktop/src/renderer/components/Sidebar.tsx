@@ -15,6 +15,7 @@ import type { AccountRole, RoomInfo } from '../../shared/ipc';
 import type { GridTarget } from './RemoteGrid';
 import Avatar from './Avatar';
 import { IconEye, IconMic } from './Player';
+import StatusLight, { type StatusStat, type StatusTone } from './StatusLight';
 import StatusMenu from './StatusMenu';
 import { useFloatingMenu } from './useFloatingMenu';
 import type { VoiceState } from '../voice/useVoice';
@@ -403,6 +404,7 @@ export default function Sidebar({
   people,
   peopleOnline,
   share,
+  connection,
   presence,
   onKickMember,
   collapsed,
@@ -448,6 +450,8 @@ export default function Sidebar({
   peopleOnline?: number;
   /** Screen and camera, in the voice bar; absent, no share buttons. */
   share?: SidebarShare;
+  /** The link to the server: the voice bar's colour and its hover card. */
+  connection?: { tone: StatusTone; label: string; stats: StatusStat[] };
   /** Your status, on your picture in the footer, which is where it is chosen. */
   presence?: PresenceController;
   /** Admins only: takes someone off the server, chat and all (ADR 0037). */
@@ -963,10 +967,18 @@ export default function Sidebar({
         <div className={`voice-panel${voice?.state === 'on' ? ' connected' : ''}`}>
           <div className="voice-panel-head">
             <span className="voice-panel-text">
-              <span className="voice-panel-state">
-                <IconSignal />
-                {voice?.state === 'on' ? t('voice.connected') : t('voice.connecting')}
-              </span>
+              {/* The connection, with ping and, while sharing, how your
+                  broadcast is encoding, on its hover card. */}
+              <StatusLight
+                tone={connection?.tone === 'bad' ? 'bad' : voice?.state === 'on' ? 'ok' : 'warn'}
+                label={connection?.label ?? t('voice.connected')}
+                stats={connection?.stats}
+              >
+                <span className="voice-panel-state">
+                  <IconSignal />
+                  {voice?.state === 'on' ? t('voice.connected') : t('voice.connecting')}
+                </span>
+              </StatusLight>
               <span className="voice-panel-channel" title={currentChannelName}>
                 {currentChannelName}
               </span>

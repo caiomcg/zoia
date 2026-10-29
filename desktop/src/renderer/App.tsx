@@ -19,7 +19,7 @@ import SourcePicker from './components/SourcePicker';
 import SettingsDialog, { type Section as SettingsSection } from './components/SettingsDialog';
 import ReleaseNotesDialog from './components/ReleaseNotesDialog';
 import Splash from './components/Splash';
-import StatusLight, { type StatusStat, type StatusTone } from './components/StatusLight';
+import type { StatusStat, StatusTone } from './components/StatusLight';
 import { WHIP_SUFFIX, useRoom, type RoomMember } from './livekit/useRoom';
 import { useGpuBroadcast } from './livekit/useGpuBroadcast';
 import { useVoice } from './voice/useVoice';
@@ -817,7 +817,7 @@ export default function App() {
   const connectionTone: StatusTone =
     room.state === 'connected' || hopping ? 'ok' : room.state === 'error' ? 'bad' : 'idle';
 
-  // What the connection light's hover card lists: always the link to the
+  // What the voice bar's hover card lists: always the link to the
   // server, and while you are sharing, how your broadcast is being encoded.
   const connectionStats: StatusStat[] = [];
   if (room.state === 'connected' && room.pingMs !== null) {
@@ -940,15 +940,6 @@ export default function App() {
             // Resolved against the loaded document rather than a root-absolute
             // path: under file:// a leading slash means the filesystem root,
             // not the folder the page was loaded from.
-          />
-          {/* One light: the connection. Ping and, while sharing, how your
-              broadcast is encoding are on its hover card. */}
-          <StatusLight
-            tone={connectionTone}
-            label={t('top.connection', {
-              state: t(`top.state.${hopping ? 'connected' : room.state}`),
-            })}
-            stats={connectionStats}
           />
         </div>
 
@@ -1193,6 +1184,13 @@ export default function App() {
             speaking: voice.speaking,
             onToggleMute: toggleMute,
             onToggleDeafen: toggleDeafen,
+          }}
+          connection={{
+            tone: connectionTone,
+            label: t('top.connection', {
+              state: t(`top.state.${hopping ? 'connected' : room.state}`),
+            }),
+            stats: connectionStats,
           }}
           share={{
             screenLive,

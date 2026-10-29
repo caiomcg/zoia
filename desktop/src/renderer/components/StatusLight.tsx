@@ -7,6 +7,8 @@
  * something you consult when a broadcast looks wrong, not something to read
  * constantly.
  */
+import type { ReactNode } from 'react';
+
 export type StatusTone = 'ok' | 'warn' | 'bad' | 'idle';
 
 export interface StatusStat {
@@ -18,16 +20,19 @@ export default function StatusLight({
   tone,
   label,
   stats = [],
+  children,
 }: {
   tone: StatusTone;
   /** The card's heading, and what screen readers hear. */
   label: string;
   stats?: StatusStat[];
+  /** What stands for the status, in place of the dot. */
+  children?: ReactNode;
 }) {
   const spoken = [label, ...stats.map((s) => `${s.label} ${s.value}`)].join(', ');
   return (
     <span className={`status-light ${tone}`} tabIndex={0} role="status" aria-label={spoken}>
-      <span className="status-dot" aria-hidden="true" />
+      {children ?? <span className="status-dot" aria-hidden="true" />}
       <span className="status-card" aria-hidden="true">
         <strong>{label}</strong>
         {stats.length > 0 && (
