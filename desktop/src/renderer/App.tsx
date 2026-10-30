@@ -1160,9 +1160,11 @@ export default function App() {
           members={
             // Out of every channel, the last room's list would hide its people
             // from the poll's, since the sidebar takes them for your own.
+            // Until a join connects, the room's list is still the last
+            // room's (after a kick, say), so the poll's stands in for it.
             channel === null
               ? []
-              : hopping
+              : hopping || (room.state !== 'connected' && !room.isReconnecting)
                 ? hopMembers(room.members, channels, channel)
                 : room.members
           }

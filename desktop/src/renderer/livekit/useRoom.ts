@@ -771,6 +771,11 @@ export function useRoom() {
       roomRef.current = room;
 
       const refresh = () => {
+        // A room being left unpublishes every remote track before it forgets
+        // its participants, and each unpublish lands here: without this, the
+        // left room's people were written back as the members, and listed
+        // as your channel's on the next join.
+        if (roomRef.current !== room) return;
         // Judged by publications, not tracks: a broadcast this viewer chose
         // not to watch has no subscribed track, and must not look new again.
         const publishing = new Set<string>();
