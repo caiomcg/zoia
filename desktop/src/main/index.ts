@@ -1141,11 +1141,22 @@ app.whenReady().then(async () => {
   });
 });
 
-app.on('window-all-closed', () => {
+/** Stops everything that captures or encodes, before the window or the app goes. */
+function stopBackgroundWork() {
   stopUpdater();
   sources.stopWarming();
   audioCapture.stopCapture();
   capture.stop();
-  encoder.shutdown();
+  void encoder.shutdown();
+}
+
+app.on('window-all-closed', () => {
+  stopBackgroundWork();
   if (process.platform !== 'darwin') app.quit();
 });
+
+// app.quit() (an update, Quit in the tray) skips window-all-closed. A
+// loopback capture still running when Node tears down deadlocks its addon,
+// and the process never exits: it keeps app.asar open, so the next update
+// cannot replace it.
+app.on('will-quit', stopBackgroundWork);

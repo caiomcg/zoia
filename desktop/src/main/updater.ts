@@ -13,6 +13,7 @@ import { Readable } from 'node:stream';
 const CONFIG_NAME = 'updater-config.json';
 const STATE_NAME = 'updater-state.json';
 const HELPER_NAME = 'zoia-update-helper.cjs';
+const RELAUNCHER_NAME = 'zoia-update-relauncher.cjs';
 
 /**
  * Where updates come from: a GitHub repository, whose latest release carries
@@ -51,42 +52,71 @@ export type UpdaterCheckResult =
   | { status: 'disabled' }
   | { status: 'error'; message: string };
 
+/**
+ * Swaps app.asar once Zoia has exited, then reopens it when `relaunch` is
+ * "1". An install the user cannot write to (Program Files) runs this
+ * elevated, and anything it opened would be elevated too: there it only
+ * swaps, and the relauncher below, started by Zoia as the user, reopens it.
+ * Either way `donePath` is written at the end, success or not.
+ */
 const HELPER_SOURCE = String.raw`process.noAsar = true;
 const fs = require('node:fs/promises');
 const { spawn } = require('node:child_process');
 
-const [target, staged, backup, parentPid, executable, statePath, version] = process.argv.slice(2);
+const [target, staged, backup, parentPid, executable, statePath, version, relaunch, donePath] =
+  process.argv.slice(2);
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const exists = async (path) => { try { await fs.access(path); return true; } catch { return false; } };
 
 async function parentExited() {
   for (let attempt = 0; attempt < 120; attempt += 1) {
-    try { process.kill(Number(parentPid), 0); } catch { return true; }
+    // Only ESRCH means it is gone: EPERM is a process that is there but
+    // will not be signalled, and swapping under it fails.
+    try { process.kill(Number(parentPid), 0); } catch (error) { if (error && error.code === 'ESRCH') return true; }
     await wait(250);
   }
   throw new Error('Zoia did not exit in time');
 }
 
+// Something else can still hold the archive for a moment: an antivirus scan,
+// or a Zoia process that is slow to go.
+async function retry(action) {
+  for (let attempt = 0; ; attempt += 1) {
+    try { return await action(); } catch (error) {
+      if (attempt >= 40 || !['EPERM', 'EBUSY', 'EACCES'].includes(error && error.code)) throw error;
+      await wait(250);
+    }
+  }
+}
+
 async function main() {
   await parentExited();
   await fs.rm(backup, { force: true }).catch(() => {});
-  await fs.rename(target, backup).catch(() => {});
+  if (await exists(target)) await retry(() => fs.rename(target, backup));
   try {
-    await fs.rename(staged, target);
+    await retry(() => fs.rename(staged, target));
   } catch (error) {
     if (await exists(backup)) await fs.rename(backup, target).catch(() => {});
     throw error;
   }
   if (statePath && version) await fs.writeFile(statePath, JSON.stringify({ version }, null, 2));
-  const env = { ...process.env };
-  delete env.ELECTRON_RUN_AS_NODE;
-  const child = spawn(executable, [], { detached: true, stdio: 'ignore', env });
-  child.unref();
-  await wait(5000);
-  await fs.rm(backup, { force: true }).catch(() => {});
 }
 
-main().catch(async (error) => {
+async function finish(swapped) {
+  if (donePath) await fs.writeFile(donePath, swapped ? 'ok' : 'failed').catch(() => {});
+  // Reopened whether or not the swap worked: the old version is still there.
+  if (relaunch === '1') {
+    const env = { ...process.env };
+    delete env.ELECTRON_RUN_AS_NODE;
+    spawn(executable, [], { detached: true, stdio: 'ignore', env }).unref();
+  }
+  if (swapped) {
+    await wait(5000);
+    await fs.rm(backup, { force: true }).catch(() => {});
+  }
+}
+
+main().then(() => finish(true), async (error) => {
   console.error('[zoia-updater]', error?.stack || error);
   try {
     const errorLog = require('node:path').join(__dirname, 'update-error.log');
@@ -94,7 +124,32 @@ main().catch(async (error) => {
   } catch {}
   if (await exists(backup) && !(await exists(target))) await fs.rename(backup, target).catch(() => {});
   process.exitCode = 1;
+  await finish(false);
 });
+`;
+
+/**
+ * Started by Zoia itself, so as the user, beside an elevated swap: reopens
+ * Zoia once the swap is done. A cancelled elevation prompt never writes
+ * `donePath`, so after a while it reopens the old version anyway.
+ */
+const RELAUNCHER_SOURCE = String.raw`process.noAsar = true;
+const fs = require('node:fs/promises');
+const { spawn } = require('node:child_process');
+
+const [donePath, executable] = process.argv.slice(2);
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function main() {
+  for (let attempt = 0; attempt < 480; attempt += 1) {
+    try { await fs.access(donePath); break; } catch { await wait(250); }
+  }
+  const env = { ...process.env };
+  delete env.ELECTRON_RUN_AS_NODE;
+  spawn(executable, [], { detached: true, stdio: 'ignore', env }).unref();
+}
+
+main();
 `;
 
 function isUrl(value: unknown): value is string {
@@ -314,8 +369,8 @@ async function downloadArtifact(
   });
 }
 
-async function writeHelper(path: string): Promise<void> {
-  await writeFile(path, HELPER_SOURCE, { encoding: 'utf8', mode: 0o600 });
+async function writeHelper(path: string, source = HELPER_SOURCE): Promise<void> {
+  await writeFile(path, source, { encoding: 'utf8', mode: 0o600 });
 }
 
 async function isWritableDirectory(dir: string): Promise<boolean> {
@@ -353,9 +408,11 @@ async function writeRunner(
     pid: number;
     statePath: string;
     version: string;
+    donePath: string;
   },
 ): Promise<void> {
-  const content = `@echo off\r\nset ELECTRON_RUN_AS_NODE=1\r\n"${args.executable}" "${args.helper}" "${args.target}" "${args.staged}" "${args.backup}" "${args.pid}" "${args.executable}" "${args.statePath}" "${args.version}"\r\n`;
+  // Relaunch "0": this runs elevated, and the relauncher reopens Zoia as the user.
+  const content = `@echo off\r\nset ELECTRON_RUN_AS_NODE=1\r\n"${args.executable}" "${args.helper}" "${args.target}" "${args.staged}" "${args.backup}" "${args.pid}" "${args.executable}" "${args.statePath}" "${args.version}" "0" "${args.donePath}"\r\n`;
   await writeFile(path, content, { encoding: 'utf8' });
 }
 
@@ -378,6 +435,8 @@ async function install(update: RemoteUpdate): Promise<void> {
   const backup = `${target}.previous`;
   const helper = join(updateDir, HELPER_NAME);
   const runner = join(updateDir, 'zoia-update-runner.bat');
+  const relauncher = join(updateDir, RELAUNCHER_NAME);
+  const donePath = join(updateDir, 'update-done');
   const statePath = join(app.getPath('userData'), STATE_NAME);
 
   await withNoAsar(async () => {
@@ -386,6 +445,7 @@ async function install(update: RemoteUpdate): Promise<void> {
     await rm(join(updateDir, 'app.asar.partial'), { force: true }).catch(() => {});
     await rm(partial, { force: true }).catch(() => {});
     await rm(staged, { force: true }).catch(() => {});
+    await rm(donePath, { force: true }).catch(() => {});
   });
 
   await downloadArtifact(update.artifactUrl, update.sha256, partial);
@@ -408,6 +468,8 @@ async function install(update: RemoteUpdate): Promise<void> {
         process.execPath,
         statePath,
         update.version,
+        '1',
+        donePath,
       ],
       {
         detached: true,
@@ -426,7 +488,15 @@ async function install(update: RemoteUpdate): Promise<void> {
       pid: process.pid,
       statePath,
       version: update.version,
+      donePath,
     });
+    await writeHelper(relauncher, RELAUNCHER_SOURCE);
+    spawn(process.execPath, [relauncher, donePath, process.execPath], {
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: true,
+      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+    }).unref();
     if (await fileExists(elevatePath)) {
       spawn(elevatePath, [process.env.ComSpec || 'cmd.exe', '/c', runner], {
         detached: true,
