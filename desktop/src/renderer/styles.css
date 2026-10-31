@@ -1,20 +1,25 @@
 :root {
+  /* Dark throughout: without it, Chromium draws a select's open list, and
+     other native controls, white. */
+  color-scheme: dark;
   /* Every control in the top bar is this tall, so they line up. */
   --control-height: 28px;
-  --bg: #1a1b1e;
-  --surface: #232428;
-  --surface-2: #2b2d31;
-  --raised: #313338;
-  --border: #35373c;
-  --text: #f2f3f5;
-  --muted: #949ba4;
-  --accent: #5865f2;
-  --accent-hover: #4752c4;
-  --live: #23a55a;
+  /* Zoia's own: greys with a little blue in them, and the logo's sky blue,
+     deepened enough to carry white text. */
+  --bg: #15181d;
+  --surface: #1c2027;
+  --surface-2: #232830;
+  --raised: #2b313b;
+  --border: #333a46;
+  --text: #eef2f7;
+  --muted: #95a0b0;
+  --accent: #2f78c8;
+  --accent-hover: #2766ab;
+  --live: #2fb67c;
   /* Someone talking in voice: brighter than live, which is a share. */
-  --speaking: #57f287;
-  --warn: #f0b132;
-  --danger: #da373c;
+  --speaking: #5ee6a8;
+  --warn: #e8a53a;
+  --danger: #d33f48;
   --radius: 8px;
 }
 
@@ -2356,7 +2361,7 @@ button.danger {
   padding: 6px 8px;
   /* Between the headings' grey and full white: readable at a glance, with
      the current one still standing out. */
-  color: #b5bac1;
+  color: #bcc5d1;
   font-size: 14px;
   font-weight: 500;
   text-align: left;
@@ -3873,17 +3878,17 @@ button.danger {
 
 .status-light.ok .status-dot {
   background: var(--live);
-  box-shadow: 0 0 0 3px rgb(35 165 90 / 0.18);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--live) 18%, transparent);
 }
 
 .status-light.warn .status-dot {
   background: var(--warn);
-  box-shadow: 0 0 0 3px rgb(240 177 50 / 0.18);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--warn) 18%, transparent);
 }
 
 .status-light.bad .status-dot {
   background: var(--danger);
-  box-shadow: 0 0 0 3px rgb(218 55 60 / 0.2);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 20%, transparent);
 }
 
 .status-light.idle .status-dot {
@@ -6050,7 +6055,7 @@ button.danger:active:not(:disabled),
 .chat-mention {
   padding: 0 2px;
   font-weight: 600;
-  color: #c9cdfb;
+  color: #cfe3fa;
   background: color-mix(in srgb, var(--accent) 22%, transparent);
   border-radius: 3px;
 }
