@@ -7,13 +7,15 @@ import { spawn } from 'node:child_process';
 import { t } from './language';
 import type { ReleaseInfo } from '../shared/ipc';
 import { checkUpdateFile, updateAssetUrl } from './update-release';
+import { askBeforeInstall, elevatedUpdateScript } from './update-elevated';
 import { pipeline } from 'node:stream/promises';
 import { Readable } from 'node:stream';
 
 const CONFIG_NAME = 'updater-config.json';
 const STATE_NAME = 'updater-state.json';
 const HELPER_NAME = 'zoia-update-helper.cjs';
-const RELAUNCHER_NAME = 'zoia-update-relauncher.cjs';
+/** The version last installed from here, so a failed one is not retried on its own. */
+const ATTEMPT_NAME = 'updater-attempt.json';
 
 /**
  * Where updates come from: a GitHub repository, whose latest release carries
@@ -56,14 +58,14 @@ export type UpdaterCheckResult =
  * Swaps app.asar once Zoia has exited, then reopens it when `relaunch` is
  * "1". An install the user cannot write to (Program Files) runs this
  * elevated, and anything it opened would be elevated too: there it only
- * swaps, and the relauncher below, started by Zoia as the user, reopens it.
- * Either way `donePath` is written at the end, success or not.
+ * swaps, and the PowerShell that asked for it reopens Zoia as the user
+ * (update-elevated.ts).
  */
 const HELPER_SOURCE = String.raw`process.noAsar = true;
 const fs = require('node:fs/promises');
 const { spawn } = require('node:child_process');
 
-const [target, staged, backup, parentPid, executable, statePath, version, relaunch, donePath] =
+const [target, staged, backup, parentPid, executable, statePath, version, relaunch] =
   process.argv.slice(2);
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const exists = async (path) => { try { await fs.access(path); return true; } catch { return false; } };
@@ -103,7 +105,6 @@ async function main() {
 }
 
 async function finish(swapped) {
-  if (donePath) await fs.writeFile(donePath, swapped ? 'ok' : 'failed').catch(() => {});
   // Reopened whether or not the swap worked: the old version is still there.
   if (relaunch === '1') {
     const env = { ...process.env };
@@ -126,30 +127,6 @@ main().then(() => finish(true), async (error) => {
   process.exitCode = 1;
   await finish(false);
 });
-`;
-
-/**
- * Started by Zoia itself, so as the user, beside an elevated swap: reopens
- * Zoia once the swap is done. A cancelled elevation prompt never writes
- * `donePath`, so after a while it reopens the old version anyway.
- */
-const RELAUNCHER_SOURCE = String.raw`process.noAsar = true;
-const fs = require('node:fs/promises');
-const { spawn } = require('node:child_process');
-
-const [donePath, executable] = process.argv.slice(2);
-const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-async function main() {
-  for (let attempt = 0; attempt < 480; attempt += 1) {
-    try { await fs.access(donePath); break; } catch { await wait(250); }
-  }
-  const env = { ...process.env };
-  delete env.ELECTRON_RUN_AS_NODE;
-  spawn(executable, [], { detached: true, stdio: 'ignore', env }).unref();
-}
-
-main();
 `;
 
 function isUrl(value: unknown): value is string {
@@ -408,11 +385,10 @@ async function writeRunner(
     pid: number;
     statePath: string;
     version: string;
-    donePath: string;
   },
 ): Promise<void> {
-  // Relaunch "0": this runs elevated, and the relauncher reopens Zoia as the user.
-  const content = `@echo off\r\nset ELECTRON_RUN_AS_NODE=1\r\n"${args.executable}" "${args.helper}" "${args.target}" "${args.staged}" "${args.backup}" "${args.pid}" "${args.executable}" "${args.statePath}" "${args.version}" "0" "${args.donePath}"\r\n`;
+  // Relaunch "0": this runs elevated; the PowerShell that started it reopens Zoia as the user.
+  const content = `@echo off\r\nset ELECTRON_RUN_AS_NODE=1\r\n"${args.executable}" "${args.helper}" "${args.target}" "${args.staged}" "${args.backup}" "${args.pid}" "${args.executable}" "${args.statePath}" "${args.version}" "0"\r\n`;
   await writeFile(path, content, { encoding: 'utf8' });
 }
 
@@ -427,7 +403,6 @@ async function install(update: RemoteUpdate): Promise<void> {
   }
 
   const writable = await isWritableDirectory(process.resourcesPath);
-  const elevatePath = join(process.resourcesPath, 'elevate.exe');
 
   const updateDir = join(app.getPath('userData'), 'updates', `v${update.version}`);
   const staged = join(updateDir, 'update.bin');
@@ -435,8 +410,6 @@ async function install(update: RemoteUpdate): Promise<void> {
   const backup = `${target}.previous`;
   const helper = join(updateDir, HELPER_NAME);
   const runner = join(updateDir, 'zoia-update-runner.bat');
-  const relauncher = join(updateDir, RELAUNCHER_NAME);
-  const donePath = join(updateDir, 'update-done');
   const statePath = join(app.getPath('userData'), STATE_NAME);
 
   await withNoAsar(async () => {
@@ -445,7 +418,6 @@ async function install(update: RemoteUpdate): Promise<void> {
     await rm(join(updateDir, 'app.asar.partial'), { force: true }).catch(() => {});
     await rm(partial, { force: true }).catch(() => {});
     await rm(staged, { force: true }).catch(() => {});
-    await rm(donePath, { force: true }).catch(() => {});
   });
 
   await downloadArtifact(update.artifactUrl, update.sha256, partial);
@@ -455,6 +427,9 @@ async function install(update: RemoteUpdate): Promise<void> {
   });
 
   await writeHelper(helper);
+  // Recorded before quitting: offered this version again after a restart,
+  // the attempt never landed, and it is asked about rather than retried.
+  await writeFile(join(app.getPath('userData'), ATTEMPT_NAME), JSON.stringify(update.version));
 
   if (writable) {
     spawn(
@@ -469,7 +444,6 @@ async function install(update: RemoteUpdate): Promise<void> {
         statePath,
         update.version,
         '1',
-        donePath,
       ],
       {
         detached: true,
@@ -488,36 +462,21 @@ async function install(update: RemoteUpdate): Promise<void> {
       pid: process.pid,
       statePath,
       version: update.version,
-      donePath,
     });
-    await writeHelper(relauncher, RELAUNCHER_SOURCE);
-    spawn(process.execPath, [relauncher, donePath, process.execPath], {
-      detached: true,
-      stdio: 'ignore',
-      windowsHide: true,
-      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
-    }).unref();
-    if (await fileExists(elevatePath)) {
-      spawn(elevatePath, [process.env.ComSpec || 'cmd.exe', '/c', runner], {
-        detached: true,
-        stdio: 'ignore',
-      }).unref();
-    } else {
-      spawn(
-        'powershell.exe',
-        [
-          '-NoProfile',
-          '-NonInteractive',
-          '-Command',
-          `Start-Process -FilePath "${process.env.ComSpec || 'cmd.exe'}" -ArgumentList '/c "${runner}"' -Verb RunAs -WindowStyle Hidden`,
-        ],
-        {
-          detached: true,
-          stdio: 'ignore',
-          windowsHide: true,
-        },
-      ).unref();
-    }
+    // Started as the user: it asks for the elevated swap, waits for it, and
+    // reopens Zoia unelevated, at once if the prompt is refused.
+    spawn(
+      'powershell.exe',
+      [
+        '-NoProfile',
+        '-NonInteractive',
+        '-WindowStyle',
+        'Hidden',
+        '-Command',
+        elevatedUpdateScript({ pid: process.pid, runner, executable: process.execPath }),
+      ],
+      { detached: true, stdio: 'ignore', windowsHide: true },
+    ).unref();
   }
   app.quit();
 }
@@ -635,7 +594,8 @@ export async function runUpdateCheck(force = false): Promise<void> {
         return;
       }
 
-      if (!config.autoInstall) {
+      const attempted = await readJson<string>(join(app.getPath('userData'), ATTEMPT_NAME));
+      if (askBeforeInstall(config.autoInstall === true, attempted, update.version)) {
         const result = await dialog.showMessageBox({
           type: 'info',
           title: t('update.availableTitle'),

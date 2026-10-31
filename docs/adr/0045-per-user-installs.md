@@ -33,6 +33,12 @@ Zoia as administrator still cannot share a window.
   let it share a window, with **Restart normally**, which closes it and reopens it through
   Explorer as the signed-in user. A share refused with `0x80070005` brings the banner back; when
   Zoia is not elevated, it says instead that the window's own program runs as administrator.
+- **An elevated swap is waited on, not timed.** For an install that still needs elevation, Zoia
+  starts a PowerShell as the user that asks for the elevated swap and waits for it to finish, then
+  reopens Zoia as the user, at once if the prompt is refused. 0.14.0 waited a fixed two minutes and
+  reopened Zoia either way, so an unanswered prompt reopened the old version, which with automatic
+  installs on installed the update again: a restart every two minutes. A version whose install was
+  already attempted is now asked about rather than installed on its own again.
 - **Installer options ship as an OTA.** The release classifier counts a change confined to
   `electron-builder.yml`'s `nsis:` block as no packaging change: those options decide nothing
   inside the install folder, so a new `app.asar` still fits every install.
