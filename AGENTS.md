@@ -227,7 +227,8 @@ Details: [docs/DISTRIBUTING.md](docs/DISTRIBUTING.md).
    - Say which platform a change applies to. Never write install instructions ("in-app
      update", "installer required", which file to download): the notes are shown in the app
      to people who have just installed the release.
-   - Claim nothing the diff does not show. Show the entry to the maintainer before tagging.
+   - Claim nothing the diff does not show. The maintainer does not review the entry before the
+     tag: once CI passes, release end to end, and share the notes when it is published.
 4. **Verify:** `node scripts/check-release-version.js vX.Y.Z` (versions agree, entry exists),
    `npm run lint` and `npm test` at the root and in `desktop/` — judged by exit code. Preview
    the notes with a local tag: `git tag vX.Y.Z && node scripts/release-notes.js vX.Y.Z`.
