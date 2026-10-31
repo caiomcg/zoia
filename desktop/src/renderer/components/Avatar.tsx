@@ -46,6 +46,24 @@ function Crown({ role }: { role: 'admin' | 'super_admin' }) {
   );
 }
 
+/**
+ * An addon's bot (ADR 0041), on the corner an admin's crown has: a bot is
+ * never an admin, so the two never meet. Named for its addon when known.
+ */
+function BotBadge({ addon }: { addon: string | null }) {
+  const t = useT();
+  const label = addon ? t('member.botHint', { addon }) : t('member.botLabel');
+  return (
+    <svg className="avatar-bot" viewBox="0 0 24 24" role="img" aria-label={label}>
+      <title>{label}</title>
+      <path d="M12 2.5v3" strokeLinecap="round" />
+      <rect x="4" y="6" width="16" height="13" rx="4" />
+      <circle cx="9" cy="12.5" r="1.8" className="avatar-bot-eye" />
+      <circle cx="15" cy="12.5" r="1.8" className="avatar-bot-eye" />
+    </svg>
+  );
+}
+
 /** Their status (ADR 0038), as a dot on the picture's bottom-right corner. */
 export function StatusDot({ status }: { status: Dot }) {
   const t = useT();
@@ -75,6 +93,7 @@ export default function Avatar({
   identity,
   role,
   status,
+  bot,
 }: {
   name: string;
   live: boolean;
@@ -85,6 +104,8 @@ export default function Avatar({
   role?: AccountRole;
   /** Their status, when it is known and worth showing here. */
   status?: Dot | null;
+  /** An addon's bot: true, or its addon's name for the badge's tooltip. */
+  bot?: boolean | string | null;
 }) {
   const stored = useAvatarImage(image ? undefined : identity);
   const src = image ?? stored;
@@ -104,12 +125,13 @@ export default function Avatar({
     </span>
   );
   const crowned = role === 'admin' || role === 'super_admin';
-  if (!crowned && !status && !live) return picture;
+  if (!crowned && !bot && !status && !live) return picture;
   // Outside the circle, which clips whatever is inside it.
   return (
     <span className="avatar-crowned">
       {picture}
       {crowned && <Crown role={role} />}
+      {bot && !crowned && <BotBadge addon={typeof bot === 'string' ? bot : null} />}
       {status && <StatusDot status={status} />}
       {live && <LiveTag />}
     </span>

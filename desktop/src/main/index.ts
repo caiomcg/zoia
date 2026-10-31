@@ -482,6 +482,17 @@ function registerIpc(): void {
     return api.setAvatar(bytes);
   });
   ipcMain.handle(IPC.removeAvatar, () => api.removeAvatar());
+  // Admins only, which the server checks: a bot's picture (Settings › Addons).
+  ipcMain.handle(IPC.adminBots, () => api.attempt(api.adminBots()));
+  ipcMain.handle(IPC.adminSetBotAvatar, (_event, id: unknown, bytes: unknown) => {
+    if (typeof id !== 'string' || !(bytes instanceof Uint8Array)) {
+      throw new Error('expected a bot and image bytes');
+    }
+    return api.attempt(api.setBotAvatar(id, bytes));
+  });
+  ipcMain.handle(IPC.adminRemoveBotAvatar, (_event, id: unknown) =>
+    api.attempt(api.removeBotAvatar(String(id))),
+  );
   ipcMain.handle(IPC.avatarGet, (_event, identity: unknown, version: unknown) =>
     typeof identity === 'string' && typeof version === 'string'
       ? api.fetchAvatar(identity, version)

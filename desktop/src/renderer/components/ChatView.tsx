@@ -1041,7 +1041,7 @@ function MessageRow({
             {time}
           </time>
         ) : (
-          <Avatar name={name} live={false} image={image} />
+          <Avatar name={name} live={false} image={image} bot={bot} />
         )}
         <div className="chat-content">
           {message.replyTo && (

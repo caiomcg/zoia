@@ -10,6 +10,7 @@ import type {
 import type { MessageKey } from '../../shared/i18n';
 import { useT } from '../i18n';
 import { useConfirm } from './ConfirmDialog';
+import AddonBots from './AddonBots';
 
 /** Refusals with words of their own; anything else is shown by its code. */
 const ERRORS: Record<string, MessageKey> = {
@@ -349,6 +350,14 @@ function AddonCard({
 
           <h5>{t('addons.permissions')}</h5>
           <Permissions list={addon.permissions} />
+
+          {/* A bot has no app to set its own picture: it is set here, for everyone. */}
+          {addon.bots.length > 0 && (
+            <>
+              <h5>{t('bots.title')}</h5>
+              <AddonBots addonId={addon.id} />
+            </>
+          )}
 
           <h5>{t('addons.chats')}</h5>
           <ul className="addon-chats">

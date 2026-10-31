@@ -4740,6 +4740,26 @@ button.danger:active:not(:disabled),
   fill: #f2c14e;
 }
 
+/* An addon's bot (ADR 0041), where an admin's crown sits: a small robot. */
+.avatar-bot {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 13px;
+  height: 13px;
+  fill: var(--accent);
+  stroke: rgb(0 0 0 / 0.65);
+  stroke-width: 2.5;
+  paint-order: stroke;
+  filter: drop-shadow(0 1px 1px rgb(0 0 0 / 0.5));
+  pointer-events: none;
+}
+
+.avatar-bot .avatar-bot-eye {
+  fill: #fff;
+  stroke: none;
+}
+
 /* Someone's status (ADR 0038): a dot on the picture's bottom-right corner,
    ringed in the sidebar's colour so it reads apart from the picture. Offline
    and invisible are a hollow ring. */
@@ -7116,4 +7136,37 @@ button.danger:active:not(:disabled),
   color: #fff;
   background: var(--accent);
   border-radius: 3px;
+}
+
+/* Settings › Addons: an addon's bots with their pictures, and changing them. */
+.bot-pictures {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bot-picture {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.bot-picture-who {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  font-size: 13px;
+}
+
+.bot-picture-who .muted {
+  font-size: 12px;
+}
+
+.bot-picture button:not(.link-button) {
+  padding: 5px 12px;
+  font-size: 12px;
 }

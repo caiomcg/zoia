@@ -12,6 +12,7 @@
 
 import { net } from 'electron';
 import type {
+  BotInfo,
   TokenResult,
   StageState,
   ClaimResult,
@@ -339,8 +340,29 @@ export function removeAvatar() {
   return call<{ ok: boolean }>('/api/avatar', { method: 'DELETE' });
 }
 
+/** Every addon's bot, for an admin to give a picture (Settings › Addons). */
+export function adminBots() {
+  return call<{ bots: BotInfo[] }>('/api/admin/bots').then((r) => r.bots);
+}
+
+/** A bot's picture, which an admin sets for everyone; the server answers its version. */
+export function setBotAvatar(id: string, bytes: Uint8Array) {
+  return call<{ ok: boolean; avatar: string }>(`/api/admin/bots/${encodeURIComponent(id)}/avatar`, {
+    method: 'PUT',
+    body: Buffer.from(bytes),
+    headers: { 'content-type': 'application/octet-stream' },
+  });
+}
+
+export function removeBotAvatar(id: string) {
+  return call<{ ok: boolean }>(`/api/admin/bots/${encodeURIComponent(id)}/avatar`, {
+    method: 'DELETE',
+  });
+}
+
 /** Device ids and picture versions are hex; anything else is not asked for. */
-const AVATAR_ID = /^[0-9a-f]{8}$/;
+// An addon's bot is in a room as bot-<its account> (ADR 0041).
+const AVATAR_ID = /^(bot-)?[0-9a-f]{8}$/;
 const AVATAR_VERSION = /^[0-9a-f]{1,64}$/;
 
 /**

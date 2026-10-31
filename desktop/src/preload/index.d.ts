@@ -17,6 +17,7 @@ import type {
   ActionOutcome,
   AccountDevice,
   AdminAccount,
+  BotInfo,
   AdminAction,
   AdminActionOptions,
   IssuedCode,
@@ -91,6 +92,10 @@ export interface ZoiaBridge {
     moveDevice(id: string, channel: string): Promise<ActionOutcome<{ moved: boolean }>>;
     /** Takes one machine off the server: out of its channel and the chat. Not a ban. */
     kickDevice(id: string): Promise<ActionOutcome<{ kicked: boolean }>>;
+    /** Every addon's bot, to give a picture. */
+    bots(): Promise<ActionOutcome<BotInfo[]>>;
+    setBotAvatar(id: string, bytes: Uint8Array): Promise<ActionOutcome<{ avatar: string }>>;
+    removeBotAvatar(id: string): Promise<ActionOutcome<{ ok: boolean }>>;
   };
   token: {
     /** A join token for a channel; the first channel when none is named. */
