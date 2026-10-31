@@ -645,6 +645,8 @@ export const pt: Messages = {
   'sounds.event.leave': 'Alguém sai do canal',
   'sounds.event.streamStart': 'Uma transmissão começa',
   'sounds.event.streamStop': 'Uma transmissão termina',
+  'sounds.event.viewerJoin': 'Alguém começa a assistir você',
+  'sounds.event.viewerLeave': 'Alguém para de assistir você',
   'sounds.event.mention': 'Alguém @menciona você',
   'sounds.style': 'Som',
   'sounds.style.chime': 'Sino',

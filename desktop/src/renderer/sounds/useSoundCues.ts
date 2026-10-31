@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { cuesBetween, type CueEvent, type CueMember } from './cues';
+import { cuesBetween, viewerCuesBetween, type CueEvent, type CueMember } from './cues';
 import { getSoundSettings } from './settings';
 import { playCue } from './synth';
 
@@ -85,4 +85,24 @@ export function useSoundCues(
     wasLive.current = live;
     playCues([live ? 'streamStart' : 'streamStop']);
   }, [live]);
+}
+
+/**
+ * Plays a cue when someone starts or stops watching this device's broadcast.
+ * `viewers` is null while not live or not connected; the first list after
+ * that is only a baseline, so going live, reconnecting or stopping never
+ * announces everyone already there at once — only the people who pick or
+ * leave your stream afterwards. The list never holds this device: it is
+ * built from the other participants.
+ */
+export function useViewerCues(viewers: readonly string[] | null): void {
+  // The list is rebuilt on every room event; only a change in who is in it counts.
+  const key = viewers === null ? null : [...viewers].sort().join('\n');
+  const previous = useRef<readonly string[] | null>(null);
+  useEffect(() => {
+    const next = key === null ? null : key === '' ? [] : key.split('\n');
+    const before = previous.current;
+    previous.current = next;
+    playCues(viewerCuesBetween(before, next));
+  }, [key]);
 }

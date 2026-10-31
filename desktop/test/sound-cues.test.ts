@@ -11,6 +11,7 @@ import {
   isFixedCue,
   notesFor,
   parseSoundSettings,
+  viewerCuesBetween,
   voiceFor,
   type CueMember,
 } from '../src/renderer/sounds/cues.ts';
@@ -157,5 +158,69 @@ describe("a cue's own volume", () => {
       parseSoundSettings(JSON.stringify({ cues: { join: { volume: -1 } } })).cues.join.volume,
       0,
     );
+  });
+});
+
+describe('viewerCuesBetween', () => {
+  test('someone starting and stopping watching you', () => {
+    assert.deepEqual(viewerCuesBetween([], ['ana']), ['viewerJoin']);
+    assert.deepEqual(viewerCuesBetween(['ana'], []), ['viewerLeave']);
+    assert.deepEqual(viewerCuesBetween(['ana'], ['ana']), []);
+  });
+
+  test('going live, reconnecting or stopping is only a baseline, never a burst', () => {
+    assert.deepEqual(viewerCuesBetween(null, ['ana', 'bo']), []);
+    assert.deepEqual(viewerCuesBetween(['ana', 'bo'], null), []);
+    assert.deepEqual(viewerCuesBetween(null, null), []);
+  });
+
+  test('several at once is one cue, and a swap is both', () => {
+    assert.deepEqual(viewerCuesBetween([], ['ana', 'bo']), ['viewerJoin']);
+    assert.deepEqual(viewerCuesBetween(['ana'], ['bo']), ['viewerJoin', 'viewerLeave']);
+  });
+});
+
+describe('the viewer cues', () => {
+  test('are on, and quieter, for settings saved before they existed', () => {
+    const settings = parseSoundSettings(
+      JSON.stringify({ volume: 0.3, cues: { join: { enabled: false } } }),
+    );
+    for (const event of ['viewerJoin', 'viewerLeave'] as const) {
+      assert.deepEqual(settings.cues[event], DEFAULT_SOUND_SETTINGS.cues[event]);
+      assert.equal(settings.cues[event].enabled, true);
+      assert.ok(settings.cues[event].volume < 1);
+    }
+    assert.equal(settings.cues.join.enabled, false);
+  });
+
+  test('keep a lowered volume of their own', () => {
+    const parsed = parseSoundSettings(JSON.stringify({ cues: { viewerLeave: { volume: 0.2 } } }));
+    assert.equal(parsed.cues.viewerLeave.volume, 0.2);
+    assert.equal(parsed.cues.viewerJoin.volume, DEFAULT_SOUND_SETTINGS.cues.viewerJoin.volume);
+  });
+
+  test('rise when someone starts and fall when they stop, briefly', () => {
+    const rise = notesFor('viewerJoin', { style: 'chime', pitch: 0 });
+    const fall = notesFor('viewerLeave', { style: 'chime', pitch: 0 });
+    assert.ok(rise[0].frequency < rise[1].frequency);
+    assert.ok(fall[0].frequency > fall[1].frequency);
+    for (const notes of [rise, fall]) {
+      assert.ok(Math.max(...notes.map((note) => note.at + note.duration)) < 0.4);
+    }
+  });
+
+  test('sound unlike every other cue, whatever style is set', () => {
+    assert.ok(isFixedCue('viewerJoin') && isFixedCue('viewerLeave'));
+    const pattern = (event: Parameters<typeof notesFor>[0], style: 'chime' | 'pop' | 'soft') =>
+      notesFor(event, { style, pitch: 0 })
+        .map((n) => n.frequency.toFixed(1))
+        .join();
+    for (const style of ['chime', 'pop', 'soft'] as const) {
+      for (const viewer of ['viewerJoin', 'viewerLeave'] as const) {
+        for (const other of ['join', 'leave', 'streamStart', 'streamStop', 'mention'] as const) {
+          assert.notEqual(pattern(viewer, style), pattern(other, style));
+        }
+      }
+    }
   });
 });

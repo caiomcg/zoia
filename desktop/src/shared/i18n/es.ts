@@ -649,6 +649,8 @@ export const es: Messages = {
   'sounds.event.leave': 'Alguien sale del canal',
   'sounds.event.streamStart': 'Empieza una transmisión',
   'sounds.event.streamStop': 'Termina una transmisión',
+  'sounds.event.viewerJoin': 'Alguien empieza a verte',
+  'sounds.event.viewerLeave': 'Alguien deja de verte',
   'sounds.event.mention': 'Alguien te @menciona',
   'sounds.style': 'Sonido',
   'sounds.style.chime': 'Campana',

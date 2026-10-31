@@ -27,7 +27,7 @@ import VoiceAudio from './voice/VoiceAudio';
 import { setPushToTalk } from './voice/pipeline';
 import { playVoiceCue, VOICE_CUE_MS } from './sounds/synth';
 import { getSoundSettings } from './sounds/settings';
-import { useSoundCues } from './sounds/useSoundCues';
+import { useSoundCues, useViewerCues } from './sounds/useSoundCues';
 import { useSoundboard } from './soundboard/useSoundboard';
 import { shortcutSound } from '../shared/shortcuts';
 import { LAST_VERSION_STORAGE_KEY, shouldShowReleaseNotes } from './whats-new';
@@ -246,6 +246,11 @@ export default function App() {
     gpuCast.state === 'starting' ||
     room.cameraState === 'starting';
   useSoundCues(room.members, room.state === 'connected', channel, isLive);
+  // Only while live and connected: going live or reconnecting starts a fresh
+  // baseline rather than announcing everyone already watching.
+  useViewerCues(
+    isLive && room.state === 'connected' ? room.viewers.map((viewer) => viewer.identity) : null,
+  );
 
   // The camera gives the stage back on its own only when no screen is shared,
   // and the hardware screen is shared from here rather than from useRoom.

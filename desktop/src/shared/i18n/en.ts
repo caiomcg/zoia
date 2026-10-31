@@ -650,6 +650,8 @@ export const en = {
   'sounds.event.leave': 'Someone leaves the channel',
   'sounds.event.streamStart': 'A stream starts',
   'sounds.event.streamStop': 'A stream stops',
+  'sounds.event.viewerJoin': 'Someone starts watching you',
+  'sounds.event.viewerLeave': 'Someone stops watching you',
   'sounds.event.mention': 'Someone @mentions you',
   'sounds.style': 'Sound',
   'sounds.style.chime': 'Chime',

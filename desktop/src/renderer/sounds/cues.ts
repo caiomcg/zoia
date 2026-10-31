@@ -1,17 +1,21 @@
 /**
  * Short sound cues for what happens in a channel: someone joining or leaving,
- * someone going live or stopping; and in the chats, someone @mentioning you. This module is pure — deciding which cues a
+ * someone going live or stopping, someone starting or stopping watching your
+ * broadcast; and in the chats, someone @mentioning you. This module is pure — deciding which cues a
  * change deserves, what the settings are, and which notes a cue is made of —
  * so it can be tested without an AudioContext. Playing them is in synth.ts.
  */
 
-export type CueEvent = 'join' | 'leave' | 'streamStart' | 'streamStop' | 'mention';
+export type CueEvent =
+  'join' | 'leave' | 'streamStart' | 'streamStop' | 'viewerJoin' | 'viewerLeave' | 'mention';
 
 export const CUE_EVENTS: readonly CueEvent[] = [
   'join',
   'leave',
   'streamStart',
   'streamStop',
+  'viewerJoin',
+  'viewerLeave',
   'mention',
 ];
 
@@ -43,6 +47,10 @@ export const DEFAULT_SOUND_SETTINGS: SoundSettings = {
     leave: { enabled: true, style: 'chime', pitch: 0, volume: 1 },
     streamStart: { enabled: true, style: 'pop', pitch: 0, volume: 1 },
     streamStop: { enabled: true, style: 'pop', pitch: 0, volume: 1 },
+    // Quieter by default: while live people come and go from your stream
+    // often, and each one is heard.
+    viewerJoin: { enabled: true, style: 'soft', pitch: 0, volume: 0.6 },
+    viewerLeave: { enabled: true, style: 'soft', pitch: 0, volume: 0.6 },
     mention: { enabled: true, style: 'chime', pitch: 0, volume: 1 },
   },
 };
@@ -122,6 +130,26 @@ export function cuesBetween(
   return CUE_EVENTS.filter((event) => events.has(event));
 }
 
+/**
+ * The cue a change in who watches your broadcast deserves, given the
+ * identities before and after. `null` is not being live (or not connected):
+ * the first list after it is only a baseline, so going live, coming back
+ * from a reconnect or stopping never plays a burst for everyone at once.
+ * Several people at once is still one cue, as for the member list.
+ */
+export function viewerCuesBetween(
+  previous: readonly string[] | null,
+  next: readonly string[] | null,
+): CueEvent[] {
+  if (previous === null || next === null) return [];
+  const before = new Set(previous);
+  const after = new Set(next);
+  const events: CueEvent[] = [];
+  if (next.some((identity) => !before.has(identity))) events.push('viewerJoin');
+  if (previous.some((identity) => !after.has(identity))) events.push('viewerLeave');
+  return events;
+}
+
 export interface Note {
   /** Seconds from the start of the cue. */
   at: number;
@@ -176,12 +204,43 @@ export const STYLE_VOICES: Record<CueStyle, StyleVoice> = {
 };
 
 /**
+ * Someone watching you is quieter news than anything a channel does, and
+ * must not be taken for a join: a soft, low-passed droplet of two short
+ * notes, a major third apart, higher than the presence cues and over in a
+ * moment. Rising when someone starts watching, falling when they stop.
+ */
+const VIEWER_VOICE: StyleVoice = {
+  wave: 'sine',
+  base: 1174.7,
+  gap: 0.07,
+  duration: 0.16,
+  attack: 0.012,
+  overtone: 0,
+  lowpass: 2600,
+};
+
+/**
  * Cues with a sound of their own, the same whatever style or pitch is set:
- * a mention must never be mistaken for something a channel does. It is a
- * small bell struck twice, rising; the uneven partials are what make it a
- * bell, and no channel cue has them. Only on and off are its to choose.
+ * a mention must never be mistaken for something a channel does, nor a
+ * viewer for someone joining. The mention is a small bell struck twice,
+ * rising; the uneven partials are what make it a bell, and no channel cue
+ * has them. Only on, off and how loud are theirs to choose.
  */
 export const FIXED_CUES: Partial<Record<CueEvent, { voice: StyleVoice; notes: Note[] }>> = {
+  viewerJoin: {
+    voice: VIEWER_VOICE,
+    notes: [
+      { at: 0, frequency: 1174.7, duration: 0.14 },
+      { at: 0.07, frequency: 1480, duration: 0.2 },
+    ],
+  },
+  viewerLeave: {
+    voice: VIEWER_VOICE,
+    notes: [
+      { at: 0, frequency: 1480, duration: 0.14 },
+      { at: 0.07, frequency: 1174.7, duration: 0.2 },
+    ],
+  },
   mention: {
     voice: {
       wave: 'sine',

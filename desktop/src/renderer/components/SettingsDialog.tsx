@@ -583,6 +583,8 @@ const CUE_LABELS: Record<CueEvent, MessageKey> = {
   leave: 'sounds.event.leave',
   streamStart: 'sounds.event.streamStart',
   streamStop: 'sounds.event.streamStop',
+  viewerJoin: 'sounds.event.viewerJoin',
+  viewerLeave: 'sounds.event.viewerLeave',
   mention: 'sounds.event.mention',
 };
 
