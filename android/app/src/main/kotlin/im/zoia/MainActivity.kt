@@ -151,10 +151,12 @@ class MainActivity : ComponentActivity() {
 
     private fun enterPipMode() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val params = PictureInPictureParams.Builder()
+            val builder = PictureInPictureParams.Builder()
                 .setAspectRatio(Rational(16, 9))
-                .build()
-            enterPictureInPictureMode(params)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                builder.setAutoEnterEnabled(true)
+            }
+            enterPictureInPictureMode(builder.build())
         }
     }
 

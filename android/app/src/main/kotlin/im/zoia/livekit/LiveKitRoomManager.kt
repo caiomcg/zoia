@@ -9,7 +9,6 @@ import io.livekit.android.room.participant.RemoteParticipant
 import io.livekit.android.room.track.AudioTrack
 import io.livekit.android.room.track.Track
 import io.livekit.android.room.track.VideoTrack
-import io.livekit.android.renderer.TextureViewRenderer
 import livekit.org.webrtc.SurfaceViewRenderer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -314,10 +313,6 @@ class LiveKitRoomManager(
             }
 
     fun initVideoRenderer(renderer: SurfaceViewRenderer) {
-        room?.initVideoRenderer(renderer)
-    }
-
-    fun initVideoRenderer(renderer: TextureViewRenderer) {
         room?.initVideoRenderer(renderer)
     }
 

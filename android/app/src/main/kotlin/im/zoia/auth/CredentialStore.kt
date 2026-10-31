@@ -17,40 +17,38 @@ class CredentialStore(context: Context) {
         EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
     )
 
-    private val plainPrefs = context.getSharedPreferences("zoia_settings", Context.MODE_PRIVATE)
-
     /**
      * What a sign-in leaves behind: the server and this machine's credential,
-     * so the password is typed once per device. The server is also kept in
-     * the clear, to start the sign-in screen with after signing out.
+     * so the password is typed once per device. The server address and last
+     * name are kept across sign-out so the sign-in screen starts with them.
      */
     fun saveSignIn(serverUrl: String, deviceCredential: String, deviceName: String) {
         prefs.edit()
             .putString(KEY_SERVER_URL, serverUrl)
             .putString(KEY_DEVICE_CREDENTIAL, deviceCredential)
             .putString(KEY_DEVICE_NAME, deviceName)
-            .apply()
-        plainPrefs.edit()
             .putString(KEY_LAST_NAME, deviceName)
             .putString(KEY_LAST_SERVER, serverUrl)
             .apply()
     }
 
     /** The server last signed in to, for the sign-in screen to start with. */
-    fun getLastServerUrl(): String? = plainPrefs.getString(KEY_LAST_SERVER, null)
+    fun getLastServerUrl(): String? = prefs.getString(KEY_LAST_SERVER, null)
 
     fun saveDeviceName(deviceName: String) {
-        prefs.edit().putString(KEY_DEVICE_NAME, deviceName).apply()
-        plainPrefs.edit().putString(KEY_LAST_NAME, deviceName).apply()
+        prefs.edit()
+            .putString(KEY_DEVICE_NAME, deviceName)
+            .putString(KEY_LAST_NAME, deviceName)
+            .apply()
     }
 
     fun getServerUrl(): String? = prefs.getString(KEY_SERVER_URL, null)
 
     fun getDeviceCredential(): String? = prefs.getString(KEY_DEVICE_CREDENTIAL, null)
 
-    fun getDeviceName(): String? = prefs.getString(KEY_DEVICE_NAME, null) ?: plainPrefs.getString(KEY_LAST_NAME, null)
+    fun getDeviceName(): String? = prefs.getString(KEY_DEVICE_NAME, null) ?: prefs.getString(KEY_LAST_NAME, null)
 
-    fun getLastDisplayName(): String? = plainPrefs.getString(KEY_LAST_NAME, null)
+    fun getLastDisplayName(): String? = prefs.getString(KEY_LAST_NAME, null)
 
     fun hasCredential(): Boolean = !getDeviceCredential().isNullOrEmpty() && !getServerUrl().isNullOrEmpty()
 

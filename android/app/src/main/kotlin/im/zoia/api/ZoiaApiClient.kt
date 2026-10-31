@@ -92,6 +92,7 @@ data class RoomInfo(
     val id: String,
     val name: String,
     val isDefault: Boolean = false,
+    val away: Boolean = false,
     val participants: List<RoomParticipant> = emptyList(),
     val broadcasters: List<RoomBroadcaster> = emptyList()
 )
@@ -129,14 +130,17 @@ class ZoiaApiClient(private val credentialStore: CredentialStore) {
     private val mediaTypeJson = "application/json; charset=utf-8".toMediaType()
 
     // In-memory cookie store for session cookies
-    private val cookieStore = mutableMapOf<String, MutableList<Cookie>>()
+    private val cookieStore = java.util.concurrent.ConcurrentHashMap<String, List<Cookie>>()
 
     private val cookieJar = object : CookieJar {
         override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
-            val list = cookieStore.getOrPut(url.host) { mutableListOf() }
-            cookies.forEach { newCookie ->
-                list.removeAll { it.name == newCookie.name }
-                list.add(newCookie)
+            cookieStore.compute(url.host) { _, existing ->
+                val current = existing?.toMutableList() ?: mutableListOf()
+                cookies.forEach { newCookie ->
+                    current.removeAll { it.name == newCookie.name }
+                    current.add(newCookie)
+                }
+                current
             }
         }
 
