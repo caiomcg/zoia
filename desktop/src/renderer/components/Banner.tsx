@@ -14,10 +14,13 @@ export default function Banner({
   children,
   onDismiss,
   autoDismissMs,
+  action,
 }: {
   tone?: 'error' | 'warn';
   children: React.ReactNode;
   onDismiss: () => void;
+  /** A button that fixes what the banner says, beside its close. */
+  action?: { label: string; onClick: () => void };
   /** Goes by itself after this long; absent, it stays until dismissed. */
   autoDismissMs?: number;
 }) {
@@ -52,6 +55,11 @@ export default function Banner({
       role={tone === 'error' ? 'alert' : 'status'}
     >
       <span className="banner-text">{children}</span>
+      {action && (
+        <button type="button" className="banner-action" onClick={action.onClick}>
+          {action.label}
+        </button>
+      )}
       <button
         className="banner-close"
         onClick={dismiss}

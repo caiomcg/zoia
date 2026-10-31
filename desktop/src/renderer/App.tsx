@@ -137,6 +137,15 @@ export default function App() {
   // lists the channels and joins one only when it is clicked.
   const [channel, setChannel] = useState<string | null>(null);
   const [channels, setChannels] = useState<RoomInfo[]>([]);
+  // Running as administrator, where Windows will not let Zoia capture a
+  // window (src/main/elevation.ts): said up front, with the way out.
+  const [elevated, setElevated] = useState(false);
+  useEffect(() => {
+    window.zoia.app
+      .elevated()
+      .then(setElevated)
+      .catch(() => {});
+  }, []);
   // Your screen share, for the live card: what it is and since when.
   const [liveSource, setLiveSource] = useState<string | null>(null);
   const [liveSince, setLiveSince] = useState<number | null>(null);
@@ -934,6 +943,21 @@ export default function App() {
   const audioWarning = show('audio', room.audioWarning);
   const voiceMessage = show('voice', voice.error);
   const stageMessage = show('stage', stageError);
+  // Windows refused to capture a window (E_ACCESSDENIED, in every capture
+  // path's errors). Elevated, restarting fixes it; otherwise the window's own
+  // program runs as administrator, and only a whole screen can be shared.
+  const accessDenied = [room.broadcastError, gpuCast.error, stageError].some((e) =>
+    e?.includes('0x80070005'),
+  );
+  // Shown again after a refused share even if dismissed at start.
+  const elevatedNotice = show(
+    accessDenied ? 'elevated-refused' : 'elevated',
+    elevated ? t('elevated.message') : null,
+  );
+  const protectedNotice = show(
+    'protected-window',
+    !elevated && accessDenied ? t('capture.protectedWindow') : null,
+  );
   const channelMessage = show('channel', channelError);
   const chatMessage = show('chat', chatError);
   const gpuWarning = gpuLive ? show('gpustatus', gpuCast.status?.error) : null;
@@ -1021,6 +1045,23 @@ export default function App() {
         <Banner onDismiss={() => dismiss('broadcast', broadcastError)}>{broadcastError}</Banner>
       )}
       {gpuError && <Banner onDismiss={() => dismiss('gpu', gpuError)}>{gpuError}</Banner>}
+      {elevatedNotice && (
+        <Banner
+          tone="warn"
+          onDismiss={() => dismiss(accessDenied ? 'elevated-refused' : 'elevated', elevatedNotice)}
+          action={{
+            label: t('elevated.restart'),
+            onClick: () => void window.zoia.app.restartUnelevated(),
+          }}
+        >
+          {elevatedNotice}
+        </Banner>
+      )}
+      {protectedNotice && (
+        <Banner tone="warn" onDismiss={() => dismiss('protected-window', protectedNotice)}>
+          {protectedNotice}
+        </Banner>
+      )}
       {stageMessage && (
         <Banner onDismiss={() => dismiss('stage', stageMessage)}>{stageMessage}</Banner>
       )}

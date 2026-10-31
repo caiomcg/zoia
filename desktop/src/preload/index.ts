@@ -193,6 +193,8 @@ const bridge: ZoiaBridge = {
   },
   app: {
     version: () => ipcRenderer.invoke(IPC.appVersion) as Promise<string>,
+    elevated: () => ipcRenderer.invoke(IPC.appElevated) as Promise<boolean>,
+    restartUnelevated: () => ipcRenderer.invoke(IPC.appRestartUnelevated) as Promise<boolean>,
     emojiPanel: () => ipcRenderer.invoke(IPC.appEmojiPanel) as Promise<void>,
     platform: process.platform,
   },

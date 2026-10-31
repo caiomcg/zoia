@@ -705,6 +705,8 @@ export const IPC = {
   updaterOpenInstaller: 'zoia:updater:installer:open',
   updaterReleaseNotes: 'zoia:updater:release-notes',
   appVersion: 'zoia:app:version',
+  appElevated: 'zoia:app:elevated',
+  appRestartUnelevated: 'zoia:app:restart-unelevated',
   appEmojiPanel: 'zoia:app:emojiPanel',
   trayCloseGet: 'zoia:tray:close:get',
   trayCloseSet: 'zoia:tray:close:set',

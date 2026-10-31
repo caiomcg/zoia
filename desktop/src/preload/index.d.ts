@@ -285,6 +285,10 @@ export interface ZoiaBridge {
   };
   app: {
     version(): Promise<string>;
+    /** Running as administrator, where Windows will not let Zoia capture a window. */
+    elevated(): Promise<boolean>;
+    /** Closes Zoia and opens it again unelevated; false when it cannot. */
+    restartUnelevated(): Promise<boolean>;
     /** Opens the system's emoji picker over the focused field (Windows, macOS). */
     emojiPanel(): Promise<void>;
     /** The OS this copy runs on; application audio is Windows-only. */

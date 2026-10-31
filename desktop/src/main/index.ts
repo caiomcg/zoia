@@ -15,6 +15,7 @@ import { join } from 'node:path';
 import * as pairing from './pairing';
 import * as config from './config';
 import * as api from './api';
+import { isElevated, restartUnelevated } from './elevation';
 import * as sources from './sources';
 import * as audioCapture from './audio';
 import * as encoder from './encoder';
@@ -395,6 +396,14 @@ function registerIpc(): void {
     return shell.openExternal(url.toString());
   });
   ipcMain.handle(IPC.appVersion, () => app.getVersion());
+  // Running as administrator, where Windows refuses window capture.
+  ipcMain.handle(IPC.appElevated, () => isElevated());
+  ipcMain.handle(IPC.appRestartUnelevated, async () => {
+    // A development build has no Zoia.exe to reopen, only electron.exe.
+    if (!app.isPackaged || !(await isElevated())) return false;
+    restartUnelevated(() => app.quit());
+    return true;
+  });
   // The system's own emoji picker, typing into whatever field has focus.
   ipcMain.handle(IPC.appEmojiPanel, () => {
     if (app.isEmojiPanelSupported()) app.showEmojiPanel();

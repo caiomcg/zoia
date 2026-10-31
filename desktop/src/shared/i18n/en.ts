@@ -726,6 +726,11 @@ export const en = {
   'bots.change': 'Change picture',
   'bots.loadFailed': 'Could not load the bots.',
   'bots.failed': "Could not change the bot's picture.",
+  'elevated.message':
+    "Zoia is running as administrator, so Windows won't let it share a window. Restart it normally to share again.",
+  'elevated.restart': 'Restart normally',
+  'capture.protectedWindow':
+    "Windows won't let Zoia capture this window, usually because its program runs as administrator. Share your whole screen instead, or run that program normally.",
   'profile.you': 'You',
   'account.password': 'Password',
   'server.limits': 'Limits',

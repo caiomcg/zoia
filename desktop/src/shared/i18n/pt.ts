@@ -722,6 +722,11 @@ export const pt: Messages = {
   'bots.change': 'Trocar foto',
   'bots.loadFailed': 'Não foi possível carregar os bots.',
   'bots.failed': 'Não foi possível trocar a foto do bot.',
+  'elevated.message':
+    'O Zoia está rodando como administrador, então o Windows não deixa ele compartilhar uma janela. Reinicie normalmente para compartilhar de novo.',
+  'elevated.restart': 'Reiniciar normalmente',
+  'capture.protectedWindow':
+    'O Windows não deixa o Zoia capturar esta janela, geralmente porque o programa dela roda como administrador. Compartilhe a tela inteira, ou rode esse programa normalmente.',
   'profile.you': 'Você',
   'account.password': 'Senha',
   'server.limits': 'Limites',

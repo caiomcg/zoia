@@ -3883,6 +3883,22 @@ button.danger {
   background: rgb(0 0 0 / 0.32);
 }
 
+/* What fixes the banner's problem, beside its close. */
+.banner-action {
+  flex: 0 0 auto;
+  padding: 3px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: inherit;
+  background: rgb(0 0 0 / 0.22);
+  border: 1px solid rgb(255 255 255 / 0.25);
+  border-radius: 6px;
+}
+
+.banner-action:hover {
+  background: rgb(0 0 0 / 0.36);
+}
+
 .banner.error {
   color: #fff;
   background: var(--danger);
