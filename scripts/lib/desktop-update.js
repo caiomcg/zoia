@@ -39,6 +39,35 @@ function packageContentChanged(ref, path, base) {
   }
 }
 
+/**
+ * The packaging file without its top-level `nsis:` block. The installer's
+ * options (where it installs, which pages it shows) decide nothing inside the
+ * install folder, so an app.asar built after changing only them still fits
+ * every install, and the change can ship as an OTA.
+ */
+export function withoutInstallerOptions(yaml) {
+  const kept = [];
+  let installer = false;
+  for (const line of yaml.split(/\r?\n/)) {
+    // A line at the margin starts the next block (or is a comment before it).
+    if (/^\S/.test(line)) installer = /^nsis:\s*(#.*)?$/.test(line);
+    if (!installer) kept.push(line);
+  }
+  return kept.join('\n');
+}
+
+function packagingChanged(ref, path, base) {
+  if (!base) return true;
+  try {
+    return (
+      withoutInstallerOptions(git(['show', `${base}:${path}`])) !==
+      withoutInstallerOptions(git(['show', `${ref}:${path}`]))
+    );
+  } catch {
+    return true;
+  }
+}
+
 function lockfileContentChanged(ref, path, base) {
   if (!base) return true;
   try {
@@ -63,7 +92,6 @@ const fullReleaseReasons = [
   [/^desktop\/ffmpeg\.json$/, 'FFmpeg pin changed'],
   // The Dockerfile and patches the shipped ffmpeg.exe is built from.
   [/^desktop\/ffmpeg\//, 'FFmpeg build changed'],
-  [/^desktop\/electron-builder\.yml$/, 'packaging layout changed'],
   [/^desktop\/electron\.vite\.config\.ts$/, 'Electron bundling configuration changed'],
   [/^desktop\/build\//, 'application icon/resource changed'],
 ];
@@ -79,6 +107,10 @@ export function classify(ref) {
     if (rule) {
       updateType = 'full';
       reasons.push(rule[1]);
+    }
+    if (file === 'desktop/electron-builder.yml' && packagingChanged(ref, file, base)) {
+      updateType = 'full';
+      reasons.push('packaging layout changed');
     }
     if (file === 'desktop/package.json' && packageContentChanged(ref, file, base)) {
       updateType = 'full';

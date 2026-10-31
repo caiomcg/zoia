@@ -86,9 +86,13 @@ dmg:
   artifactName: '${productName}-${version}-mac-${arch}.${ext}'
 
 nsis:
-  oneClick: false
+  # Installed for the current user only, in their own AppData, with no choice
+  # of mode or folder (ADR 0045). A copy in Program Files cannot be updated
+  # without administrator rights, and an update that needs them is how Zoia
+  # ended up running elevated, where Windows refuses to capture a window.
+  # Only this block changing still ships as an OTA (scripts/lib/desktop-update.js).
+  oneClick: true
   perMachine: false
-  allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
   createStartMenuShortcut: true
   artifactName: '${productName}-Setup-${version}-${arch}.${ext}'

@@ -2,6 +2,8 @@
 
 - **Status:** accepted
 - **Date:** 2026-09-27
+- **Amended by** [ADR 0045](0045-per-user-installs.md): new installs are per-user only, so step 5's
+  elevation is left to installs made before it
 
 ## Context
 
