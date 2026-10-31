@@ -1077,6 +1077,9 @@ export function createApp({
   app.get('/api/avatar/:id', requireSession, requireAvatars, async (req, res, next) => {
     try {
       const { id } = req.params;
+      // An addon's bot is in a room as bot-<its account>, with no device.
+      if (isBotIdentity(id))
+        return await sendAvatar(res, await botAccount(id.slice(BOT_PREFIX.length)));
       if (!isAvatarId(id)) return res.status(404).json({ error: 'no_avatar' });
       const record = await deviceStore.getActive(id);
       const holder = record ? await accountStore.get(record.accountId) : null;
@@ -1092,6 +1095,81 @@ export function createApp({
     try {
       const { id } = req.params;
       await sendAvatar(res, isAvatarId(id) ? await accountStore.get(id) : null);
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  /** A bot's account by its id, or null for anything that is not one. */
+  async function botAccount(id) {
+    if (!isAvatarId(id)) return null;
+    const account = await accountStore.get(id);
+    return account?.addonId ? account : null;
+  }
+
+  // ---- bots' pictures ------------------------------------------------------
+  // A bot has no app to set its own picture: an admin sets it for everyone,
+  // beside its addon in Settings › Addons. Only the picture: a bot's name and rights stay its
+  // addon's (ADR 0041).
+
+  app.get('/api/admin/bots', requireAdmin, async (_req, res, next) => {
+    try {
+      const addons = addonStore ? await addonStore.list() : [];
+      const addonName = (id) => addons.find((a) => a.id === id)?.name ?? id;
+      const bots = (await accountStore.list())
+        .filter((a) => a.addonId)
+        .map((a) => ({
+          id: a.id,
+          name: a.name,
+          addonId: a.addonId,
+          addon: addonName(a.addonId),
+          avatar: a.avatar ?? null,
+        }));
+      res.json({ bots });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  /** Shows a bot's new picture, or none, in every channel it is in now. */
+  async function announceBotAvatar(bot, version) {
+    for (const channel of await channelSet.list()) {
+      await channel.stage.setAvatar?.(`${BOT_PREFIX}${bot.id}`, version);
+    }
+  }
+
+  app.put(
+    '/api/admin/bots/:id/avatar',
+    requireAdmin,
+    requireAvatars,
+    readAvatarBody,
+    async (req, res, next) => {
+      try {
+        const bot = await botAccount(req.params.id);
+        if (!bot) return res.status(404).json({ error: 'unknown_bot' });
+        if (!imageType(req.body)) return res.status(400).json({ error: 'invalid_image' });
+        const avatar = await avatarStore.save(bot.id, req.body);
+        await accountStore.setAvatar(bot.id, avatar);
+        await announceBotAvatar(bot, avatar);
+        peopleChanged();
+        logger.info(`[admin] ${req.user.accountId} set a picture for bot ${bot.id}`);
+        res.json({ ok: true, avatar });
+      } catch (err) {
+        next(err);
+      }
+    },
+  );
+
+  app.delete('/api/admin/bots/:id/avatar', requireAdmin, requireAvatars, async (req, res, next) => {
+    try {
+      const bot = await botAccount(req.params.id);
+      if (!bot) return res.status(404).json({ error: 'unknown_bot' });
+      await accountStore.setAvatar(bot.id, null);
+      await avatarStore.remove(bot.id);
+      await announceBotAvatar(bot, null);
+      peopleChanged();
+      logger.info(`[admin] ${req.user.accountId} removed bot ${bot.id}'s picture`);
+      res.json({ ok: true });
     } catch (err) {
       next(err);
     }

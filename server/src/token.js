@@ -115,7 +115,12 @@ export function createTokenIssuer({
       await ensureRoom(room);
       const identity = botIdentity(bot.id);
       const at = new AccessToken(apiKey, apiSecret, { identity, name: bot.name, ttl: TOKEN_TTL });
-      at.attributes = { [VOICE_ATTRIBUTE]: '1', [BOT_ATTRIBUTE]: String(addonName ?? bot.name) };
+      at.attributes = {
+        [VOICE_ATTRIBUTE]: '1',
+        [BOT_ATTRIBUTE]: String(addonName ?? bot.name),
+        // Its picture, which an admin sets (Settings › Addons), as a person's.
+        ...(bot.avatar ? { [AVATAR_ATTRIBUTE]: String(bot.avatar) } : {}),
+      };
       at.addGrant({
         roomJoin: true,
         room,

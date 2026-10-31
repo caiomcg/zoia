@@ -215,6 +215,20 @@ export function createStage({ rooms, roomName, logger = console, now = () => Dat
       }
     },
 
+    /**
+     * A new picture version for someone in the room, a bot's say, which has
+     * no app to set its own: everyone in it fetches the new one now.
+     */
+    async setAvatar(identity, version) {
+      try {
+        await rooms.updateParticipant(roomName, identity, {
+          attributes: { [AVATAR_ATTRIBUTE]: version ?? '' },
+        });
+      } catch {
+        // Not in this room, which is most rooms.
+      }
+    },
+
     async disconnect(identities) {
       for (const identity of identities) {
         for (const id of [identity, `${identity}${WHIP_SUFFIX}`]) {

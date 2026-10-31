@@ -22,6 +22,7 @@ import { createStage } from '../src/stage.js';
 import { fixedChannels } from '../src/channels.js';
 import { AVATAR_ATTRIBUTE, AVATAR_MAX_BYTES, createAvatarStore } from '../src/avatars.js';
 import { createChatHub } from '../src/chat-routes.js';
+import { createAddonStore, validateManifest } from '../src/addons.js';
 
 const PASSWORD = 'Correct-horse-1';
 
@@ -548,6 +549,61 @@ describe('pictures', () => {
     for (const id of ['..%2Fzoia.db', '..', 'ABCDEF12', '1234567', 'deadbeef']) {
       assert.equal((await alice.agent.get(`/api/avatar/${id}`)).status, 404, id);
     }
+  });
+
+  test('an admin sets a bot its picture, which everyone sees, in its room too', async () => {
+    const admin = await person('admin@example.com', 'admin');
+    const bob = await person('bob@example.com');
+    // A bot belongs to an installed addon.
+    const checked = validateManifest({
+      id: 'zouve',
+      name: 'Zouve',
+      version: '1.0.0',
+      image: `ghcr.io/caiomcg/zouve@sha256:${'a'.repeat(64)}`,
+      permissions: ['bots.create', 'voice.publish'],
+    });
+    const { addon } = await createAddonStore({ db, logger: quiet() }).install({
+      repo: 'caiomcg/zouve',
+      manifest: checked.manifest,
+      by: 'test',
+    });
+    const { account: bot } = await accounts.createBot({ addonId: addon.id, name: 'Zouve' });
+    const path = `/api/admin/bots/${bot.id}/avatar`;
+
+    assert.equal(
+      (await bob.agent.put(path).set('content-type', 'image/webp').send(WEBP)).status,
+      403,
+    );
+    const set = await admin.agent.put(path).set('content-type', 'image/webp').send(WEBP);
+    assert.equal(set.status, 200);
+    assert.ok(
+      rooms.updates.some(
+        (u) =>
+          u.identity === `bot-${bot.id}` && u.attributes?.[AVATAR_ATTRIBUTE] === set.body.avatar,
+      ),
+    );
+    assert.equal((await bob.agent.get(`/api/avatar/bot-${bot.id}`)).status, 200);
+    const listed = (await admin.agent.get('/api/admin/bots')).body.bots;
+    assert.deepEqual(
+      listed.map((b) => [b.id, b.name, b.avatar]),
+      [[bot.id, 'Zouve', set.body.avatar]],
+    );
+    await bob.agent.get('/api/admin/bots').expect(403);
+
+    assert.equal((await admin.agent.delete(path)).status, 200);
+    assert.equal((await bob.agent.get(`/api/avatar/bot-${bot.id}`)).status, 404);
+  });
+
+  test('only a bot gets a picture this way, never a person', async () => {
+    const admin = await person('admin@example.com', 'admin');
+    const bob = await person('bob@example.com');
+    const res = await admin.agent
+      .put(`/api/admin/bots/${bob.account.id}/avatar`)
+      .set('content-type', 'image/webp')
+      .send(WEBP);
+    assert.equal(res.status, 404);
+    assert.equal(res.body.error, 'unknown_bot');
+    assert.equal((await bob.agent.get(`/api/avatar/bot-${bob.account.id}`)).status, 404);
   });
 
   test('setting, removing and fetching all require a session', async () => {
