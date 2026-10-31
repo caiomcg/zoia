@@ -615,7 +615,8 @@ export const pt: Messages = {
     'As fotos de perfil, enquadradas arrastando e com zoom, e um nome único por servidor.',
   'about.role.stefano':
     'O compartilhamento codificado por hardware em placas NVIDIA, e um palco cuja faixa e janelas ficam onde você as coloca.',
-  'about.role.yure': 'Os canais em que se entra com um clique, e um botão para sair deles.',
+  'about.role.yure':
+    'Os chats de texto com fotos e vídeos, uma câmera ao lado da tela, os status e quem está no servidor, e os canais em que se entra com um clique.',
   'about.role.anderson':
     'O app para Android: assistir pelo celular, com o som tocando mesmo em segundo plano.',
 

@@ -619,7 +619,8 @@ export const en = {
     'Profile pictures, framed by dragging and zooming, and one display name per server.',
   'about.role.stefano':
     'Hardware-encoded sharing on NVIDIA cards, and a stage whose strip and tiles go where you put them.',
-  'about.role.yure': 'Channels you join with a click, and a button to leave them.',
+  'about.role.yure':
+    'Text chats with photos and videos, a camera beside the screen, statuses and who is on the server, and channels you join with a click.',
   'about.role.anderson':
     'The Android app: watching on a phone, with the sound still playing in the background.',
 
