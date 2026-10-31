@@ -5710,8 +5710,37 @@ button.danger:active:not(:disabled),
 }
 
 .member-menu-volume-value {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
+}
+
+/* Back to a slider's usual value, shown only while it is somewhere else. */
+.slider-reset {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  color: var(--muted);
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.slider-reset:hover {
+  color: var(--text);
+  background: var(--raised);
+}
+
+.voice-value {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
 }
 
 .member-menu-volume input {

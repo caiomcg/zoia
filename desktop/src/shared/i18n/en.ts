@@ -343,7 +343,7 @@ export const en = {
     'How loud your microphone is sent. Too quiet even at 100%? Turn on Boost.',
   'voiceSettings.volumeBoostHint':
     'Boost goes past 100% for a quiet microphone. Loud peaks are softened; if you sound distorted, lower it.',
-  'voiceSettings.volumeReset': 'Double-click to go back to {percent}%',
+  'voiceSettings.volumeReset': 'Back to {percent}%',
   'voiceSettings.boost': 'Boost',
   'voiceSettings.boostHint': 'Make a quiet microphone louder than 100%',
   'voiceSettings.mode': 'Input mode',

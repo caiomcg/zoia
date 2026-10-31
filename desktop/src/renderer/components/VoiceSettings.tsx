@@ -11,6 +11,7 @@ import { useT } from '../i18n';
 import type { MessageKey } from '../../shared/i18n';
 import { useCameraDevices } from '../livekit/useCamera';
 import { useWheelRange } from './useWheelRange';
+import ResetButton from './ResetButton';
 import { useMicLevel } from '../voice/useMicLevel';
 import {
   BOOST_MAX,
@@ -132,23 +133,20 @@ function LevelMeter({
   );
 }
 
-/** A slider in percent with the wheel, one percent a notch, and a value to go back to on double-click. */
+/** A slider in percent, with the wheel moving it one percent a notch. */
 function PercentRange({
   value,
   min,
   max,
-  reset,
   label,
   onChange,
 }: {
   value: number;
   min: number;
   max: number;
-  reset: number;
   label: string;
   onChange: (percent: number) => void;
 }) {
-  const t = useT();
   const set = (next: number) => onChange(Math.min(max, Math.max(min, next)));
   const ref = useWheelRange((direction) => set(value + direction));
   return (
@@ -161,11 +159,8 @@ function PercentRange({
       step={1}
       value={value}
       onChange={(event) => set(Number(event.target.value))}
-      // Easy to overshoot by a little.
-      onDoubleClick={() => set(reset)}
       aria-label={label}
       aria-valuetext={`${value}%`}
-      title={t('voiceSettings.volumeReset', { percent: reset })}
     />
   );
 }
@@ -184,7 +179,15 @@ function InputVolume({ settings }: { settings: VoiceSettings }) {
       <div className="voice-row">
         <span className="voice-label">{t('voiceSettings.volume')}</span>
         <span className="voice-volume-head">
-          <span className="voice-value">{volume}%</span>
+          <span className="voice-value">
+            {volume !== 100 && (
+              <ResetButton
+                label={t('voiceSettings.volumeReset', { percent: 100 })}
+                onClick={() => setVoiceSettings({ ...settings, inputVolume: 1 })}
+              />
+            )}
+            {volume}%
+          </span>
           <button
             type="button"
             className={`voice-boost-toggle${settings.boost ? ' active' : ''}`}
@@ -203,7 +206,6 @@ function InputVolume({ settings }: { settings: VoiceSettings }) {
         value={volume}
         min={0}
         max={100}
-        reset={100}
         label={t('voiceSettings.volume')}
         onChange={(percent) => setVoiceSettings({ ...settings, inputVolume: percent / 100 })}
       />
@@ -211,13 +213,20 @@ function InputVolume({ settings }: { settings: VoiceSettings }) {
         <div className="voice-boost">
           <div className="voice-row">
             <span className="voice-label">{t('voiceSettings.boost')}</span>
-            <span className="voice-value voice-boosted">{boost}%</span>
+            <span className="voice-value voice-boosted">
+              {boost !== 200 && (
+                <ResetButton
+                  label={t('voiceSettings.volumeReset', { percent: 200 })}
+                  onClick={() => setVoiceSettings({ ...settings, boostLevel: 2 })}
+                />
+              )}
+              {boost}%
+            </span>
           </div>
           <PercentRange
             value={boost}
             min={100}
             max={BOOST_MAX * 100}
-            reset={200}
             label={t('voiceSettings.boost')}
             onChange={(percent) => setVoiceSettings({ ...settings, boostLevel: percent / 100 })}
           />

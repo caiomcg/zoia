@@ -10,6 +10,7 @@ import {
   type ReactNode,
 } from 'react';
 import { createPortal } from 'react-dom';
+import ResetButton from './ResetButton';
 import type { RoomMember } from '../livekit/useRoom';
 import type { AccountRole, RoomInfo } from '../../shared/ipc';
 import type { GridTarget } from './RemoteGrid';
@@ -1278,7 +1279,16 @@ function VoiceVolume({ identity, name }: { identity: string; name: string }) {
     <label className="member-menu-volume">
       <span>
         {t('voice.volume')}
-        <span className="member-menu-volume-value">{percent}%</span>
+        <span className="member-menu-volume-value">
+          {/* Back to as sent, where it is easy to overshoot by a little. */}
+          {percent !== 100 && (
+            <ResetButton
+              label={t('voiceSettings.volumeReset', { percent: 100 })}
+              onClick={() => setVoiceVolume(identity, 1)}
+            />
+          )}
+          {percent}%
+        </span>
       </span>
       <input
         ref={ref}
@@ -1288,8 +1298,6 @@ function VoiceVolume({ identity, name }: { identity: string; name: string }) {
         step={1}
         value={percent}
         onChange={(event) => setVoiceVolume(identity, Number(event.target.value) / 100)}
-        // Back to as sent, where it is easy to overshoot by a little.
-        onDoubleClick={() => setVoiceVolume(identity, 1)}
         aria-label={t('voice.volumeOf', { name })}
         aria-valuetext={`${percent}%`}
       />
