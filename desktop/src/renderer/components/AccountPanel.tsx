@@ -4,6 +4,7 @@ import { isStrongPassword } from '../../shared/password';
 import PasswordRules from './PasswordRules';
 import { authError } from '../account-errors';
 import { useT } from '../i18n';
+import { SettingsCard } from './SettingsCard';
 
 /**
  * Your account, under Profile: which email you sign in with, your password,
@@ -21,22 +22,25 @@ export default function AccountPanel({
 
   return (
     <>
-      <h3 className="settings-subheading">{t('account.title')}</h3>
-      {account.email && (
-        <p className="muted">
-          {t('account.signedInAs', { email: account.email })}
-          {account.role !== 'user' && (
-            <span className="settings-badge">{t(`account.role.${account.role}`)}</span>
-          )}
-        </p>
-      )}
-      <PasswordForm />
-      <Devices />
-      <p>
-        <button type="button" onClick={() => void onSignOut()}>
-          {t('account.signOut')}
-        </button>
-      </p>
+      <SettingsCard id="settings-account" title={t('account.title')}>
+        <div className="voice-row">
+          <span className="muted">
+            {account.email ? t('account.signedInAs', { email: account.email }) : null}
+            {account.role !== 'user' && (
+              <span className="settings-badge">{t(`account.role.${account.role}`)}</span>
+            )}
+          </span>
+          <button type="button" onClick={() => void onSignOut()}>
+            {t('account.signOut')}
+          </button>
+        </div>
+      </SettingsCard>
+      <SettingsCard id="settings-password" title={t('account.password')}>
+        <PasswordForm />
+      </SettingsCard>
+      <SettingsCard id="settings-devices" title={t('account.devices')}>
+        <Devices />
+      </SettingsCard>
     </>
   );
 }
@@ -135,7 +139,6 @@ function Devices() {
 
   return (
     <div className="settings-field">
-      <span>{t('account.devices')}</span>
       {devices === null && !error && <p className="muted">{t('common.loading')}</p>}
       <ul className="account-devices">
         {devices?.map((device) => (

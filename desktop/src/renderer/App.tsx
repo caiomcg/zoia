@@ -1357,6 +1357,11 @@ export default function App() {
           onSignOut={handleSignOut}
           onAccountsChanged={() => void window.zoia.account.refresh()}
           initialSection={settingsSection}
+          away={{
+            channels: channels.filter((c) => !c.isDefault),
+            current: channels.find((c) => c.away)?.id ?? null,
+            onChange: (id) => void changeChannels(window.zoia.rooms.setAway(id)),
+          }}
           limits={{
             channels: {
               count: channels.length,

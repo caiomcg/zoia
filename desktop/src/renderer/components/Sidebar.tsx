@@ -1171,7 +1171,7 @@ export default function Sidebar({
                 : t('sidebar.settings')
             }
           >
-            <IconSliders />
+            <IconGear />
             {settingsBadge > 0 && (
               <span className="settings-dot" aria-hidden="true">
                 {settingsBadge}
@@ -1846,8 +1846,8 @@ function IconLeave() {
   );
 }
 
-/** Two sliders: lighter than a gear at this size. */
-function IconSliders() {
+/** A gear: what settings look like everywhere. */
+function IconGear() {
   return (
     <svg
       viewBox="0 0 24 24"
@@ -1855,13 +1855,12 @@ function IconSliders() {
       height="18"
       fill="none"
       stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
+      strokeWidth="1.8"
+      strokeLinejoin="round"
       aria-hidden="true"
     >
-      <path d="M4 8h9M17 8h3M4 16h3M11 16h9" />
-      <circle cx="15" cy="8" r="2" />
-      <circle cx="9" cy="16" r="2" />
+      <path d="M10.0 4.9 L10.4 2.1 L13.6 2.1 L14.0 4.9 L15.6 5.6 L17.9 3.9 L20.1 6.1 L18.4 8.4 L19.1 10.0 L21.9 10.4 L21.9 13.6 L19.1 14.0 L18.4 15.6 L20.1 17.9 L17.9 20.1 L15.6 18.4 L14.0 19.1 L13.6 21.9 L10.4 21.9 L10.0 19.1 L8.4 18.4 L6.1 20.1 L3.9 17.9 L5.6 15.6 L4.9 14.0 L2.1 13.6 L2.1 10.4 L4.9 10.0 L5.6 8.4 L3.9 6.1 L6.1 3.9 L8.4 5.6Z" />
+      <circle cx="12" cy="12" r="3.2" />
     </svg>
   );
 }

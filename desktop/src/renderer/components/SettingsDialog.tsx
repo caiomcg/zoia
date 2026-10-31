@@ -30,6 +30,7 @@ import VoiceSettingsSection from './VoiceSettings';
 import { playCue } from '../sounds/synth';
 import ReleaseNotesDialog from './ReleaseNotesDialog';
 import { useExit } from '../presence';
+import { SettingsCard, SettingsToggle } from './SettingsCard';
 
 export type Section =
   | 'profile'
@@ -44,6 +45,13 @@ export type Section =
   | 'about';
 
 /** One of the server's limits, for an admin to change. The server checks both. */
+export interface AwayChoice {
+  /** The channels that may be it: every one but the default. */
+  channels: { id: string; name: string }[];
+  current: string | null;
+  onChange: (id: string | null) => void;
+}
+
 export interface ServerLimit {
   /** How many there are now. */
   count: number;
@@ -92,6 +100,8 @@ interface SettingsDialogProps {
   initialSection?: Section;
   /** Admins: how many channels and chats there may be. No chats without chat. */
   limits?: { channels: ServerLimit; chats?: ServerLimit };
+  /** Which channel is the away channel (ADR 0044), for Settings › Server. */
+  away?: AwayChoice;
 }
 
 /**
@@ -116,6 +126,7 @@ export default function SettingsDialog({
   onAccountsChanged,
   initialSection = 'profile',
   limits,
+  away,
 }: SettingsDialogProps) {
   const t = useT();
   const [section, setSection] = useState<Section>(initialSection);
@@ -180,7 +191,9 @@ export default function SettingsDialog({
             {section === 'accounts' && account && isAdmin && (
               <AccountsSection me={account} onChanged={() => onAccountsChanged?.()} />
             )}
-            {section === 'server' && isAdmin && limits && <ServerSection limits={limits} />}
+            {section === 'server' && isAdmin && limits && (
+              <ServerSection limits={limits} away={away} />
+            )}
             {section === 'addons' && account?.role === 'super_admin' && <AddonsSection />}
             {section === 'broadcast' && (
               <BroadcastSection
@@ -287,103 +300,105 @@ function ProfileSection({
   return (
     <>
       <h3>{t('settings.nav.profile')}</h3>
-      <div className="settings-profile">
-        {onAvatarChange ? (
-          <button
-            type="button"
-            className="avatar-edit"
-            onClick={() => fileRef.current?.click()}
-            disabled={pictureBusy}
-            aria-label={t('profile.changePicture')}
-            title={t('profile.changePicture')}
-          >
-            <Avatar name={next || myName} identity={myIdentity} live={false} />
-            <span className="avatar-edit-badge" aria-hidden="true">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M4 8h3l2-3h6l2 3h3v11H4z" strokeLinejoin="round" strokeLinecap="round" />
-                <circle cx="12" cy="13" r="3.5" />
-              </svg>
-            </span>
-          </button>
-        ) : (
-          <Avatar name={next || myName} identity={myIdentity} live={false} />
-        )}
-        <div className="settings-profile-text">
-          <p className="muted">{t('profile.body')}</p>
-          {onAvatarChange && (
-            <p className="settings-profile-actions">
-              <span className="muted">
-                {t('profile.pictureHint')} {t('profile.pictureRules', { max: MAX_PICTURE_MB })}
+      <SettingsCard id="settings-profile-you" title={t('profile.you')}>
+        <div className="settings-profile">
+          {onAvatarChange ? (
+            <button
+              type="button"
+              className="avatar-edit"
+              onClick={() => fileRef.current?.click()}
+              disabled={pictureBusy}
+              aria-label={t('profile.changePicture')}
+              title={t('profile.changePicture')}
+            >
+              <Avatar name={next || myName} identity={myIdentity} live={false} />
+              <span className="avatar-edit-badge" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M4 8h3l2-3h6l2 3h3v11H4z" strokeLinejoin="round" strokeLinecap="round" />
+                  <circle cx="12" cy="13" r="3.5" />
+                </svg>
               </span>
-              {hasAvatar && (
-                <button
-                  type="button"
-                  className="link-button"
-                  onClick={() => void removePicture()}
-                  disabled={pictureBusy}
-                >
-                  {t('profile.removePicture')}
-                </button>
-              )}
-            </p>
+            </button>
+          ) : (
+            <Avatar name={next || myName} identity={myIdentity} live={false} />
           )}
-        </div>
-        <input
-          ref={fileRef}
-          type="file"
-          accept={PICTURE_TYPES.join(',')}
-          hidden
-          onChange={(event) => {
-            const file = event.target.files?.[0];
-            // Cleared, so choosing the same file again still counts as a change.
-            event.target.value = '';
-            if (!file) return;
-            setMessage(null);
-            // The chooser filters by type, but "All files" gets past it.
-            if (!PICTURE_TYPES.includes(file.type)) {
-              setError(t('profile.pictureWrongType'));
-              return;
-            }
-            if (file.size > MAX_PICTURE_MB * 1024 * 1024) {
-              setError(t('profile.pictureTooLarge', { max: MAX_PICTURE_MB }));
-              return;
-            }
-            setError(null);
-            setPicked(file);
-          }}
-        />
-      </div>
-      {cropDialog.mounted && shownPicked && (
-        <AvatarCropDialog
-          file={shownPicked}
-          closing={cropDialog.closing}
-          onCancel={() => setPicked(null)}
-          onSave={(crop) => publishPicture(shownPicked, crop)}
-        />
-      )}
-      <label className="settings-field">
-        <span>{t('profile.displayName')}</span>
-        <div className="settings-inline">
+          <div className="settings-profile-text">
+            <p className="muted">{t('profile.body')}</p>
+            {onAvatarChange && (
+              <p className="settings-profile-actions">
+                <span className="muted">
+                  {t('profile.pictureHint')} {t('profile.pictureRules', { max: MAX_PICTURE_MB })}
+                </span>
+                {hasAvatar && (
+                  <button
+                    type="button"
+                    className="link-button"
+                    onClick={() => void removePicture()}
+                    disabled={pictureBusy}
+                  >
+                    {t('profile.removePicture')}
+                  </button>
+                )}
+              </p>
+            )}
+          </div>
           <input
-            value={value}
-            maxLength={32}
-            disabled={busy}
+            ref={fileRef}
+            type="file"
+            accept={PICTURE_TYPES.join(',')}
+            hidden
             onChange={(event) => {
-              setValue(event.target.value);
+              const file = event.target.files?.[0];
+              // Cleared, so choosing the same file again still counts as a change.
+              event.target.value = '';
+              if (!file) return;
               setMessage(null);
+              // The chooser filters by type, but "All files" gets past it.
+              if (!PICTURE_TYPES.includes(file.type)) {
+                setError(t('profile.pictureWrongType'));
+                return;
+              }
+              if (file.size > MAX_PICTURE_MB * 1024 * 1024) {
+                setError(t('profile.pictureTooLarge', { max: MAX_PICTURE_MB }));
+                return;
+              }
               setError(null);
-            }}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') void save();
+              setPicked(file);
             }}
           />
-          <button className="primary" onClick={() => void save()} disabled={busy || !changed}>
-            {t('settings.save')}
-          </button>
         </div>
-      </label>
-      {error && <p className="settings-error">{error}</p>}
-      {message && <p className="settings-message">{message}</p>}
+        {cropDialog.mounted && shownPicked && (
+          <AvatarCropDialog
+            file={shownPicked}
+            closing={cropDialog.closing}
+            onCancel={() => setPicked(null)}
+            onSave={(crop) => publishPicture(shownPicked, crop)}
+          />
+        )}
+        <label className="settings-field">
+          <span>{t('profile.displayName')}</span>
+          <div className="settings-inline">
+            <input
+              value={value}
+              maxLength={32}
+              disabled={busy}
+              onChange={(event) => {
+                setValue(event.target.value);
+                setMessage(null);
+                setError(null);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') void save();
+              }}
+            />
+            <button className="primary" onClick={() => void save()} disabled={busy || !changed}>
+              {t('settings.save')}
+            </button>
+          </div>
+        </label>
+        {error && <p className="settings-error">{error}</p>}
+        {message && <p className="settings-message">{message}</p>}
+      </SettingsCard>
     </>
   );
 }
@@ -404,42 +419,30 @@ function BroadcastSection({
   return (
     <>
       <h3>{t('settings.nav.broadcast')}</h3>
-      <label
-        className={`settings-check ${!hardwareAvailable ? 'unavailable' : ''}`}
-        title={hardwareDetail}
-      >
-        <input
-          type="checkbox"
+      <SettingsCard id="settings-broadcast-encoding" title={t('broadcast.encoding')}>
+        <SettingsToggle
+          label={t('broadcast.hardware')}
+          badge={hardwareAvailable ? t('broadcast.beta') : t('broadcast.unavailable')}
+          hint={hardwareDetail}
+          title={hardwareDetail}
           checked={hardware && hardwareAvailable}
           disabled={!hardwareAvailable}
-          onChange={(event) => onHardwareChange?.(event.target.checked)}
+          onChange={(checked) => onHardwareChange?.(checked)}
         />
-        <span>
-          {t('broadcast.hardware')}
-          <span className="settings-badge">{hardwareAvailable ? 'Beta' : 'Unavailable'}</span>
-          <small>{hardwareDetail}</small>
-        </span>
-      </label>
-      <label className={`settings-check ${!hardwareAvailable ? 'unavailable' : ''}`}>
-        <input
-          type="checkbox"
+        <p className="muted settings-card-note">{t('broadcast.hardwareHelp')}</p>
+      </SettingsCard>
+      <SettingsCard id="settings-broadcast-capture" title={t('broadcast.capture')}>
+        <SettingsToggle
+          label={t('broadcast.border')}
+          hint={t('broadcast.borderDetail')}
           checked={border}
           disabled={!hardwareAvailable}
-          onChange={(event) => {
-            setBorder(event.target.checked);
-            setCaptureBorderEnabled(event.target.checked);
+          onChange={(checked) => {
+            setBorder(checked);
+            setCaptureBorderEnabled(checked);
           }}
         />
-        <span>
-          {t('broadcast.border')}
-          <small>{t('broadcast.borderDetail')}</small>
-        </span>
-      </label>
-      <p className="muted" style={{ marginTop: '8px', fontSize: '12px' }}>
-        Uses your GPU for video encoding (WHIP/WebRTC) to reduce CPU load. If you experience UI
-        freezes, encoder errors, or legacy GPU incompatibilities, turn this off to use standard CPU
-        broadcasting.
-      </p>
+      </SettingsCard>
     </>
   );
 }
@@ -479,49 +482,40 @@ function GeneralSection() {
       setDevToolsEnabled(await window.zoia.devTools.setEnabled(value));
     } catch {
       setDevToolsEnabled(!value);
-      setError('Could not change the developer tools setting.');
+      setError(t('general.devToolsFailed'));
     }
   }
 
   return (
     <>
       <h3>{t('settings.nav.general')}</h3>
-      <label className="settings-check">
-        <input
-          type="checkbox"
-          checked={closeToTray}
-          onChange={(event) => void toggleCloseToTray(event.target.checked)}
-        />
-        {t('general.tray')}
-      </label>
-
-      <label className="settings-check">
-        <input
-          type="checkbox"
-          checked={devToolsEnabled}
-          onChange={(event) => void toggleDevTools(event.target.checked)}
-        />
-        Enable Developer Tools (F12 or Ctrl+Shift+I)
-      </label>
-
-      {devToolsEnabled && (
-        <div>
-          <button
-            type="button"
-            onClick={() => void window.zoia.devTools.open()}
-            style={{ fontSize: '12px', padding: '6px 14px' }}
-          >
-            Open Developer Tools
-          </button>
+      <SettingsCard id="settings-general-app" title={t('general.app')}>
+        <div className="voice-row">
+          <span className="voice-label">{t('general.language')}</span>
+          <LanguagePicker />
         </div>
-      )}
-
+        <SettingsToggle
+          label={t('general.tray')}
+          checked={closeToTray}
+          onChange={(checked) => void toggleCloseToTray(checked)}
+        />
+      </SettingsCard>
+      <SettingsCard id="settings-general-developer" title={t('general.developer')}>
+        <SettingsToggle
+          label={t('general.devTools')}
+          hint={t('general.devToolsHint')}
+          checked={devToolsEnabled}
+          onChange={(checked) => void toggleDevTools(checked)}
+        />
+        {devToolsEnabled && (
+          <div>
+            <button type="button" onClick={() => void window.zoia.devTools.open()}>
+              {t('general.openDevTools')}
+            </button>
+          </div>
+        )}
+      </SettingsCard>
       {error && <p className="settings-error">{error}</p>}
-
-      <div className="settings-field">
-        <span>{t('general.language')}</span>
-        <LanguagePicker />
-      </div>
     </>
   );
 }
@@ -530,15 +524,50 @@ function GeneralSection() {
  * How many channels and chats there may be. Set once and rarely touched, so
  * here rather than beside every heading in the sidebar.
  */
-function ServerSection({ limits }: { limits: { channels: ServerLimit; chats?: ServerLimit } }) {
+function ServerSection({
+  limits,
+  away,
+}: {
+  limits: { channels: ServerLimit; chats?: ServerLimit };
+  away?: AwayChoice;
+}) {
   const t = useT();
   return (
     <>
       <h3>{t('settings.nav.server')}</h3>
-      <p className="muted">{t('server.intro')}</p>
-      <LimitField label={t('server.channels')} limit={limits.channels} />
-      {limits.chats && <LimitField label={t('server.chats')} limit={limits.chats} />}
+      <SettingsCard id="settings-server-limits" title={t('server.limits')}>
+        <p className="muted settings-card-note">{t('server.intro')}</p>
+        <LimitField label={t('server.channels')} limit={limits.channels} />
+        {limits.chats && <LimitField label={t('server.chats')} limit={limits.chats} />}
+      </SettingsCard>
+      {away && <AwayField away={away} />}
     </>
+  );
+}
+
+/**
+ * The away channel (ADR 0044): where nobody talks or shares, and the idle
+ * limit is longer. Any channel but the default, or none.
+ */
+function AwayField({ away }: { away: AwayChoice }) {
+  const t = useT();
+  return (
+    <SettingsCard id="settings-server-away" title={t('server.away')}>
+      <select
+        className="settings-select"
+        value={away.current ?? ''}
+        onChange={(event) => away.onChange(event.target.value || null)}
+        aria-label={t('server.away')}
+      >
+        <option value="">{t('server.awayNone')}</option>
+        {away.channels.map((c) => (
+          <option key={c.id} value={c.id}>
+            {c.name}
+          </option>
+        ))}
+      </select>
+      <p className="muted settings-card-note">{t('server.awayHint')}</p>
+    </SettingsCard>
   );
 }
 
@@ -605,114 +634,116 @@ function SoundsSection() {
   return (
     <>
       <h3>{t('settings.nav.sounds')}</h3>
-      <p className="muted settings-note">{t('sounds.intro')}</p>
+      <SettingsCard id="settings-sounds-cues" title={t('sounds.cues')}>
+        <p className="muted settings-card-note">{t('sounds.intro')}</p>
 
-      <label className="settings-field">
-        <span>
-          {t('sounds.volume')} · {Math.round(settings.volume * 100)}%
-        </span>
-        <input
-          className="settings-range"
-          type="range"
-          min={0}
-          max={100}
-          value={Math.round(settings.volume * 100)}
-          onChange={(event) =>
-            setSoundSettings({ ...settings, volume: Number(event.target.value) / 100 })
-          }
-          onPointerUp={() => playCue('join', settings.cues.join, settings.volume)}
-        />
-      </label>
+        <label className="settings-field">
+          <span>
+            {t('sounds.volume')} · {Math.round(settings.volume * 100)}%
+          </span>
+          <input
+            className="settings-range"
+            type="range"
+            min={0}
+            max={100}
+            value={Math.round(settings.volume * 100)}
+            onChange={(event) =>
+              setSoundSettings({ ...settings, volume: Number(event.target.value) / 100 })
+            }
+            onPointerUp={() => playCue('join', settings.cues.join, settings.volume)}
+          />
+        </label>
 
-      {CUE_EVENTS.map((event) => {
-        const cue = settings.cues[event];
-        return (
-          <div key={event} className={`sound-cue ${cue.enabled ? '' : 'off'}`}>
-            <div className="sound-cue-head">
-              <label className="settings-check">
-                <input
-                  type="checkbox"
-                  checked={cue.enabled}
-                  onChange={(change) => updateCue(event, { enabled: change.target.checked })}
-                />
-                {t(CUE_LABELS[event])}
-              </label>
-              <button
-                type="button"
-                className="sound-preview"
-                onClick={() => playCue(event, cue, settings.volume)}
-                disabled={settings.volume === 0}
-              >
-                ▶ {t('sounds.preview')}
-              </button>
-            </div>
-            {/* A fixed cue has its own sound: only on, off and how loud are yours. */}
-            {!isFixedCue(event) && (
-              <div className="sound-cue-controls">
-                <div className="sound-styles" role="radiogroup" aria-label={t('sounds.style')}>
-                  {CUE_STYLES.map((style) => (
-                    <button
-                      key={style}
-                      type="button"
-                      role="radio"
-                      aria-checked={cue.style === style}
-                      className={cue.style === style ? 'active' : undefined}
+        {CUE_EVENTS.map((event) => {
+          const cue = settings.cues[event];
+          return (
+            <div key={event} className={`sound-cue ${cue.enabled ? '' : 'off'}`}>
+              <div className="sound-cue-head">
+                <label className="settings-check">
+                  <input
+                    type="checkbox"
+                    checked={cue.enabled}
+                    onChange={(change) => updateCue(event, { enabled: change.target.checked })}
+                  />
+                  {t(CUE_LABELS[event])}
+                </label>
+                <button
+                  type="button"
+                  className="sound-preview"
+                  onClick={() => playCue(event, cue, settings.volume)}
+                  disabled={settings.volume === 0}
+                >
+                  ▶ {t('sounds.preview')}
+                </button>
+              </div>
+              {/* A fixed cue has its own sound: only on, off and how loud are yours. */}
+              {!isFixedCue(event) && (
+                <div className="sound-cue-controls">
+                  <div className="sound-styles" role="radiogroup" aria-label={t('sounds.style')}>
+                    {CUE_STYLES.map((style) => (
+                      <button
+                        key={style}
+                        type="button"
+                        role="radio"
+                        aria-checked={cue.style === style}
+                        className={cue.style === style ? 'active' : undefined}
+                        disabled={!cue.enabled}
+                        onClick={() => updateCue(event, { style })}
+                      >
+                        {t(`sounds.style.${style}`)}
+                      </button>
+                    ))}
+                  </div>
+                  <label className="sound-pitch">
+                    <span>
+                      {t('sounds.pitch')} {cue.pitch > 0 ? `+${cue.pitch}` : cue.pitch}
+                    </span>
+                    <input
+                      className="settings-range"
+                      type="range"
+                      min={-PITCH_RANGE}
+                      max={PITCH_RANGE}
+                      step={1}
+                      value={cue.pitch}
                       disabled={!cue.enabled}
-                      onClick={() => updateCue(event, { style })}
-                    >
-                      {t(`sounds.style.${style}`)}
-                    </button>
-                  ))}
+                      onChange={(change) =>
+                        updateCue(event, { pitch: Number(change.target.value) }, false)
+                      }
+                      onPointerUp={() => playCue(event, cue, settings.volume)}
+                    />
+                  </label>
                 </div>
+              )}
+              <div className="sound-cue-controls">
                 <label className="sound-pitch">
                   <span>
-                    {t('sounds.pitch')} {cue.pitch > 0 ? `+${cue.pitch}` : cue.pitch}
+                    {t('sounds.volume')} {Math.round(cue.volume * 100)}%
                   </span>
                   <input
                     className="settings-range"
                     type="range"
-                    min={-PITCH_RANGE}
-                    max={PITCH_RANGE}
-                    step={1}
-                    value={cue.pitch}
+                    min={0}
+                    max={100}
+                    value={Math.round(cue.volume * 100)}
                     disabled={!cue.enabled}
+                    aria-label={`${t(CUE_LABELS[event])}: ${t('sounds.volume')}`}
                     onChange={(change) =>
-                      updateCue(event, { pitch: Number(change.target.value) }, false)
+                      updateCue(event, { volume: Number(change.target.value) / 100 }, false)
                     }
                     onPointerUp={() => playCue(event, cue, settings.volume)}
                   />
                 </label>
               </div>
-            )}
-            <div className="sound-cue-controls">
-              <label className="sound-pitch">
-                <span>
-                  {t('sounds.volume')} {Math.round(cue.volume * 100)}%
-                </span>
-                <input
-                  className="settings-range"
-                  type="range"
-                  min={0}
-                  max={100}
-                  value={Math.round(cue.volume * 100)}
-                  disabled={!cue.enabled}
-                  aria-label={`${t(CUE_LABELS[event])}: ${t('sounds.volume')}`}
-                  onChange={(change) =>
-                    updateCue(event, { volume: Number(change.target.value) / 100 }, false)
-                  }
-                  onPointerUp={() => playCue(event, cue, settings.volume)}
-                />
-              </label>
             </div>
-          </div>
-        );
-      })}
+          );
+        })}
 
-      <div className="settings-actions">
-        <button type="button" onClick={() => setSoundSettings(DEFAULT_SOUND_SETTINGS)}>
-          {t('updates.restoreDefaults')}
-        </button>
-      </div>
+        <div className="settings-actions">
+          <button type="button" onClick={() => setSoundSettings(DEFAULT_SOUND_SETTINGS)}>
+            {t('updates.restoreDefaults')}
+          </button>
+        </div>
+      </SettingsCard>
 
       <SoundboardSettingsSection />
     </>
@@ -726,17 +757,13 @@ function SoundboardSettingsSection() {
   const percent = Math.round(settings.volume * 100);
   const volumeRef = useWheelRange(stepSoundboardVolume);
   return (
-    <>
-      <h3>{t('soundboard.title')}</h3>
-      <p className="muted settings-note">{t('soundboard.settingsIntro')}</p>
-      <label className="settings-check">
-        <input
-          type="checkbox"
-          checked={settings.muted}
-          onChange={(event) => soundboardSettings.set({ ...settings, muted: event.target.checked })}
-        />
-        {t('soundboard.muteAll')}
-      </label>
+    <SettingsCard id="settings-sounds-soundboard" title={t('soundboard.title')}>
+      <p className="muted settings-card-note">{t('soundboard.settingsIntro')}</p>
+      <SettingsToggle
+        label={t('soundboard.muteAll')}
+        checked={settings.muted}
+        onChange={(muted) => soundboardSettings.set({ ...settings, muted })}
+      />
       <label className="settings-field">
         <span>
           {t('soundboard.volume')} · {percent}%
@@ -755,7 +782,7 @@ function SoundboardSettingsSection() {
           }
         />
       </label>
-    </>
+    </SettingsCard>
   );
 }
 
@@ -878,82 +905,83 @@ function UpdatesSection() {
   return (
     <>
       <h3>{t('settings.nav.updates')}</h3>
-      <div className="settings-version" aria-live="polite">
-        <span>{t('updates.installed')}</span>
-        <strong>{currentVersion ? `v${currentVersion}` : t('common.loading')}</strong>
-        <span>{t('updates.available')}</span>
-        <strong>{availableVersion ? `v${availableVersion}` : t('updates.notChecked')}</strong>
-      </div>
-      <p className="muted">{t('updates.body')}</p>
+      <SettingsCard id="settings-updates-version" title={t('updates.version')}>
+        <div className="settings-version" aria-live="polite">
+          <span>{t('updates.installed')}</span>
+          <strong>{currentVersion ? `v${currentVersion}` : t('common.loading')}</strong>
+          <span>{t('updates.available')}</span>
+          <strong>{availableVersion ? `v${availableVersion}` : t('updates.notChecked')}</strong>
+        </div>
+        <p className="muted settings-card-note">{t('updates.body')}</p>
 
-      <div className="settings-warning">{t('updates.warning')}</div>
+        {error && <p className="settings-error">{error}</p>}
+        {message && <p className="settings-message">{message}</p>}
 
-      <label className="settings-field">
-        <span>{t('updates.repository')}</span>
-        <input
-          value={config.repository}
-          onChange={(event) => update('repository', event.target.value)}
-          placeholder="https://github.com/owner/repository"
-          disabled={busy || updating}
-        />
-      </label>
+        {installerUrl && (
+          <button
+            className="primary settings-download"
+            onClick={() =>
+              void window.zoia.updater.openInstaller(installerUrl).catch(() => {
+                setError(t('updates.openInstallerFailed'));
+              })
+            }
+          >
+            {t('updates.downloadInstaller')}
+          </button>
+        )}
 
-      <label className="settings-check">
-        <input
-          type="checkbox"
+        {canInstall && !installerUrl && (
+          <button
+            className="primary settings-download"
+            onClick={() => void install()}
+            disabled={busy || updating}
+          >
+            {updating ? t('updates.updating') : t('updates.updateNow')}
+          </button>
+        )}
+
+        <div className="settings-actions">
+          <button onClick={() => void check()} disabled={busy || updating}>
+            {t('updates.checkNow')}
+          </button>
+        </div>
+      </SettingsCard>
+
+      <SettingsCard id="settings-updates-source" title={t('updates.source')}>
+        <div className="settings-warning">{t('updates.warning')}</div>
+
+        <label className="settings-field">
+          <span>{t('updates.repository')}</span>
+          <input
+            value={config.repository}
+            onChange={(event) => update('repository', event.target.value)}
+            placeholder="https://github.com/owner/repository"
+            disabled={busy || updating}
+          />
+        </label>
+
+        <SettingsToggle
+          label={t('updates.checkOnStart')}
           checked={config.checkOnStartup !== false}
-          onChange={(event) => update('checkOnStartup', event.target.checked)}
           disabled={busy || updating}
+          onChange={(checked) => update('checkOnStartup', checked)}
         />
-        {t('updates.checkOnStart')}
-      </label>
-      <label className="settings-check">
-        <input
-          type="checkbox"
+        <SettingsToggle
+          label={t('updates.autoInstall')}
           checked={config.autoInstall === true}
-          onChange={(event) => update('autoInstall', event.target.checked)}
           disabled={busy || updating}
+          onChange={(checked) => update('autoInstall', checked)}
         />
-        {t('updates.autoInstall')}
-      </label>
 
-      {error && <p className="settings-error">{error}</p>}
-      {message && <p className="settings-message">{message}</p>}
-
-      {installerUrl && (
-        <button
-          className="primary settings-download"
-          onClick={() =>
-            void window.zoia.updater.openInstaller(installerUrl).catch(() => {
-              setError(t('updates.openInstallerFailed'));
-            })
-          }
-        >
-          {t('updates.downloadInstaller')}
-        </button>
-      )}
-
-      {canInstall && !installerUrl && (
-        <button
-          className="primary settings-download"
-          onClick={() => void install()}
-          disabled={busy || updating}
-        >
-          {updating ? t('updates.updating') : t('updates.updateNow')}
-        </button>
-      )}
-
-      <div className="settings-actions">
-        <button onClick={() => void reset()} disabled={busy || updating}>
-          {t('updates.restoreDefaults')}
-        </button>
-        <button onClick={() => void check()} disabled={busy || updating}>
-          {t('updates.checkNow')}
-        </button>
-        <button className="primary" onClick={() => void save()} disabled={busy || updating}>
-          {t('settings.save')}
-        </button>
-      </div>
+        <div className="settings-actions">
+          <button onClick={() => void reset()} disabled={busy || updating}>
+            {t('updates.restoreDefaults')}
+          </button>
+          <button className="primary" onClick={() => void save()} disabled={busy || updating}>
+            {t('settings.save')}
+          </button>
+        </div>
+      </SettingsCard>
     </>
   );
 }
