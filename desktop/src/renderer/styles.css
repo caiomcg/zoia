@@ -5339,6 +5339,54 @@ button.danger:active:not(:disabled),
   border-color: var(--accent);
 }
 
+/* The message box and, behind it, the copy of its text that paints the
+   accents of @mentions and a !command. The box goes transparent so the copy
+   shows through, and the field's colour moves to this wrapper. */
+.chat-input {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  background: var(--surface-2);
+  border-radius: 8px;
+}
+
+.chat-input textarea {
+  position: relative;
+  min-width: 0;
+  background: transparent;
+}
+
+/* Laid out exactly as the textarea above, border and scrollbar included, so
+   each accent lands under its text while it wraps and scrolls. Its own text
+   and scrollbar are invisible; only the accents' backgrounds show. */
+.chat-input-backdrop {
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+  padding: 9px 12px;
+  font: inherit;
+  font-size: 14px;
+  line-height: 18px;
+  color: transparent;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  pointer-events: none;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  scrollbar-color: transparent transparent;
+}
+
+/* The look of a mention in a sent message (.chat-mention), as far as a
+   background can carry it: weight and colour would move the text. The
+   shadow stands in for its padding, which would too. */
+.chat-input-backdrop mark {
+  color: transparent;
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  border-radius: 3px;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
 .chat-send {
   display: inline-flex;
   flex: 0 0 auto;

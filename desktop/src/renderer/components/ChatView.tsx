@@ -32,6 +32,7 @@ import {
   type MentionQuery,
 } from '../chat/mentions';
 import { applyCommand, commandQuery, matchCommands } from '../chat/commands';
+import { composerHighlights, splitHighlights } from '../chat/highlight';
 import { insertText, pushRecent } from '../chat/emoji';
 import Avatar from './Avatar';
 import EmojiPicker from './EmojiPicker';
@@ -124,6 +125,8 @@ export default function ChatView({
   const [commands, setCommands] = useState<ChatCommand[]>([]);
   const [command, setCommand] = useState<{ query: string; index: number } | null>(null);
   const textRef = useRef<HTMLTextAreaElement>(null);
+  // Paints the accents behind the message box, scrolled along with it.
+  const backdropRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   // The emoji beside the message box, and the button that opens them.
@@ -265,6 +268,17 @@ export default function ChatView({
   // Who the @query at the caret may mean; none shown, none to pick.
   const suggestions = mention ? matchPeople(chat.people, mention.query.query) : [];
   const commandSuggestions = command ? matchCommands(commands, command.query) : [];
+  // The mentions and command being written, accented as they will be once
+  // sent. Only people picked from the suggestions go out as mentions, so only
+  // they are accented; a name typed out by hand stays plain, as it will stay.
+  const accents = composerHighlights(draft, picked, commands);
+
+  // A new backdrop, or new text in it, starts where the box is scrolled to.
+  useLayoutEffect(() => {
+    if (backdropRef.current && textRef.current) {
+      backdropRef.current.scrollTop = textRef.current.scrollTop;
+    }
+  });
   // Who among the authors is an addon's bot, to say so beside their name.
   const bots = new Set(chat.people.filter((p) => p.bot).map((p) => p.id));
 
@@ -724,34 +738,59 @@ export default function ChatView({
           />
         )}
         <div className="chat-composer-row">
-          <textarea
-            ref={textRef}
-            value={draft}
-            rows={1}
-            maxLength={MESSAGE_MAX}
-            disabled={!chat.available}
-            placeholder={
-              file
-                ? t('chat.caption')
-                : chat.openChat
-                  ? t('chat.placeholder', { chat: chat.openChat.name })
-                  : t('chat.unavailable')
-            }
-            aria-label={t('chat.placeholder', { chat: chat.openChat?.name ?? '' })}
-            onChange={(event) => {
-              setDraft(event.target.value);
-              findMention(event.target.value, event.target.selectionStart);
-            }}
-            onSelect={(event) =>
-              findMention(event.currentTarget.value, event.currentTarget.selectionStart)
-            }
-            onBlur={() => {
-              setMention(null);
-              setCommand(null);
-            }}
-            onKeyDown={onKeyDown}
-            onPaste={onPaste}
-          />
+          {/* A textarea cannot style part of its text, so the accents are
+              painted by a copy of it laid out the same way behind it: its
+              text is invisible, only the accents' backgrounds show, and the
+              box's own text, caret, selection and IME stay untouched. */}
+          <div className="chat-input">
+            {accents.length > 0 && (
+              <div className="chat-input-backdrop" ref={backdropRef} aria-hidden="true">
+                {splitHighlights(draft, accents).map((part, i) =>
+                  part.kind ? (
+                    <mark key={i} className={part.kind}>
+                      {part.text}
+                    </mark>
+                  ) : (
+                    part.text
+                  ),
+                )}
+                {/* A last line break only takes up a line with something after it. */}
+                {String.fromCharCode(0x200b)}
+              </div>
+            )}
+            <textarea
+              ref={textRef}
+              value={draft}
+              rows={1}
+              maxLength={MESSAGE_MAX}
+              disabled={!chat.available}
+              placeholder={
+                file
+                  ? t('chat.caption')
+                  : chat.openChat
+                    ? t('chat.placeholder', { chat: chat.openChat.name })
+                    : t('chat.unavailable')
+              }
+              aria-label={t('chat.placeholder', { chat: chat.openChat?.name ?? '' })}
+              onChange={(event) => {
+                setDraft(event.target.value);
+                findMention(event.target.value, event.target.selectionStart);
+              }}
+              onSelect={(event) =>
+                findMention(event.currentTarget.value, event.currentTarget.selectionStart)
+              }
+              onBlur={() => {
+                setMention(null);
+                setCommand(null);
+              }}
+              onKeyDown={onKeyDown}
+              onPaste={onPaste}
+              onScroll={(event) => {
+                if (backdropRef.current)
+                  backdropRef.current.scrollTop = event.currentTarget.scrollTop;
+              }}
+            />
+          </div>
           {/* Kept from taking the focus, so the emoji goes where the caret is. */}
           <button
             ref={emojiButtonRef}
