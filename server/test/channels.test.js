@@ -132,6 +132,26 @@ describe('the channel store', () => {
     assert.deepEqual(await makeStore().remove('zoia'), { ok: false, reason: 'room_is_default' });
   });
 
+  test('one channel that is not the default can be the away channel', async () => {
+    const store = makeStore();
+    const { channel: first } = await store.create('Ausente');
+    const { channel: second } = await store.create('Longe');
+    assert.deepEqual(await store.setAway('zoia', null), { ok: false, reason: 'room_is_default' });
+    assert.deepEqual(await store.setAway('nope', null), { ok: false, reason: 'unknown_room' });
+
+    assert.equal((await store.setAway(first.id)).ok, true);
+    assert.equal((await store.setAway(second.id)).ok, true);
+    assert.deepEqual(
+      (await store.list()).map((c) => c.away),
+      [false, false, true],
+    );
+    assert.equal((await store.setAway(null)).ok, true);
+    assert.deepEqual(
+      (await store.list()).map((c) => c.away),
+      [false, false, false],
+    );
+  });
+
   test('a store without a stored limit keeps the one it was given', async () => {
     const store = makeStore({ max: 2 });
     assert.equal(store.max, 2);
@@ -276,6 +296,28 @@ describe('the channel routes', () => {
     await agent.put('/api/rooms/limit').send({ max: 2 }).expect(200);
     assert.equal((await agent.get('/api/rooms')).body.rooms.length, 4);
     assert.equal((await agent.post('/api/rooms').send({ name: 'Sala 5' })).status, 409);
+  });
+
+  test('only admins choose the away channel, and everyone sees which it is', async () => {
+    const { agent: admin } = await signedIn('Alice', undefined, 'admin');
+    const { agent: bob } = await signedIn('Bob');
+    const id = await newChannel(admin, 'Ausente');
+
+    await bob.put('/api/rooms/away').send({ channel: id }).expect(403);
+    assert.equal((await admin.put('/api/rooms/away').send({ channel: 'zoia' })).status, 409);
+    assert.equal((await admin.put('/api/rooms/away').send({ channel: 'nope' })).status, 404);
+    assert.equal((await admin.put('/api/rooms/away').send({ channel: 7 })).status, 404);
+
+    assert.deepEqual((await admin.put('/api/rooms/away').send({ channel: id })).body, { away: id });
+    assert.deepEqual(
+      (await bob.get('/api/rooms')).body.rooms.map((r) => [r.name, r.away]),
+      [
+        ['Geral', false],
+        ['Ausente', true],
+      ],
+    );
+    await admin.put('/api/rooms/away').send({ channel: null }).expect(200);
+    assert.equal((await bob.get('/api/rooms')).body.rooms[1].away, false);
   });
 
   test('a bad name is refused', async () => {

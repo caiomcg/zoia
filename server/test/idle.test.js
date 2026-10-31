@@ -132,6 +132,69 @@ describe('the idle sweep', () => {
   });
 });
 
+describe('the away channel', () => {
+  test('keeps someone for its own limit, while other channels keep theirs', async () => {
+    const away = fakeRoom();
+    sweeper = createIdleSweeper({
+      channels: fixedChannels([
+        {
+          id: 'zoia',
+          name: 'Lobby',
+          stage: createStage({ rooms: room, roomName: 'zoia', logger: quiet }),
+        },
+        {
+          id: 'zoia-away',
+          name: 'Away',
+          away: true,
+          stage: createStage({ rooms: away, roomName: 'zoia-away', logger: quiet }),
+        },
+      ]),
+      idleMs: 10 * MINUTE,
+      awayIdleMs: 60 * MINUTE,
+      graceMs: 0,
+      logger: quiet,
+      now: () => clock,
+    });
+    enter('here');
+    away.participants.push({
+      identity: 'gone',
+      name: 'gone',
+      permission: {},
+      tracks: [],
+      attributes: {},
+    });
+    await at(0);
+    await at(10);
+    assert.deepEqual(room.removed, ['here', 'here-gpu']);
+    await at(59);
+    assert.deepEqual(away.removed, []);
+    await at(60);
+    assert.deepEqual(away.sent, [{ to: ['gone'], topic: 'zoia.kick' }]);
+    assert.deepEqual(away.removed, ['gone', 'gone-gpu']);
+  });
+
+  test('a limit of 0 kicks nobody from the channels it covers', async () => {
+    sweeper = createIdleSweeper({
+      channels: fixedChannels([
+        {
+          id: 'zoia',
+          name: 'Lobby',
+          stage: createStage({ rooms: room, roomName: 'zoia', logger: quiet }),
+        },
+      ]),
+      idleMs: 0,
+      awayIdleMs: 60 * MINUTE,
+      graceMs: 0,
+      logger: quiet,
+      now: () => clock,
+    });
+    enter('stays');
+    await at(0);
+    await at(600);
+    assert.deepEqual(room.removed, []);
+  });
+});
+
 describe('a kick', () => {
   test('is removed even when the message cannot be sent', async () => {
     room.sendData = async () => {

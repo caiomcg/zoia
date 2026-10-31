@@ -45,12 +45,17 @@ export async function kick(stage, identity, reason, { graceMs = KICK_GRACE_MS } 
  * in voice (ADR 0039), so being in it is no activity: talking is having the
  * microphone on while someone else in voice could hear it.
  *
+ * The away channel (ADR 0044) has a limit of its own, `awayIdleMs`. Nobody
+ * there can talk or share, so its clock runs from arriving. A limit of 0
+ * kicks nobody from the channels it covers.
+ *
  * Timers live in memory: a restart gives everyone a fresh `idleMs`, which errs
  * towards keeping people rather than dropping them.
  */
 export function createIdleSweeper({
   channels,
   idleMs,
+  awayIdleMs = idleMs,
   graceMs = KICK_GRACE_MS,
   logger = console,
   now = () => Date.now(),
@@ -78,6 +83,7 @@ export function createIdleSweeper({
           participants.filter((p) => p.publishing).map((p) => ownerOf(p.identity)),
         );
         const inVoice = participants.filter((p) => p.voice).length;
+        const limit = channel.away ? awayIdleMs : idleMs;
         for (const p of participants) {
           const talking = p.audible && inVoice > 1;
           if (ownerOf(p.identity) !== p.identity) continue;
@@ -85,7 +91,7 @@ export function createIdleSweeper({
           seen.add(key);
           if (sharing.has(p.identity) || p.watching || talking || !lastActive.has(key)) {
             lastActive.set(key, now());
-          } else if (now() - lastActive.get(key) >= idleMs) {
+          } else if (limit > 0 && now() - lastActive.get(key) >= limit) {
             lastActive.delete(key);
             logger.info(`[idle] kicked ${p.identity} from ${channel.id}`);
             kicks.push(kick(channel.stage, p.identity, 'idle', { graceMs }));

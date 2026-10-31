@@ -762,15 +762,17 @@ export function createApp({
     try {
       const roles = new Map();
       const rooms = await Promise.all(
-        (await channelSet.list()).map(async ({ id, name, isDefault, stage: channelStage }) => {
+        (await channelSet.list()).map(async ({ id, name, isDefault, away, stage: room }) => {
           const [participants, broadcasters] = await Promise.all([
-            channelStage.participants(),
-            channelStage.broadcasters(),
+            room.participants(),
+            room.broadcasters(),
           ]);
           return {
             id,
             name,
             isDefault,
+            // The away channel (ADR 0044): the app mutes everyone there.
+            away: Boolean(away),
             // A WHIP publisher is its owner's broadcast, not another person.
             participants: await Promise.all(
               participants
@@ -824,6 +826,19 @@ export function createApp({
       const result = await channelSet.setMax(req.body?.max, req.user);
       if (!result.ok) return refuse(res, result.reason);
       res.json({ max: result.max });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // Which channel is the away channel, or none: `{ channel: id | null }`.
+  app.put('/api/rooms/away', requireAdmin, async (req, res, next) => {
+    try {
+      const id = req.body?.channel ?? null;
+      if (id !== null && typeof id !== 'string') return refuse(res, 'unknown_room');
+      const result = await channelSet.setAway(id, req.user);
+      if (!result.ok) return refuse(res, result.reason);
+      res.json({ away: result.away });
     } catch (err) {
       next(err);
     }

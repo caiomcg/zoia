@@ -119,6 +119,7 @@ missing UDP forward, certificates that never issued, containers that are up but 
 | `DEFAULT_CHAT_NAME` | `Geral` | The default chat's name until someone renames it. Chats start at a limit of ten. |
 | `CHAT_MEDIA_CAP_GB` | `5` | All chats' photos and videos together; past it the oldest are deleted first. |
 | `IDLE_KICK_MINUTES` | `30` | Minutes in a channel neither sharing nor watching before the server disconnects someone. `0` turns it off. |
+| `AWAY_KICK_MINUTES` | `60` | The same for the away channel an admin picks in Settings › Server, where nobody talks or shares. `0` turns it off. |
 
 Chat needs ScyllaDB, which `docker-compose.yml` starts beside the app. It takes a minute to
 come up; until it answers, the app runs and broadcasts as usual and chat says it is not

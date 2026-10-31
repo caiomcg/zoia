@@ -11,6 +11,10 @@
  * and remove an empty one that is not the default. Each channel is its own LiveKit room, with its own
  * stage and WHIP publisher, built on first use.
  *
+ * One channel that is not the default may be the away channel (ADR 0044):
+ * where people go when they step away, with a longer idle limit. The app
+ * keeps everyone there muted and unable to share.
+ *
  * Validation failures come back as `{ ok: false, reason }` rather than thrown:
  * a throw inside the JSON store's write queue would leave the queue rejected,
  * and every later write would fail with it.
@@ -69,10 +73,10 @@ export function createChannelStore({
   function arrange(saved) {
     const stored = saved.find((c) => c.id === defaultId);
     return [
-      { id: defaultId, name: stored?.name ?? defaultName, isDefault: true },
+      { id: defaultId, name: stored?.name ?? defaultName, isDefault: true, away: false },
       ...saved
         .filter((c) => c.id !== defaultId)
-        .map(({ id, name }) => ({ id, name, isDefault: false })),
+        .map(({ id, name, away }) => ({ id, name, isDefault: false, away: Boolean(away) })),
     ];
   }
 
@@ -141,6 +145,25 @@ export function createChannelStore({
       });
     },
 
+    /**
+     * Makes this channel the away channel, the one before it no longer, or
+     * with null leaves the server without one. The default channel, where
+     * everyone lands, cannot be it.
+     */
+    async setAway(id, by) {
+      if (id === defaultId) return { ok: false, reason: 'room_is_default' };
+      return store.mutate((saved) => {
+        const record = id === null ? null : saved.find((c) => c.id === id);
+        if (id !== null && !record) return { ok: false, reason: 'unknown_room' };
+        for (const c of saved) delete c.away;
+        if (record) record.away = true;
+        logger.info(
+          `[channels] ${by?.name ?? '?'} ${record ? `made ${id} the away channel` : 'cleared the away channel'}`,
+        );
+        return { ok: true, away: id };
+      });
+    },
+
     /** Removes a channel. Whether it is empty is the caller's check. */
     async remove(id, by) {
       if (id === defaultId) return { ok: false, reason: 'room_is_default' };
@@ -171,12 +194,13 @@ export function fixedChannels(list) {
     max: list.length,
     ceiling: list.length,
     setMax: async () => ({ ok: false, reason: 'channels_fixed' }),
-    list: async () => list.map((c, i) => ({ isDefault: i === 0, ...c })),
+    list: async () => list.map((c, i) => ({ isDefault: i === 0, away: false, ...c })),
     get: async (id) => {
       const channel = find(id);
-      return channel ? { isDefault: channel === first, ...channel } : null;
+      return channel ? { isDefault: channel === first, away: false, ...channel } : null;
     },
     create: refuse,
+    setAway: refuse,
     rename: refuse,
     remove: refuse,
   };

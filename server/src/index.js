@@ -120,8 +120,12 @@ const app = createApp({
 });
 
 // Nobody sits in a channel for long neither sharing nor watching; ADR 0037.
-if (config.idleKickMinutes > 0) {
-  createIdleSweeper({ channels, idleMs: config.idleKickMinutes * 60_000 }).start();
+if (config.idleKickMinutes > 0 || config.awayKickMinutes > 0) {
+  createIdleSweeper({
+    channels,
+    idleMs: config.idleKickMinutes * 60_000,
+    awayIdleMs: config.awayKickMinutes * 60_000,
+  }).start();
 }
 
 app.listen(config.port, () => {
@@ -131,6 +135,9 @@ app.listen(config.port, () => {
   console.log(`[zoia] channels     default ${config.roomName}, up to ${channels.max}`);
   console.log(
     `[zoia] idle kick    ${config.idleKickMinutes > 0 ? `${config.idleKickMinutes} min` : 'off'}`,
+  );
+  console.log(
+    `[zoia] away kick    ${config.awayKickMinutes > 0 ? `${config.awayKickMinutes} min` : 'off'}`,
   );
   const scylla = config.chat.scylla;
   console.log(
