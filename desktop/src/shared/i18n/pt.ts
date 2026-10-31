@@ -324,6 +324,14 @@ export const pt: Messages = {
   'voiceSettings.microphone': 'Microfone',
   'voiceSettings.systemDefault': 'Padrão do sistema',
   'voiceSettings.input': 'Entrada',
+  'voiceSettings.volume': 'Volume de entrada',
+  'voiceSettings.volumeHint':
+    'O quão alto seu microfone é enviado. Baixo mesmo em 100%? Ative o Reforço.',
+  'voiceSettings.volumeBoostHint':
+    'O Reforço vai além de 100% para um microfone baixo. Picos altos são suavizados; se sua voz soar distorcida, abaixe.',
+  'voiceSettings.volumeReset': 'Clique duas vezes para voltar a {percent}%',
+  'voiceSettings.boost': 'Reforço',
+  'voiceSettings.boostHint': 'Deixa um microfone baixo mais alto que 100%',
   'voiceSettings.mode': 'Modo de entrada',
   'voiceSettings.mode.voiceActivity': 'Detecção de voz',
   'voiceSettings.mode.pushToTalk': 'Pressionar para falar',

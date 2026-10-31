@@ -3049,10 +3049,59 @@ button.danger {
   color: var(--text);
 }
 
-.voice-meter-block {
+.voice-meter-block,
+.voice-volume {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+/* The boost: a toggle beside the volume, and the slider it reveals. */
+.voice-volume-head {
+  display: inline-flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.voice-boost-toggle {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  padding: 3px 10px;
+  font-size: 12px;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.voice-boost-toggle:hover {
+  color: var(--text);
+}
+
+.voice-boost-toggle.active {
+  color: var(--warn);
+  border-color: color-mix(in srgb, var(--warn) 60%, transparent);
+  background: color-mix(in srgb, var(--warn) 14%, transparent);
+}
+
+.voice-boost {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border-left: 2px solid var(--warn);
+  background: color-mix(in srgb, var(--warn) 6%, transparent);
+  border-radius: 0 var(--radius) var(--radius) 0;
+}
+
+.voice-boost .settings-range {
+  accent-color: var(--warn);
+}
+
+.voice-value.voice-boosted {
+  color: var(--warn);
 }
 
 /* The level, with the sensitivity marker over it. */

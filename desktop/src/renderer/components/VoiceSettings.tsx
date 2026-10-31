@@ -10,8 +10,10 @@ import { useCallback, useEffect, useState } from 'react';
 import { useT } from '../i18n';
 import type { MessageKey } from '../../shared/i18n';
 import { useCameraDevices } from '../livekit/useCamera';
+import { useWheelRange } from './useWheelRange';
 import { useMicLevel } from '../voice/useMicLevel';
 import {
+  BOOST_MAX,
   dbFraction,
   levelToDb,
   SENSITIVITY_MAX,
@@ -126,6 +128,104 @@ function LevelMeter({
           title={value}
         />
       )}
+    </div>
+  );
+}
+
+/** A slider in percent with the wheel, one percent a notch, and a value to go back to on double-click. */
+function PercentRange({
+  value,
+  min,
+  max,
+  reset,
+  label,
+  onChange,
+}: {
+  value: number;
+  min: number;
+  max: number;
+  reset: number;
+  label: string;
+  onChange: (percent: number) => void;
+}) {
+  const t = useT();
+  const set = (next: number) => onChange(Math.min(max, Math.max(min, next)));
+  const ref = useWheelRange((direction) => set(value + direction));
+  return (
+    <input
+      ref={ref}
+      className="settings-range"
+      type="range"
+      min={min}
+      max={max}
+      step={1}
+      value={value}
+      onChange={(event) => set(Number(event.target.value))}
+      // Easy to overshoot by a little.
+      onDoubleClick={() => set(reset)}
+      aria-label={label}
+      aria-valuetext={`${value}%`}
+      title={t('voiceSettings.volumeReset', { percent: reset })}
+    />
+  );
+}
+
+/**
+ * How loud the microphone is sent, 0 to 100%, and the boost beside it: for
+ * a microphone too quiet even at full volume, it reveals a second slider
+ * that goes on to 300%. The meter below moves with both.
+ */
+function InputVolume({ settings }: { settings: VoiceSettings }) {
+  const t = useT();
+  const volume = Math.round(settings.inputVolume * 100);
+  const boost = Math.round(settings.boostLevel * 100);
+  return (
+    <div className="voice-volume">
+      <div className="voice-row">
+        <span className="voice-label">{t('voiceSettings.volume')}</span>
+        <span className="voice-volume-head">
+          <span className="voice-value">{volume}%</span>
+          <button
+            type="button"
+            className={`voice-boost-toggle${settings.boost ? ' active' : ''}`}
+            aria-pressed={settings.boost}
+            onClick={() => setVoiceSettings({ ...settings, boost: !settings.boost })}
+            title={t('voiceSettings.boostHint')}
+          >
+            <svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true">
+              <path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z" fill="currentColor" />
+            </svg>
+            {t('voiceSettings.boost')}
+          </button>
+        </span>
+      </div>
+      <PercentRange
+        value={volume}
+        min={0}
+        max={100}
+        reset={100}
+        label={t('voiceSettings.volume')}
+        onChange={(percent) => setVoiceSettings({ ...settings, inputVolume: percent / 100 })}
+      />
+      {settings.boost && (
+        <div className="voice-boost">
+          <div className="voice-row">
+            <span className="voice-label">{t('voiceSettings.boost')}</span>
+            <span className="voice-value voice-boosted">{boost}%</span>
+          </div>
+          <PercentRange
+            value={boost}
+            min={100}
+            max={BOOST_MAX * 100}
+            reset={200}
+            label={t('voiceSettings.boost')}
+            onChange={(percent) => setVoiceSettings({ ...settings, boostLevel: percent / 100 })}
+          />
+        </div>
+      )}
+      <p className="muted voice-card-note">
+        {settings.boost ? t('voiceSettings.volumeBoostHint') : t('voiceSettings.volumeHint')}
+      </p>
     </div>
   );
 }
@@ -290,6 +390,8 @@ export default function VoiceSettingsSection() {
             ))}
           </select>
         </label>
+
+        <InputVolume settings={settings} />
 
         <div className="voice-row">
           <span className="voice-label">{t('voiceSettings.mode')}</span>

@@ -1,7 +1,7 @@
 /**
  * How loud the microphone is, 0 to 1, after everything voice does to it but
- * the gate: the same device, echo cancellation, gain control and noise
- * suppression (pipeline.ts). So the meter in Settings › Voice shows what the
+ * the gate: the same device, echo cancellation, gain control, noise
+ * suppression and input volume (pipeline.ts). So the meter in Settings › Voice shows what the
  * channel would hear, and where the gate would cut.
  *
  * It opens a capture of its own while mounted. Chromium shares the device

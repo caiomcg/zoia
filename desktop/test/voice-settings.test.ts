@@ -11,10 +11,13 @@ import {
   AUTO_MAX_DB,
   AUTO_MIN_DB,
   dbFraction,
+  BOOST_MAX,
+  inputGain,
   levelToDb,
   NoiseFloor,
   parseVoiceSettings,
   SENSITIVITY_MIN,
+  softClip,
 } from '../src/renderer/voice/settings.ts';
 
 describe('parseVoiceSettings', () => {
@@ -27,6 +30,9 @@ describe('parseVoiceSettings', () => {
       sensitivity: SENSITIVITY_MIN,
       autoSensitivity: true,
       inputMode: 'voiceActivity',
+      inputVolume: 1,
+      boost: false,
+      boostLevel: 2,
     });
   });
 
@@ -42,6 +48,9 @@ describe('parseVoiceSettings', () => {
       sensitivity: -40,
       autoSensitivity: false,
       inputMode: 'pushToTalk',
+      inputVolume: 0.8,
+      boost: true,
+      boostLevel: 2.5,
     });
     assert.deepEqual(parseVoiceSettings(stored, ''), {
       microphoneId: '',
@@ -51,7 +60,36 @@ describe('parseVoiceSettings', () => {
       sensitivity: -40,
       autoSensitivity: false,
       inputMode: 'pushToTalk',
+      inputVolume: 0.8,
+      boost: true,
+      boostLevel: 2.5,
     });
+  });
+
+  test('an input volume off the slider is brought back onto it', () => {
+    const at = (inputVolume: unknown) =>
+      parseVoiceSettings(JSON.stringify({ inputVolume }), null).inputVolume;
+    assert.equal(at(0), 0);
+    assert.equal(at(40), 1);
+    assert.equal(at(-1), 0);
+    assert.equal(at('loud'), 1);
+  });
+
+  test('a boost off its slider is brought back onto it', () => {
+    const at = (boostLevel: unknown) =>
+      parseVoiceSettings(JSON.stringify({ boostLevel }), null).boostLevel;
+    assert.equal(at(0.5), 1);
+    assert.equal(at(9), BOOST_MAX);
+    assert.equal(at('loud'), 2);
+  });
+
+  test('the boost multiplies the volume only while it is on, and is kept while off', () => {
+    const settings = parseVoiceSettings(
+      JSON.stringify({ inputVolume: 0.5, boost: false, boostLevel: 3 }),
+      null,
+    );
+    assert.equal(inputGain(settings), 0.5);
+    assert.equal(inputGain({ ...settings, boost: true }), 1.5);
   });
 
   test('a sensitivity off the slider is brought back onto it', () => {
@@ -145,5 +183,18 @@ describe('automatic sensitivity', () => {
   test('stays inside its range, however loud or silent the room', () => {
     assert.equal(hold(new NoiseFloor(), -5, 60), AUTO_MAX_DB);
     assert.equal(hold(new NoiseFloor(), -90, 60), AUTO_MIN_DB);
+  });
+});
+
+describe('softClip', () => {
+  test('passes an ordinary level through untouched', () => {
+    for (const sample of [0, 0.25, -0.5, 0.7, -0.7]) assert.equal(softClip(sample), sample);
+  });
+
+  test('rounds a boosted peak off below full scale, keeping its sign and order', () => {
+    const peaks = [0.8, 1, 1.5, BOOST_MAX].map(softClip);
+    for (const peak of peaks) assert.ok(peak > 0.7 && peak < 1);
+    for (let i = 1; i < peaks.length; i++) assert.ok(peaks[i]! > peaks[i - 1]!);
+    assert.equal(softClip(-1.5), -softClip(1.5));
   });
 });

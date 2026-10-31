@@ -1,9 +1,11 @@
 /**
  * What happens to the microphone between the capture and the encoder
- * (ADR 0039): RNNoise in Enhanced mode, then the input sensitivity gate.
+ * (ADR 0039): RNNoise in Enhanced mode, the input volume and boost with their limiter,
+ * then the input sensitivity gate.
  *
  *   capture (AEC, AGC, Chromium NS in Standard)
- *     → RNNoise (Enhanced) → analyser → gate gain → the track LiveKit sends
+ *     → RNNoise (Enhanced) → input volume and boost → limiter → analyser → gate gain
+ *     → the track LiveKit sends
  *
  * The same graph, without the gate, drives the meter in Settings › Voice, so
  * the meter shows what would be sent.
@@ -18,7 +20,16 @@ import rnnoiseWorkletUrl from '@sapphi-red/web-noise-suppressor/rnnoiseWorklet.j
 // SIMD build is needed. Compiling it is what 'wasm-unsafe-eval' in
 // index.html's policy is for.
 import rnnoiseWasmUrl from '@sapphi-red/web-noise-suppressor/rnnoise_simd.wasm?url&inline';
-import { getVoiceSettings, levelToDb, NoiseFloor, SENSITIVITY_MIN } from './settings';
+import {
+  getVoiceSettings,
+  inputGain,
+  BOOST_MAX,
+  levelToDb,
+  NoiseFloor,
+  SENSITIVITY_MIN,
+  softClip,
+  subscribeVoiceSettings,
+} from './settings';
 import { watchSpeaking } from './speaking';
 
 /** RNNoise works on 48 kHz frames, and Opus is 48 kHz anyway. */
@@ -50,6 +61,32 @@ export function pushToTalkOpen(now = performance.now()): boolean {
 /** Fade times, in seconds: quick to open so first syllables pass, slower to close. */
 const GATE_ATTACK_S = 0.005;
 const GATE_RELEASE_S = 0.05;
+
+/** How quickly the input volume follows its slider, in seconds: smooth, so dragging does not crackle. */
+const VOLUME_SMOOTHING_S = 0.02;
+
+/** Points in the limiter's curve: plenty for a smooth bend. */
+const LIMITER_POINTS = 4096;
+
+let limiterCurve: Float32Array<ArrayBuffer> | null = null;
+
+/**
+ * The limiter's curve. A wave shaper reads its input as -1 to 1 and holds
+ * anything past that at the ends, so the volume feeds it scaled down by
+ * BOOST_MAX and the curve scales it back up before limiting.
+ */
+function limiter(context: AudioContext): WaveShaperNode {
+  if (!limiterCurve) {
+    limiterCurve = new Float32Array(LIMITER_POINTS);
+    for (let i = 0; i < LIMITER_POINTS; i++) {
+      const input = (i / (LIMITER_POINTS - 1)) * 2 - 1;
+      limiterCurve[i] = softClip(input * BOOST_MAX);
+    }
+  }
+  const shaper = context.createWaveShaper();
+  shaper.curve = limiterCurve;
+  return shaper;
+}
 
 let rnnoiseBinary: Promise<ArrayBuffer> | null = null;
 const workletLoaded = new WeakMap<BaseAudioContext, Promise<void>>();
@@ -92,7 +129,7 @@ export interface VoiceGraph {
 /**
  * Builds the graph on `input`. With `gate`, what is sent follows the input
  * mode: push to talk, or the sensitivity, read live so the slider needs no
- * rebuild. With `speaker`, that identity's ring follows what is sent.
+ * rebuild; the input volume is followed live too. With `speaker`, that identity's ring follows what is sent.
  */
 export async function buildVoiceGraph(
   context: AudioContext,
@@ -103,13 +140,25 @@ export async function buildVoiceGraph(
   const source = context.createMediaStreamSource(new MediaStream([input]));
   const denoise =
     getVoiceSettings().noiseSuppression === 'enhanced' ? await rnnoiseNode(context) : null;
+  // Before the analyser, so the meter and the gate both see the volume as sent.
+  // Scaled down for the limiter, which scales it back up (limiter()).
+  const volume = context.createGain();
+  volume.gain.value = inputGain(getVoiceSettings()) / BOOST_MAX;
+  const stopVolume = subscribeVoiceSettings(() => {
+    volume.gain.setTargetAtTime(
+      inputGain(getVoiceSettings()) / BOOST_MAX,
+      context.currentTime,
+      VOLUME_SMOOTHING_S,
+    );
+  });
+  const limit = limiter(context);
   const analyser = context.createAnalyser();
   analyser.fftSize = 1024;
   const gain = context.createGain();
   const destination = context.createMediaStreamDestination();
   destination.channelCount = 1;
 
-  (denoise ? source.connect(denoise) : source).connect(analyser);
+  (denoise ? source.connect(denoise) : source).connect(volume).connect(limit).connect(analyser);
   analyser.connect(gain).connect(destination);
   // What actually leaves, gate and mute included: the ring shows only that.
   const sent = context.createAnalyser();
@@ -157,11 +206,14 @@ export async function buildVoiceGraph(
     output,
     destroy() {
       if (timer) clearInterval(timer);
+      stopVolume();
       stopSpeaking?.();
       sent.disconnect();
       source.disconnect();
       denoise?.disconnect();
       denoise?.destroy();
+      volume.disconnect();
+      limit.disconnect();
       analyser.disconnect();
       gain.disconnect();
       output.stop();

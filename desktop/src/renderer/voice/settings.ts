@@ -35,6 +35,12 @@ export interface VoiceSettings {
   /** Sensitivity follows the room's noise (NoiseFloor) instead of the slider. */
   autoSensitivity: boolean;
   inputMode: InputMode;
+  /** How loud the microphone is sent: 0 silent, 1 as captured. */
+  inputVolume: number;
+  /** Whether the boost applies, for a microphone too quiet even at full volume. */
+  boost: boolean;
+  /** How much the boost multiplies the volume by, 1 to BOOST_MAX; kept while it is off. */
+  boostLevel: number;
 }
 
 /** What getUserMedia is asked for; the rest applies to the captured sound. */
@@ -46,6 +52,31 @@ export type CaptureSettings = Pick<
 /** The slider's range. Its quiet end is no gate at all. */
 export const SENSITIVITY_MIN = -70;
 export const SENSITIVITY_MAX = 0;
+
+/** The boost tops out at three times as captured, about +9.5 dB. */
+export const BOOST_MAX = 3;
+/** Where the boost starts the first time it is turned on. */
+const BOOST_DEFAULT = 2;
+
+/** What the microphone is multiplied by on its way out: the volume, boosted or not. */
+export function inputGain({ inputVolume, boost, boostLevel }: VoiceSettings): number {
+  return boost ? inputVolume * boostLevel : inputVolume;
+}
+
+/** Where the limiter starts rounding peaks off: below it, the sound passes as it is. */
+const LIMIT_KNEE = 0.7;
+
+/**
+ * The limiter after the input volume: linear up to the knee, then bending
+ * smoothly towards full scale and never past it, so a boosted voice is
+ * rounded off rather than clipped hard.
+ */
+export function softClip(sample: number): number {
+  const size = Math.abs(sample);
+  if (size <= LIMIT_KNEE) return sample;
+  const over = Math.tanh((size - LIMIT_KNEE) / (1 - LIMIT_KNEE));
+  return Math.sign(sample) * (LIMIT_KNEE + (1 - LIMIT_KNEE) * over);
+}
 
 /** A peak sample, 0 to 1, in dBFS, floored at the slider's quiet end. */
 export function levelToDb(level: number): number {
@@ -68,6 +99,9 @@ const DEFAULTS: VoiceSettings = {
   sensitivity: SENSITIVITY_MIN,
   autoSensitivity: true,
   inputMode: 'voiceActivity',
+  inputVolume: 1,
+  boost: false,
+  boostLevel: BOOST_DEFAULT,
 };
 
 export function parseVoiceSettings(raw: string | null, microphoneId: string | null): VoiceSettings {
@@ -101,6 +135,15 @@ export function parseVoiceSettings(raw: string | null, microphoneId: string | nu
         ? stored.autoSensitivity
         : DEFAULTS.autoSensitivity,
     inputMode: stored.inputMode === 'pushToTalk' ? 'pushToTalk' : 'voiceActivity',
+    inputVolume:
+      typeof stored.inputVolume === 'number' && Number.isFinite(stored.inputVolume)
+        ? Math.min(1, Math.max(0, stored.inputVolume))
+        : DEFAULTS.inputVolume,
+    boost: typeof stored.boost === 'boolean' ? stored.boost : DEFAULTS.boost,
+    boostLevel:
+      typeof stored.boostLevel === 'number' && Number.isFinite(stored.boostLevel)
+        ? Math.min(BOOST_MAX, Math.max(1, stored.boostLevel))
+        : DEFAULTS.boostLevel,
   };
 }
 
