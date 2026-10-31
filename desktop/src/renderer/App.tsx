@@ -137,6 +137,9 @@ export default function App() {
   // lists the channels and joins one only when it is clicked.
   const [channel, setChannel] = useState<string | null>(null);
   const [channels, setChannels] = useState<RoomInfo[]>([]);
+  // Your screen share, for the live card: what it is and since when.
+  const [liveSource, setLiveSource] = useState<string | null>(null);
+  const [liveSince, setLiveSince] = useState<number | null>(null);
   const [maxChannels, setMaxChannels] = useState(0);
   const [channelCeiling, setChannelCeiling] = useState(0);
   const [channelError, setChannelError] = useState<string | null>(null);
@@ -711,6 +714,27 @@ export default function App() {
   // Who is on the server (ADR 0038), told on the chat's stream.
   const presence = usePresence({ usable: usable && chat.enabled, me: accountId });
 
+  // When your screen went live, for the live card's clock. A switch keeps it;
+  // only stopping the screen clears it.
+  const screenIdle = room.broadcastState === 'idle' && gpuCast.state === 'idle';
+  useEffect(() => {
+    if (screenIdle) {
+      setLiveSince(null);
+      setLiveSource(null);
+    } else if (screenLive) {
+      setLiveSince((since) => since ?? Date.now());
+    }
+  }, [screenIdle, screenLive]);
+
+  // Nobody shares in the away channel (ADR 0044): a channel made it while you
+  // share there takes the share down.
+  const sharingAnything = screenLive || cameraLive || gpuCast.state !== 'idle';
+  useEffect(() => {
+    if (away && sharingAnything) void stopSharing();
+    // stopSharing is a new function each render; only these decide.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [away, sharingAnything]);
+
   if (!status) return <Splash />;
   if (!status.paired) return <AuthScreen status={status} onSignedIn={setStatus} />;
   if (status.account?.status === 'pending') {
@@ -726,6 +750,8 @@ export default function App() {
 
   async function handlePick(source: SourceInfo) {
     setPickerOpen(false);
+    // For the live card: what is going out, in words.
+    setLiveSource(source.name || null);
     // Already sharing a screen means this is a source switch, and the stage is
     // ours to keep — dropping and re-claiming it would put the viewer's
     // picture out for no reason, and briefly offer the stage to someone else.
@@ -1219,10 +1245,17 @@ export default function App() {
           share={{
             screenLive,
             cameraLive,
-            disabled: room.state !== 'connected' || isStarting,
+            disabled: room.state !== 'connected' || isStarting || away,
             hopping,
             onScreen: () => setPickerOpen(true),
             onCamera: () => void toggleCamera(),
+            live: {
+              source: liveSource,
+              since: liveSince,
+              watching: viewerIds.size,
+              onStop: () => void stopScreen(),
+              onSwitch: () => setPickerOpen(true),
+            },
           }}
           onHoverBroadcast={(target, anchor) => gridRef.current?.hover(target, anchor)}
           onWatchBroadcast={(target) => gridRef.current?.watch(target)}

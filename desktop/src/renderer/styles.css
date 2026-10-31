@@ -1049,6 +1049,27 @@ video.mirrored {
   margin: 0;
 }
 
+/* Stop and switch on the "You're live" screen. */
+.overlay-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  margin-top: 8px;
+}
+
+.overlay-actions button {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  font-weight: 600;
+}
+
+.overlay-actions svg {
+  width: 14px;
+  height: 14px;
+}
+
 .onboarding-card {
   width: min(420px, 100%);
   padding: 24px;
@@ -3520,6 +3541,98 @@ button.danger {
   grid-auto-flow: column;
   gap: 8px;
   margin-top: 8px;
+}
+
+/* Your screen share, said in words, with its stop: above the share buttons. */
+.live-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 10px;
+  background: color-mix(in srgb, var(--danger) 16%, var(--surface-2));
+  border: 1px solid color-mix(in srgb, var(--danger) 45%, transparent);
+  border-radius: var(--radius);
+}
+
+.live-card-head {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 13px;
+}
+
+.live-card-dot {
+  width: 8px;
+  height: 8px;
+  background: var(--danger);
+  border-radius: 50%;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 30%, transparent);
+}
+
+.live-card-title {
+  font-weight: 700;
+}
+
+.live-card-time {
+  margin-left: auto;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.live-card-detail {
+  display: flex;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.live-card-source {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.live-card-watching {
+  flex-shrink: 0;
+}
+
+.live-card-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.live-card-stop {
+  display: inline-flex;
+  flex: 1;
+  gap: 6px;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+  padding: 0 10px;
+  font-weight: 700;
+  color: #fff;
+  background: var(--danger);
+  border-color: transparent;
+}
+
+.live-card-stop:hover {
+  background: color-mix(in srgb, var(--danger) 85%, #000);
+}
+
+.live-card-switch {
+  width: 36px;
+  height: 32px;
+  padding: 0;
+  background: var(--raised);
+}
+
+/* Collapsed, the card is gone: its stop stays, red. */
+.live-card-stop-compact {
+  color: var(--danger);
 }
 
 /* The share buttons sit in the row as if they were its own. */

@@ -193,6 +193,10 @@ export const es: Messages = {
   'player.youreLive': 'Estás en vivo',
   'player.previewHidden':
     'Tu vista previa está oculta. Los espectadores ven tu transmisión normalmente.',
+  'live.screen': 'Tu pantalla',
+  'live.watchingNone': 'Nadie mirando aún',
+  'live.watchingOne': '1 mirando',
+  'live.watching': '{count} mirando',
   'player.gpuTitle': 'Compartiendo tu pantalla',
   'player.gpuBody':
     'Codificado en la GPU y enviado directo al servidor, así que no hay vista previa local. Los espectadores la ven normalmente.',

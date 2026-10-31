@@ -220,11 +220,13 @@ export default function Player({
         <div className="overlay">
           <h2>{t('player.youreLive')}</h2>
           <p className="muted">{t('player.previewHidden')}</p>
+          <LiveActions onStop={onStop} onSwitch={onSwitch} />
         </div>
       ) : !localTrack && gpuBroadcasting ? (
         <div className="overlay">
           <h2>{t('player.youreLive')}</h2>
           <p className="muted">{t('top.starting')}</p>
+          <LiveActions onStop={onStop} onSwitch={onSwitch} />
         </div>
       ) : null}
 
@@ -401,6 +403,23 @@ function IconClose() {
     >
       <path d="M6 6l12 12M18 6L6 18" />
     </svg>
+  );
+}
+
+/** Stop and switch, said in words on the "You're live" screen. */
+function LiveActions({ onStop, onSwitch }: { onStop: () => void; onSwitch: () => void }) {
+  const t = useT();
+  return (
+    <div className="overlay-actions">
+      <button className="danger" onClick={onStop}>
+        <IconStop />
+        {t('common.stopSharing')}
+      </button>
+      <button onClick={onSwitch} title={t('player.switchTitle')}>
+        <IconSwitch />
+        {t('player.switch')}
+      </button>
+    </div>
   );
 }
 

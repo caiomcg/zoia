@@ -199,6 +199,10 @@ export const en = {
   'avatar.live': 'LIVE',
   'player.youreLive': 'You’re live',
   'player.previewHidden': 'Your preview is hidden. Viewers see your broadcast as normal.',
+  'live.screen': 'Your screen',
+  'live.watchingNone': 'Nobody watching yet',
+  'live.watchingOne': '1 watching',
+  'live.watching': '{count} watching',
   'player.gpuTitle': 'Sharing your screen',
   'player.gpuBody':
     'Encoded on the GPU and sent straight to the server, so there is no local preview. Viewers see it as normal.',
