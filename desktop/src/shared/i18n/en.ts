@@ -88,6 +88,7 @@ export const en = {
   'sidebar.joinOne': 'Join {channel} (1 person)',
   'sidebar.joinMany': 'Join {channel} ({count} people)',
   'sidebar.rename': 'Rename {channel}',
+  'sidebar.awayChannel': 'Away channel: nobody talks or shares here',
   'sidebar.delete': 'Delete {channel}',
   'sidebar.newChannel': 'New channel',
   'sidebar.channelsFull': 'Channel limit reached. Raise it in Settings › Server.',
@@ -321,6 +322,7 @@ export const en = {
   'voice.processingFailed':
     'Noise suppression and input sensitivity could not start, so your microphone is sent as captured: {error}',
   'voice.connected': 'Voice connected',
+  'voice.away': 'Away · muted',
   'voice.connecting': 'Connecting…',
   'voice.deafenedInVoice': 'In voice, not listening',
   'voice.mutedInVoice': 'In voice, microphone off',
@@ -540,6 +542,10 @@ export const en = {
     'How many channels and chats there may be. Lowering a limit removes nothing that already exists.',
   'server.channels': 'Channels',
   'server.chats': 'Chats',
+  'server.away': 'Away channel',
+  'server.awayNone': 'None',
+  'server.awayHint':
+    'Everyone there is muted and cannot share, and is disconnected after an hour of inactivity instead of the usual time.',
   'server.inUse': '{count} in use',
   'server.less': 'Allow one fewer: {what}',
   'server.more': 'Allow one more: {what}',

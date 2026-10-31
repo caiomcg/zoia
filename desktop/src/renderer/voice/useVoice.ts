@@ -214,6 +214,16 @@ export function useVoice(roomRef: RefObject<Room | null>, connection: Connection
     }
   }, [roomRef, publish, teardown]);
 
+  /** Leaves voice but not the channel: for the away channel (ADR 0044). */
+  const leave = useCallback(async () => {
+    const room = voiceRoomRef.current;
+    if (!room) return;
+    const track = trackRef.current;
+    if (track) await room.localParticipant.unpublishTrack(track, true).catch(() => {});
+    await teardown();
+    await window.zoia.voice.leave().catch(() => {});
+  }, [teardown]);
+
   /**
    * Unmuting while deafened undeafens too: being heard while hearing nobody
    * helps no one. Only this choice is remembered; deafening's mute is not.
@@ -344,6 +354,7 @@ export function useVoice(roomRef: RefObject<Room | null>, connection: Connection
     error,
     clearError: useCallback(() => setError(null), []),
     join,
+    leave,
     setMuted,
     setDeafened,
   };

@@ -376,6 +376,9 @@ function registerIpc(): void {
   );
   ipcMain.handle(IPC.roomsRemove, (_event, id: string) => api.roomsRemove(String(id)));
   ipcMain.handle(IPC.roomsSetLimit, (_event, max: unknown) => api.roomsSetLimit(Number(max)));
+  ipcMain.handle(IPC.roomsSetAway, (_event, id: unknown) =>
+    api.roomsSetAway(typeof id === 'string' ? id : null),
+  );
 
   ipcMain.handle(IPC.gpuStatus, () => gpuStatus);
 

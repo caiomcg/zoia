@@ -170,11 +170,15 @@ export default function App() {
   const room = useRoom();
   const voice = useVoice(room.room, room.state);
   // Being in a channel is being in its voice (ADR 0039). Leaving the channel
-  // leaves voice with it: the server forgets the participant.
-  const { join: joinVoice } = voice;
+  // leaves voice with it: the server forgets the participant. The away
+  // channel is the exception (ADR 0044): nobody there talks or hears anyone,
+  // and a channel made the away channel takes its people out of voice.
+  const away = channels.some((c) => c.id === channel && c.away === true);
+  const { join: joinVoice, leave: leaveVoice } = voice;
   useEffect(() => {
-    if (room.state === 'connected') void joinVoice();
-  }, [room.state, joinVoice]);
+    if (room.state !== 'connected') return;
+    void (away ? leaveVoice() : joinVoice());
+  }, [room.state, away, joinVoice, leaveVoice]);
   // Mute and deafen, from the footer's buttons or the global shortcuts (ADR
   // 0039), each with a tone to say it happened: from a shortcut Zoia may well
   // be out of sight. Read through a ref, so the shortcut listener stays put
@@ -1195,6 +1199,7 @@ export default function App() {
             localWatched: stage.localWatched,
           }}
           onToggleCamera={(identity) => gridRef.current?.toggleCamera(identity)}
+          away={away}
           voice={{
             state: voice.state,
             muted: voice.muted,

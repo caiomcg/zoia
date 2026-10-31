@@ -417,7 +417,10 @@ export default function Sidebar({
   onCollapsedChange,
   voice,
   soundboard,
+  away = false,
 }: {
+  /** You are in the away channel (ADR 0044): no voice, no sharing. */
+  away?: boolean;
   /** Absent: no voice controls at all. */
   voice?: SidebarVoice;
   /** The soundboard (ADR 0040), beside your microphone; absent, no button for it. */
@@ -833,21 +836,26 @@ export default function Sidebar({
                       <span className="channel-short" aria-hidden="true">
                         {shortName(c.name)}
                       </span>
-                      {/* A screen, as a chat has its #: what a channel is for. */}
-                      <svg
-                        className="channel-icon"
-                        viewBox="0 0 24 24"
-                        width="16"
-                        height="16"
-                        aria-hidden="true"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                      >
-                        <rect x="2.5" y="4" width="19" height="13" rx="2" />
-                        <path d="M8 20.5h8" />
-                      </svg>
+                      {/* A screen, as a chat has its #: what a channel is for. The
+                          away channel has a moon: nobody talks or shares there. */}
+                      {c.away ? (
+                        <IconMoon label={t('sidebar.awayChannel')} />
+                      ) : (
+                        <svg
+                          className="channel-icon"
+                          viewBox="0 0 24 24"
+                          width="16"
+                          height="16"
+                          aria-hidden="true"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                        >
+                          <rect x="2.5" y="4" width="19" height="13" rx="2" />
+                          <path d="M8 20.5h8" />
+                        </svg>
+                      )}
                       <span className="channel-name">{c.name}</span>
                       {/* Only someone there is worth a number; an empty one says nothing. */}
                       {(current ? liveMembers.length : othersInChannel(c, here).length) > 0 && (
@@ -987,13 +995,23 @@ export default function Sidebar({
               {/* The connection, with ping and, while sharing, how your
                   broadcast is encoding, on its hover card. */}
               <StatusLight
-                tone={connection?.tone === 'bad' ? 'bad' : voice?.state === 'on' ? 'ok' : 'warn'}
+                tone={
+                  connection?.tone === 'bad'
+                    ? 'bad'
+                    : voice?.state === 'on' || (away && connection?.tone === 'ok')
+                      ? 'ok'
+                      : 'warn'
+                }
                 label={connection?.label ?? t('voice.connected')}
                 stats={connection?.stats}
               >
                 <span className="voice-panel-state">
                   <IconSignal />
-                  {voice?.state === 'on' ? t('voice.connected') : t('voice.connecting')}
+                  {away && connection?.tone === 'ok'
+                    ? t('voice.away')
+                    : voice?.state === 'on'
+                      ? t('voice.connected')
+                      : t('voice.connecting')}
                 </span>
               </StatusLight>
               <span className="voice-panel-channel" title={currentChannelName}>
@@ -1660,6 +1678,28 @@ function WatchingYou() {
     >
       <IconEye />
     </span>
+  );
+}
+
+/** The away channel's icon, where another channel has its screen. */
+function IconMoon({ label }: { label: string }) {
+  return (
+    <svg
+      className="channel-icon"
+      viewBox="0 0 24 24"
+      width="16"
+      height="16"
+      role="img"
+      aria-label={label}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <title>{label}</title>
+      <path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z" />
+    </svg>
   );
 }
 

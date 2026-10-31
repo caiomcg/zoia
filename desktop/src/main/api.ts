@@ -258,6 +258,11 @@ export function roomsSetLimit(max: number) {
   return outcome(call('/api/rooms/limit', { method: 'PUT', body: JSON.stringify({ max }) }));
 }
 
+/** Which channel is the away channel, or none; admins only, which the server checks. */
+export function roomsSetAway(id: string | null) {
+  return outcome(call('/api/rooms/away', { method: 'PUT', body: JSON.stringify({ channel: id }) }));
+}
+
 export function roomsRemove(id: string) {
   return outcome(call(`/api/rooms/${encodeURIComponent(id)}`, { method: 'DELETE' }));
 }

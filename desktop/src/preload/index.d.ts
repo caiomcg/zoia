@@ -105,6 +105,8 @@ export interface ZoiaBridge {
     remove(id: string): Promise<ChannelOutcome>;
     /** How many channels there may be, the default included. Admins only. */
     setLimit(max: number): Promise<ChannelOutcome>;
+    /** Which channel is the away channel (ADR 0044), or none. Admins only. */
+    setAway(id: string | null): Promise<ChannelOutcome>;
   };
   stage: {
     get(): Promise<StageState>;

@@ -82,6 +82,7 @@ export const pt: Messages = {
   'sidebar.joinOne': 'Entrar em {channel} (1 pessoa)',
   'sidebar.joinMany': 'Entrar em {channel} ({count} pessoas)',
   'sidebar.rename': 'Renomear {channel}',
+  'sidebar.awayChannel': 'Canal ausente: ninguém fala nem compartilha aqui',
   'sidebar.delete': 'Apagar {channel}',
   'sidebar.newChannel': 'Novo canal',
   'sidebar.channelsFull': 'O limite de canais foi atingido. Aumente em Configurações › Servidor.',
@@ -313,6 +314,7 @@ export const pt: Messages = {
   'voice.processingFailed':
     'Não foi possível iniciar a supressão de ruído nem a sensibilidade de entrada, então seu microfone é enviado como capturado: {error}',
   'voice.connected': 'Voz conectada',
+  'voice.away': 'Ausente · mutado',
   'voice.connecting': 'Conectando…',
   'voice.deafenedInVoice': 'Na voz, sem ouvir',
   'voice.mutedInVoice': 'Na voz, microfone desligado',
@@ -535,6 +537,10 @@ export const pt: Messages = {
     'Quantos canais e chats pode haver. Diminuir um limite não apaga nada que já existe.',
   'server.channels': 'Canais',
   'server.chats': 'Chats',
+  'server.away': 'Canal ausente',
+  'server.awayNone': 'Nenhum',
+  'server.awayHint':
+    'Todos lá ficam mutados e não podem compartilhar, e são desconectados após uma hora de inatividade em vez do tempo normal.',
   'server.inUse': '{count} em uso',
   'server.less': 'Permitir um a menos: {what}',
   'server.more': 'Permitir um a mais: {what}',

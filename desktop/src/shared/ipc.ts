@@ -86,12 +86,28 @@ export interface IssuedCode {
 export type AuthOutcome = { ok: true; status: PairingStatus } | { ok: false; error: string };
 export type ActionOutcome<T = undefined> = { ok: true; value: T } | { ok: false; error: string };
 
+/** An addon's bot (ADR 0041), as an admin sees it to give it a picture. */
+export interface BotInfo {
+  id: string;
+  name: string;
+  addonId: string;
+  /** Its addon's name. */
+  addon: string;
+  /** The version of its picture; null for none. */
+  avatar: string | null;
+}
+
 /** A channel, who is in it, and who is live there. */
 export interface RoomInfo {
   id: string;
   name: string;
   /** Where clients that name no channel land. Renamable, never removable. */
   isDefault: boolean;
+  /**
+   * The away channel (ADR 0044): nobody there talks or shares. Older servers
+   * do not say.
+   */
+  away?: boolean;
   /**
    * `avatar` is the version of their picture, when they have one; `role` is
    * there for admins and the super admin, from the server's own records.
@@ -615,6 +631,7 @@ export const IPC = {
   roomsList: 'zoia:rooms:list',
   roomsCreate: 'zoia:rooms:create',
   roomsRename: 'zoia:rooms:rename',
+  roomsSetAway: 'zoia:rooms:set-away',
   roomsRemove: 'zoia:rooms:remove',
   roomsSetLimit: 'zoia:rooms:limit',
   chatList: 'zoia:chat:list',
