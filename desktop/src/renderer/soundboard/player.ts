@@ -1,16 +1,17 @@
 /**
  * Plays soundboard sounds on this machine (ADR 0040), through a gain of their
- * own: the effects' volume, apart from voices and from the cues. Deafen
- * silences them with everything else Zoia plays, from main.
+ * own: the effects' volume, apart from voices and from the cues. Entrance
+ * sounds (ADR 0046) go through another, with a volume of their own. Deafen
+ * silences both with everything else Zoia plays, from main.
  *
- * One sound per person: a new one from someone cuts the one they were
- * playing. Every sound stops at MAX_SOUND_SECONDS, fading out.
+ * One sound per person, whatever its kind: a new one from someone cuts the
+ * one they were playing. Every sound stops at its kind's limit, fading out.
  */
 
 import { useSyncExternalStore } from 'react';
-import { MAX_SOUND_SECONDS, type Sound } from '../../shared/soundboard';
+import { MAX_ENTRANCE_SECONDS, MAX_SOUND_SECONDS, type Sound } from '../../shared/soundboard';
 import { soundboardSettings } from './library';
-import { audibleRange, effectsGain } from './model';
+import { audibleRange, effectsGain, entranceGain, type SoundKind } from './model';
 
 /** Long enough not to click when a sound is cut, short enough not to be heard as a fade. */
 const FADE_S = 0.15;
@@ -18,21 +19,32 @@ const FADE_S = 0.15;
 /** Decoded sounds kept for the next play, most recent last. */
 const MAX_DECODED = 30;
 
-let context: AudioContext | null = null;
-let master: GainNode | null = null;
+const LIMIT_SECONDS: Record<SoundKind, number> = {
+  effect: MAX_SOUND_SECONDS,
+  entrance: MAX_ENTRANCE_SECONDS,
+};
 
-function output(): { context: AudioContext; master: GainNode } {
-  if (!context || !master) {
-    context = new AudioContext();
-    master = context.createGain();
-    master.gain.value = effectsGain(soundboardSettings.get());
-    master.connect(context.destination);
-    soundboardSettings.subscribe(() => {
-      if (master) master.gain.value = effectsGain(soundboardSettings.get());
-    });
+let context: AudioContext | null = null;
+let masters: Record<SoundKind, GainNode> | null = null;
+
+function output(): { context: AudioContext; masters: Record<SoundKind, GainNode> } {
+  if (!context || !masters) {
+    const audio = new AudioContext();
+    const buses = { effect: audio.createGain(), entrance: audio.createGain() };
+    const apply = () => {
+      const settings = soundboardSettings.get();
+      buses.effect.gain.value = effectsGain(settings);
+      buses.entrance.gain.value = entranceGain(settings);
+    };
+    apply();
+    buses.effect.connect(audio.destination);
+    buses.entrance.connect(audio.destination);
+    soundboardSettings.subscribe(apply);
+    context = audio;
+    masters = buses;
   }
   if (context.state === 'suspended') void context.resume().catch(() => {});
-  return { context, master };
+  return { context, masters };
 }
 
 const decoded = new Map<string, Promise<AudioBuffer | null>>();
@@ -77,11 +89,14 @@ function bufferFor(context: AudioContext, url: string): Promise<AudioBuffer | nu
 interface Playing {
   source: AudioBufferSourceNode;
   gain: GainNode;
+  kind: SoundKind;
   /** Shown in the people list, for a sound someone else played. */
   shown: string | null;
 }
 
 const playing = new Map<string, Playing>();
+// What each key has loading, so a mute of that kind stops it before it starts.
+const loading = new Map<string, SoundKind>();
 // Each play by a person counts up, so one still loading when the next
 // arrives is dropped rather than played over it.
 const generation = new Map<string, number>();
@@ -91,8 +106,10 @@ function changed() {
   for (const listener of listeners) listener();
 }
 
-/** Stops what `key` is playing, if anything. */
-export function stopSound(key: string) {
+/** Stops what `key` is playing or loading, if anything; given a `kind`, only of that kind. */
+export function stopSound(key: string, kind?: SoundKind) {
+  if (kind && (playing.get(key)?.kind ?? loading.get(key)) !== kind) return;
+  loading.delete(key);
   generation.set(key, (generation.get(key) ?? 0) + 1);
   const current = playing.get(key);
   if (!current) return;
@@ -107,43 +124,47 @@ export function stopSound(key: string) {
   if (current.shown) changed();
 }
 
-export function stopAllSounds() {
-  for (const key of [...playing.keys()]) stopSound(key);
+export function stopAllSounds(kind?: SoundKind) {
+  for (const key of new Set([...playing.keys(), ...loading.keys()])) stopSound(key, kind);
 }
 
 /**
  * Plays `sound` as `key`'s: an identity, or "preview" for your own preview.
  * With `show`, the people list shows it beside them while it plays. Resolves
  * to when it started (performance.now()) and how many seconds it plays for
- * (its audible part, the silence around it skipped, up to MAX_SOUND_SECONDS),
+ * (its audible part, the silence around it skipped, up to `kind`'s limit),
  * or null if it could not be loaded.
  */
 export async function playSound(
   key: string,
   sound: Sound,
   show: boolean,
+  kind: SoundKind = 'effect',
 ): Promise<{ startedAt: number; seconds: number } | null> {
   stopSound(key);
+  loading.set(key, kind);
   const mine = generation.get(key) ?? 0;
-  const { context, master } = output();
+  const { context, masters } = output();
   const buffer = await bufferFor(context, sound.url);
+  if (generation.get(key) === mine) loading.delete(key);
   if (!buffer) return null;
   const { from, to } = audibleOf(buffer);
-  const seconds = Math.min(to - from, MAX_SOUND_SECONDS);
+  const limit = LIMIT_SECONDS[kind];
+  const seconds = Math.min(to - from, limit);
   if (generation.get(key) !== mine) return { startedAt: performance.now(), seconds };
 
   const source = context.createBufferSource();
   source.buffer = buffer;
   const gain = context.createGain();
-  source.connect(gain).connect(master);
+  source.connect(gain).connect(masters[kind]);
   const start = context.currentTime;
-  if (to - from > MAX_SOUND_SECONDS) {
-    gain.gain.setValueAtTime(1, start + MAX_SOUND_SECONDS - FADE_S);
-    gain.gain.linearRampToValueAtTime(0, start + MAX_SOUND_SECONDS);
+  if (to - from > limit) {
+    gain.gain.setValueAtTime(1, start + limit - FADE_S);
+    gain.gain.linearRampToValueAtTime(0, start + limit);
   }
   source.start(start, from, seconds);
   const startedAt = performance.now();
-  const entry: Playing = { source, gain, shown: show ? sound.name : null };
+  const entry: Playing = { source, gain, kind, shown: show ? sound.name : null };
   playing.set(key, entry);
   source.onended = () => {
     if (playing.get(key) !== entry) return;

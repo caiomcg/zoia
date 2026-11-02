@@ -2,6 +2,8 @@
 
 - **Status:** proposed
 - **Date:** 2026-10-28
+- **Amended by** [ADR 0046](0046-entrance-sounds.md): a sound of your own may also play as you
+  arrive, under rules and a volume of its own
 
 ## Context
 

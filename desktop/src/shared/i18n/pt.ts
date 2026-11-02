@@ -709,6 +709,15 @@ export const pt: Messages = {
   'soundboard.playing': 'Tocando “{sound}”',
   'soundboard.mutePerson': 'Mutar os efeitos sonoros desta pessoa',
   'soundboard.from': 'Sons do Myinstants',
+  'entrance.title': 'Som de entrada',
+  'entrance.intro':
+    'Toca para o canal quando você chega com o microfone ligado, por no máximo {seconds} segundos. Fica salvo neste computador. Um som novo vale a partir do próximo canal em que você entrar.',
+  'entrance.none': 'Você ainda não tem som de entrada. Busque um abaixo.',
+  'entrance.use': 'Usar “{name}” como som de entrada',
+  'entrance.remove': 'Remover seu som de entrada',
+  'entrance.muteAll': 'Mutar os sons de entrada de todo mundo',
+  'entrance.volume': 'Volume dos sons de entrada',
+  'entrance.mutePerson': 'Mutar o som de entrada desta pessoa',
 
   // ---- what's new
   'changelog.title': 'Novidades',

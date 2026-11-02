@@ -713,6 +713,15 @@ export const en = {
   'soundboard.playing': 'Playing “{sound}”',
   'soundboard.mutePerson': 'Mute their sound effects',
   'soundboard.from': 'Sounds from Myinstants',
+  'entrance.title': 'Entrance sound',
+  'entrance.intro':
+    'Plays for the channel when you arrive with your microphone on, for {seconds} seconds at most. It is kept on this computer. A new sound counts from the next channel you join.',
+  'entrance.none': 'You have no entrance sound yet. Search for one below.',
+  'entrance.use': 'Use “{name}” as your entrance sound',
+  'entrance.remove': 'Remove your entrance sound',
+  'entrance.muteAll': 'Mute everyone’s entrance sounds',
+  'entrance.volume': 'Entrance sounds volume',
+  'entrance.mutePerson': 'Mute their entrance sound',
 
   // ---- what's new
   'changelog.title': "What's new",

@@ -28,6 +28,7 @@ import { setPushToTalk } from './voice/pipeline';
 import { playVoiceCue, VOICE_CUE_MS } from './sounds/synth';
 import { getSoundSettings } from './sounds/settings';
 import { useSoundCues, useViewerCues } from './sounds/useSoundCues';
+import { useEntrance } from './soundboard/useEntrance';
 import { useSoundboard } from './soundboard/useSoundboard';
 import { shortcutSound } from '../shared/shortcuts';
 import { LAST_VERSION_STORAGE_KEY, shouldShowReleaseNotes } from './whats-new';
@@ -225,6 +226,8 @@ export default function App() {
   }, []);
   // The soundboard (ADR 0040): what others play, and playing to them.
   const soundboard = useSoundboard(room.room, room.state, voice);
+  // The sound someone arrives with (ADR 0046), after their join cue.
+  useEntrance(room.room, room.state, channel, voice, away);
   const { sendPad } = soundboard;
   useEffect(
     () =>

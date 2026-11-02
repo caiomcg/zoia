@@ -714,6 +714,15 @@ export const es: Messages = {
   'soundboard.playing': 'Reproduciendo «{sound}»',
   'soundboard.mutePerson': 'Silenciar sus efectos de sonido',
   'soundboard.from': 'Sonidos de Myinstants',
+  'entrance.title': 'Sonido de entrada',
+  'entrance.intro':
+    'Suena para el canal cuando llegas con el micrófono activado, {seconds} segundos como máximo. Se guarda en este ordenador. Un sonido nuevo cuenta desde el próximo canal al que entres.',
+  'entrance.none': 'Aún no tienes sonido de entrada. Busca uno abajo.',
+  'entrance.use': 'Usar “{name}” como sonido de entrada',
+  'entrance.remove': 'Quitar tu sonido de entrada',
+  'entrance.muteAll': 'Silenciar los sonidos de entrada de todos',
+  'entrance.volume': 'Volumen de los sonidos de entrada',
+  'entrance.mutePerson': 'Silenciar su sonido de entrada',
 
   // ---- what's new
   'changelog.title': 'Novedades',

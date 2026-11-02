@@ -107,8 +107,8 @@ export function useSoundboard(
     () =>
       soundboardSettings.subscribe(() => {
         const { muted, mutedPeople } = soundboardSettings.get();
-        if (muted) stopAllSounds();
-        else for (const identity of mutedPeople) stopSound(identity);
+        if (muted) stopAllSounds('effect');
+        else for (const identity of mutedPeople) stopSound(identity, 'effect');
       }),
     [],
   );

@@ -23,7 +23,10 @@ import {
   removePad,
   renamePad,
   searchUrl,
+  encodeEntranceAttribute,
+  MAX_ENTRANCE_SECONDS,
   MAX_SOUND_SECONDS,
+  parseEntranceAttribute,
   type Sound,
 } from '../src/shared/soundboard.ts';
 import {
@@ -31,9 +34,14 @@ import {
   audibleRange,
   removeRecent,
   effectsGain,
+  entranceGain,
+  ENTRANCE_COOLDOWN_MS,
+  EntranceCooldown,
+  hearsEntrance,
   MAX_RECENTS,
   parseSoundboardSettings,
   sendBlock,
+  setEntranceMuted,
   setPersonMuted,
   SoundLock,
   lockMs,
@@ -258,6 +266,92 @@ describe('settings', () => {
     settings = setPersonMuted(settings, 'ana', true);
     assert.deepEqual(settings.mutedPeople, ['ana']);
     assert.deepEqual(setPersonMuted(settings, 'ana', false).mutedPeople, []);
+  });
+});
+
+describe('entrance sounds', () => {
+  const at = (raw: unknown) => parseEntranceAttribute(JSON.stringify(raw));
+
+  test('an attribute is held to what a message is', () => {
+    const { slug, name, url } = sound('boom');
+    assert.equal(at({ slug, name, url })?.slug, 'boom');
+    assert.equal(at({ slug, name, url: 'https://evil.example/a.mp3' }), null);
+    assert.equal(parseEntranceAttribute('not json'), null);
+    assert.equal(parseEntranceAttribute(''), null);
+    assert.equal(parseEntranceAttribute(undefined), null);
+  });
+
+  test('an attribute names a sound and nothing else of what is kept', () => {
+    const named = { ...sound('boom'), color: 'ff0000' };
+    assert.deepEqual(Object.keys(JSON.parse(encodeEntranceAttribute(named))), [
+      'slug',
+      'name',
+      'url',
+    ]);
+    assert.equal(parseEntranceAttribute(encodeEntranceAttribute(named))?.url, named.url);
+  });
+
+  test('a sound kept and then removed reads as none', () => {
+    assert.equal(parseEntranceAttribute(JSON.stringify(null)), null);
+  });
+
+  test('they are cut sooner than any other sound', () => {
+    assert.equal(MAX_ENTRANCE_SECONDS, 5);
+    assert.ok(MAX_ENTRANCE_SECONDS < MAX_SOUND_SECONDS);
+  });
+
+  test('their settings are kept, and default to on, at half volume', () => {
+    assert.equal(DEFAULT_SOUNDBOARD_SETTINGS.entranceVolume, 0.5);
+    assert.equal(DEFAULT_SOUNDBOARD_SETTINGS.entrancesMuted, false);
+    assert.equal(parseSoundboardSettings('{"entranceVolume":3}').entranceVolume, 1);
+    assert.equal(parseSoundboardSettings('{"entrancesMuted":true}').entrancesMuted, true);
+    assert.deepEqual(
+      parseSoundboardSettings('{"mutedEntrances":["ana",4,"ana",""]}').mutedEntrances,
+      ['ana'],
+    );
+  });
+
+  test('settings from before them still read', () => {
+    const settings = parseSoundboardSettings('{"volume":0.2,"muted":true,"mutedPeople":["ana"]}');
+    assert.equal(settings.volume, 0.2);
+    assert.equal(settings.entranceVolume, DEFAULT_SOUNDBOARD_SETTINGS.entranceVolume);
+    assert.deepEqual(settings.mutedEntrances, []);
+  });
+
+  test('their volume and mute are their own, apart from the effects', () => {
+    const on = { ...DEFAULT_SOUNDBOARD_SETTINGS, volume: 0.8, entranceVolume: 0.3 };
+    assert.equal(entranceGain(on), 0.3);
+    assert.equal(entranceGain({ ...on, muted: true }), 0.3);
+    assert.equal(entranceGain({ ...on, entrancesMuted: true }), 0);
+    assert.equal(effectsGain({ ...on, entrancesMuted: true }), 0.8);
+  });
+
+  test("muting someone's entrance leaves their effects, and the other way round", () => {
+    const on = DEFAULT_SOUNDBOARD_SETTINGS;
+    const entranceOff = setEntranceMuted(on, 'ana', true);
+    assert.equal(hearsEntrance(entranceOff, 'ana'), false);
+    assert.equal(hearsEntrance(entranceOff, 'bia'), true);
+    assert.deepEqual(entranceOff.mutedPeople, []);
+    assert.equal(hearsEntrance(setEntranceMuted(entranceOff, 'ana', false), 'ana'), true);
+
+    assert.equal(hearsEntrance(setPersonMuted(on, 'ana', true), 'ana'), true);
+    assert.equal(hearsEntrance({ ...on, muted: true }, 'ana'), true);
+  });
+
+  test('muting them all mutes everyone', () => {
+    assert.equal(
+      hearsEntrance({ ...DEFAULT_SOUNDBOARD_SETTINGS, entrancesMuted: true }, 'ana'),
+      false,
+    );
+  });
+
+  test('one per person per minute', () => {
+    const cooldown = new EntranceCooldown();
+    assert.ok(cooldown.ready('ana', 1000));
+    cooldown.mark('ana', 1000);
+    assert.equal(cooldown.ready('ana', 1000 + ENTRANCE_COOLDOWN_MS - 1), false);
+    assert.ok(cooldown.ready('ana', 1000 + ENTRANCE_COOLDOWN_MS));
+    assert.ok(cooldown.ready('bia', 1001));
   });
 });
 

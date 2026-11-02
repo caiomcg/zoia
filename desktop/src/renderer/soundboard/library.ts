@@ -5,7 +5,13 @@
  */
 
 import { useSyncExternalStore } from 'react';
-import { parsePads, parseSoundList, type Pad, type Sound } from '../../shared/soundboard';
+import {
+  parseEntranceAttribute,
+  parsePads,
+  parseSoundList,
+  type Pad,
+  type Sound,
+} from '../../shared/soundboard';
 import { MAX_RECENTS, parseSoundboardSettings, type SoundboardSettings } from './model';
 
 interface Store<T> {
@@ -45,12 +51,23 @@ export const soundboardSettings = stored('zoia.soundboard', parseSoundboardSetti
 // Kept under the name it had when pads were favourites, so none are lost.
 export const pads = stored('zoia.soundboard.favorites', parsePads);
 export const recents = stored('zoia.soundboard.recents', (raw) => parseSoundList(raw, MAX_RECENTS));
+/** The sound you arrive with (ADR 0046); null for none. */
+export const entranceSound = stored('zoia.soundboard.entrance', (raw) =>
+  parseEntranceAttribute(raw ?? undefined),
+);
 
 /** The effects' volume one point up or down, as the mouse wheel moves its slider. */
 export function stepSoundboardVolume(direction: 1 | -1) {
   const settings = soundboardSettings.get();
   const percent = Math.min(100, Math.max(0, Math.round(settings.volume * 100) + direction));
   soundboardSettings.set({ ...settings, volume: percent / 100 });
+}
+
+/** The entrance sounds' volume one point up or down, as the mouse wheel moves its slider. */
+export function stepEntranceVolume(direction: 1 | -1) {
+  const settings = soundboardSettings.get();
+  const percent = Math.min(100, Math.max(0, Math.round(settings.entranceVolume * 100) + direction));
+  soundboardSettings.set({ ...settings, entranceVolume: percent / 100 });
 }
 
 export function useSoundboardSettings(): SoundboardSettings {
@@ -65,9 +82,20 @@ export function useRecents(): Sound[] {
   return useSyncExternalStore(recents.subscribe, recents.get);
 }
 
+export function useEntranceSound(): Sound | null {
+  return useSyncExternalStore(entranceSound.subscribe, entranceSound.get);
+}
+
 /** Whether you hear `identity`'s sounds. */
 export function usePersonMuted(identity: string): boolean {
   return useSyncExternalStore(soundboardSettings.subscribe, () =>
     soundboardSettings.get().mutedPeople.includes(identity),
+  );
+}
+
+/** Whether you have muted `identity`'s entrance sound. */
+export function useEntranceMuted(identity: string): boolean {
+  return useSyncExternalStore(soundboardSettings.subscribe, () =>
+    soundboardSettings.get().mutedEntrances.includes(identity),
   );
 }
