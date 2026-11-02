@@ -18,7 +18,6 @@ import {
   renamePad,
   type Pad,
   type Sound,
-  type SoundPage,
 } from '../../shared/soundboard';
 import {
   shortcutSound,
@@ -41,15 +40,13 @@ import { removeRecent } from '../soundboard/model';
 import { useWheelRange } from './useWheelRange';
 import { playSound } from '../soundboard/player';
 import type { SoundboardControls } from '../soundboard/useSoundboard';
+import { useSoundSearch } from '../soundboard/useSoundSearch';
 
 /** Marks the button that opens the panel, which a click outside it does not count. */
 export const TOGGLE_ATTRIBUTE = 'data-soundboard-toggle';
 
 /** How far the panel stays from the window's left and right edges. */
 const EDGE_GAP = 16;
-
-/** How long typing must pause before Myinstants is asked. */
-const SEARCH_DELAY_MS = 300;
 
 const BLOCK_MESSAGES: Record<NonNullable<SoundboardControls['blocked']>, MessageKey> = {
   notInVoice: 'soundboard.notInVoice',
@@ -62,14 +59,6 @@ const PAD_EMOJI = (
   '📢 🎺 🥁 🎸 🎤 🎵 🔔 🚨 💥 💣 🔥 ✨ 😂 🤣 😱 😭 😡 🤡 💀 👻 ' +
   '🤖 👽 🐐 🐸 🐱 🐶 🦆 🐔 👏 🙌 👀 🍿 🎉 🏆 ❌ ✅ ❓ ⏰ 🚀 💸 🫡'
 ).split(' ');
-
-interface Search {
-  query: string;
-  sounds: Sound[];
-  next: number | null;
-  loading: boolean;
-  failed: boolean;
-}
 
 /**
  * The soundboard (ADR 0040), above its button in the sidebar's footer: your
@@ -96,8 +85,7 @@ export default function SoundboardPanel({
   const padList = usePads();
   // What you played that is not on your pad: once added, it is there instead.
   const recentList = useRecents().filter((s) => !onPad(padList, s.slug));
-  const [query, setQuery] = useState('');
-  const [search, setSearch] = useState<Search | null>(null);
+  const { query, setQuery, search, loadMore } = useSoundSearch();
   const [previewFailed, setPreviewFailed] = useState<string | null>(null);
   // The pad being edited, by its slug.
   const [editing, setEditing] = useState<string | null>(null);
@@ -157,33 +145,6 @@ export default function SoundboardPanel({
       window.removeEventListener('resize', onClose);
     };
   }, [onClose]);
-
-  // Asks Myinstants once typing pauses. An answer to an older query is dropped.
-  const latest = useRef('');
-  useEffect(() => {
-    const trimmed = query.trim();
-    latest.current = trimmed;
-    if (!trimmed) {
-      setSearch(null);
-      return;
-    }
-    setSearch({ query: trimmed, sounds: [], next: null, loading: true, failed: false });
-    const timer = setTimeout(() => {
-      void window.zoia.soundboard.search(trimmed, 1).then((page) => {
-        if (latest.current === trimmed) setSearch(searchFrom(trimmed, [], page));
-      });
-    }, SEARCH_DELAY_MS);
-    return () => clearTimeout(timer);
-  }, [query]);
-
-  const loadMore = () => {
-    if (!search?.next || search.loading) return;
-    const { query: searched, sounds, next } = search;
-    setSearch({ ...search, loading: true, failed: false });
-    void window.zoia.soundboard.search(searched, next).then((page) => {
-      if (latest.current === searched) setSearch(searchFrom(searched, sounds, page));
-    });
-  };
 
   // Playing again is held back while the last sound you played plays out.
   const [now, setNow] = useState(() => performance.now());
@@ -402,13 +363,6 @@ export default function SoundboardPanel({
     </div>,
     document.body,
   );
-}
-
-function searchFrom(query: string, before: Sound[], page: SoundPage | null): Search {
-  if (!page) return { query, sounds: before, next: null, loading: false, failed: true };
-  // A page can repeat a sound from the one before it when Myinstants' list moves.
-  const sounds = [...before, ...page.sounds.filter((s) => !before.some((b) => b.slug === s.slug))];
-  return { query, sounds, next: page.next, loading: false, failed: false };
 }
 
 /** The pads' shortcuts main holds, and recording one. */
@@ -812,7 +766,7 @@ const ICON = {
   strokeLinejoin: 'round',
 } as const;
 
-function IconPreview() {
+export function IconPreview() {
   return (
     <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
       <path d="M8 5v14l11-7z" fill="currentColor" />
@@ -844,7 +798,7 @@ function IconCheck() {
   );
 }
 
-function IconClose() {
+export function IconClose() {
   return (
     <svg {...ICON} width="12" height="12">
       <path d="M6 6l12 12M18 6L6 18" />
@@ -860,7 +814,7 @@ function IconBack() {
   );
 }
 
-function IconSearch() {
+export function IconSearch() {
   return (
     <svg {...ICON} width="14" height="14">
       <circle cx="11" cy="11" r="6" />

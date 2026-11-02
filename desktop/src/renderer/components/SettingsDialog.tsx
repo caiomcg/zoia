@@ -6,6 +6,7 @@ import AccountsSection from './AccountsSection';
 import AddonsSection from './AddonsSection';
 import Avatar from './Avatar';
 import AvatarCropDialog from './AvatarCropDialog';
+import EntranceSettingsSection from './EntranceSettings';
 import { encodeAvatar, type AvatarCrop, type EncodedAvatar } from '../avatars';
 import { tNow, useT } from '../i18n';
 import LanguagePicker from './LanguagePicker';
@@ -746,6 +747,7 @@ function SoundsSection() {
       </SettingsCard>
 
       <SoundboardSettingsSection />
+      <EntranceSettingsSection />
     </>
   );
 }

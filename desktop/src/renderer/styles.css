@@ -6850,6 +6850,19 @@ button.danger:active:not(:disabled),
   font-size: 13px;
 }
 
+/* ---- the entrance sound, in Settings › Sounds. */
+.entrance-chosen .soundboard-play {
+  cursor: default;
+}
+
+.entrance-chosen .soundboard-play:hover {
+  background: none;
+}
+
+.entrance-results {
+  max-height: 220px;
+}
+
 /* ---- editing a pad, where the pad was. */
 .soundpad-editor {
   display: flex;

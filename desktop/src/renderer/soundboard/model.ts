@@ -30,6 +30,22 @@ export function lockMs(seconds: number): number {
   return Math.min(MAX_LOCK_MS, Math.round(seconds * 1000));
 }
 
+/**
+ * The least time between two of one person's entrance sounds (ADR 0046), so
+ * hopping between channels or dropping off and back is not a soundboard.
+ */
+export const ENTRANCE_COOLDOWN_MS = 60_000;
+
+/**
+ * How long after someone arrives their sound and their microphone may still
+ * come: whether the microphone is on decides whether the sound plays. Past
+ * it, they have arrived, and nothing more is played for it.
+ */
+export const ENTRANCE_WAIT_MS = 8_000;
+
+/** What a sound is, which sets how loud it plays and which mutes silence it. */
+export type SoundKind = 'effect' | 'entrance';
+
 export interface SoundboardSettings {
   /** 0–1, on top of the file's own level. */
   volume: number;
@@ -37,13 +53,34 @@ export interface SoundboardSettings {
   muted: boolean;
   /** Identities whose sounds you do not hear. */
   mutedPeople: string[];
+  /** Entrance sounds' volume, 0–1, apart from the effects'. */
+  entranceVolume: number;
+  /** No entrance sound plays for you. Yours still plays for everyone else. */
+  entrancesMuted: boolean;
+  /** Identities whose entrance sound you do not hear, their effects aside. */
+  mutedEntrances: string[];
 }
 
 export const DEFAULT_SOUNDBOARD_SETTINGS: SoundboardSettings = {
   volume: 0.5,
   muted: false,
   mutedPeople: [],
+  entranceVolume: 0.5,
+  entrancesMuted: false,
+  mutedEntrances: [],
 };
+
+function parseVolume(value: unknown, fallback: number): number {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? Math.min(1, Math.max(0, value))
+    : fallback;
+}
+
+function parseIdentities(value: unknown): string[] {
+  return Array.isArray(value)
+    ? [...new Set(value.filter((p): p is string => typeof p === 'string' && !!p))]
+    : [];
+}
 
 /** Settings from storage, field by field: whatever is unreadable is the default. */
 export function parseSoundboardSettings(raw: string | null): SoundboardSettings {
@@ -54,22 +91,53 @@ export function parseSoundboardSettings(raw: string | null): SoundboardSettings 
   } catch {
     // Unreadable is the same as never set.
   }
-  const { volume, muted, mutedPeople } = stored;
+  const { volume, muted, mutedPeople, entranceVolume, entrancesMuted, mutedEntrances } = stored;
   return {
-    volume:
-      typeof volume === 'number' && Number.isFinite(volume)
-        ? Math.min(1, Math.max(0, volume))
-        : DEFAULT_SOUNDBOARD_SETTINGS.volume,
+    volume: parseVolume(volume, DEFAULT_SOUNDBOARD_SETTINGS.volume),
     muted: muted === true,
-    mutedPeople: Array.isArray(mutedPeople)
-      ? [...new Set(mutedPeople.filter((p): p is string => typeof p === 'string' && !!p))]
-      : [],
+    mutedPeople: parseIdentities(mutedPeople),
+    entranceVolume: parseVolume(entranceVolume, DEFAULT_SOUNDBOARD_SETTINGS.entranceVolume),
+    entrancesMuted: entrancesMuted === true,
+    mutedEntrances: parseIdentities(mutedEntrances),
   };
 }
 
 /** How loud the soundboard plays: nothing while muted. */
 export function effectsGain(settings: SoundboardSettings): number {
   return settings.muted ? 0 : settings.volume;
+}
+
+/** How loud entrance sounds play: nothing while muted, whatever the effects do. */
+export function entranceGain(settings: SoundboardSettings): number {
+  return settings.entrancesMuted ? 0 : settings.entranceVolume;
+}
+
+/** Whether `identity`'s entrance sound plays for you. Muting their effects has no part in it. */
+export function hearsEntrance(settings: SoundboardSettings, identity: string): boolean {
+  return !settings.entrancesMuted && !settings.mutedEntrances.includes(identity);
+}
+
+export function setEntranceMuted(
+  settings: SoundboardSettings,
+  identity: string,
+  muted: boolean,
+): SoundboardSettings {
+  const others = settings.mutedEntrances.filter((p) => p !== identity);
+  return { ...settings, mutedEntrances: muted ? [...others, identity] : others };
+}
+
+/** One entrance sound per person per ENTRANCE_COOLDOWN_MS, across every channel. */
+export class EntranceCooldown {
+  private played = new Map<string, number>();
+
+  ready(identity: string, now: number): boolean {
+    const last = this.played.get(identity);
+    return last === undefined || now - last >= ENTRANCE_COOLDOWN_MS;
+  }
+
+  mark(identity: string, now: number): void {
+    this.played.set(identity, now);
+  }
 }
 
 export function setPersonMuted(

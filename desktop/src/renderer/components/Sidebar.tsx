@@ -24,8 +24,8 @@ import { setVoiceVolume, useVoiceVolume, VOLUME_MAX } from '../voice/volumes';
 import { useWheelRange } from './useWheelRange';
 import SoundboardPanel, { IconNote, TOGGLE_ATTRIBUTE } from './SoundboardPanel';
 import type { SoundboardControls } from '../soundboard/useSoundboard';
-import { soundboardSettings, usePersonMuted } from '../soundboard/library';
-import { setPersonMuted } from '../soundboard/model';
+import { soundboardSettings, useEntranceMuted, usePersonMuted } from '../soundboard/library';
+import { setEntranceMuted, setPersonMuted } from '../soundboard/model';
 import { usePlayingSound } from '../soundboard/player';
 import { useT } from '../i18n';
 import { useLeaving } from '../presence';
@@ -1257,6 +1257,7 @@ function MemberMenu({
       </div>
       {volume && <VoiceVolume identity={identity} name={name} />}
       {volume && <SoundboardMute identity={identity} />}
+      {volume && <EntranceMute identity={identity} />}
       {onKick && (
         <button type="button" role="menuitem" className="member-menu-item" onClick={choose(onKick)}>
           <IconKick />
@@ -1321,6 +1322,26 @@ function SoundboardMute({ identity }: { identity: string }) {
         }
       />
       {t('soundboard.mutePerson')}
+    </label>
+  );
+}
+
+/** Whether you hear someone's entrance sound (ADR 0046), apart from their effects. */
+function EntranceMute({ identity }: { identity: string }) {
+  const t = useT();
+  const muted = useEntranceMuted(identity);
+  return (
+    <label className="member-menu-check">
+      <input
+        type="checkbox"
+        checked={muted}
+        onChange={(event) =>
+          soundboardSettings.set(
+            setEntranceMuted(soundboardSettings.get(), identity, event.target.checked),
+          )
+        }
+      />
+      {t('entrance.mutePerson')}
     </label>
   );
 }

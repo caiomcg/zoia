@@ -23,6 +23,12 @@ const SOUND_PATH = '/media/sounds/';
 /** A sound plays for this long at most, for everyone, then fades out. */
 export const MAX_SOUND_SECONDS = 10;
 
+/** Someone's entrance sound (ADR 0046), as JSON, set by their own app as they arrive. */
+export const ENTRANCE_ATTRIBUTE = 'zoia.entrance';
+
+/** An entrance sound plays for this long at most, for everyone, then fades out. */
+export const MAX_ENTRANCE_SECONDS = 5;
+
 /** The most a sound's file may be. Ten seconds of any sensible mp3 is far less. */
 export const MAX_SOUND_BYTES = 5 * 1024 * 1024;
 
@@ -121,6 +127,22 @@ export function encodeSoundMessage(sound: Sound): Uint8Array<ArrayBuffer> {
 export function decodeSoundMessage(payload: Uint8Array): Sound | null {
   try {
     return parseSound(JSON.parse(new TextDecoder().decode(payload)));
+  } catch {
+    return null;
+  }
+}
+
+/** The attribute that tells the room `sound` is yours to arrive with. */
+export function encodeEntranceAttribute(sound: Sound): string {
+  const { slug, name, url } = sound;
+  return JSON.stringify({ slug, name, url });
+}
+
+/** The entrance sound an attribute names, or null for none or anything else. */
+export function parseEntranceAttribute(raw: string | undefined): Sound | null {
+  if (!raw) return null;
+  try {
+    return parseSound(JSON.parse(raw));
   } catch {
     return null;
   }
