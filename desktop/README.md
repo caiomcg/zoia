@@ -1,5 +1,14 @@
 # Zoia Desktop
 
+## Frontend preview without a server
+
+Run `npm run dev:demo` from `desktop/` and open
+`http://127.0.0.1:5174/?demo`. This uses the real interface with six sample chats
+and messages kept in memory, with no login or backend. You can switch and close
+tabs, keep separate text drafts, and send simulated messages. Reloading resets
+the demo data. Voice, broadcasts and uploads need the desktop app and a server.
+The demo is available only in development and is excluded from release builds.
+
 The broadcaster client: screen and (soon) per-application audio over WebRTC,
 paired to a Zoia server with a token embedded at build time.
 

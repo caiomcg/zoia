@@ -124,7 +124,8 @@ function hopMembers(
     : others;
 }
 
-export default function App() {
+export default function App({ preview = false }: { preview?: boolean }) {
+  const demo = import.meta.env.DEV && preview;
   const t = useT();
   const [status, setStatus] = useState<PairingStatus | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -139,7 +140,7 @@ export default function App() {
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
   // The channel this device is in, or wants to be in. None at launch: the app
   // lists the channels and joins one only when it is clicked.
-  const [channel, setChannel] = useState<string | null>(null);
+  const [channel, setChannel] = useState<string | null>(demo ? 'demo-stage' : null);
   const [channels, setChannels] = useState<RoomInfo[]>([]);
   // Running as administrator, where Windows will not let Zoia capture a
   // window (src/main/elevation.ts): said up front, with the way out.
@@ -315,7 +316,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!usable || channel === null || room.state !== 'idle' || connectingRef.current) {
+    if (demo || !usable || channel === null || room.state !== 'idle' || connectingRef.current) {
       return;
     }
     connectingRef.current = true;
@@ -333,7 +334,7 @@ export default function App() {
       .finally(() => {
         connectingRef.current = false;
       });
-  }, [usable, room, channel, t]);
+  }, [demo, usable, room, channel, t]);
 
   // Who is in which channel, and who is live there, for the channel list.
   useEffect(() => {
@@ -414,6 +415,10 @@ export default function App() {
    * it never sees an idle room paired with the old channel and rejoins it.
    */
   async function switchChannel(id: string) {
+    if (demo) {
+      setChannel(id);
+      return;
+    }
     if (id === channel) return;
     if (channel === null) {
       // The first join from the list: a plain connect, shown as one.
