@@ -85,6 +85,7 @@ function renderInline(nodes: Inline[], options: InlineOptions): ReactNode {
           return <Fragment key={index}>{renderInline(node.children, options)}</Fragment>;
         // Opened in the browser by the main window's open handler; the
         // address is in the title, for a masked link whose words differ.
+        // Right-clicking it is the message's menu, with the link's items.
         return (
           <a
             key={index}

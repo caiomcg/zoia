@@ -186,6 +186,8 @@ export const en = {
   'chat.deleteTheirs': "Delete {name}'s message? Everyone stops seeing it.",
   'chat.messageDeleted': 'Message deleted',
   'chat.spoiler': 'Spoiler: click to show',
+  'chat.openLink': 'Open link',
+  'chat.copyLink': 'Copy link',
   'chat.format': 'Formatting',
   'chat.format.show': 'Show formatting',
   'chat.format.hide': 'Hide formatting',

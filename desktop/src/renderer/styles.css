@@ -5948,6 +5948,16 @@ button.danger:active:not(:disabled),
   outline: none;
 }
 
+.person-menu .person-menu-item.danger {
+  color: var(--danger);
+}
+
+.person-menu-divider {
+  margin: 4px 0;
+  border: none;
+  border-top: 1px solid var(--border);
+}
+
 .person-menu-note {
   margin: 0;
   padding: 4px 10px 6px;

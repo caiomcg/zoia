@@ -180,6 +180,8 @@ export const es: Messages = {
   'chat.deleteTheirs': '¿Eliminar el mensaje de {name}? Nadie lo verá más.',
   'chat.messageDeleted': 'Mensaje eliminado',
   'chat.spoiler': 'Spoiler: haz clic para verlo',
+  'chat.openLink': 'Abrir enlace',
+  'chat.copyLink': 'Copiar enlace',
   'chat.format': 'Formato',
   'chat.format.show': 'Mostrar formato',
   'chat.format.hide': 'Ocultar formato',

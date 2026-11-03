@@ -179,6 +179,8 @@ export const pt: Messages = {
   'chat.deleteTheirs': 'Apagar a mensagem de {name}? Ninguém mais vai vê-la.',
   'chat.messageDeleted': 'Mensagem apagada',
   'chat.spoiler': 'Spoiler: clique para ver',
+  'chat.openLink': 'Abrir link',
+  'chat.copyLink': 'Copiar link',
   'chat.format': 'Formatação',
   'chat.format.show': 'Mostrar formatação',
   'chat.format.hide': 'Ocultar formatação',
