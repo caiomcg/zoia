@@ -5179,6 +5179,114 @@ button.danger:active:not(:disabled),
   user-select: text;
 }
 
+/* Formatting in a message, as Discord writes it (chat/format.ts). */
+.chat-body strong {
+  font-weight: 700;
+}
+
+.chat-body .chat-heading {
+  margin: 6px 0 2px;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--text);
+}
+
+.chat-body .chat-heading.level-1 {
+  font-size: 22px;
+}
+
+.chat-body .chat-heading.level-2 {
+  font-size: 18px;
+}
+
+.chat-body .chat-heading.level-3 {
+  font-size: 15px;
+}
+
+.chat-body > .chat-heading:first-child {
+  margin-top: 0;
+}
+
+.chat-subtext {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.chat-blockquote {
+  margin: 2px 0;
+  padding: 0 8px 0 12px;
+  border-left: 4px solid var(--border);
+  border-radius: 2px;
+}
+
+.chat-list {
+  margin: 2px 0;
+  padding-left: 22px;
+  white-space: normal;
+}
+
+.chat-list li {
+  white-space: pre-wrap;
+}
+
+.chat-list .chat-list {
+  margin: 0;
+}
+
+.chat-code,
+.chat-codeblock {
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 0.85em;
+  background: var(--bg);
+  border: 1px solid var(--border);
+}
+
+.chat-code {
+  padding: 1px 4px;
+  border-radius: 4px;
+}
+
+.chat-codeblock {
+  max-width: 100%;
+  margin: 4px 0;
+  padding: 8px 10px;
+  overflow-x: auto;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  border-radius: 6px;
+}
+
+/* ||Hidden|| until clicked: the words, and anything in them, take no colour
+   and no clicks until then. */
+.chat-spoiler {
+  padding: 0 2px;
+  background: color-mix(in srgb, var(--raised) 60%, transparent);
+  border-radius: 3px;
+}
+
+.chat-spoiler:not(.shown) {
+  color: transparent;
+  cursor: pointer;
+  user-select: none;
+  background: var(--raised);
+}
+
+.chat-spoiler:not(.shown):hover {
+  background: color-mix(in srgb, var(--raised) 80%, var(--text));
+}
+
+.chat-spoiler:not(.shown) * {
+  color: transparent;
+  pointer-events: none;
+  background: transparent;
+  border-color: transparent;
+}
+
+.chat-spoiler:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
 .chat-day,
 .chat-new {
   display: flex;

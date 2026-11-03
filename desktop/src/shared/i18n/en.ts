@@ -180,6 +180,7 @@ export const en = {
   'chat.deleteMine': 'Delete this message? Everyone stops seeing it.',
   'chat.deleteTheirs': "Delete {name}'s message? Everyone stops seeing it.",
   'chat.messageDeleted': 'Message deleted',
+  'chat.spoiler': 'Spoiler: click to show',
   'chat.error.deleteFailed': 'Could not delete that message.',
   'chat.editMessage': 'Edit message',
   'chat.edited': '(edited)',

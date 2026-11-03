@@ -173,6 +173,7 @@ export const pt: Messages = {
   'chat.deleteMine': 'Apagar esta mensagem? Ninguém mais vai vê-la.',
   'chat.deleteTheirs': 'Apagar a mensagem de {name}? Ninguém mais vai vê-la.',
   'chat.messageDeleted': 'Mensagem apagada',
+  'chat.spoiler': 'Spoiler: clique para ver',
   'chat.error.deleteFailed': 'Não foi possível apagar essa mensagem.',
   'chat.editMessage': 'Editar mensagem',
   'chat.edited': '(editado)',
