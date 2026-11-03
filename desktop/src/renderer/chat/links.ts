@@ -22,7 +22,7 @@ function trimEnd(candidate: string): string {
   for (;;) {
     const last = candidate[end - 1];
     if (!last) break;
-    if (/[.,;:!?'*_~]/.test(last)) {
+    if (/[.,;:!?'*_~|]/.test(last)) {
       end -= 1;
       continue;
     }
@@ -52,6 +52,22 @@ function hrefOf(address: string): string | null {
   } catch {
     return null;
   }
+}
+
+const ADDRESS_AT = new RegExp(ADDRESS.source, 'iy');
+
+/**
+ * The link that starts exactly at `at`, ending no later than `end`, or null.
+ * For the message formatter, which walks the text itself and must not take
+ * the underscores or asterisks of an address for formatting.
+ */
+export function linkAt(text: string, at: number, end = text.length): TextPart | null {
+  ADDRESS_AT.lastIndex = at;
+  const match = ADDRESS_AT.exec(text);
+  if (!match) return null;
+  const address = trimEnd(match[0].slice(0, end - at));
+  const href = address ? hrefOf(address) : null;
+  return href ? { text: address, href } : null;
 }
 
 /** `text` split into plain parts and links, in order. */

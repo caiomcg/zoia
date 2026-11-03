@@ -28,7 +28,6 @@ import {
   matchPeople,
   mentionQuery,
   mentionedIn,
-  splitMentions,
   type MentionQuery,
 } from '../chat/mentions';
 import { applyCommand, commandQuery, matchCommands } from '../chat/commands';
@@ -37,7 +36,8 @@ import { insertText, pushRecent } from '../chat/emoji';
 import Avatar from './Avatar';
 import EmojiPicker from './EmojiPicker';
 import MediaViewer from './MediaViewer';
-import { splitLinks } from '../chat/links';
+import MessageText, { ExcerptText } from './MessageText';
+import { shortcutMarker, toggleMarker } from '../chat/format';
 import { IconTrash } from './Sidebar';
 import { useConfirm } from './ConfirmDialog';
 import { useLanguage, useT } from '../i18n';
@@ -424,6 +424,7 @@ export default function ChatView({
   }
 
   function onKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (formatShortcut(event, setDraft)) return;
     if (command && commandSuggestions.length > 0) {
       const count = commandSuggestions.length;
       if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
@@ -1071,37 +1072,17 @@ function MessageRow({
           {editing ? (
             <EditBox initial={message.body} onSave={onSaveEdit} onCancel={onCancelEdit} />
           ) : message.body ? (
-            <p className="chat-body">
-              {splitMentions(message.body, message.mentions).map((part, i) =>
-                part.mention ? (
-                  <span key={i} className={`chat-mention${part.mention.id === me ? ' me' : ''}`}>
-                    {part.text}
-                  </span>
-                ) : (
-                  splitLinks(part.text).map((piece, j) =>
-                    piece.href ? (
-                      <a
-                        key={`${i}-${j}`}
-                        className="chat-link"
-                        href={piece.href}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        {piece.text}
-                      </a>
-                    ) : (
-                      piece.text
-                    ),
-                  )
-                ),
-              )}
-              {editedAt && <EditedMark when={editedAt} />}
-            </p>
+            <MessageText
+              body={message.body}
+              mentions={message.mentions}
+              me={me}
+              tail={editedAt && <EditedMark when={editedAt} />}
+            />
           ) : (
             editedAt && (
-              <p className="chat-body">
+              <div className="chat-body">
                 <EditedMark when={editedAt} />
-              </p>
+              </div>
             )
           )}
           {reactions.length > 0 && (
@@ -1141,6 +1122,26 @@ function EditedMark({ when }: { when: string }) {
       {t('chat.edited')}
     </span>
   );
+}
+
+/**
+ * Ctrl+B, Ctrl+I, Ctrl+U and Ctrl+Shift+X in a message box: put the markers
+ * for bold, italics, underline or strikethrough around the selection, or take
+ * them off. True when the key was one of them.
+ */
+function formatShortcut(
+  event: KeyboardEvent<HTMLTextAreaElement>,
+  setText: (text: string) => void,
+): boolean {
+  const marker = shortcutMarker(event);
+  if (!marker) return false;
+  event.preventDefault();
+  const box = event.currentTarget;
+  const next = toggleMarker(box.value, box.selectionStart, box.selectionEnd, marker, MESSAGE_MAX);
+  if (!next) return true;
+  setText(next.text);
+  requestAnimationFrame(() => box.setSelectionRange(next.start, next.end));
+  return true;
 }
 
 /**
@@ -1188,6 +1189,7 @@ function EditBox({
         aria-label={t('chat.editMessage')}
         onChange={(event) => setText(event.target.value)}
         onKeyDown={(event) => {
+          if (formatShortcut(event, setText)) return;
           if (event.key === 'Escape') {
             event.preventDefault();
             event.stopPropagation();
@@ -1295,9 +1297,15 @@ function ReplyQuote({ reply, label }: { reply: ChatReply; label?: string }) {
       </span>
     );
   }
-  const what =
-    reply.body ||
-    (reply.kind === 'video' ? t('chat.video') : reply.kind === 'image' ? t('chat.photo') : '');
+  const what = reply.body ? (
+    <ExcerptText body={reply.body} />
+  ) : reply.kind === 'video' ? (
+    t('chat.video')
+  ) : reply.kind === 'image' ? (
+    t('chat.photo')
+  ) : (
+    ''
+  );
   return (
     <span className="chat-quote">
       <span className="chat-quote-author">{label ?? reply.authorName ?? t('chat.someone')}</span>

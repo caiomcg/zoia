@@ -174,6 +174,7 @@ export const es: Messages = {
   'chat.deleteMine': '¿Eliminar este mensaje? Nadie lo verá más.',
   'chat.deleteTheirs': '¿Eliminar el mensaje de {name}? Nadie lo verá más.',
   'chat.messageDeleted': 'Mensaje eliminado',
+  'chat.spoiler': 'Spoiler: haz clic para verlo',
   'chat.error.deleteFailed': 'No se pudo eliminar ese mensaje.',
   'chat.editMessage': 'Editar mensaje',
   'chat.edited': '(editado)',
