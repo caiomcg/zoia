@@ -45,3 +45,31 @@ test('server deletions close tabs and sign-out resets the initial selection', ()
   tabs = chatTabs(tabs, { type: 'sync', ids: ['other'] });
   assert.equal(tabs.activeId, 'other');
 });
+
+test('pinning groups zabas at the start while preserving selection and open tabs', () => {
+  let tabs = EMPTY_CHAT_TABS;
+  for (const id of ['a', 'b', 'c', 'd']) tabs = chatTabs(tabs, { type: 'open', id });
+  tabs = chatTabs(tabs, { type: 'pin', id: 'c', pinned: true });
+  tabs = chatTabs(tabs, { type: 'pin', id: 'b', pinned: true });
+  assert.deepEqual(tabs.ids, ['c', 'b', 'a', 'd']);
+  assert.deepEqual(tabs.pinned, ['c', 'b']);
+  assert.equal(tabs.activeId, 'd');
+  tabs = chatTabs(tabs, { type: 'open', id: 'e' });
+  assert.deepEqual(tabs.pinned, ['c', 'b']);
+  assert.deepEqual(tabs.ids, ['c', 'b', 'a', 'd', 'e']);
+  tabs = chatTabs(tabs, { type: 'pin', id: 'c', pinned: false });
+  assert.deepEqual(tabs.ids, ['b', 'c', 'a', 'd', 'e']);
+  assert.deepEqual(tabs.pinned, ['b']);
+});
+
+test('closed or deleted zabas lose their pins; nonexistent zabas cannot be pinned', () => {
+  let tabs = chatTabs(EMPTY_CHAT_TABS, { type: 'open', id: 'a' });
+  tabs = chatTabs(tabs, { type: 'pin', id: 'a', pinned: true });
+  tabs = chatTabs(tabs, { type: 'close', id: 'a' });
+  assert.deepEqual(tabs.pinned, []);
+  tabs = chatTabs(tabs, { type: 'open', id: 'b' });
+  tabs = chatTabs(tabs, { type: 'pin', id: 'b', pinned: true });
+  tabs = chatTabs(tabs, { type: 'sync', ids: [] });
+  assert.deepEqual(tabs.pinned, []);
+  assert.equal(chatTabs(tabs, { type: 'pin', id: 'missing', pinned: true }), tabs);
+});

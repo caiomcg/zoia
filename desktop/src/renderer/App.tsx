@@ -1140,6 +1140,7 @@ export default function App() {
                     chat={info}
                     current={chatShown && chat.openId === id}
                     unread={shownUnread(info, silencedChats)}
+                    pinned={chat.pinnedTabs.includes(id)}
                     onOpen={() => {
                       chat.open(id);
                       setView('chat');
@@ -1148,6 +1149,7 @@ export default function App() {
                       chat.close(id);
                       if (chat.tabs.length === 1) setView('stage');
                     }}
+                    onPin={(pinned) => chat.pin(id, pinned)}
                   />
                 );
               })}

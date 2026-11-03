@@ -1,12 +1,14 @@
-/** Open text chats, in the order they were opened. Closing the last stays closed. */
+/** Open text chats, pinned ones first. Closing the last stays closed. */
 export interface ChatTabs {
   ids: string[];
+  pinned: string[];
   activeId: string | null;
   initialized: boolean;
 }
 
 export const EMPTY_CHAT_TABS: ChatTabs = {
   ids: [],
+  pinned: [],
   activeId: null,
   initialized: false,
 };
@@ -15,6 +17,7 @@ type Action =
   | { type: 'sync'; ids: string[] }
   | { type: 'open'; id: string }
   | { type: 'close'; id: string }
+  | { type: 'pin'; id: string; pinned: boolean }
   | { type: 'reset' };
 
 export function chatTabs(state: ChatTabs, action: Action): ChatTabs {
@@ -35,10 +38,22 @@ export function chatTabs(state: ChatTabs, action: Action): ChatTabs {
       return {
         ...state,
         ids,
+        pinned: state.pinned.filter((id) => id !== action.id),
         activeId:
           state.activeId === action.id
             ? (ids[Math.min(index, ids.length - 1)] ?? null)
             : state.activeId,
+      };
+    }
+    case 'pin': {
+      if (!state.ids.includes(action.id)) return state;
+      if (state.pinned.includes(action.id) === action.pinned) return state;
+      const pinned = state.pinned.filter((id) => id !== action.id);
+      if (action.pinned) pinned.push(action.id);
+      return {
+        ...state,
+        pinned,
+        ids: [...pinned, ...state.ids.filter((id) => !pinned.includes(id))],
       };
     }
     case 'sync': {

@@ -495,6 +495,8 @@ export function useChat({
     openId,
     openChat: chats.find((c) => c.id === openId) ?? null,
     tabs: tabs.ids,
+    pinnedTabs: tabs.pinned,
+    pin: (id: string, pinned: boolean) => dispatchTabs({ type: 'pin', id, pinned }),
     open: (id: string) => dispatchTabs({ type: 'open', id }),
     close: (id: string) => dispatchTabs({ type: 'close', id }),
     thread: thread?.chatId === openId ? thread : null,

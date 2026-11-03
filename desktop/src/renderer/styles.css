@@ -4997,6 +4997,12 @@ button.danger:active:not(:disabled),
   white-space: nowrap;
 }
 
+.chat-tab-pin {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--muted);
+}
+
 .main-tab-close {
   display: inline-grid;
   place-items: center;
