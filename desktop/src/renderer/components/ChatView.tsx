@@ -28,7 +28,6 @@ import {
   matchPeople,
   mentionQuery,
   mentionedIn,
-  splitMentions,
   type MentionQuery,
 } from '../chat/mentions';
 import { applyCommand, commandQuery, matchCommands } from '../chat/commands';
@@ -37,7 +36,9 @@ import { insertText, pushRecent } from '../chat/emoji';
 import Avatar from './Avatar';
 import EmojiPicker from './EmojiPicker';
 import MediaViewer from './MediaViewer';
-import { splitLinks } from '../chat/links';
+import MessageText, { ExcerptText } from './MessageText';
+import { shortcutAction } from '../chat/format';
+import FormatBar, { formatBox } from './FormatBar';
 import { IconTrash } from './Sidebar';
 import { useConfirm } from './ConfirmDialog';
 import { useLanguage, useT } from '../i18n';
@@ -54,6 +55,17 @@ function readRecentEmoji(): string[] {
     return Array.isArray(stored) ? stored.filter((e): e is string => typeof e === 'string') : [];
   } catch {
     return [];
+  }
+}
+
+/** Whether the formatting bar is open over the message box; kept per machine. */
+const FORMAT_BAR_KEY = 'zoia.chat.formatBar';
+
+function readFormatBar(): boolean {
+  try {
+    return localStorage.getItem(FORMAT_BAR_KEY) === '1';
+  } catch {
+    return false;
   }
 }
 
@@ -132,6 +144,17 @@ export default function ChatView({
   // The emoji beside the message box, and the button that opens them.
   const [picking, setPicking] = useState(false);
   const [recentEmoji, setRecentEmoji] = useState(readRecentEmoji);
+  // The formatting bar over the message box, as Teams has, opened by its button.
+  const [formatting, setFormatting] = useState(readFormatBar);
+  function toggleFormatting() {
+    const open = !formatting;
+    setFormatting(open);
+    try {
+      localStorage.setItem(FORMAT_BAR_KEY, open ? '1' : '0');
+    } catch {
+      // Remembering is a convenience; the bar opens all the same.
+    }
+  }
   const emojiButtonRef = useRef<HTMLButtonElement>(null);
   const stickRef = useRef(true);
   // Clears a failed reaction's message; set while one is showing.
@@ -424,6 +447,7 @@ export default function ChatView({
   }
 
   function onKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (formatShortcut(event, setDraft)) return;
     if (command && commandSuggestions.length > 0) {
       const count = commandSuggestions.length;
       if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
@@ -737,6 +761,14 @@ export default function ChatView({
             toggle={emojiButtonRef}
           />
         )}
+        {formatting && (
+          <FormatBar
+            target={textRef}
+            setText={setDraft}
+            max={MESSAGE_MAX}
+            disabled={!chat.available}
+          />
+        )}
         <div className="chat-composer-row">
           {/* A textarea cannot style part of its text, so the accents are
               painted by a copy of it laid out the same way behind it: its
@@ -791,6 +823,35 @@ export default function ChatView({
               }}
             />
           </div>
+          {/* Kept from taking the focus, so the selection stays for the bar to style. */}
+          <button
+            type="button"
+            className={`chat-attach chat-format-toggle${formatting ? ' active' : ''}`}
+            disabled={!chat.available}
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={toggleFormatting}
+            aria-pressed={formatting}
+            aria-label={t('chat.format')}
+            title={formatting ? t('chat.format.hide') : t('chat.format.show')}
+          >
+            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+              <path
+                d="M4 17L9 5l5 12M5.7 13h6.6"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              <path
+                d="M14 20l6.5-6.5a1.4 1.4 0 00-2-2L12 18l-.5 2.5z"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.6"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
           {/* Kept from taking the focus, so the emoji goes where the caret is. */}
           <button
             ref={emojiButtonRef}
@@ -1071,37 +1132,17 @@ function MessageRow({
           {editing ? (
             <EditBox initial={message.body} onSave={onSaveEdit} onCancel={onCancelEdit} />
           ) : message.body ? (
-            <p className="chat-body">
-              {splitMentions(message.body, message.mentions).map((part, i) =>
-                part.mention ? (
-                  <span key={i} className={`chat-mention${part.mention.id === me ? ' me' : ''}`}>
-                    {part.text}
-                  </span>
-                ) : (
-                  splitLinks(part.text).map((piece, j) =>
-                    piece.href ? (
-                      <a
-                        key={`${i}-${j}`}
-                        className="chat-link"
-                        href={piece.href}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        {piece.text}
-                      </a>
-                    ) : (
-                      piece.text
-                    ),
-                  )
-                ),
-              )}
-              {editedAt && <EditedMark when={editedAt} />}
-            </p>
+            <MessageText
+              body={message.body}
+              mentions={message.mentions}
+              me={me}
+              tail={editedAt && <EditedMark when={editedAt} />}
+            />
           ) : (
             editedAt && (
-              <p className="chat-body">
+              <div className="chat-body">
                 <EditedMark when={editedAt} />
-              </p>
+              </div>
             )
           )}
           {reactions.length > 0 && (
@@ -1141,6 +1182,22 @@ function EditedMark({ when }: { when: string }) {
       {t('chat.edited')}
     </span>
   );
+}
+
+/**
+ * Ctrl+B, Ctrl+I, Ctrl+U and Ctrl+Shift+X in a message box: put the markers
+ * for bold, italics, underline or strikethrough around the selection, or take
+ * them off. True when the key was one of them.
+ */
+function formatShortcut(
+  event: KeyboardEvent<HTMLTextAreaElement>,
+  setText: (text: string) => void,
+): boolean {
+  const action = shortcutAction(event);
+  if (!action) return false;
+  event.preventDefault();
+  formatBox(event.currentTarget, action, setText, MESSAGE_MAX);
+  return true;
 }
 
 /**
@@ -1188,6 +1245,7 @@ function EditBox({
         aria-label={t('chat.editMessage')}
         onChange={(event) => setText(event.target.value)}
         onKeyDown={(event) => {
+          if (formatShortcut(event, setText)) return;
           if (event.key === 'Escape') {
             event.preventDefault();
             event.stopPropagation();
@@ -1295,9 +1353,15 @@ function ReplyQuote({ reply, label }: { reply: ChatReply; label?: string }) {
       </span>
     );
   }
-  const what =
-    reply.body ||
-    (reply.kind === 'video' ? t('chat.video') : reply.kind === 'image' ? t('chat.photo') : '');
+  const what = reply.body ? (
+    <ExcerptText body={reply.body} />
+  ) : reply.kind === 'video' ? (
+    t('chat.video')
+  ) : reply.kind === 'image' ? (
+    t('chat.photo')
+  ) : (
+    ''
+  );
   return (
     <span className="chat-quote">
       <span className="chat-quote-author">{label ?? reply.authorName ?? t('chat.someone')}</span>
