@@ -105,6 +105,8 @@ export const en = {
   // ---- text chat
   'chat.title': 'Chats',
   'chat.tabStage': 'Broadcast',
+  'chat.closeTab': 'Close {chat} tab',
+  'chat.chooseChat': 'Choose a chat in the sidebar to open a tab.',
   'chat.name': 'Chat name',
   'chat.new': 'New chat',
   'chat.full': 'Chat limit reached. Raise it in Settings › Server.',

@@ -99,6 +99,8 @@ export const pt: Messages = {
   // ---- chat de texto
   'chat.title': 'Chats',
   'chat.tabStage': 'Transmissão',
+  'chat.closeTab': 'Fechar aba de {chat}',
+  'chat.chooseChat': 'Escolha um chat na barra lateral para abrir uma aba.',
   'chat.name': 'Nome do chat',
   'chat.new': 'Novo chat',
   'chat.full': 'O limite de chats foi atingido. Aumente em Configurações › Servidor.',

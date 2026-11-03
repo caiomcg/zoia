@@ -4941,10 +4941,12 @@ button.danger:active:not(:disabled),
   display: flex;
   flex: 0 0 auto;
   gap: 4px;
+  overflow-x: auto;
 }
 
 .main-tab {
   display: inline-flex;
+  flex-shrink: 0;
   gap: 6px;
   align-items: center;
   height: var(--control-height);
@@ -4967,6 +4969,63 @@ button.danger:active:not(:disabled),
   color: var(--text);
   background: var(--surface-2);
   border-color: var(--border);
+}
+
+.main-tab.chat-tab {
+  gap: 0;
+  padding: 0 4px 0 0;
+  max-width: 260px;
+}
+
+.main-tab-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: stretch;
+  min-width: 0;
+  padding: 0 8px 0 12px;
+  color: inherit;
+  font: inherit;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+.main-tab-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.main-tab-close {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 22px;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  color: var(--muted);
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.chat-tab:hover .main-tab-close,
+.chat-tab:focus-within .main-tab-close {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.main-tab-close:hover {
+  color: var(--text);
+  background: var(--surface);
+}
+
+.chat-view.chat-hidden {
+  display: none;
 }
 
 .chat-hash {

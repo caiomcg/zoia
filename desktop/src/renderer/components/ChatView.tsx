@@ -106,15 +106,32 @@ export default function ChatView({
   chat,
   me,
   canModerate = false,
+  visible = true,
 }: {
   chat: ChatController;
   me: string | null;
   /** An admin, who may delete anyone's messages; the server checks it again. */
   canModerate?: boolean;
+  visible?: boolean;
 }) {
   const t = useT();
   const { language } = useLanguage();
-  const [draft, setDraft] = useState('');
+  const [drafts, setDrafts] = useState<Record<string, { text: string; picked: ChatMention[] }>>({});
+  const draftId = chat.openId ?? '';
+  const draft = drafts[draftId]?.text ?? '';
+  const picked = drafts[draftId]?.picked ?? [];
+  function setDraft(text: string) {
+    setDrafts((all) => ({ ...all, [draftId]: { text, picked: all[draftId]?.picked ?? [] } }));
+  }
+  function setPicked(next: ChatMention[] | ((list: ChatMention[]) => ChatMention[])) {
+    setDrafts((all) => ({
+      ...all,
+      [draftId]: {
+        text: all[draftId]?.text ?? '',
+        picked: typeof next === 'function' ? next(all[draftId]?.picked ?? []) : next,
+      },
+    }));
+  }
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -129,7 +146,6 @@ export default function ChatView({
   // The message of yours being edited in place (ADR 0043), if any.
   const [editingId, setEditingId] = useState<string | null>(null);
   const { confirm, dialog } = useConfirm();
-  const [picked, setPicked] = useState<ChatMention[]>([]);
   // The @query at the caret, and which suggestion is highlighted.
   const [mention, setMention] = useState<{ query: MentionQuery; index: number } | null>(null);
   // The ! commands this chat offers (ADR 0041), and the one highlighted while
@@ -177,9 +193,9 @@ export default function ChatView({
     } else if (stickRef.current) {
       el.scrollTop = el.scrollHeight;
     }
-  }, [lastId, firstId, thread?.chatId]);
+  }, [lastId, firstId, thread?.chatId, visible]);
 
-  // A new chat starts at its newest message, with nothing half-sent from the last.
+  // Each chat keeps its draft; files, replies and edits belong to the active view.
   useLayoutEffect(() => {
     stickRef.current = true;
     setFar(false);
@@ -187,9 +203,8 @@ export default function ChatView({
     setFile(null);
     setReplyingTo(null);
     setEditingId(null);
-    setPicked([]);
     setMention(null);
-  }, [thread?.chatId]);
+  }, [chat.openId]);
 
   // The chosen file, shown before it is sent.
   useEffect(() => {
@@ -555,9 +570,17 @@ export default function ChatView({
   const seen = last ? seenBy(last, chat.readers).filter((id) => id !== me) : [];
   const nameOf = (id: string) => chat.authors[id]?.name ?? t('chat.someone');
 
+  if (!chat.openChat) {
+    return (
+      <section className={`chat-view${visible ? '' : ' chat-hidden'}`}>
+        <p className="chat-empty muted">{t('chat.chooseChat')}</p>
+      </section>
+    );
+  }
+
   return (
     <section
-      className={`chat-view${dragging ? ' dragging' : ''}`}
+      className={`chat-view${dragging ? ' dragging' : ''}${visible ? '' : ' chat-hidden'}`}
       aria-label={chat.openChat?.name}
       onDragOver={(event) => {
         if (!event.dataTransfer.types.includes('Files')) return;
