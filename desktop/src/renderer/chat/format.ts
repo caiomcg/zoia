@@ -486,6 +486,13 @@ export function parseExcerpt(body: string, mentions: ChatMention[] = []): Inline
   return out;
 }
 
+/** The text after a change made while writing, and the selection to leave in it. */
+export interface FormatEdit {
+  text: string;
+  start: number;
+  end: number;
+}
+
 /**
  * The text with `marker` put around the selection, or taken away when it is
  * already there, as Ctrl+B and the like do in the message box. With nothing
@@ -498,7 +505,7 @@ export function toggleMarker(
   end: number,
   marker: string,
   max: number,
-): { text: string; start: number; end: number } | null {
+): FormatEdit | null {
   const n = marker.length;
   const c = marker[0]!;
   const selected = text.slice(start, end);
@@ -536,16 +543,121 @@ export function toggleMarker(
   return { text: next, start: start + n, end: end + n };
 }
 
-/** The marker a formatting shortcut puts around the selection, or null for other keys. */
-export function shortcutMarker(event: {
+/** What the formatting bar and its shortcuts can do to the text being written. */
+export type FormatAction =
+  'bold' | 'italic' | 'underline' | 'strike' | 'spoiler' | 'code' | 'codeBlock' | 'quote' | 'list';
+
+const MARKERS: Partial<Record<FormatAction, string>> = {
+  bold: '**',
+  italic: '*',
+  underline: '__',
+  strike: '~~',
+  spoiler: '||',
+  code: '`',
+};
+
+/** The keys, after Ctrl (Cmd on a Mac), of the actions that have a shortcut. */
+export const FORMAT_KEYS: Partial<Record<FormatAction, string>> = {
+  bold: 'B',
+  italic: 'I',
+  underline: 'U',
+  strike: 'Shift+X',
+};
+
+/** From the start of the first line the selection touches to the end of its last. */
+function lineSpan(text: string, start: number, end: number): [number, number] {
+  const from = text.lastIndexOf('\n', start - 1) + 1;
+  // A selection that ends just past a line break leaves the next line out.
+  const stop = end > start && text[end - 1] === '\n' ? end - 1 : end;
+  const to = text.indexOf('\n', stop);
+  return [from, to === -1 ? text.length : to];
+}
+
+/**
+ * `prefix` at the start of every line the selection touches, or taken off
+ * them all when each already has it: a quote's "> ", a list's "- ".
+ */
+export function toggleLinePrefix(
+  text: string,
+  start: number,
+  end: number,
+  prefix: string,
+  max: number,
+): FormatEdit | null {
+  const [from, to] = lineSpan(text, start, end);
+  const lines = text.slice(from, to).split('\n');
+  const all = lines.every((line) => line.startsWith(prefix));
+  const block = lines
+    .map((line) => {
+      if (all) return line.slice(prefix.length);
+      return line.startsWith(prefix) ? line : prefix + line;
+    })
+    .join('\n');
+  const next = text.slice(0, from) + block + text.slice(to);
+  if (next.length > max) return null;
+  // With nothing selected on one line, the caret keeps its place in the words.
+  if (start === end && lines.length === 1) {
+    const caret = Math.max(from, start + (all ? -prefix.length : prefix.length));
+    return { text: next, start: caret, end: caret };
+  }
+  return { text: next, start: from, end: from + block.length };
+}
+
+/** The selection fenced as a code block on lines of its own, or out of the block it is in. */
+export function toggleCodeBlock(
+  text: string,
+  start: number,
+  end: number,
+  max: number,
+): FormatEdit | null {
+  const open = '```\n';
+  const close = '\n```';
+  if (
+    text.slice(start - open.length, start) === open &&
+    text.slice(end, end + close.length) === close
+  ) {
+    return {
+      text:
+        text.slice(0, start - open.length) +
+        text.slice(start, end) +
+        text.slice(end + close.length),
+      start: start - open.length,
+      end: end - open.length,
+    };
+  }
+  const before = start > 0 && text[start - 1] !== '\n' ? '\n' : '';
+  const after = end < text.length && text[end] !== '\n' ? '\n' : '';
+  const lead = before + open;
+  const next =
+    text.slice(0, start) + lead + text.slice(start, end) + close + after + text.slice(end);
+  if (next.length > max) return null;
+  return { text: next, start: start + lead.length, end: end + lead.length };
+}
+
+/** The text with `action` done to the selection, or undone; null past `max`. */
+export function applyFormat(
+  text: string,
+  start: number,
+  end: number,
+  action: FormatAction,
+  max: number,
+): FormatEdit | null {
+  const marker = MARKERS[action];
+  if (marker) return toggleMarker(text, start, end, marker, max);
+  if (action === 'codeBlock') return toggleCodeBlock(text, start, end, max);
+  return toggleLinePrefix(text, start, end, action === 'quote' ? '> ' : '- ', max);
+}
+
+/** The action a formatting shortcut does, or null for other keys. */
+export function shortcutAction(event: {
   key: string;
   ctrlKey: boolean;
   metaKey: boolean;
   altKey: boolean;
   shiftKey: boolean;
-}): string | null {
+}): FormatAction | null {
   if (!(event.ctrlKey || event.metaKey) || event.altKey) return null;
   const key = event.key.toLowerCase();
-  if (event.shiftKey) return key === 'x' ? '~~' : null;
-  return key === 'b' ? '**' : key === 'i' ? '*' : key === 'u' ? '__' : null;
+  if (event.shiftKey) return key === 'x' ? 'strike' : null;
+  return key === 'b' ? 'bold' : key === 'i' ? 'italic' : key === 'u' ? 'underline' : null;
 }

@@ -9,7 +9,8 @@ import {
   parseExcerpt,
   parseInline,
   parseMessage,
-  shortcutMarker,
+  applyFormat,
+  shortcutAction,
   toggleMarker,
   type Inline,
 } from '../src/renderer/chat/format.ts';
@@ -278,7 +279,68 @@ describe('toggleMarker', () => {
   });
 });
 
-describe('shortcutMarker', () => {
+describe('applyFormat', () => {
+  test('styles words with markers', () => {
+    assert.deepEqual(applyFormat('a b', 2, 3, 'spoiler', 100), {
+      text: 'a ||b||',
+      start: 4,
+      end: 5,
+    });
+    assert.deepEqual(applyFormat('a b', 2, 3, 'code', 100), { text: 'a `b`', start: 3, end: 4 });
+    assert.deepEqual(applyFormat('a `b`', 3, 4, 'code', 100), { text: 'a b', start: 2, end: 3 });
+  });
+
+  test('quotes every line touched, and takes the quote off when all have it', () => {
+    assert.deepEqual(applyFormat('um\ndois\ntrês', 1, 5, 'quote', 100), {
+      text: '> um\n> dois\ntrês',
+      start: 0,
+      end: 11,
+    });
+    assert.deepEqual(applyFormat('> um\n> dois', 0, 11, 'quote', 100), {
+      text: 'um\ndois',
+      start: 0,
+      end: 7,
+    });
+  });
+
+  test('with nothing selected, lists the line of the caret and keeps it in its words', () => {
+    assert.deepEqual(applyFormat('x\nitem', 4, 4, 'list', 100), {
+      text: 'x\n- item',
+      start: 6,
+      end: 6,
+    });
+    assert.deepEqual(applyFormat('x\n- item', 6, 6, 'list', 100), {
+      text: 'x\nitem',
+      start: 4,
+      end: 4,
+    });
+  });
+
+  test('a line break that ends the selection leaves the next line alone', () => {
+    assert.equal(applyFormat('a\nb', 0, 2, 'quote', 100)?.text, '> a\nb');
+  });
+
+  test('fences code on lines of their own, and takes the fences off again', () => {
+    const fenced = applyFormat('veja x = 1 aqui', 5, 10, 'codeBlock', 100);
+    assert.deepEqual(fenced, { text: 'veja \n```\nx = 1\n```\n aqui', start: 10, end: 15 });
+    assert.deepEqual(applyFormat(fenced!.text, fenced!.start, fenced!.end, 'codeBlock', 100), {
+      text: 'veja \nx = 1\n aqui',
+      start: 6,
+      end: 11,
+    });
+    assert.deepEqual(applyFormat('', 0, 0, 'codeBlock', 100), {
+      text: '```\n\n```',
+      start: 4,
+      end: 4,
+    });
+  });
+
+  test('refuses to go past the limit', () => {
+    assert.equal(applyFormat('abc', 0, 3, 'quote', 4), null);
+  });
+});
+
+describe('shortcutAction', () => {
   const key = (
     k: string,
     extra: Partial<Record<'shiftKey' | 'altKey' | 'metaKey', boolean>> = {},
@@ -291,12 +353,12 @@ describe('shortcutMarker', () => {
     ...extra,
   });
   test('Ctrl+B, I, U and Shift+X', () => {
-    assert.equal(shortcutMarker(key('b')), '**');
-    assert.equal(shortcutMarker(key('I')), '*');
-    assert.equal(shortcutMarker(key('u')), '__');
-    assert.equal(shortcutMarker(key('X', { shiftKey: true })), '~~');
-    assert.equal(shortcutMarker(key('c')), null);
-    assert.equal(shortcutMarker(key('b', { altKey: true })), null);
-    assert.equal(shortcutMarker({ ...key('b'), ctrlKey: false }), null);
+    assert.equal(shortcutAction(key('b')), 'bold');
+    assert.equal(shortcutAction(key('I')), 'italic');
+    assert.equal(shortcutAction(key('u')), 'underline');
+    assert.equal(shortcutAction(key('X', { shiftKey: true })), 'strike');
+    assert.equal(shortcutAction(key('c')), null);
+    assert.equal(shortcutAction(key('b', { altKey: true })), null);
+    assert.equal(shortcutAction({ ...key('b'), ctrlKey: false }), null);
   });
 });
