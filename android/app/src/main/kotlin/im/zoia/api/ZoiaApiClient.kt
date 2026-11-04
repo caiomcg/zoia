@@ -1,6 +1,7 @@
 package im.zoia.api
 
 import im.zoia.auth.CredentialStore
+import im.zoia.chat.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
@@ -12,10 +13,13 @@ import okhttp3.Cookie
 import okhttp3.CookieJar
 import okhttp3.HttpUrl
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.IOException
+import java.net.URLEncoder
+import java.nio.charset.StandardCharsets
 import java.util.concurrent.TimeUnit
 
 @Serializable
@@ -60,6 +64,9 @@ data class OkResponse(val ok: Boolean = true)
 
 @Serializable
 data class TokenRequest(val room: String? = null)
+
+@Serializable
+data class VoiceRequest(val room: String? = null)
 
 @Serializable
 data class TokenResponse(
@@ -149,11 +156,14 @@ class ZoiaApiClient(private val credentialStore: CredentialStore) {
         }
     }
 
-    private val httpClient = OkHttpClient.Builder()
+    val httpClient = OkHttpClient.Builder()
         .cookieJar(cookieJar)
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(15, TimeUnit.SECONDS)
         .build()
+
+    val serverUrl: String?
+        get() = credentialStore.getServerUrl()
 
     /** Forgets the session cookie, as signing out must. */
     fun clearCookies() {
@@ -268,6 +278,261 @@ class ZoiaApiClient(private val credentialStore: CredentialStore) {
                 .post(body.toRequestBody(mediaTypeJson))
                 .build()
 
+            executeCall(request)
+        }
+
+    suspend fun joinVoice(room: String? = null): OkResponse =
+        withContext(Dispatchers.IO) {
+            val baseUrl = credentialStore.getServerUrl()
+                ?: throw IllegalStateException("Servidor não configurado.")
+
+            val body = json.encodeToString(VoiceRequest(room))
+            val request = Request.Builder()
+                .url("$baseUrl/api/voice/join")
+                .post(body.toRequestBody(mediaTypeJson))
+                .build()
+
+            executeCall(request)
+        }
+
+    suspend fun leaveVoice(room: String? = null): OkResponse =
+        withContext(Dispatchers.IO) {
+            val baseUrl = credentialStore.getServerUrl()
+                ?: throw IllegalStateException("Servidor não configurado.")
+
+            val body = json.encodeToString(VoiceRequest(room))
+            val request = Request.Builder()
+                .url("$baseUrl/api/voice/leave")
+                .post(body.toRequestBody(mediaTypeJson))
+                .build()
+
+            executeCall(request)
+        }
+
+    // ---- chats (ADR 0036) ----
+
+    suspend fun getChats(): ChatListResponse =
+        withContext(Dispatchers.IO) {
+            val baseUrl = serverUrl ?: throw IllegalStateException("Servidor não configurado.")
+            val request = Request.Builder().url("$baseUrl/api/chats").get().build()
+            executeCall(request)
+        }
+
+    suspend fun getChatPeople(): List<ChatPerson> =
+        withContext(Dispatchers.IO) {
+            val baseUrl = serverUrl ?: throw IllegalStateException("Servidor não configurado.")
+            val request = Request.Builder().url("$baseUrl/api/chats/people").get().build()
+            val resp: ChatPeopleResponse = executeCall(request)
+            resp.people
+        }
+
+    suspend fun getChatMessages(chatId: String, before: String? = null, limit: Int = 50): ChatMessagesResponse =
+        withContext(Dispatchers.IO) {
+            val baseUrl = serverUrl ?: throw IllegalStateException("Servidor não configurado.")
+            var url = "$baseUrl/api/chats/$chatId/messages?limit=$limit"
+            if (before != null) {
+                url += "&before=${URLEncoder.encode(before, StandardCharsets.UTF_8.toString())}"
+            }
+            val request = Request.Builder().url(url).get().build()
+            executeCall(request)
+        }
+
+    suspend fun sendChatMessage(
+        chatId: String,
+        body: String,
+        replyTo: String? = null,
+        mentions: List<String> = emptyList()
+    ): SendMessageResponse =
+        withContext(Dispatchers.IO) {
+            val baseUrl = serverUrl ?: throw IllegalStateException("Servidor não configurado.")
+            val payload = json.encodeToString(SendMessageRequest(body, replyTo, mentions))
+            val request = Request.Builder()
+                .url("$baseUrl/api/chats/$chatId/messages")
+                .post(payload.toRequestBody(mediaTypeJson))
+                .build()
+            executeCall(request)
+        }
+
+    suspend fun sendChatMedia(
+        chatId: String,
+        bytes: ByteArray,
+        fileName: String,
+        mimeType: String,
+        caption: String = "",
+        replyTo: String? = null,
+        mentions: List<String> = emptyList()
+    ): SendMessageResponse =
+        withContext(Dispatchers.IO) {
+            val baseUrl = serverUrl ?: throw IllegalStateException("Servidor não configurado.")
+            val encName = URLEncoder.encode(fileName, StandardCharsets.UTF_8.toString())
+            val encCaption = URLEncoder.encode(caption, StandardCharsets.UTF_8.toString())
+            var url = "$baseUrl/api/chats/$chatId/media?name=$encName&caption=$encCaption"
+            if (replyTo != null) {
+                url += "&replyTo=${URLEncoder.encode(replyTo, StandardCharsets.UTF_8.toString())}"
+            }
+            if (mentions.isNotEmpty()) {
+                val encMentions = URLEncoder.encode(mentions.joinToString(","), StandardCharsets.UTF_8.toString())
+                url += "&mentions=$encMentions"
+            }
+            val body = bytes.toRequestBody(mimeType.toMediaTypeOrNull())
+            val request = Request.Builder().url(url).post(body).build()
+            executeCall(request)
+        }
+
+    suspend fun editChatMessage(
+        chatId: String,
+        messageId: String,
+        body: String,
+        mentions: List<String> = emptyList()
+    ): EditMessageResponse =
+        withContext(Dispatchers.IO) {
+            val baseUrl = serverUrl ?: throw IllegalStateException("Servidor não configurado.")
+            val payload = json.encodeToString(EditMessageRequest(body, mentions))
+            val request = Request.Builder()
+                .url("$baseUrl/api/chats/$chatId/messages/$messageId")
+                .patch(payload.toRequestBody(mediaTypeJson))
+                .build()
+            executeCall(request)
+        }
+
+    suspend fun deleteChatMessage(chatId: String, messageId: String): OkResponse =
+        withContext(Dispatchers.IO) {
+            val baseUrl = serverUrl ?: throw IllegalStateException("Servidor não configurado.")
+            val request = Request.Builder()
+                .url("$baseUrl/api/chats/$chatId/messages/$messageId")
+                .delete()
+                .build()
+            executeCall(request)
+        }
+
+    suspend fun reactChatMessage(chatId: String, messageId: String, emoji: String, on: Boolean): OkResponse =
+        withContext(Dispatchers.IO) {
+            val baseUrl = serverUrl ?: throw IllegalStateException("Servidor não configurado.")
+            val encEmoji = URLEncoder.encode(emoji, StandardCharsets.UTF_8.toString())
+            val url = "$baseUrl/api/chats/$chatId/messages/$messageId/reactions/$encEmoji"
+            val request = if (on) {
+                Request.Builder().url(url).put("{}".toRequestBody(mediaTypeJson)).build()
+            } else {
+                Request.Builder().url(url).delete().build()
+            }
+            executeCall(request)
+        }
+
+    suspend fun markChatRead(chatId: String, messageId: String): OkResponse =
+        withContext(Dispatchers.IO) {
+            val baseUrl = serverUrl ?: throw IllegalStateException("Servidor não configurado.")
+            val payload = json.encodeToString(MarkReadRequest(messageId))
+            val request = Request.Builder()
+                .url("$baseUrl/api/chats/$chatId/read")
+                .post(payload.toRequestBody(mediaTypeJson))
+                .build()
+            executeCall(request)
+        }
+
+    // ---- Avatars (Fase 3) ----------------------------------------------------
+
+    suspend fun setAvatar(bytes: ByteArray, mimeType: String = "image/jpeg"): AvatarResponse =
+        withContext(Dispatchers.IO) {
+            val baseUrl = serverUrl ?: throw IllegalStateException("Servidor não configurado.")
+            val body = bytes.toRequestBody(mimeType.toMediaTypeOrNull())
+            val request = Request.Builder()
+                .url("$baseUrl/api/avatar")
+                .put(body)
+                .build()
+            executeCall(request)
+        }
+
+    suspend fun deleteAvatar(): OkResponse =
+        withContext(Dispatchers.IO) {
+            val baseUrl = serverUrl ?: throw IllegalStateException("Servidor não configurado.")
+            val request = Request.Builder()
+                .url("$baseUrl/api/avatar")
+                .delete()
+                .build()
+            executeCall(request)
+        }
+
+    // ---- Administration (Fase 4) ---------------------------------------------
+
+    suspend fun getAdminAccounts(): List<AdminAccount> =
+        withContext(Dispatchers.IO) {
+            val baseUrl = serverUrl ?: throw IllegalStateException("Servidor não configurado.")
+            val request = Request.Builder()
+                .url("$baseUrl/api/admin/accounts")
+                .get()
+                .build()
+            val response: AdminAccountsResponse = executeCall(request)
+            response.accounts
+        }
+
+    suspend fun adminApproveAccount(id: String): OkResponse =
+        withContext(Dispatchers.IO) {
+            val baseUrl = serverUrl ?: throw IllegalStateException("Servidor não configurado.")
+            val request = Request.Builder()
+                .url("$baseUrl/api/admin/accounts/$id/approve")
+                .post("{}".toRequestBody(mediaTypeJson))
+                .build()
+            executeCall(request)
+        }
+
+    suspend fun adminRejectAccount(id: String): OkResponse =
+        withContext(Dispatchers.IO) {
+            val baseUrl = serverUrl ?: throw IllegalStateException("Servidor não configurado.")
+            val request = Request.Builder()
+                .url("$baseUrl/api/admin/accounts/$id/reject")
+                .post("{}".toRequestBody(mediaTypeJson))
+                .build()
+            executeCall(request)
+        }
+
+    suspend fun adminResetAccount(id: String): IssuedResetCode =
+        withContext(Dispatchers.IO) {
+            val baseUrl = serverUrl ?: throw IllegalStateException("Servidor não configurado.")
+            val request = Request.Builder()
+                .url("$baseUrl/api/admin/accounts/$id/reset")
+                .post("{}".toRequestBody(mediaTypeJson))
+                .build()
+            executeCall(request)
+        }
+
+    suspend fun adminSetRole(id: String, role: String): OkResponse =
+        withContext(Dispatchers.IO) {
+            val baseUrl = serverUrl ?: throw IllegalStateException("Servidor não configurado.")
+            val payload = json.encodeToString(AdminRoleRequest(role))
+            val request = Request.Builder()
+                .url("$baseUrl/api/admin/accounts/$id/role")
+                .post(payload.toRequestBody(mediaTypeJson))
+                .build()
+            executeCall(request)
+        }
+
+    suspend fun adminDisableAccount(id: String): OkResponse =
+        withContext(Dispatchers.IO) {
+            val baseUrl = serverUrl ?: throw IllegalStateException("Servidor não configurado.")
+            val request = Request.Builder()
+                .url("$baseUrl/api/admin/accounts/$id/disable")
+                .post("{}".toRequestBody(mediaTypeJson))
+                .build()
+            executeCall(request)
+        }
+
+    suspend fun adminEnableAccount(id: String): OkResponse =
+        withContext(Dispatchers.IO) {
+            val baseUrl = serverUrl ?: throw IllegalStateException("Servidor não configurado.")
+            val request = Request.Builder()
+                .url("$baseUrl/api/admin/accounts/$id/enable")
+                .post("{}".toRequestBody(mediaTypeJson))
+                .build()
+            executeCall(request)
+        }
+
+    suspend fun deleteRoom(roomId: String): OkResponse =
+        withContext(Dispatchers.IO) {
+            val baseUrl = serverUrl ?: throw IllegalStateException("Servidor não configurado.")
+            val request = Request.Builder()
+                .url("$baseUrl/api/rooms/$roomId")
+                .delete()
+                .build()
             executeCall(request)
         }
 

@@ -1,13 +1,15 @@
 package im.zoia
-
+ 
 import android.app.Application
+import coil.ImageLoader
+import coil.ImageLoaderFactory
 import im.zoia.api.ZoiaApiClient
 import im.zoia.auth.CredentialStore
 import im.zoia.auth.SessionManager
 import im.zoia.livekit.LiveKitRoomManager
 import io.livekit.android.LiveKit
 
-class ZoiaApp : Application() {
+class ZoiaApp : Application(), ImageLoaderFactory {
     lateinit var credentialStore: CredentialStore private set
     lateinit var apiClient: ZoiaApiClient private set
     lateinit var sessionManager: SessionManager private set
@@ -24,6 +26,13 @@ class ZoiaApp : Application() {
         apiClient = ZoiaApiClient(credentialStore)
         sessionManager = SessionManager(apiClient, credentialStore)
         roomManager = LiveKitRoomManager(this, apiClient)
+    }
+
+    override fun newImageLoader(): ImageLoader {
+        return ImageLoader.Builder(this)
+            .okHttpClient(apiClient.httpClient)
+            .crossfade(true)
+            .build()
     }
 
     companion object {
