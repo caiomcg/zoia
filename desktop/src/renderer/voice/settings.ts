@@ -24,6 +24,8 @@ export type InputMode = 'voiceActivity' | 'pushToTalk';
 export interface VoiceSettings {
   /** Empty: whatever the system calls the default. */
   microphoneId: string;
+  /** Empty: whatever the system calls the default audio output. */
+  speakerId: string;
   noiseSuppression: NoiseSuppression;
   echoCancellation: boolean;
   autoGainControl: boolean;
@@ -90,9 +92,11 @@ export function dbFraction(db: number): number {
 
 const STORAGE_KEY = 'zoia.voice';
 export const MICROPHONE_KEY = 'zoia.microphoneId';
+export const SPEAKER_KEY = 'zoia.speakerId';
 
 const DEFAULTS: VoiceSettings = {
   microphoneId: '',
+  speakerId: '',
   noiseSuppression: 'enhanced',
   echoCancellation: true,
   autoGainControl: true,
@@ -104,7 +108,11 @@ const DEFAULTS: VoiceSettings = {
   boostLevel: BOOST_DEFAULT,
 };
 
-export function parseVoiceSettings(raw: string | null, microphoneId: string | null): VoiceSettings {
+export function parseVoiceSettings(
+  raw: string | null,
+  microphoneId: string | null,
+  speakerId?: string | null,
+): VoiceSettings {
   let stored: Partial<VoiceSettings> = {};
   try {
     const parsed: unknown = JSON.parse(raw ?? '{}');
@@ -114,6 +122,12 @@ export function parseVoiceSettings(raw: string | null, microphoneId: string | nu
   }
   return {
     microphoneId: microphoneId ?? DEFAULTS.microphoneId,
+    speakerId:
+      speakerId !== undefined && speakerId !== null
+        ? speakerId
+        : typeof stored.speakerId === 'string'
+          ? stored.speakerId
+          : DEFAULTS.speakerId,
     noiseSuppression:
       stored.noiseSuppression && NOISE_MODES.includes(stored.noiseSuppression)
         ? stored.noiseSuppression
@@ -152,6 +166,7 @@ function read(): VoiceSettings {
     return parseVoiceSettings(
       localStorage.getItem(STORAGE_KEY),
       localStorage.getItem(MICROPHONE_KEY),
+      localStorage.getItem(SPEAKER_KEY),
     );
   } catch {
     return DEFAULTS;
@@ -168,9 +183,10 @@ export function getVoiceSettings(): VoiceSettings {
 export function setVoiceSettings(next: VoiceSettings): void {
   current = next;
   try {
-    const { microphoneId, ...processing } = next;
+    const { microphoneId, speakerId, ...processing } = next;
     localStorage.setItem(MICROPHONE_KEY, microphoneId);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(processing));
+    localStorage.setItem(SPEAKER_KEY, speakerId);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...processing, speakerId }));
   } catch {
     // Remembering is a convenience; the change still applies this session.
   }

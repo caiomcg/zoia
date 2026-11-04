@@ -13,6 +13,7 @@ import { useCameraDevices } from '../livekit/useCamera';
 import { useWheelRange } from './useWheelRange';
 import ResetButton from './ResetButton';
 import { useMicLevel } from '../voice/useMicLevel';
+import { playCue } from '../sounds/synth';
 import {
   BOOST_MAX,
   dbFraction,
@@ -378,6 +379,39 @@ export default function VoiceSettingsSection() {
     <>
       <h3>{t('settings.nav.voice')}</h3>
       <p className="muted settings-note">{t('voiceSettings.live')}</p>
+
+      <section className="voice-card" aria-labelledby="voice-output">
+        <h4 id="voice-output">{t('voiceSettings.output')}</h4>
+
+        <label className="settings-field">
+          <span>{t('voiceSettings.speaker')}</span>
+          <select
+            className="settings-select"
+            value={settings.speakerId}
+            onChange={(event) => setVoiceSettings({ ...settings, speakerId: event.target.value })}
+          >
+            <option value="">{t('voiceSettings.systemDefault')}</option>
+            {devices.speakers
+              .filter((s) => s.deviceId !== 'default')
+              .map((s) => (
+                <option key={s.deviceId} value={s.deviceId}>
+                  {s.label}
+                </option>
+              ))}
+          </select>
+        </label>
+
+        <div className="voice-row">
+          <button
+            type="button"
+            onClick={() => {
+              playCue('join', { style: 'chime', pitch: 1 }, 1);
+            }}
+          >
+            {t('voiceSettings.testAudio')}
+          </button>
+        </div>
+      </section>
 
       <section className="voice-card" aria-labelledby="voice-input">
         <h4 id="voice-input">{t('voiceSettings.input')}</h4>

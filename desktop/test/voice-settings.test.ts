@@ -24,6 +24,7 @@ describe('parseVoiceSettings', () => {
   test('nothing stored gives the defaults: RNNoise, echo cancellation and gain on, no gate', () => {
     assert.deepEqual(parseVoiceSettings(null, null), {
       microphoneId: '',
+      speakerId: '',
       noiseSuppression: 'enhanced',
       echoCancellation: true,
       autoGainControl: true,
@@ -40,8 +41,17 @@ describe('parseVoiceSettings', () => {
     assert.equal(parseVoiceSettings(null, 'usb-mic').microphoneId, 'usb-mic');
   });
 
+  test('the speaker output device is kept from storage or key', () => {
+    assert.equal(parseVoiceSettings(null, null, 'headphones').speakerId, 'headphones');
+    assert.equal(
+      parseVoiceSettings(JSON.stringify({ speakerId: 'speakers-1' }), null).speakerId,
+      'speakers-1',
+    );
+  });
+
   test('what was chosen is kept', () => {
     const stored = JSON.stringify({
+      speakerId: 'headphones',
       noiseSuppression: 'off',
       echoCancellation: false,
       autoGainControl: false,
@@ -52,8 +62,9 @@ describe('parseVoiceSettings', () => {
       boost: true,
       boostLevel: 2.5,
     });
-    assert.deepEqual(parseVoiceSettings(stored, ''), {
+    assert.deepEqual(parseVoiceSettings(stored, '', 'headphones'), {
       microphoneId: '',
+      speakerId: 'headphones',
       noiseSuppression: 'off',
       echoCancellation: false,
       autoGainControl: false,

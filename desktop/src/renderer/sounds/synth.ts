@@ -12,6 +12,7 @@ import {
   type Note,
   type StyleVoice,
 } from './cues';
+import { registerAudioSink } from '../voice/audioSink';
 
 /** Loud enough to notice under a stream's audio, quiet enough not to startle. */
 const PEAK_GAIN = 0.25;
@@ -19,7 +20,10 @@ const PEAK_GAIN = 0.25;
 let context: AudioContext | null = null;
 
 function audioContext(): AudioContext {
-  context ??= new AudioContext();
+  if (!context) {
+    context = new AudioContext();
+    registerAudioSink(context);
+  }
   // Chromium starts a context suspended until the page has had a gesture; the
   // settings preview is one, and Electron does not hold cues back without it.
   if (context.state === 'suspended') void context.resume().catch(() => {});

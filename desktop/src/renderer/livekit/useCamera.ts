@@ -18,6 +18,7 @@ export interface MediaDeviceChoice {
 export interface Devices {
   cameras: MediaDeviceChoice[];
   microphones: MediaDeviceChoice[];
+  speakers: MediaDeviceChoice[];
 }
 
 const CAMERA_KEY = 'zoia.cameraId';
@@ -53,11 +54,16 @@ async function enumerateWithLabels(): Promise<Devices> {
   return {
     cameras: pick('videoinput', 'Camera'),
     microphones: pick('audioinput', 'Microphone'),
+    speakers: pick('audiooutput', 'Speaker'),
   };
 }
 
 export function useCameraDevices() {
-  const [devices, setDevices] = useState<Devices>({ cameras: [], microphones: [] });
+  const [devices, setDevices] = useState<Devices>({
+    cameras: [],
+    microphones: [],
+    speakers: [],
+  });
   const [cameraId, setCameraId] = useState(() => localStorage.getItem(CAMERA_KEY) ?? '');
   const [error, setError] = useState<string | null>(null);
 
