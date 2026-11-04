@@ -24,16 +24,26 @@ function changedFiles(ref, base) {
   return output ? output.split(/\r?\n/).filter(Boolean) : [];
 }
 
+/**
+ * The desktop package.json without the fields an installed app never reads:
+ * `version`, which every release bumps, and `scripts`, the npm commands used
+ * to develop and build it. Anything else, such as a dependency or `main`,
+ * still needs the full installer.
+ */
+export function withoutUnshippedPackageFields(json) {
+  const fields = JSON.parse(json);
+  delete fields.version;
+  delete fields.scripts;
+  return JSON.stringify(fields);
+}
+
 function packageContentChanged(ref, path, base) {
   if (!base) return true;
   try {
-    const before = JSON.parse(git(['show', `${base}:${path}`]));
-    const after = JSON.parse(git(['show', `${ref}:${path}`]));
-    if (path === 'desktop/package.json') {
-      delete before.version;
-      delete after.version;
-    }
-    return JSON.stringify(before) !== JSON.stringify(after);
+    return (
+      withoutUnshippedPackageFields(git(['show', `${base}:${path}`])) !==
+      withoutUnshippedPackageFields(git(['show', `${ref}:${path}`]))
+    );
   } catch {
     return true;
   }
