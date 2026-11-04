@@ -22,17 +22,42 @@
  * connects, and the picker reads whatever is already in the cache — which by
  * the time anyone clicks Share is normally a few seconds old at most. This is
  * the same trick every screen-share picker that feels instant is doing.
+ *
+ * ## Without node-window-manager
+ *
+ * Its addon.node is unsigned, and Windows' Smart App Control refuses to load
+ * it. So it is loaded on first use, never at import, and everything here works
+ * without it: windows come from desktopCapturer alone, unfiltered, with no
+ * process behind them (so no application audio), and the League client is
+ * not restored.
  */
 
 import { desktopCapturer, screen, systemPreferences, type NativeImage } from 'electron';
+import { createRequire } from 'node:module';
 import { t } from './language';
-import { Window, windowManager } from 'node-window-manager';
+import type * as WindowManagerModule from 'node-window-manager';
+import { optionalModule } from './optional-module';
 import { isParkedWindow, isShareableWindow, type Bounds } from './window-filter';
 import { perAppAudioSupported } from './audio';
 import type { SourceInfo } from '../shared/ipc';
 import { isLeagueClient, isLeagueGame, isLeagueSource } from '../shared/league';
 
 export type { SourceInfo };
+
+type NativeWindow = WindowManagerModule.Window;
+
+const require = createRequire(import.meta.url);
+
+/** Null when the addon cannot load, as under Smart App Control. */
+const windowManagerModule = optionalModule<typeof WindowManagerModule>(
+  'node-window-manager',
+  () => require('node-window-manager') as typeof WindowManagerModule,
+);
+
+/** Every top-level window, natively; null when the addon is unavailable. */
+function nativeWindows(): NativeWindow[] | null {
+  return windowManagerModule()?.windowManager.getWindows() ?? null;
+}
 
 function hwndFromSourceId(id: string): number | null {
   const match = /^window:(\d+):/.exec(id);
@@ -107,7 +132,7 @@ async function getSourcesOfType(
  * restoring those *shows* them: they piled up as blank "League of Legends"
  * windows on the taskbar, and in the picker, every time either listed them.
  */
-function restoreParkedLeagueClient(win: ReturnType<typeof windowManager.getWindows>[number]) {
+function restoreParkedLeagueClient(win: NativeWindow) {
   try {
     if (!/leagueclient(ux)?\.exe$/i.test(win.path || '')) return;
     if (!win.isVisible() || !isParkedWindow(safeBounds(win))) return;
@@ -117,14 +142,18 @@ function restoreParkedLeagueClient(win: ReturnType<typeof windowManager.getWindo
   }
 }
 
+/**
+ * `windowsById` is the native window list, or null without the addon: then
+ * windows are offered as desktopCapturer lists them, with no process.
+ */
 function toSourceInfo(
   sources: Electron.DesktopCapturerSource[],
-  windowsById: Map<number, ReturnType<typeof windowManager.getWindows>[number]>,
+  windowsById: Map<number, NativeWindow> | null,
 ): SourceInfo[] {
   return sources.flatMap((source) => {
     const isWindow = source.id.startsWith('window:');
     const hwnd = isWindow ? hwndFromSourceId(source.id) : null;
-    const nativeWindow = hwnd !== null ? windowsById.get(hwnd) : undefined;
+    const nativeWindow = hwnd !== null ? windowsById?.get(hwnd) : undefined;
 
     // Chromium can retain capture entries for hidden/ghost HWNDs after an
     // app closes a launcher window. Only expose windows that still exist in
@@ -132,7 +161,7 @@ function toSourceInfo(
     // have an HWND and are intentionally kept unchanged.
     // Visible is not enough: see window-filter.ts for the tray apps and
     // helper windows that pass it with nothing to show.
-    if (isWindow) {
+    if (isWindow && windowsById) {
       if (!nativeWindow || !nativeWindow.isVisible()) {
         return [];
       }
@@ -186,7 +215,8 @@ async function captureSources(): Promise<SourceInfo[]> {
   // One native call, reused for every window source below rather than one
   // enumeration per source. This part is cheap (~15ms) — it is never the
   // reason to cache.
-  const windowsById = new Map(windowManager.getWindows().map((w) => [w.id, w]));
+  const windows = nativeWindows();
+  const windowsById = windows ? new Map(windows.map((w) => [w.id, w])) : null;
   const mapped = toSourceInfo(sources, windowsById);
   rememberOffered(sources, asked);
   screenCache = mapped.filter((s) => s.kind === 'screen');
@@ -342,7 +372,7 @@ export function windowTitle(hwnd: number): string | null {
   // precise label with a vaguer one three seconds into the share.
   if (process.platform === 'darwin') return null;
   try {
-    const window = windowManager.getWindows().find((w) => w.id === hwnd);
+    const window = nativeWindows()?.find((w) => w.id === hwnd);
     return window?.getTitle() || null;
   } catch {
     return null;
@@ -356,8 +386,11 @@ export function windowTitle(hwnd: number): string | null {
  */
 export function windowExists(hwnd: number): boolean {
   if (process.platform !== 'win32') return true;
+  // Without the addon there is no asking; assume it is still there, as on a Mac.
+  const module = windowManagerModule();
+  if (!module) return true;
   try {
-    return new Window(hwnd).isWindow();
+    return new module.Window(hwnd).isWindow();
   } catch {
     return false;
   }
@@ -374,14 +407,17 @@ export function getSelectedSource() {
  * the cached list is not refreshed while live, so it cannot answer that.
  */
 export function listWindows(): SourceInfo[] {
-  if (process.platform !== 'win32') return cache?.filter((s) => s.kind === 'window') ?? [];
+  const cached = () => cache?.filter((s) => s.kind === 'window') ?? [];
+  if (process.platform !== 'win32') return cached();
 
-  let windows: ReturnType<typeof windowManager.getWindows>;
+  let windows: NativeWindow[] | null;
   try {
-    windows = windowManager.getWindows();
+    windows = nativeWindows();
   } catch {
     return [];
   }
+  // Without the addon, the last full refresh is the only list there is.
+  if (!windows) return cached();
   return windows.flatMap((win) => {
     try {
       if (!win.isVisible() || !isShareableWindow(safeBounds(win))) return [];
@@ -416,12 +452,13 @@ export function findLeagueWindows(): {
     return { game: null, client: null };
   }
 
-  let windows: ReturnType<typeof windowManager.getWindows>;
+  let windows: NativeWindow[] | null;
   try {
-    windows = windowManager.getWindows();
+    windows = nativeWindows();
   } catch {
     return { game: null, client: null };
   }
+  if (!windows) return { game: null, client: null };
 
   let game: SourceInfo | null = null;
   let client: SourceInfo | null = null;
