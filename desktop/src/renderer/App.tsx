@@ -1267,7 +1267,7 @@ export default function App({ preview = false }: { preview?: boolean }) {
           myName={status.deviceName ?? t('common.you')}
           myIdentity={myIdentity}
           viewerIds={viewerIds}
-          onOpenSettings={() => openSettings()}
+          onOpenSettings={(section) => openSettings(section)}
           settingsBadge={pendingApprovals}
           myRole={account?.role}
           loadingRemoteIds={loadingRemoteIds}

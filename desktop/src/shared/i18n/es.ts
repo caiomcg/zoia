@@ -353,6 +353,7 @@ export const es: Messages = {
   'voiceSettings.output': 'Salida',
   'voiceSettings.testAudio': 'Probar sonido',
   'voiceSettings.systemDefault': 'Predeterminado del sistema',
+  'voiceSettings.voiceSettingsShortcut': 'Ajustes de voz...',
   'voiceSettings.input': 'Entrada',
   'voiceSettings.volume': 'Volumen de entrada',
   'voiceSettings.volumeHint':

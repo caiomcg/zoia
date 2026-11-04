@@ -360,6 +360,7 @@ export const en = {
   'voiceSettings.output': 'Output',
   'voiceSettings.testAudio': 'Test sound',
   'voiceSettings.systemDefault': 'System default',
+  'voiceSettings.voiceSettingsShortcut': 'Voice settings...',
   'voiceSettings.input': 'Input',
   'voiceSettings.volume': 'Input volume',
   'voiceSettings.volumeHint':

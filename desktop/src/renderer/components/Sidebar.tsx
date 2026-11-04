@@ -18,6 +18,10 @@ import Avatar from './Avatar';
 import { IconEye, IconMic } from './Player';
 import StatusLight, { type StatusStat, type StatusTone } from './StatusLight';
 import StatusMenu from './StatusMenu';
+import QuickDeviceMenu from './QuickDeviceMenu';
+import { useCameraDevices } from '../livekit/useCamera';
+import { useVoiceSettings, setVoiceSettings } from '../voice/settings';
+import type { Section as SettingsSection } from './SettingsDialog';
 import { useFloatingMenu } from './useFloatingMenu';
 import type { VoiceState } from '../voice/useVoice';
 import { setVoiceVolume, useVoiceVolume, VOLUME_MAX } from '../voice/volumes';
@@ -445,7 +449,7 @@ export default function Sidebar({
   myIdentity?: string;
   /** Who is watching your broadcast right now; empty while you are not live. */
   viewerIds: ReadonlySet<string>;
-  onOpenSettings: () => void;
+  onOpenSettings: (section?: SettingsSection) => void;
   /** Sign-ups waiting for an admin; shown on the settings button. */
   settingsBadge?: number;
   /** Yours, shown beside your name; nothing for a plain user. */
@@ -609,8 +613,16 @@ export default function Sidebar({
   const [soundboardAnchor, setSoundboardAnchor] = useState<DOMRect | null>(null);
   const closeSoundboard = useCallback(() => setSoundboardAnchor(null), []);
   const inVoice = !collapsed && voice?.state === 'on';
+  const [micMenuAnchor, setMicMenuAnchor] = useState<DOMRect | null>(null);
+  const [speakerMenuAnchor, setSpeakerMenuAnchor] = useState<DOMRect | null>(null);
+  const { devices } = useCameraDevices();
+  const voiceSettings = useVoiceSettings();
   useEffect(() => {
-    if (!inVoice) setSoundboardAnchor(null);
+    if (!inVoice) {
+      setSoundboardAnchor(null);
+      setMicMenuAnchor(null);
+      setSpeakerMenuAnchor(null);
+    }
   }, [inVoice]);
 
   // Right-clicking someone opens what you can do about them: their voice's
@@ -1137,30 +1149,62 @@ export default function Sidebar({
         {/* In voice, as Discord has them: your microphone, and every sound. */}
         {!collapsed && voice && voice.state === 'on' && (
           <>
-            <button
-              className={`icon-button sidebar-settings${voice.muted ? ' voice-off' : ''}`}
-              onClick={voice.onToggleMute}
-              aria-pressed={voice.muted}
-              title={voice.muted ? t('voice.unmute') : t('voice.mute')}
-              aria-label={voice.muted ? t('voice.unmute') : t('voice.mute')}
-            >
-              <IconMic muted={voice.muted} />
-            </button>
-            <button
-              className={`icon-button sidebar-settings${voice.deafened ? ' voice-off' : ''}`}
-              onClick={voice.onToggleDeafen}
-              aria-pressed={voice.deafened}
-              title={voice.deafened ? t('voice.undeafen') : t('voice.deafen')}
-              aria-label={voice.deafened ? t('voice.undeafen') : t('voice.deafen')}
-            >
-              <IconHeadset off={voice.deafened} />
-            </button>
+            <div className="sidebar-voice-group">
+              <button
+                className={`icon-button sidebar-settings sidebar-voice-main${voice.muted ? ' voice-off' : ''}`}
+                onClick={voice.onToggleMute}
+                aria-pressed={voice.muted}
+                title={voice.muted ? t('voice.unmute') : t('voice.mute')}
+                aria-label={voice.muted ? t('voice.unmute') : t('voice.mute')}
+              >
+                <IconMic muted={voice.muted} />
+              </button>
+              <button
+                className={`icon-button sidebar-settings sidebar-voice-arrow${micMenuAnchor ? ' open' : ''}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setMicMenuAnchor(micMenuAnchor ? null : e.currentTarget.getBoundingClientRect());
+                  setSpeakerMenuAnchor(null);
+                }}
+                aria-expanded={micMenuAnchor !== null}
+                title={t('voiceSettings.input')}
+                aria-label={t('voiceSettings.input')}
+              >
+                <IconChevronDown />
+              </button>
+            </div>
+            <div className="sidebar-voice-group">
+              <button
+                className={`icon-button sidebar-settings sidebar-voice-main${voice.deafened ? ' voice-off' : ''}`}
+                onClick={voice.onToggleDeafen}
+                aria-pressed={voice.deafened}
+                title={voice.deafened ? t('voice.undeafen') : t('voice.deafen')}
+                aria-label={voice.deafened ? t('voice.undeafen') : t('voice.deafen')}
+              >
+                <IconHeadset off={voice.deafened} />
+              </button>
+              <button
+                className={`icon-button sidebar-settings sidebar-voice-arrow${speakerMenuAnchor ? ' open' : ''}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSpeakerMenuAnchor(
+                    speakerMenuAnchor ? null : e.currentTarget.getBoundingClientRect(),
+                  );
+                  setMicMenuAnchor(null);
+                }}
+                aria-expanded={speakerMenuAnchor !== null}
+                title={t('voiceSettings.output')}
+                aria-label={t('voiceSettings.output')}
+              >
+                <IconChevronDown />
+              </button>
+            </div>
           </>
         )}
         {!collapsed && (
           <button
             className="icon-button sidebar-settings"
-            onClick={onOpenSettings}
+            onClick={() => onOpenSettings()}
             title={
               settingsBadge > 0
                 ? t('sidebar.settingsPending', { count: settingsBadge })
@@ -1187,6 +1231,30 @@ export default function Sidebar({
           chosen={presence.chosen}
           onChoose={(status) => void presence.choose(status)}
           onClose={closeStatus}
+        />
+      )}
+      {micMenuAnchor && (
+        <QuickDeviceMenu
+          anchor={micMenuAnchor}
+          title={t('voiceSettings.input')}
+          devices={devices.microphones}
+          selectedId={voiceSettings.microphoneId}
+          defaultLabel={t('voiceSettings.systemDefault')}
+          onSelect={(id) => setVoiceSettings({ ...voiceSettings, microphoneId: id })}
+          onOpenSettings={() => onOpenSettings('voice')}
+          onClose={() => setMicMenuAnchor(null)}
+        />
+      )}
+      {speakerMenuAnchor && (
+        <QuickDeviceMenu
+          anchor={speakerMenuAnchor}
+          title={t('voiceSettings.output')}
+          devices={devices.speakers}
+          selectedId={voiceSettings.speakerId}
+          defaultLabel={t('voiceSettings.systemDefault')}
+          onSelect={(id) => setVoiceSettings({ ...voiceSettings, speakerId: id })}
+          onOpenSettings={() => onOpenSettings('voice')}
+          onClose={() => setSpeakerMenuAnchor(null)}
         />
       )}
       {soundboardAnchor && soundboard && (
@@ -1680,6 +1748,24 @@ function IconChannels() {
       aria-hidden="true"
     >
       <path d="M5 9h14M5 15h14M10 4 8 20M16 4l-2 16" />
+    </svg>
+  );
+}
+
+function IconChevronDown() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="10"
+      height="10"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M6 9l6 6 6-6" />
     </svg>
   );
 }

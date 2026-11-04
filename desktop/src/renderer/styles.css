@@ -7497,3 +7497,134 @@ button.danger:active:not(:disabled),
   padding: 5px 12px;
   font-size: 12px;
 }
+
+/* Voice control groups: mic + arrow, headset + arrow */
+.sidebar-voice-group {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 6px;
+  background: transparent;
+  transition: background 0.12s ease;
+}
+
+.sidebar-voice-group:hover {
+  background: var(--raised);
+}
+
+.sidebar-footer .sidebar-voice-group .sidebar-voice-main {
+  width: 24px;
+  height: 30px;
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.sidebar-footer .sidebar-voice-group .sidebar-voice-arrow {
+  width: 14px;
+  height: 30px;
+  padding: 0;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  opacity: 0.7;
+}
+
+.sidebar-voice-group .sidebar-voice-arrow:hover,
+.sidebar-voice-group .sidebar-voice-arrow.open {
+  opacity: 1;
+  background: color-mix(in srgb, var(--raised) 120%, white 10%);
+}
+
+.sidebar-voice-group .sidebar-voice-arrow svg {
+  transition: transform 0.15s ease;
+}
+
+.sidebar-voice-group .sidebar-voice-arrow.open svg {
+  transform: rotate(180deg);
+}
+
+/* Quick device picker menu (above mic / headset in sidebar footer) */
+.device-menu {
+  min-width: 240px;
+  max-width: 320px;
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+.device-menu-header {
+  padding: 6px 10px 4px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.device-menu-item {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+  padding: 6px 10px;
+  color: var(--text);
+  font-size: 13px;
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.device-menu-item:hover,
+.device-menu-item:focus-visible {
+  background: var(--raised);
+  outline: none;
+}
+
+.device-menu-item.chosen {
+  font-weight: 600;
+  color: #fff;
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.device-menu-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.device-menu-check {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 14px;
+  height: 14px;
+  color: var(--accent);
+}
+
+.device-menu-divider {
+  height: 1px;
+  margin: 4px 0;
+  background: var(--border);
+}
+
+.device-menu-settings {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 6px 10px;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.device-menu-settings:hover,
+.device-menu-settings:focus-visible {
+  color: var(--text);
+  background: var(--raised);
+  outline: none;
+}
