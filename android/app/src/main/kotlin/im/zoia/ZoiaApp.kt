@@ -7,6 +7,7 @@ import im.zoia.api.ZoiaApiClient
 import im.zoia.auth.CredentialStore
 import im.zoia.auth.SessionManager
 import im.zoia.livekit.LiveKitRoomManager
+import im.zoia.update.UpdateManager
 import io.livekit.android.LiveKit
 
 class ZoiaApp : Application(), ImageLoaderFactory {
@@ -14,6 +15,7 @@ class ZoiaApp : Application(), ImageLoaderFactory {
     lateinit var apiClient: ZoiaApiClient private set
     lateinit var sessionManager: SessionManager private set
     lateinit var roomManager: LiveKitRoomManager private set
+    lateinit var updateManager: UpdateManager private set
 
     override fun onCreate() {
         super.onCreate()
@@ -26,6 +28,7 @@ class ZoiaApp : Application(), ImageLoaderFactory {
         apiClient = ZoiaApiClient(credentialStore)
         sessionManager = SessionManager(apiClient, credentialStore)
         roomManager = LiveKitRoomManager(this, apiClient)
+        updateManager = UpdateManager(this, apiClient.httpClient)
     }
 
     override fun newImageLoader(): ImageLoader {

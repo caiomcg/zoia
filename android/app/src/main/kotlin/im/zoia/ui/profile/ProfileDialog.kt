@@ -16,6 +16,8 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.SystemUpdate
+import im.zoia.BuildConfig
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -43,6 +45,7 @@ fun ProfileDialog(
     onUploadAvatar: suspend (ByteArray) -> String?,
     onDeleteAvatar: suspend () -> String?,
     onOpenAudioSettings: (() -> Unit)? = null,
+    onCheckUpdates: (() -> Unit)? = null,
     onSignOut: () -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -300,6 +303,27 @@ fun ProfileDialog(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text("Dispositivos de Áudio", fontSize = 14.sp)
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+
+                if (onCheckUpdates != null) {
+                    OutlinedButton(
+                        onClick = {
+                            onCheckUpdates()
+                        },
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.SystemUpdate,
+                            contentDescription = null,
+                            tint = Color(0xFF4E75FF),
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Verificar Atualizações (${BuildConfig.VERSION_NAME})", fontSize = 14.sp)
                     }
                     Spacer(modifier = Modifier.height(8.dp))
                 }

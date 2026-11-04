@@ -105,7 +105,9 @@ import im.zoia.ui.admin.AdminDialog
 import im.zoia.ui.audio.AudioSettingsDialog
 import im.zoia.ui.chat.ChatPanel
 import im.zoia.ui.common.UserAvatar
+import im.zoia.ZoiaApp
 import im.zoia.ui.profile.ProfileDialog
+import im.zoia.ui.update.UpdateDialog
 import io.livekit.android.room.track.VideoTrack
 import livekit.org.webrtc.SurfaceViewRenderer
 import kotlinx.coroutines.launch
@@ -120,6 +122,12 @@ fun RoomScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val sessionState by sessionManager.sessionState.collectAsState()
+    val updateManager = remember { ZoiaApp.instance.updateManager }
+    val updateState by updateManager.updateState.collectAsState()
+
+    LaunchedEffect(Unit) {
+        updateManager.checkForUpdates(silent = true)
+    }
     val currentDeviceName = (sessionState as? SessionState.Authenticated)?.deviceName
         ?: sessionManager.getSavedDisplayName()
         ?: "Dispositivo"
@@ -268,6 +276,7 @@ fun RoomScreen(
                 }
             },
             onOpenAudioSettings = { showAudioSettingsDialog = true },
+            onCheckUpdates = { updateManager.checkForUpdates(silent = false) },
             onSignOut = {
                 roomManager.disconnect()
                 scope.launch { sessionManager.signOut() }
@@ -282,6 +291,14 @@ fun RoomScreen(
             onDismiss = { showAudioSettingsDialog = false }
         )
     }
+
+    UpdateDialog(
+        state = updateState,
+        onDownload = { info -> updateManager.downloadUpdate(info) },
+        onInstall = { file -> updateManager.installUpdate(context, file) },
+        onRetry = { updateManager.checkForUpdates(silent = false) },
+        onDismiss = { updateManager.dismiss() }
+    )
 
     if (showAdminDialog) {
         val serverUrl = apiClient.serverUrl ?: ""
