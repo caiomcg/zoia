@@ -13,7 +13,7 @@
  * at all) `enabled` stays false and nothing here shows.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import type {
   ChatAuthor,
   ChatInfo,
@@ -26,6 +26,7 @@ import { applyEdit, applyReaction, atOrAfter, laterMarker, mergeMessages } from 
 import { playCues } from '../sounds/useSoundCues';
 import { chatMessageCues, shownUnread } from './silence';
 import { isChatSilenced, useSilencedChats } from './silence-store';
+import { chatTabs, EMPTY_CHAT_TABS } from './tabs';
 
 export interface ChatThread {
   chatId: string;
@@ -60,7 +61,8 @@ export function useChat({
 }) {
   const [list, setList] = useState<ChatList | null>(null);
   const [enabled, setEnabled] = useState(false);
-  const [openId, setOpenId] = useState<string | null>(null);
+  const [tabs, dispatchTabs] = useReducer(chatTabs, EMPTY_CHAT_TABS);
+  const openId = tabs.activeId;
   const [thread, setThread] = useState<ChatThread | null>(null);
   const [authors, setAuthors] = useState<Record<string, ChatAuthor>>({});
   const [readers, setReaders] = useState<Record<string, string>>({});
@@ -97,6 +99,7 @@ export function useChat({
       void loadPeople();
     } else if (NO_CHAT.has(result.error)) {
       setEnabled(false);
+      dispatchTabs({ type: 'reset' });
     }
   }, [loadPeople]);
 
@@ -135,6 +138,7 @@ export function useChat({
     if (!usable) {
       setList(null);
       setEnabled(false);
+      dispatchTabs({ type: 'reset' });
       return undefined;
     }
     void refresh();
@@ -142,14 +146,12 @@ export function useChat({
     return () => void window.zoia.chat.listen(false);
   }, [usable, refresh]);
 
-  // The default chat is open until another is chosen, and again if the open
-  // one is removed.
+  // Start with the default chat. A removed chat closes its tab; list refreshes
+  // never reopen a tab the person closed.
   useEffect(() => {
     if (!list) return;
-    if (!openId || !list.chats.some((c) => c.id === openId)) {
-      setOpenId(list.chats[0]?.id ?? null);
-    }
-  }, [list, openId]);
+    dispatchTabs({ type: 'sync', ids: list.chats.map((c) => c.id) });
+  }, [list]);
 
   const available = list?.available ?? false;
   useEffect(() => {
@@ -333,7 +335,7 @@ export function useChat({
   );
 
   // On screen means read, up to the newest message.
-  const latest = thread?.messages.at(-1)?.id;
+  const latest = thread?.chatId === openId ? thread.messages.at(-1)?.id : undefined;
   const myMarker = me ? readers[me] : undefined;
   useEffect(() => {
     if (!visible || !openId || !latest || !me) return;
@@ -492,8 +494,12 @@ export function useChat({
     ceiling: list?.ceiling ?? 1,
     openId,
     openChat: chats.find((c) => c.id === openId) ?? null,
-    open: setOpenId,
-    thread,
+    tabs: tabs.ids,
+    pinnedTabs: tabs.pinned,
+    pin: (id: string, pinned: boolean) => dispatchTabs({ type: 'pin', id, pinned }),
+    open: (id: string) => dispatchTabs({ type: 'open', id }),
+    close: (id: string) => dispatchTabs({ type: 'close', id }),
+    thread: thread?.chatId === openId ? thread : null,
     authors,
     readers,
     people,

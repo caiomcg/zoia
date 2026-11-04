@@ -6,6 +6,7 @@ import {
   type ClipboardEvent,
   type DragEvent,
   type KeyboardEvent,
+  type ReactNode,
 } from 'react';
 import { createPortal } from 'react-dom';
 import {
@@ -41,6 +42,7 @@ import { shortcutAction } from '../chat/format';
 import FormatBar, { formatBox } from './FormatBar';
 import { IconTrash } from './Sidebar';
 import { useConfirm } from './ConfirmDialog';
+import { useFloatingMenu } from './useFloatingMenu';
 import { useLanguage, useT } from '../i18n';
 
 /** Must match MESSAGE_MAX in server/src/messages.js. */
@@ -106,15 +108,32 @@ export default function ChatView({
   chat,
   me,
   canModerate = false,
+  visible = true,
 }: {
   chat: ChatController;
   me: string | null;
   /** An admin, who may delete anyone's messages; the server checks it again. */
   canModerate?: boolean;
+  visible?: boolean;
 }) {
   const t = useT();
   const { language } = useLanguage();
-  const [draft, setDraft] = useState('');
+  const [drafts, setDrafts] = useState<Record<string, { text: string; picked: ChatMention[] }>>({});
+  const draftId = chat.openId ?? '';
+  const draft = drafts[draftId]?.text ?? '';
+  const picked = drafts[draftId]?.picked ?? [];
+  function setDraft(text: string) {
+    setDrafts((all) => ({ ...all, [draftId]: { text, picked: all[draftId]?.picked ?? [] } }));
+  }
+  function setPicked(next: ChatMention[] | ((list: ChatMention[]) => ChatMention[])) {
+    setDrafts((all) => ({
+      ...all,
+      [draftId]: {
+        text: all[draftId]?.text ?? '',
+        picked: typeof next === 'function' ? next(all[draftId]?.picked ?? []) : next,
+      },
+    }));
+  }
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -129,7 +148,6 @@ export default function ChatView({
   // The message of yours being edited in place (ADR 0043), if any.
   const [editingId, setEditingId] = useState<string | null>(null);
   const { confirm, dialog } = useConfirm();
-  const [picked, setPicked] = useState<ChatMention[]>([]);
   // The @query at the caret, and which suggestion is highlighted.
   const [mention, setMention] = useState<{ query: MentionQuery; index: number } | null>(null);
   // The ! commands this chat offers (ADR 0041), and the one highlighted while
@@ -177,9 +195,9 @@ export default function ChatView({
     } else if (stickRef.current) {
       el.scrollTop = el.scrollHeight;
     }
-  }, [lastId, firstId, thread?.chatId]);
+  }, [lastId, firstId, thread?.chatId, visible]);
 
-  // A new chat starts at its newest message, with nothing half-sent from the last.
+  // Each chat keeps its draft; files, replies and edits belong to the active view.
   useLayoutEffect(() => {
     stickRef.current = true;
     setFar(false);
@@ -187,9 +205,8 @@ export default function ChatView({
     setFile(null);
     setReplyingTo(null);
     setEditingId(null);
-    setPicked([]);
     setMention(null);
-  }, [thread?.chatId]);
+  }, [chat.openId]);
 
   // The chosen file, shown before it is sent.
   useEffect(() => {
@@ -555,9 +572,17 @@ export default function ChatView({
   const seen = last ? seenBy(last, chat.readers).filter((id) => id !== me) : [];
   const nameOf = (id: string) => chat.authors[id]?.name ?? t('chat.someone');
 
+  if (!chat.openChat) {
+    return (
+      <section className={`chat-view${visible ? '' : ' chat-hidden'}`}>
+        <p className="chat-empty muted">{t('chat.chooseChat')}</p>
+      </section>
+    );
+  }
+
   return (
     <section
-      className={`chat-view${dragging ? ' dragging' : ''}`}
+      className={`chat-view${dragging ? ' dragging' : ''}${visible ? '' : ' chat-hidden'}`}
       aria-label={chat.openChat?.name}
       onDragOver={(event) => {
         if (!event.dataTransfer.types.includes('Files')) return;
@@ -996,6 +1021,8 @@ function MessageRow({
   const name = author?.name ?? t('chat.someone');
   const image = useAccountAvatar(message.authorId, author?.avatar);
   const [picking, setPicking] = useState(false);
+  // Right-clicked, where, and the link under the pointer if there was one.
+  const [menu, setMenu] = useState<{ x: number; y: number; link: string | null } | null>(null);
   const actionsRef = useRef<HTMLSpanElement>(null);
   // A click anywhere else, or Escape, puts the emoji away again.
   useEffect(() => {
@@ -1028,6 +1055,15 @@ function MessageRow({
       <li
         className={`chat-message${grouped && !message.replyTo ? ' grouped' : ''}${mine ? ' mine' : ''}${mentionsMe ? ' mentions-me' : ''}${bot ? ' bot' : ''}`}
         data-message-id={message.id}
+        onContextMenu={(event) => {
+          // Editing, the box keeps the system's own menu for its text.
+          if (editing) return;
+          const link =
+            (event.target as Element).closest<HTMLAnchorElement>('a.chat-link')?.href ?? null;
+          if (!link && !onReply && !onDelete) return;
+          event.preventDefault();
+          setMenu({ x: event.clientX, y: event.clientY, link });
+        }}
       >
         {(onReply || onReact || onDelete || onEdit) && !editing && (
           <span className={`chat-actions${picking ? ' open' : ''}`} ref={actionsRef}>
@@ -1169,7 +1205,82 @@ function MessageRow({
           )}
         </div>
       </li>
+      {menu && (
+        <MessageMenu
+          name={name}
+          link={menu.link}
+          x={menu.x}
+          y={menu.y}
+          onClose={() => setMenu(null)}
+          onReply={onReply}
+          onDelete={onDelete}
+        />
+      )}
     </>
+  );
+}
+
+/**
+ * What a right-click on a message offers: replying to it and deleting it,
+ * as its buttons do, and, on a link in it, what a browser offers for one.
+ */
+function MessageMenu({
+  name,
+  link,
+  x,
+  y,
+  onClose,
+  onReply,
+  onDelete,
+}: {
+  /** Who wrote it, naming the menu. */
+  name: string;
+  link: string | null;
+  x: number;
+  y: number;
+  onClose: () => void;
+  onReply?: () => void;
+  onDelete?: () => void;
+}) {
+  const t = useT();
+  const ref = useRef<HTMLDivElement>(null);
+  const place = useFloatingMenu(ref, x, y, onClose);
+  const item = (label: string, icon: ReactNode, act: () => void, danger = false) => (
+    <button
+      type="button"
+      role="menuitem"
+      className={`person-menu-item${danger ? ' danger' : ''}`}
+      onClick={() => {
+        onClose();
+        act();
+      }}
+    >
+      {icon}
+      {label}
+    </button>
+  );
+  return createPortal(
+    <div
+      ref={ref}
+      className="member-menu person-menu chat-menu"
+      role="menu"
+      aria-label={name}
+      style={place}
+      onContextMenu={(event) => event.preventDefault()}
+    >
+      {link && (
+        <>
+          {item(t('chat.openLink'), <IconExternal />, () =>
+            window.open(link, '_blank', 'noreferrer'),
+          )}
+          {item(t('chat.copyLink'), <IconCopy />, () => void navigator.clipboard.writeText(link))}
+          {(onReply || onDelete) && <hr className="person-menu-divider" />}
+        </>
+      )}
+      {onReply && item(t('chat.reply'), <IconReply />, onReply)}
+      {onDelete && item(t('chat.deleteMessage'), <IconTrash />, onDelete, true)}
+    </div>,
+    document.body,
   );
 }
 
@@ -1508,6 +1619,43 @@ function IconSmile() {
 }
 
 /** An arrow curving back: answer this. */
+function IconExternal() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="14"
+      height="14"
+      aria-hidden="true"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 01-1 1H5a1 1 0 01-1-1V7a1 1 0 011-1h5" />
+    </svg>
+  );
+}
+
+function IconCopy() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="14"
+      height="14"
+      aria-hidden="true"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <rect x="9" y="9" width="11" height="11" rx="2" />
+      <path d="M5 15V5a1 1 0 011-1h10" />
+    </svg>
+  );
+}
+
 function IconReply() {
   return (
     <svg

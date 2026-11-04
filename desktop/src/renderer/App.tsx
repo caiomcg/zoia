@@ -11,9 +11,12 @@ import RemoteGrid, {
 } from './components/RemoteGrid';
 import Sidebar, { useSidebarCollapsed } from './components/Sidebar';
 import ChatList from './components/ChatList';
+import ChatTab from './components/ChatTab';
 import ChatView from './components/ChatView';
 import PeopleList from './components/PeopleList';
 import { useChat } from './chat/useChat';
+import { shownUnread } from './chat/silence';
+import { useSilencedChats } from './chat/silence-store';
 import { usePresence } from './chat/usePresence';
 import SourcePicker from './components/SourcePicker';
 import SettingsDialog, { type Section as SettingsSection } from './components/SettingsDialog';
@@ -121,7 +124,8 @@ function hopMembers(
     : others;
 }
 
-export default function App() {
+export default function App({ preview = false }: { preview?: boolean }) {
+  const demo = import.meta.env.DEV && preview;
   const t = useT();
   const [status, setStatus] = useState<PairingStatus | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -136,7 +140,7 @@ export default function App() {
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
   // The channel this device is in, or wants to be in. None at launch: the app
   // lists the channels and joins one only when it is clicked.
-  const [channel, setChannel] = useState<string | null>(null);
+  const [channel, setChannel] = useState<string | null>(demo ? 'demo-stage' : null);
   const [channels, setChannels] = useState<RoomInfo[]>([]);
   // Running as administrator, where Windows will not let Zoia capture a
   // window (src/main/elevation.ts): said up front, with the way out.
@@ -312,7 +316,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!usable || channel === null || room.state !== 'idle' || connectingRef.current) {
+    if (demo || !usable || channel === null || room.state !== 'idle' || connectingRef.current) {
       return;
     }
     connectingRef.current = true;
@@ -330,7 +334,7 @@ export default function App() {
       .finally(() => {
         connectingRef.current = false;
       });
-  }, [usable, room, channel, t]);
+  }, [demo, usable, room, channel, t]);
 
   // Who is in which channel, and who is live there, for the channel list.
   useEffect(() => {
@@ -411,6 +415,10 @@ export default function App() {
    * it never sees an idle room paired with the old channel and rejoins it.
    */
   async function switchChannel(id: string) {
+    if (demo) {
+      setChannel(id);
+      return;
+    }
     if (id === channel) return;
     if (channel === null) {
       // The first join from the list: a plain connect, shown as one.
@@ -722,7 +730,15 @@ export default function App() {
     me: accountId,
     visible: chatShownIfEnabled && focused,
   });
-  const chatShown = chat.enabled && chatShownIfEnabled;
+  const chatShown =
+    chat.enabled && chatShownIfEnabled && (chat.openId !== null || channel === null);
+  const silencedChats = useSilencedChats();
+  const tabsRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    tabsRef.current
+      ?.querySelector('[role="tab"][aria-selected="true"]')
+      ?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }, [chat.openId, chatShown]);
   // Who is on the server (ADR 0038), told on the chat's stream.
   const presence = usePresence({ usable: usable && chat.enabled, me: accountId });
 
@@ -1096,57 +1112,58 @@ export default function App() {
 
       <div className="body">
         <main className={`main${chatShown ? ' chat-full' : ''}`}>
-          {chat.enabled && channel !== null && (
-            <div className="main-tabs" role="tablist">
-              <button
-                role="tab"
-                aria-selected={!chatShown}
-                className={`main-tab${chatShown ? '' : ' current'}`}
-                onClick={() => setView('stage')}
-              >
-                <svg
-                  viewBox="0 0 24 24"
-                  width="16"
-                  height="16"
-                  aria-hidden="true"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
+          {chat.enabled && (channel !== null || chat.tabs.length > 0) && (
+            <div className="main-tabs" role="tablist" ref={tabsRef}>
+              {channel !== null && (
+                <button
+                  role="tab"
+                  aria-selected={!chatShown}
+                  className={`main-tab${chatShown ? '' : ' current'}`}
+                  onClick={() => setView('stage')}
                 >
-                  <rect x="2.5" y="4" width="19" height="13" rx="2" />
-                  <path d="M8 20.5h8" strokeLinecap="round" />
-                </svg>
-                {t('chat.tabStage')}
-              </button>
-              <button
-                role="tab"
-                aria-selected={chatShown}
-                className={`main-tab${chatShown ? ' current' : ''}`}
-                onClick={() => setView('chat')}
-              >
-                <span className="chat-hash" aria-hidden="true">
-                  #
-                </span>
-                {chat.openChat?.name ?? t('chat.title')}
-                {!chatShown && chat.totalMentions > 0 && (
-                  <span
-                    className="chat-mention-badge"
-                    aria-label={t('chat.mentionsUnread', { count: chat.totalMentions })}
-                    title={t('chat.mentionsUnread', { count: chat.totalMentions })}
+                  <svg
+                    viewBox="0 0 24 24"
+                    width="16"
+                    height="16"
+                    aria-hidden="true"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
                   >
-                    @
-                  </span>
-                )}
-                {!chatShown && chat.totalUnread > 0 && (
-                  <span className="chat-unread">
-                    {chat.totalUnread >= 100 ? '99+' : chat.totalUnread}
-                  </span>
-                )}
-              </button>
+                    <rect x="2.5" y="4" width="19" height="13" rx="2" />
+                    <path d="M8 20.5h8" strokeLinecap="round" />
+                  </svg>
+                  {t('chat.tabStage')}
+                </button>
+              )}
+              {chat.tabs.map((id) => {
+                const info = chat.chats.find((c) => c.id === id);
+                if (!info) return null;
+                return (
+                  <ChatTab
+                    key={id}
+                    chat={info}
+                    current={chatShown && chat.openId === id}
+                    unread={shownUnread(info, silencedChats)}
+                    pinned={chat.pinnedTabs.includes(id)}
+                    onOpen={() => {
+                      chat.open(id);
+                      setView('chat');
+                    }}
+                    onClose={() => {
+                      chat.close(id);
+                      if (chat.tabs.length === 1) setView('stage');
+                    }}
+                    onPin={(pinned) => chat.pin(id, pinned)}
+                  />
+                );
+              })}
             </div>
           )}
           <div className="main-panes">
-            {chatShown && <ChatView chat={chat} me={accountId} canModerate={isAdmin} />}
+            {chat.enabled && (
+              <ChatView chat={chat} me={accountId} canModerate={isAdmin} visible={chatShown} />
+            )}
             {/* Behind the chat rather than unmounted: what you watch keeps
               playing, and its sound with it, while you read. */}
             <div className={`main-pane${chatShown ? ' behind' : ''}`}>
