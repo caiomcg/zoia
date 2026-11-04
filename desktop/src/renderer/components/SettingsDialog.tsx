@@ -1027,6 +1027,11 @@ const PEOPLE = [
     handle: 'Andchh',
     role: 'about.role.anderson' as MessageKey,
   },
+  {
+    name: 'Amon',
+    handle: 'amonn3',
+    role: 'about.role.amon' as MessageKey,
+  },
 ];
 
 /**

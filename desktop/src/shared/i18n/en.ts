@@ -654,6 +654,8 @@ export const en = {
     'Text chats with photos and videos, a camera beside the screen, statuses and who is on the server, and channels you join with a click.',
   'about.role.anderson':
     'The Android app: watching on a phone, with the sound still playing in the background.',
+  'about.role.amon':
+    'Chats in tabs: open several at once, pin them and close them with the middle mouse button.',
 
   // ---- main process: tray and update dialogs
   'tray.open': 'Open Zoia',

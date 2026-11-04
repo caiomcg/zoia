@@ -653,6 +653,8 @@ export const es: Messages = {
     'Los chats de texto con fotos y vídeos, una cámara junto a la pantalla, los estados y quién está en el servidor, y los canales a los que se entra con un clic.',
   'about.role.anderson':
     'La app para Android: ver desde el móvil, con el sonido sonando incluso en segundo plano.',
+  'about.role.amon':
+    'Los chats en pestañas: varios abiertos a la vez, fijados y cerrados con el botón central del ratón.',
 
   'tray.open': 'Abrir Zoia',
   'tray.keep': 'Mantener en la bandeja al cerrar',
