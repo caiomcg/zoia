@@ -11,8 +11,10 @@ limit admins change at runtime; see ADR 0015 and 0036) and watches
 there; **anyone may claim an independent broadcast slot** in their channel and share a screen,
 window or tab with audio. Multiple people may stream at the same time, and each viewer chooses
 which broadcasts to watch. Latency is ~200–500 ms. Beside the channels are **text chats**
-(ADR 0036): messages, photos and videos, replies and @mentions, every chat visible to every
-approved account. Access is by account: anyone may sign up
+(ADR 0036): messages, photos and videos, replies, threads and @mentions, every chat visible
+to every approved account; **direct messages** between two people, seen by them alone (ADR
+0047); and **scheduled events** with RSVPs, announced as they start (ADR 0050). Access is by
+account: anyone may sign up
 with an email and password, and an admin approves them before they can join. Roles (user,
 admin, one super admin) govern administration only, never who may broadcast — see ADR 0031.
 
@@ -101,6 +103,9 @@ source; match on "not `MICROPHONE`" instead.
 | `server/src/messages.js` | Chat messages, read markers, replies and mentions, in ScyllaDB |
 | `server/src/chat-routes.js` | The chat API and its live SSE stream |
 | `server/src/chat-media.js` | Chat photos and videos on disk, typed by their bytes, under one cap |
+| `server/src/direct-chats.js` | Direct messages: one private chat per pair of accounts (ADR 0047), in SQLite |
+| `server/src/schedule.js` | Scheduled events and their RSVPs (ADR 0050), in SQLite |
+| `server/src/schedule-routes.js` | The schedule API, `/api/schedule`, and the sweep that announces starts |
 | `server/src/addons.js` | Installed addons, their manifests, permissions, settings, commands and chats (ADR 0041) |
 | `server/src/addon-routes.js` | The addon API, `/api/addon/v1`, every route behind one permission |
 | `server/src/addon-admin.js` | The super admin's addon routes: install from GitHub, enable, settings |
@@ -149,6 +154,11 @@ source; match on "not `MICROPHONE`" instead.
    Nothing else in the compose file mounts it.
 9. **`app.set('trust proxy', ...)` must stay.** Behind Caddy every request otherwise appears to
    originate from the proxy, so rate limiting would throttle all users as a single client.
+10. **A direct chat is its two members' alone** (ADR 0047): every chat id goes through
+    `resolveChat` in `chat-routes.js`, which answers `404` to anyone else, admins included,
+    and every event about a chat goes out through `tell`, which passes its members as the
+    audience. A new route or event that skips either leaks private messages. The same holds
+    for a direct chat's threads and files; `server/test/messaging.test.js` guards it.
 
 ## Environment gotchas
 

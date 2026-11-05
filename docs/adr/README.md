@@ -52,6 +52,10 @@ record that supersedes it, so the history stays legible.
 | [0042](0042-deleted-messages-leave-the-disk.md) | Deleted messages leave the disk an hour later, not ten days | proposed |
 | [0043](0043-editing-messages.md) | Its author edits a message, in place, and everyone sees it was edited | proposed |
 | [0046](0046-entrance-sounds.md) | Entrance sounds, chosen on each machine and named by the arriving app | proposed |
+| [0047](0047-direct-messages.md) | Direct messages, private to the two people in them | proposed |
+| [0048](0048-threads.md) | Threads, kept as chats of their own | proposed |
+| [0049](0049-typing-indicator.md) | Typing indicator, said and forgotten | proposed |
+| [0050](0050-scheduled-events.md) | Scheduled events, with answers and a call when they start | proposed |
 
 ## The two that explain the most
 
