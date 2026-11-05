@@ -259,7 +259,7 @@ jobs:
           echo "::error::ANDROID_KEYSTORE_BASE64 is not set; a release APK would be unsigned."
           exit 1
 
-      - uses: actions/setup-java@v5
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '17'

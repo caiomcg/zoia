@@ -38,7 +38,7 @@ interface LoopbackCaptureInstance {
 // standalone script used to capture genuine, non-silent audio from a live
 // process on this machine (verified: saved to a WAV file, confirmed
 // non-silent — see the runbook). Same code path, not a new guess.
-const require = createRequire(import.meta.url);
+const requireNative = createRequire(import.meta.url);
 
 type LoopbackCaptureCtor = new () => LoopbackCaptureInstance;
 
@@ -51,8 +51,9 @@ function loadCtor(): LoopbackCaptureCtor {
   if (process.platform !== 'win32') {
     throw new Error('Application audio capture is only available on Windows.');
   }
-  LoopbackCaptureCtor ??= (require('loopback-capture') as { LoopbackCapture: LoopbackCaptureCtor })
-    .LoopbackCapture;
+  LoopbackCaptureCtor ??= (
+    requireNative('loopback-capture') as { LoopbackCapture: LoopbackCaptureCtor }
+  ).LoopbackCapture;
   return LoopbackCaptureCtor;
 }
 

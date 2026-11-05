@@ -131,7 +131,7 @@ let gpuStatus: GpuStatus = {
  * all and no encoder flag will help.
  */
 async function refreshGpuStatus(): Promise<void> {
-  let adapter = 'unknown';
+  let adapter: string;
   try {
     const info = (await app.getGPUInfo('complete')) as {
       gpuDevice?: Array<{ vendorId?: number; deviceId?: number; active?: boolean }>;

@@ -9,7 +9,13 @@
  */
 
 import { useEffect, useState } from 'react';
-import { captureOptions, levelToDb, NoiseFloor, type CaptureSettings } from './settings';
+import {
+  availableDeviceId,
+  captureOptions,
+  levelToDb,
+  NoiseFloor,
+  type CaptureSettings,
+} from './settings';
 import { buildVoiceGraph, peakOf, VOICE_SAMPLE_RATE, type VoiceGraph } from './pipeline';
 
 /** How much of the level falls away per frame, so the meter settles rather than flickers. */
@@ -38,8 +44,10 @@ export function useMicLevel(settings: CaptureSettings): MicLevel {
 
     void (async () => {
       try {
+        // An unplugged choice is measured on the default, as voice uses it.
+        const devices = await navigator.mediaDevices.enumerateDevices().catch(() => []);
         const options = captureOptions({
-          microphoneId,
+          microphoneId: availableDeviceId(microphoneId, devices, 'audioinput'),
           echoCancellation,
           noiseSuppression,
           autoGainControl,

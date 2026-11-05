@@ -65,7 +65,7 @@ interface CaptureAddon {
   setBitrate(bitsPerSecond: number): void;
 }
 
-const require = createRequire(import.meta.url);
+const requireNative = createRequire(import.meta.url);
 
 let addon: CaptureAddon | null = null;
 let loadError: string | null = null;
@@ -83,7 +83,7 @@ function load(): CaptureAddon | null {
     return null;
   }
   try {
-    addon = require('../../native/index.cjs') as CaptureAddon;
+    addon = requireNative('../../native/index.cjs') as CaptureAddon;
   } catch (err) {
     loadError = err instanceof Error ? err.message : String(err);
     addon = null;

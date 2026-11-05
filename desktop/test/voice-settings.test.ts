@@ -6,7 +6,10 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  availableDeviceId,
   captureOptions,
+  defaultDeviceKey,
+  defaultDeviceName,
   AUTO_MARGIN_DB,
   AUTO_MAX_DB,
   AUTO_MIN_DB,
@@ -207,5 +210,63 @@ describe('softClip', () => {
     for (const peak of peaks) assert.ok(peak > 0.7 && peak < 1);
     for (let i = 1; i < peaks.length; i++) assert.ok(peaks[i]! > peaks[i - 1]!);
     assert.equal(softClip(-1.5), -softClip(1.5));
+  });
+});
+
+describe('availableDeviceId', () => {
+  const devices = [
+    { kind: 'audioinput' as const, deviceId: 'default', groupId: 'g-headset', label: '' },
+    { kind: 'audioinput' as const, deviceId: 'mic-a', groupId: 'g-headset', label: '' },
+    { kind: 'audioinput' as const, deviceId: 'mic-b', groupId: 'g-webcam', label: '' },
+    { kind: 'audiooutput' as const, deviceId: 'out-a', groupId: 'g-headset', label: '' },
+  ];
+
+  test('the chosen device while it is plugged in', () => {
+    assert.equal(availableDeviceId('mic-b', devices, 'audioinput'), 'mic-b');
+  });
+
+  test('the system default once it is gone, so the next device is used', () => {
+    assert.equal(availableDeviceId('mic-c', devices, 'audioinput'), '');
+  });
+
+  test('a device of the other kind does not count', () => {
+    assert.equal(availableDeviceId('out-a', devices, 'audioinput'), '');
+    assert.equal(availableDeviceId('out-a', devices, 'audiooutput'), 'out-a');
+  });
+
+  test('no choice is the system default', () => {
+    assert.equal(availableDeviceId('', devices, 'audioinput'), '');
+  });
+});
+
+describe('defaultDeviceKey', () => {
+  test('names the device the default is, so a change of default shows', () => {
+    const before = [
+      { kind: 'audioinput' as const, deviceId: 'default', groupId: 'g-headset', label: '' },
+    ];
+    const after = [
+      { kind: 'audioinput' as const, deviceId: 'default', groupId: 'g-webcam', label: '' },
+    ];
+    assert.equal(defaultDeviceKey(before, 'audioinput'), 'g-headset');
+    assert.notEqual(defaultDeviceKey(before, 'audioinput'), defaultDeviceKey(after, 'audioinput'));
+  });
+
+  test('is empty when nothing is listed as the default', () => {
+    assert.equal(defaultDeviceKey([], 'audiooutput'), '');
+  });
+});
+
+describe('defaultDeviceName', () => {
+  test("reads the device out of Chromium's default entry", () => {
+    const devices = [
+      { deviceId: 'default', label: 'Default - Headset (USB Audio)' },
+      { deviceId: 'mic-a', label: 'Headset (USB Audio)' },
+    ];
+    assert.equal(defaultDeviceName(devices), 'Headset (USB Audio)');
+  });
+
+  test('is empty without a default entry or a label', () => {
+    assert.equal(defaultDeviceName([{ deviceId: 'mic-a', label: 'Headset' }]), '');
+    assert.equal(defaultDeviceName([{ deviceId: 'default', label: '' }]), '');
   });
 });

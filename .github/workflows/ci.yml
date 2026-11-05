@@ -140,6 +140,11 @@ jobs:
         env:
           ZOIA_TOKENLESS_BUILD: '1'
         run: npx electron-vite build
+      # A bundle can build and still not parse: electron-vite 6 injects its
+      # own top-level `require`, and a module's `const require` hoisted beside
+      # it was a duplicate declaration that only failed when the app started.
+      - name: Main bundle parses
+        run: node --check out/main/index.js
 
   commitlint:
     runs-on: ubuntu-latest

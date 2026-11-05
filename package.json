@@ -1,6 +1,6 @@
 {
   "name": "zoia",
-  "version": "0.14.6",
+  "version": "0.14.7",
   "private": true,
   "description": "Private one-to-many screen broadcast over a self-hosted LiveKit SFU.",
   "type": "module",
@@ -24,18 +24,18 @@
     "cassandra-driver": "^4.10.0",
     "cookie-parser": "^1.4.7",
     "express": "^5.1.0",
-    "express-rate-limit": "^8.1.0",
+    "express-rate-limit": "^8.7.3",
     "livekit-server-sdk": "^2.13.1"
   },
   "devDependencies": {
-    "@commitlint/cli": "^21.2.3",
-    "@commitlint/config-conventional": "^21.2.3",
+    "@commitlint/cli": "^21.2.4",
+    "@commitlint/config-conventional": "^21.2.4",
     "@eslint/js": "^10.0.1",
-    "eslint": "^10.11.0",
-    "globals": "^17.12.0",
+    "eslint": "^10.14.0",
+    "globals": "^17.14.0",
     "husky": "^9.1.7",
-    "prettier": "^3.6.2",
-    "supertest": "^7.1.4"
+    "prettier": "^3.9.10",
+    "supertest": "^7.3.1"
   },
   "license": "MIT",
   "repository": {

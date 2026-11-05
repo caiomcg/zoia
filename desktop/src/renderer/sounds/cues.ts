@@ -77,7 +77,7 @@ function clamp(value: unknown, min: number, max: number, fallback: number): numb
  * everything, and a corrupt one falls back to the defaults.
  */
 export function parseSoundSettings(raw: string | null): SoundSettings {
-  let stored: unknown = null;
+  let stored: unknown;
   try {
     stored = raw ? JSON.parse(raw) : null;
   } catch {

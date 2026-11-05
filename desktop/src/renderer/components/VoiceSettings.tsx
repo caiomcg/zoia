@@ -8,6 +8,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useT } from '../i18n';
+import { systemDefaultLabel } from '../voice/device-label';
 import type { MessageKey } from '../../shared/i18n';
 import { useCameraDevices } from '../livekit/useCamera';
 import { useWheelRange } from './useWheelRange';
@@ -390,7 +391,7 @@ export default function VoiceSettingsSection() {
             value={settings.speakerId}
             onChange={(event) => setVoiceSettings({ ...settings, speakerId: event.target.value })}
           >
-            <option value="">{t('voiceSettings.systemDefault')}</option>
+            <option value="">{systemDefaultLabel(t, devices.speakers)}</option>
             {devices.speakers
               .filter((s) => s.deviceId !== 'default')
               .map((s) => (
@@ -425,7 +426,7 @@ export default function VoiceSettingsSection() {
               setVoiceSettings({ ...settings, microphoneId: event.target.value })
             }
           >
-            <option value="">{t('voiceSettings.systemDefault')}</option>
+            <option value="">{systemDefaultLabel(t, devices.microphones)}</option>
             {devices.microphones.map((m) => (
               <option key={m.deviceId} value={m.deviceId}>
                 {m.label}

@@ -208,6 +208,48 @@ export function useVoiceSettings(): VoiceSettings {
  * cancellation is on by default: whatever is being watched plays out of the
  * same speakers the microphone hears.
  */
+/** What enumerateDevices lists, as far as choosing a device goes. */
+export type ListedDevice = Pick<MediaDeviceInfo, 'kind' | 'deviceId' | 'groupId' | 'label'>;
+
+/**
+ * The device to use: the chosen one while it is plugged in, otherwise ''
+ * (the system default, which is the next one Windows has). The choice itself
+ * is kept, so the device is used again as soon as it comes back.
+ */
+export function availableDeviceId(
+  chosen: string,
+  devices: readonly ListedDevice[],
+  kind: 'audioinput' | 'audiooutput',
+): string {
+  if (!chosen) return '';
+  return devices.some((d) => d.kind === kind && d.deviceId === chosen) ? chosen : '';
+}
+
+/**
+ * Which physical device the system default is right now. Chromium lists it
+ * as a 'default' entry that shares the real device's groupId, so a change of
+ * default shows up here even though the id 'default' stays the same.
+ */
+export function defaultDeviceKey(
+  devices: readonly ListedDevice[],
+  kind: 'audioinput' | 'audiooutput',
+): string {
+  const entry = devices.find((d) => d.kind === kind && d.deviceId === 'default');
+  return entry?.groupId ?? '';
+}
+
+/**
+ * The name of the device the system default is right now, from Chromium's
+ * "Default - <name>" entry, so "System default" can say which it is. Empty
+ * when the list has no such entry or no labels yet.
+ */
+export function defaultDeviceName(
+  devices: readonly Pick<MediaDeviceInfo, 'deviceId' | 'label'>[],
+): string {
+  const entry = devices.find((d) => d.deviceId === 'default');
+  return entry ? entry.label.replace(/^default\s*-\s*/i, '').trim() : '';
+}
+
 export function captureOptions(settings: CaptureSettings): AudioCaptureOptions {
   return {
     deviceId: settings.microphoneId ? { exact: settings.microphoneId } : undefined,

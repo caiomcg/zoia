@@ -46,12 +46,12 @@ export type { SourceInfo };
 
 type NativeWindow = WindowManagerModule.Window;
 
-const require = createRequire(import.meta.url);
+const requireNative = createRequire(import.meta.url);
 
 /** Null when the addon cannot load, as under Smart App Control. */
 const windowManagerModule = optionalModule<typeof WindowManagerModule>(
   'node-window-manager',
-  () => require('node-window-manager') as typeof WindowManagerModule,
+  () => requireNative('node-window-manager') as typeof WindowManagerModule,
 );
 
 /** Every top-level window, natively; null when the addon is unavailable. */
@@ -464,8 +464,8 @@ export function findLeagueWindows(): {
   let client: SourceInfo | null = null;
 
   for (const win of windows) {
-    let path = '';
-    let title = '';
+    let path: string;
+    let title: string;
     try {
       path = win.path || '';
       title = win.getTitle() || '';
