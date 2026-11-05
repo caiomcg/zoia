@@ -213,7 +213,7 @@ export default function SettingsDialog({
                 hardwareAvailable={hardwareAvailable ?? false}
               />
             )}
-            {section === 'voice' && <VoiceSettingsSection />}
+            {section === 'voice' && <VoiceSettingsSection closing={closing} />}
             {section === 'general' && <GeneralSection />}
             {section === 'sounds' && <SoundsSection />}
             {section === 'notifications' && <NotificationsSection />}

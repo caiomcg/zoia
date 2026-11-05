@@ -7,8 +7,8 @@
  *     → RNNoise (Enhanced) → input volume and boost → limiter → analyser → gate gain
  *     → the track LiveKit sends
  *
- * The same graph, without the gate, drives the meter in Settings › Voice, so
- * the meter shows what would be sent.
+ * The same graph drives the meter in Settings › Voice, so the meter shows what
+ * would be sent, and Hear yourself plays what the gate lets through.
  */
 
 import type { AudioProcessorOptions, Track, TrackProcessor } from 'livekit-client';
@@ -123,6 +123,11 @@ export interface VoiceGraph {
   analyser: AnalyserNode;
   /** What is sent, gate applied. */
   output: MediaStreamTrack;
+  /**
+   * The same sound as `output`, still in the graph: Hear yourself connects it
+   * to the context's speakers. Disconnected with the rest on destroy.
+   */
+  gated: AudioNode;
   destroy(): void;
 }
 
@@ -204,6 +209,7 @@ export async function buildVoiceGraph(
   return {
     analyser,
     output,
+    gated: gain,
     destroy() {
       if (timer) clearInterval(timer);
       stopVolume();

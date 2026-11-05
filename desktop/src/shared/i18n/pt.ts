@@ -482,6 +482,9 @@ export const pt: Messages = {
   'voiceSettings.sensitivity': 'Sensibilidade de entrada',
   'voiceSettings.sensitivityAuto': 'Automática',
   'voiceSettings.sensitivityAutoToggle': 'Ajustar a sensibilidade de entrada automaticamente',
+  'voiceSettings.monitor': 'Ouvir sua voz',
+  'voiceSettings.monitorHint':
+    'Toca o seu microfone para você como os outros o ouvem. Use fones de ouvido, ou você vai ouvir um eco.',
   'voiceSettings.sensitivityAutoHint':
     'Fale para testar. O Zoia acompanha o ruído ao seu redor e só envia o que passa dele; o marcador mostra onde.',
   'voiceSettings.sensitivityAlways': 'Sempre ligado',

@@ -490,6 +490,9 @@ export const en = {
   'voiceSettings.sensitivity': 'Input sensitivity',
   'voiceSettings.sensitivityAuto': 'Automatic',
   'voiceSettings.sensitivityAutoToggle': 'Set input sensitivity automatically',
+  'voiceSettings.monitor': 'Hear yourself',
+  'voiceSettings.monitorHint':
+    'Plays your microphone back to you as others hear it. Use headphones, or you will hear an echo.',
   'voiceSettings.sensitivityAutoHint':
     'Speak to test. Zoia follows the noise around you and sends only what rises above it; the marker shows where.',
   'voiceSettings.sensitivityAlways': 'Always on',
