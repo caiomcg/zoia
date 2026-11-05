@@ -3,6 +3,7 @@ package im.zoia.ui.room
 import android.Manifest
 import android.app.Activity
 import android.content.pm.PackageManager
+import android.content.res.Configuration
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -11,6 +12,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -29,6 +31,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -44,6 +47,7 @@ import androidx.compose.material.icons.automirrored.filled.VolumeMute
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.AdminPanelSettings
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.CallEnd
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
@@ -67,6 +71,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -84,9 +89,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -121,6 +128,9 @@ fun RoomScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val configuration = LocalConfiguration.current
+    val isCompact = configuration.screenWidthDp < 600
+    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
     val sessionState by sessionManager.sessionState.collectAsState()
     val updateManager = remember { ZoiaApp.instance.updateManager }
     val updateState by updateManager.updateState.collectAsState()
@@ -322,21 +332,24 @@ fun RoomScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(60.dp)
+                    .height(if (isCompact) 56.dp else 60.dp)
                     .background(Color(0xFF161920))
-                    .padding(horizontal = 20.dp),
+                    .padding(horizontal = if (isCompact) 10.dp else 20.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 // Left: Logo + Room/Channel Switcher + Voice Pill
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = if (isCompact) Modifier.weight(1f, fill = false) else Modifier
+                ) {
                     Text(
                         text = "Zoia",
                         color = Color(0xFF4E75FF),
-                        fontSize = 20.sp,
+                        fontSize = if (isCompact) 18.sp else 20.sp,
                         fontWeight = FontWeight.Bold
                     )
-                    Spacer(modifier = Modifier.width(16.dp))
+                    Spacer(modifier = Modifier.width(if (isCompact) 8.dp else 16.dp))
 
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -347,28 +360,32 @@ fun RoomScreen(
                                 refreshRooms()
                                 showChannelsDialog = true
                             }
-                            .padding(horizontal = 12.dp, vertical = 6.dp)
+                            .padding(horizontal = if (isCompact) 8.dp else 12.dp, vertical = 6.dp)
                     ) {
                         Text(
-                            text = if (roomTitle != null) "# $roomTitle" else "Escolha um canal",
+                            text = if (roomTitle != null) "# $roomTitle" else "Canais",
                             color = if (roomTitle != null) Color.White else Color(0xFFB0B7C3),
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.SemiBold
+                            fontSize = if (isCompact) 13.sp else 14.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = if (isCompact) Modifier.widthIn(max = 110.dp) else Modifier
                         )
-                        Spacer(modifier = Modifier.width(4.dp))
+                        Spacer(modifier = Modifier.width(2.dp))
                         Icon(
                             imageVector = Icons.Default.ArrowDropDown,
                             contentDescription = "Trocar canal",
                             tint = Color(0xFF8E95A5),
-                            modifier = Modifier.size(20.dp)
+                            modifier = Modifier.size(18.dp)
                         )
                     }
 
                     if (connectionState is RoomConnectionState.Connected) {
-                        Spacer(modifier = Modifier.width(10.dp))
+                        Spacer(modifier = Modifier.width(if (isCompact) 6.dp else 10.dp))
                         VoiceControlPill(
                             isInVoice = isInVoice,
                             isMicMuted = isMicMuted,
+                            isCompact = isCompact,
                             onJoinVoice = {
                                 val hasPermission = ContextCompat.checkSelfPermission(
                                     context,
@@ -401,7 +418,7 @@ fun RoomScreen(
                         )
                     }
 
-                    if (currentSound != null) {
+                    if (currentSound != null && !isCompact) {
                         Spacer(modifier = Modifier.width(12.dp))
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
@@ -428,9 +445,12 @@ fun RoomScreen(
                 }
 
                 // Right: Admin + Chat Button + User Profile + Disconnect + Exit
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(if (isCompact) 6.dp else 10.dp)
+                ) {
                     if (isAdmin) {
-                        Box(modifier = Modifier.padding(end = 10.dp)) {
+                        Box {
                             IconButton(
                                 onClick = { showAdminDialog = true },
                                 modifier = Modifier
@@ -465,7 +485,7 @@ fun RoomScreen(
                     }
 
                     // Chat button with unread / mention badge
-                    Box(modifier = Modifier.padding(end = 12.dp)) {
+                    Box {
                         IconButton(
                             onClick = { isChatOpen = !isChatOpen },
                             modifier = Modifier
@@ -499,89 +519,117 @@ fun RoomScreen(
                     }
 
                     // Audio Devices Settings button
-                    Box(modifier = Modifier.padding(end = 12.dp)) {
-                        IconButton(
-                            onClick = { showAudioSettingsDialog = true },
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(if (showAudioSettingsDialog) Color(0xFF283655) else Color(0xFF222630))
-                                .size(36.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Tune,
-                                contentDescription = "Dispositivos de áudio",
-                                tint = if (showAudioSettingsDialog) Color(0xFF4E75FF) else Color(0xFF8E95A5),
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
+                    IconButton(
+                        onClick = { showAudioSettingsDialog = true },
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(if (showAudioSettingsDialog) Color(0xFF283655) else Color(0xFF222630))
+                            .size(36.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Tune,
+                            contentDescription = "Configurações e limites de áudio",
+                            tint = if (showAudioSettingsDialog) Color(0xFF4E75FF) else Color(0xFF8E95A5),
+                            modifier = Modifier.size(20.dp)
+                        )
                     }
 
                     val myAvatarUrl = authenticated?.avatar?.let {
                         "${apiClient.serverUrl}/api/avatar/account/${authenticated.accountId}?v=$it"
                     }
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(Color(0xFF222630))
-                            .clickable { showProfileDialog = true }
-                            .padding(horizontal = 10.dp, vertical = 6.dp)
-                    ) {
-                        UserAvatar(
-                            name = currentDeviceName,
-                            avatarUrl = myAvatarUrl,
-                            role = authenticated?.role,
-                            size = 24.dp
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = currentDeviceName,
-                            color = Color.White,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
 
-                    Spacer(modifier = Modifier.width(12.dp))
-
-                    // Disconnect button
-                    if (connectionState is RoomConnectionState.Connected) {
+                    if (isCompact) {
+                        Box(
+                            modifier = Modifier
+                                .clip(CircleShape)
+                                .clickable { showProfileDialog = true }
+                        ) {
+                            UserAvatar(
+                                name = currentDeviceName,
+                                avatarUrl = myAvatarUrl,
+                                role = authenticated?.role,
+                                size = 32.dp
+                            )
+                        }
+                    } else {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier
                                 .clip(RoundedCornerShape(8.dp))
-                                .background(Color(0xFF381A22))
-                                .clickable { roomManager.disconnect() }
+                                .background(Color(0xFF222630))
+                                .clickable { showProfileDialog = true }
                                 .padding(horizontal = 10.dp, vertical = 6.dp)
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.PowerSettingsNew,
-                                contentDescription = "Sair da transmissão",
-                                tint = Color(0xFFFF5252),
-                                modifier = Modifier.size(16.dp)
+                            UserAvatar(
+                                name = currentDeviceName,
+                                avatarUrl = myAvatarUrl,
+                                role = authenticated?.role,
+                                size = 24.dp
                             )
-                            Spacer(modifier = Modifier.width(6.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = "Sair",
-                                color = Color(0xFFFF8A8A),
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.SemiBold
+                                text = currentDeviceName,
+                                color = Color.White,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Medium
                             )
                         }
                     }
 
-                    Spacer(modifier = Modifier.width(8.dp))
+                    // Disconnect button
+                    if (connectionState is RoomConnectionState.Connected) {
+                        if (isCompact) {
+                            IconButton(
+                                onClick = { roomManager.disconnect() },
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(Color(0xFF381A22))
+                                    .size(36.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.PowerSettingsNew,
+                                    contentDescription = "Sair do canal",
+                                    tint = Color(0xFFFF5252),
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        } else {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(Color(0xFF381A22))
+                                    .clickable { roomManager.disconnect() }
+                                    .padding(horizontal = 10.dp, vertical = 6.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.PowerSettingsNew,
+                                    contentDescription = "Sair da transmissão",
+                                    tint = Color(0xFFFF5252),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "Sair",
+                                    color = Color(0xFFFF8A8A),
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                        }
+                    }
 
-                    // Close app button
-                    IconButton(onClick = {
-                        roomManager.disconnect()
-                        (context as? Activity)?.finish()
-                    }) {
-                        Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = "Fechar aplicativo",
-                            tint = Color(0xFF8E95A5)
-                        )
+                    if (!isCompact) {
+                        IconButton(onClick = {
+                            roomManager.disconnect()
+                            (context as? Activity)?.finish()
+                        }) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Fechar aplicativo",
+                                tint = Color(0xFF8E95A5)
+                            )
+                        }
                     }
                 }
             }
@@ -597,7 +645,8 @@ fun RoomScreen(
                     modifier = Modifier
                         .fillMaxHeight()
                         .weight(1f)
-                        .padding(16.dp),
+                        .padding(if (isCompact) 8.dp else 16.dp)
+                        .padding(bottom = if (isInVoice && connectionState is RoomConnectionState.Connected) 68.dp else 0.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     when (connectionState) {
@@ -658,7 +707,7 @@ fun RoomScreen(
                                         )
                                     }
                                 } else {
-                                    val columns = if (tiles.size == 1) 1 else 2
+                                    val columns = if (isCompact && !isLandscape) 1 else if (tiles.size == 1) 1 else 2
                                     LazyVerticalGrid(
                                         columns = GridCells.Fixed(columns),
                                         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -743,24 +792,71 @@ fun RoomScreen(
                     }
                 }
 
-                // Chat Sliding Panel
-                AnimatedVisibility(
-                    visible = isChatOpen,
-                    enter = slideInHorizontally { it } + fadeIn(),
-                    exit = slideOutHorizontally { it } + fadeOut()
-                ) {
-                    ChatPanel(
-                        chatManager = chatManager,
-                        myAccountId = authenticated?.accountId ?: "",
-                        myRole = authenticated?.role ?: "user",
-                        onClose = { isChatOpen = false },
-                        modifier = Modifier
-                            .width(380.dp)
-                            .fillMaxHeight()
-                            .background(Color(0xFF161920))
-                    )
+                // Chat Sliding Panel (Tablet / Desktop)
+                if (!isCompact) {
+                    AnimatedVisibility(
+                        visible = isChatOpen,
+                        enter = slideInHorizontally { it } + fadeIn(),
+                        exit = slideOutHorizontally { it } + fadeOut()
+                    ) {
+                        ChatPanel(
+                            chatManager = chatManager,
+                            myAccountId = authenticated?.accountId ?: "",
+                            myRole = authenticated?.role ?: "user",
+                            onClose = { isChatOpen = false },
+                            modifier = Modifier
+                                .width(380.dp)
+                                .fillMaxHeight()
+                                .background(Color(0xFF161920))
+                        )
+                    }
                 }
             }
+        }
+
+        // Full Screen Chat Overlay for Mobile (Compact)
+        if (isCompact) {
+            AnimatedVisibility(
+                visible = isChatOpen,
+                enter = slideInHorizontally { it } + fadeIn(),
+                exit = slideOutHorizontally { it } + fadeOut()
+            ) {
+                ChatPanel(
+                    chatManager = chatManager,
+                    myAccountId = authenticated?.accountId ?: "",
+                    myRole = authenticated?.role ?: "user",
+                    onClose = { isChatOpen = false },
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color(0xFF161920))
+                )
+            }
+        }
+
+        // Floating Voice Bar when connected to Voice
+        if (isInVoice && connectionState is RoomConnectionState.Connected) {
+            VoiceBottomBar(
+                roomTitle = roomTitle,
+                isMicMuted = isMicMuted,
+                onToggleMic = {
+                    val hasPermission = ContextCompat.checkSelfPermission(
+                        context,
+                        Manifest.permission.RECORD_AUDIO
+                    ) == PackageManager.PERMISSION_GRANTED
+                    if (hasPermission) {
+                        roomManager.toggleMicrophone()
+                    } else {
+                        micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                    }
+                },
+                onOpenAudioSettings = { showAudioSettingsDialog = true },
+                onLeaveVoice = {
+                    scope.launch { roomManager.leaveVoice() }
+                },
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = if (isCompact) 8.dp else 16.dp)
+            )
         }
     }
 }
@@ -1010,6 +1106,7 @@ fun CameraBar(people: List<StreamItem>, onToggle: (StreamItem) -> Unit) {
 fun VoiceControlPill(
     isInVoice: Boolean,
     isMicMuted: Boolean,
+    isCompact: Boolean = false,
     onJoinVoice: () -> Unit,
     onLeaveVoice: () -> Unit,
     onToggleMic: () -> Unit,
@@ -1022,7 +1119,7 @@ fun VoiceControlPill(
                 .clip(RoundedCornerShape(8.dp))
                 .background(Color(0xFF222630))
                 .clickable { onJoinVoice() }
-                .padding(horizontal = 10.dp, vertical = 6.dp)
+                .padding(horizontal = if (isCompact) 8.dp else 10.dp, vertical = 6.dp)
         ) {
             Icon(
                 imageVector = Icons.Default.Mic,
@@ -1030,7 +1127,7 @@ fun VoiceControlPill(
                 tint = Color(0xFF4E75FF),
                 modifier = Modifier.size(16.dp)
             )
-            Spacer(modifier = Modifier.width(6.dp))
+            Spacer(modifier = Modifier.width(4.dp))
             Text(
                 text = "Voz",
                 color = Color.White,
@@ -1044,14 +1141,14 @@ fun VoiceControlPill(
             modifier = Modifier
                 .clip(RoundedCornerShape(8.dp))
                 .background(Color(0xFF1E3A2F))
-                .padding(horizontal = 8.dp, vertical = 4.dp)
+                .padding(horizontal = 6.dp, vertical = 4.dp)
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
                     .clip(RoundedCornerShape(6.dp))
                     .clickable { onToggleMic() }
-                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                    .padding(horizontal = 4.dp, vertical = 2.dp)
             ) {
                 Icon(
                     imageVector = if (isMicMuted) Icons.Default.MicOff else Icons.Default.Mic,
@@ -1061,32 +1158,161 @@ fun VoiceControlPill(
                 )
                 Spacer(modifier = Modifier.width(4.dp))
                 Text(
-                    text = if (isMicMuted) "Mutado" else "Em Voz",
+                    text = if (isMicMuted) "Mutado" else "Voz",
                     color = if (isMicMuted) Color(0xFFFF8A8A) else Color(0xFF7AE7A7),
                     fontSize = 13.sp,
                     fontWeight = FontWeight.SemiBold
                 )
             }
+            if (!isCompact) {
+                Spacer(modifier = Modifier.width(6.dp))
+                Icon(
+                    imageVector = Icons.Default.Tune,
+                    contentDescription = "Configurações de áudio",
+                    tint = Color(0xFF8E95A5),
+                    modifier = Modifier
+                        .size(16.dp)
+                        .clip(CircleShape)
+                        .clickable { onOpenAudioSettings() }
+                )
+            }
             Spacer(modifier = Modifier.width(6.dp))
-            Icon(
-                imageVector = Icons.Default.Tune,
-                contentDescription = "Configurações de áudio",
-                tint = Color(0xFF8E95A5),
+            Box(
                 modifier = Modifier
-                    .size(16.dp)
+                    .size(24.dp)
                     .clip(CircleShape)
-                    .clickable { onOpenAudioSettings() }
-            )
-            Spacer(modifier = Modifier.width(6.dp))
-            Icon(
-                imageVector = Icons.Default.Close,
-                contentDescription = "Sair da voz",
-                tint = Color(0xFF8E95A5),
-                modifier = Modifier
-                    .size(14.dp)
-                    .clip(CircleShape)
-                    .clickable { onLeaveVoice() }
-            )
+                    .background(Color(0xFFE53935))
+                    .clickable { onLeaveVoice() },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.CallEnd,
+                    contentDescription = "Sair da voz",
+                    tint = Color.White,
+                    modifier = Modifier.size(13.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun VoiceBottomBar(
+    roomTitle: String?,
+    isMicMuted: Boolean,
+    onToggleMic: () -> Unit,
+    onOpenAudioSettings: () -> Unit,
+    onLeaveVoice: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier
+            .padding(horizontal = 16.dp, vertical = 12.dp)
+            .fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        color = Color(0xFF161920),
+        shadowElevation = 8.dp,
+        border = BorderStroke(1.dp, Color(0xFF23A55A).copy(alpha = 0.5f))
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            // Status indicator + Room title
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.weight(1f, fill = false)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(10.dp)
+                        .clip(CircleShape)
+                        .background(if (isMicMuted) Color(0xFFFF5252) else Color(0xFF23A55A))
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Column {
+                    Text(
+                        text = if (isMicMuted) "Voz (Mutado)" else "Conectado à Voz",
+                        color = Color.White,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1
+                    )
+                    Text(
+                        text = if (roomTitle != null) "# $roomTitle" else "Canal de Voz",
+                        color = Color(0xFF8E95A5),
+                        fontSize = 11.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.width(8.dp))
+
+            // Action buttons
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                // Mic toggle
+                IconButton(
+                    onClick = onToggleMic,
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(if (isMicMuted) Color(0xFF381A22) else Color(0xFF1E3A2F))
+                ) {
+                    Icon(
+                        imageVector = if (isMicMuted) Icons.Default.MicOff else Icons.Default.Mic,
+                        contentDescription = if (isMicMuted) "Desmutar microfone" else "Mutar microfone",
+                        tint = if (isMicMuted) Color(0xFFFF5252) else Color(0xFF23A55A),
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+
+                // Audio settings
+                IconButton(
+                    onClick = onOpenAudioSettings,
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFF222630))
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Tune,
+                        contentDescription = "Dispositivos de áudio",
+                        tint = Color(0xFFB0B7C3),
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+
+                // Prominent Red Leave Voice Button
+                Button(
+                    onClick = onLeaveVoice,
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE53935)),
+                    shape = RoundedCornerShape(20.dp),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                    modifier = Modifier.height(40.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.CallEnd,
+                        contentDescription = "Sair da voz",
+                        tint = Color.White,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Sair da Voz",
+                        color = Color.White,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
         }
     }
 }
