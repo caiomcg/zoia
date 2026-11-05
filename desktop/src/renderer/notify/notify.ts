@@ -29,7 +29,7 @@ const PREFS_KEY = 'zoia.notifications';
 
 /** Preferences from storage, repaired: anything missing or odd is on. */
 export function parseNotifyPrefs(raw: string | null): NotifyPrefs {
-  let stored: unknown = null;
+  let stored: unknown;
   try {
     stored = raw ? JSON.parse(raw) : null;
   } catch {
@@ -147,7 +147,7 @@ export function pruneInbox(list: InboxItem[], now: number): InboxItem[] {
 
 /** Entries from storage: well-formed ones under a day old, newest first. */
 export function parseInbox(raw: string | null, now: number): InboxItem[] {
-  let stored: unknown = null;
+  let stored: unknown;
   try {
     stored = raw ? JSON.parse(raw) : null;
   } catch {
