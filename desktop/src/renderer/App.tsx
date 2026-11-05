@@ -28,6 +28,7 @@ import PeopleList from './components/PeopleList';
 import { useChat } from './chat/useChat';
 import { useThread } from './chat/useThread';
 import ThreadPanel from './components/ThreadPanel';
+import NotificationBell from './components/NotificationBell';
 import { shownUnread } from './chat/silence';
 import { useSilencedChats } from './chat/silence-store';
 import { usePresence } from './chat/usePresence';
@@ -1148,8 +1149,9 @@ export default function App({ preview = false }: { preview?: boolean }) {
         </div>
 
         {/* Screen and camera live in the sidebar's voice bar now, with the
-            rest of what you send (ADR 0039). */}
-        <div className="topbar-right" />
+            rest of what you send (ADR 0039). Notifications sit at the top
+            right, where they are looked for, whatever the sidebar shows. */}
+        <div className="topbar-right">{usable && <NotificationBell />}</div>
       </header>
 
       {roomError && <Banner onDismiss={() => dismiss('room', roomError)}>{roomError}</Banner>}

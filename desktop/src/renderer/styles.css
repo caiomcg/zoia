@@ -9182,3 +9182,28 @@ button.events-new:hover {
 .status-menu-action .nav-count {
   margin-left: auto;
 }
+
+/* The bell at the top right of the window. */
+.topbar-right {
+  justify-content: flex-end;
+}
+
+.topbar .notify-bell {
+  width: 32px;
+  height: 30px;
+  padding: 0;
+  color: var(--muted);
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+}
+
+.topbar .notify-bell:hover,
+.topbar .notify-bell.open {
+  color: var(--text);
+  background: var(--raised);
+}
+
+.topbar .notify-badge {
+  border-color: var(--surface);
+}
