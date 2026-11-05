@@ -429,6 +429,8 @@ export default function Sidebar({
   onWatchBroadcast,
   onToggleCamera,
   chats,
+  textChats,
+  onMessageMember,
   chatsBadge,
   people,
   events,
@@ -478,8 +480,12 @@ export default function Sidebar({
   onWatchBroadcast: (target: GridTarget) => void;
   /** Puts someone's camera on stage, or takes it off again. */
   onToggleCamera: (identity: string) => void;
-  /** The text chats (ADR 0036) and direct messages (ADR 0047), in their own tab. */
+  /** Direct messages (ADR 0047) and the people on the server, in the Chats tab. */
   chats?: (collapsed: boolean) => ReactNode;
+  /** The text chats everyone sees (ADR 0036), above the voice channels. */
+  textChats?: (collapsed: boolean) => ReactNode;
+  /** Double-clicking someone in a channel: write to them (ADR 0047), by their name. */
+  onMessageMember?: (name: string) => void;
   /** What the Chats tab says while it is not showing: unread, and whether any calls you. */
   chatsBadge?: { unread: number; calls: boolean };
   /**
@@ -673,6 +679,7 @@ export default function Sidebar({
     onToggleCamera,
     collapsed,
     speaking: voice?.speaking,
+    onMessage: onMessageMember,
   };
   // Which channel is being renamed, or 'new' while one is being named.
   const [editing, setEditing] = useState<string | null>(null);
@@ -1040,6 +1047,11 @@ export default function Sidebar({
                                   ? (event) => openMenu(event, p.identity, p.name, p.role)
                                   : undefined
                               }
+                              onDoubleClick={
+                                onMessageMember && !p.bot
+                                  ? () => onMessageMember(p.name)
+                                  : undefined
+                              }
                               {...dragFrom(p.identity, p.role, c.id)}
                             >
                               <Avatar
@@ -1079,6 +1091,9 @@ export default function Sidebar({
             )}
           </section>
         )}
+
+        {/* The chats everyone sees, under the voice channels. */}
+        {!showEvents && !onPeople && !onChats && textChats?.(collapsed)}
 
         {/* Their own tab; collapsed, under the channels as faces and initials. */}
         {!showEvents && (onChats || !tabbed) && chats?.(collapsed)}
@@ -1538,9 +1553,12 @@ function MemberRow({
   collapsed,
   onContextMenu,
   speaking,
+  onMessage,
 }: {
   /** Who is speaking in voice right now. */
   speaking?: ReadonlySet<string>;
+  /** Double-click: write to them. Never yourself, never a bot. */
+  onMessage?: (name: string) => void;
   /** Admins only: opens what they may do to this person. */
   onContextMenu?: (event: ReactMouseEvent) => void;
   member: RoomMember;
@@ -1584,6 +1602,7 @@ function MemberRow({
       aria-label={live ? t('sidebar.watchLive', { name: m.name }) : undefined}
       onContextMenu={onContextMenu}
       onClick={live ? () => onWatch(target) : undefined}
+      onDoubleClick={onMessage && !m.isLocal && !m.bot ? () => onMessage(m.name) : undefined}
       onKeyDown={
         live
           ? (event) => {

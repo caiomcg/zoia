@@ -1452,21 +1452,35 @@ export default function App({ preview = false }: { preview?: boolean }) {
               ? (identity) => void kickMember(identity)
               : undefined
           }
+          textChats={
+            chat.enabled
+              ? (collapsed) => (
+                  <ChatList
+                    chat={chat}
+                    collapsed={collapsed}
+                    showing={chatShown}
+                    myRole={account?.role}
+                    onOpen={(id) => {
+                      chat.open(id);
+                      setView('chat');
+                    }}
+                    onError={(code) => setChatError(chatErrorText(code))}
+                  />
+                )
+              : undefined
+          }
+          onMessageMember={(name) => {
+            const person = chat.people.find((p) => p.name === name && p.id !== accountId && !p.bot);
+            if (!person) return;
+            void chat.openDirect(person.id).then((refused) => {
+              if (refused) setChatError(chatErrorText(refused));
+              else setView('chat');
+            });
+          }}
           chats={
             chat.enabled
               ? (collapsed) => (
                   <>
-                    <ChatList
-                      chat={chat}
-                      collapsed={collapsed}
-                      showing={chatShown}
-                      myRole={account?.role}
-                      onOpen={(id) => {
-                        chat.open(id);
-                        setView('chat');
-                      }}
-                      onError={(code) => setChatError(chatErrorText(code))}
-                    />
                     <DirectList
                       chat={chat}
                       me={accountId}
@@ -1504,8 +1518,10 @@ export default function App({ preview = false }: { preview?: boolean }) {
           chatsBadge={
             chat.enabled
               ? {
-                  unread: chat.totalUnread,
-                  calls: chat.totalMentions > 0 || chat.direct.some((d) => (d.unread ?? 0) > 0),
+                  // Direct messages alone: the chats everyone sees show their
+                  // own counts on the Channels tab.
+                  unread: chat.direct.reduce((sum, d) => sum + (d.unread ?? 0), 0),
+                  calls: chat.direct.some((d) => (d.unread ?? 0) > 0),
                 }
               : undefined
           }
