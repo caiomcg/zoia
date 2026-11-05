@@ -22,6 +22,8 @@ sealed class SessionState {
         val deviceName: String,
         val deviceId: String,
         val role: String = "user",
+        val accountId: String = "",
+        val avatar: String? = null,
     ) : SessionState() {
         val isAdmin: Boolean get() = role == "admin" || role == "super_admin"
     }
@@ -59,7 +61,13 @@ class SessionManager(
         if (session.status == "pending") {
             SessionState.Pending(session.email)
         } else {
-            SessionState.Authenticated(deviceName = session.name, deviceId = session.id, role = session.role)
+            SessionState.Authenticated(
+                deviceName = session.name,
+                deviceId = session.id,
+                role = session.role,
+                accountId = session.accountId,
+                avatar = session.avatar
+            )
         }
 
     /** Signed out by the server: the device is gone, or the account disabled. */
@@ -175,6 +183,34 @@ class SessionManager(
                 else -> e.message ?: "Falha ao alterar nome."
             }
             Result.failure(Exception(errorMsg, e))
+        }
+    }
+
+    suspend fun setAvatar(bytes: ByteArray, mimeType: String = "image/jpeg"): Result<String> {
+        return try {
+            val response = apiClient.setAvatar(bytes, mimeType)
+            val current = _sessionState.value
+            if (current is SessionState.Authenticated) {
+                _sessionState.value = current.copy(avatar = response.avatar)
+            }
+            Result.success(response.avatar)
+        } catch (e: Exception) {
+            if (e is kotlin.coroutines.cancellation.CancellationException) throw e
+            Result.failure(e)
+        }
+    }
+
+    suspend fun deleteAvatar(): Result<Unit> {
+        return try {
+            apiClient.deleteAvatar()
+            val current = _sessionState.value
+            if (current is SessionState.Authenticated) {
+                _sessionState.value = current.copy(avatar = null)
+            }
+            Result.success(Unit)
+        } catch (e: Exception) {
+            if (e is kotlin.coroutines.cancellation.CancellationException) throw e
+            Result.failure(e)
         }
     }
 
