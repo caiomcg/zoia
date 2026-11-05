@@ -35,15 +35,14 @@ updates:
       # deliberately, while patch and minor updates still arrive here.
       - dependency-name: electron
         update-types: ['version-update:semver-major']
-      # Vite 8 cannot be installed here at all: electron-vite 5 peers
-      # ^5 || ^6 || ^7, and @vitejs/plugin-react 6 in turn requires vite ^8,
-      # so the two move together or not at all. npm ci refuses the
-      # combination outright, which took a whole grouped PR down with it.
-      # Lift both of these once electron-vite 6 leaves beta — its peer range
-      # already reads ^6 || ^7 || ^8.
-      - dependency-name: vite
+      # typescript-eslint 8 peers typescript <6.1, and npm ci refuses 7
+      # outright, which took a whole grouped PR down with it. Lift this once
+      # typescript-eslint supports TypeScript 7.
+      - dependency-name: typescript
         update-types: ['version-update:semver-major']
-      - dependency-name: '@vitejs/plugin-react'
+      # The types describe the Node that Electron bundles (Electron 44 runs
+      # Node 24), not the newest Node. Move this major with Electron's.
+      - dependency-name: '@types/node'
         update-types: ['version-update:semver-major']
 
   - package-ecosystem: github-actions

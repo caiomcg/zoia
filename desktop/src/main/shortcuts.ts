@@ -46,7 +46,7 @@ interface Hook {
 /** How long a recording waits for input before giving up. */
 const RECORD_TIMEOUT_MS = 15_000;
 
-const require = createRequire(import.meta.url);
+const requireNative = createRequire(import.meta.url);
 const prefsPath = () => join(app.getPath('userData'), 'shortcuts.json');
 
 let hook: Hook | null = null;
@@ -104,7 +104,7 @@ function input(code: string, pressed: boolean) {
 function load(): boolean {
   if (available !== null) return available;
   try {
-    const module = require('uiohook-napi') as {
+    const module = requireNative('uiohook-napi') as {
       uIOhook: Hook;
       UiohookKey: Record<string, number>;
     };

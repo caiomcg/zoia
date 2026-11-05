@@ -11,7 +11,7 @@ import type { CueEvent } from '../sounds/cues';
 
 /** The ids of the silenced chats, from storage. Anything unreadable is none. */
 export function parseSilencedChats(raw: string | null): ReadonlySet<string> {
-  let stored: unknown = null;
+  let stored: unknown;
   try {
     stored = raw ? JSON.parse(raw) : null;
   } catch {
