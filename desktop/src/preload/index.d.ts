@@ -27,6 +27,10 @@ import type {
   ChatAuthor,
   ChatPerson,
   ChatCommand,
+  DirectChatInfo,
+  RsvpAnswer,
+  ScheduledEvent,
+  ScheduledEventInput,
   ChatSendExtras,
   ChatEvent,
   AddonInfo,
@@ -238,6 +242,10 @@ export interface ZoiaBridge {
     people(): Promise<ActionOutcome<ChatPerson[]>>;
     /** The ! commands this chat offers, under this server's names (ADR 0041). */
     commands(chatId: string): Promise<ActionOutcome<ChatCommand[]>>;
+    /** Opens a direct chat with someone, or finds the one there is (ADR 0047). */
+    direct(accountId: string): Promise<ActionOutcome<DirectChatInfo>>;
+    /** Says you are writing in a chat (ADR 0049). */
+    typing(chatId: string): Promise<ActionOutcome>;
     /** Deletes a message: your own, or anyone's as an admin. */
     deleteMessage(chatId: string, messageId: string): Promise<ActionOutcome>;
     /** Edits a message of your own (ADR 0043); mentions are account ids, as when sending. */
@@ -262,6 +270,23 @@ export interface ZoiaBridge {
     onEvent(cb: (event: ChatEvent) => void): () => void;
     /** An author's picture as a data: URL, or null when they have none. */
     avatar(accountId: string, version: string): Promise<string | null>;
+  };
+  /** Scheduled events (ADR 0050); changes arrive through chat.onEvent. */
+  /** Windows' own notifications, sent from the main process (see notify.ts). */
+  notify: {
+    /** Shows one; resolves to whether the system could. */
+    show(id: number, title: string, body: string): Promise<boolean>;
+    /** One that was shown has been clicked: Zoia is already in front. */
+    onClick(cb: (id: number) => void): () => void;
+  };
+  schedule: {
+    list(): Promise<ActionOutcome<ScheduledEvent[]>>;
+    create(input: ScheduledEventInput): Promise<ActionOutcome<ScheduledEvent>>;
+    /** Its creator or an admin only. */
+    update(id: string, input: ScheduledEventInput): Promise<ActionOutcome<ScheduledEvent>>;
+    remove(id: string): Promise<ActionOutcome>;
+    /** Going, maybe or not; null takes the answer back. */
+    rsvp(id: string, answer: RsvpAnswer | null): Promise<ActionOutcome<ScheduledEvent>>;
   };
   /** Who is on the server (ADR 0038); changes arrive through chat.onEvent. */
   presence: {

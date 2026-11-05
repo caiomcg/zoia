@@ -21,7 +21,9 @@ import type {
   ChatMessage,
   ChatPerson,
   ChatSendExtras,
+  DirectChatInfo,
 } from '../../shared/ipc';
+import { isDirectChatId, threadParts } from '../../shared/ipc';
 import { applyEdit, applyReaction, atOrAfter, laterMarker, mergeMessages } from './model';
 import { playCues } from '../sounds/useSoundCues';
 import { chatMessageCues, shownUnread } from './silence';
@@ -47,10 +49,32 @@ const RECOUNT_DELAY_MS = 500;
 /** Codes a server without chat answers with: the route is not there. */
 const NO_CHAT = new Set(['http_404', 'http_501']);
 
+/** A direct chat as the rest of the app shows a chat: named after who it is with. */
+export function directAsChat(direct: DirectChatInfo): ChatInfo {
+  return {
+    id: direct.id,
+    name: direct.peer.name,
+    isDefault: false,
+    unread: direct.unread,
+    mentions: direct.mentions ?? 0,
+    peer: direct.peer,
+  };
+}
+
+/** A message that calls you: written to you directly, or @mentioning you. */
+export interface ChatNotice {
+  kind: 'direct' | 'mention';
+  /** Where to go to read it: the chat, or the chat a thread is in. */
+  chatId: string;
+  message: ChatMessage;
+  author: ChatAuthor;
+}
+
 export function useChat({
   usable,
   me,
   visible,
+  onNotify,
 }: {
   /** Signed in and approved. */
   usable: boolean;
@@ -58,7 +82,11 @@ export function useChat({
   me: string | null;
   /** Whether the open chat's messages are on screen and the window has focus. */
   visible: boolean;
+  /** A message calls you while you are not reading it: tell the person. */
+  onNotify?: (notice: ChatNotice) => void;
 }) {
+  const notifyRef = useRef(onNotify);
+  notifyRef.current = onNotify;
   const [list, setList] = useState<ChatList | null>(null);
   const [enabled, setEnabled] = useState(false);
   const [tabs, dispatchTabs] = useReducer(chatTabs, EMPTY_CHAT_TABS);
@@ -85,6 +113,8 @@ export function useChat({
   visibleRef.current = visible;
   const threadRef = useRef(thread);
   threadRef.current = thread;
+  const listRef = useRef(list);
+  listRef.current = list;
 
   const loadPeople = useCallback(async () => {
     const found = await window.zoia.chat.people();
@@ -150,7 +180,10 @@ export function useChat({
   // never reopen a tab the person closed.
   useEffect(() => {
     if (!list) return;
-    dispatchTabs({ type: 'sync', ids: list.chats.map((c) => c.id) });
+    dispatchTabs({
+      type: 'sync',
+      ids: [...list.chats.map((c) => c.id), ...(list.direct ?? []).map((d) => d.id)],
+    });
   }, [list]);
 
   const available = list?.available ?? false;
@@ -207,22 +240,23 @@ export function useChat({
   /** Moves a chat's unread count, and its mentions with `mentioned`; null ones stay unknown. */
   const setUnread = useCallback(
     (chatId: string, next: (n: number) => number, mentioned?: (n: number) => number) => {
+      const move = <T extends { id: string; unread: number | null; mentions?: number | null }>(
+        c: T,
+      ): T =>
+        c.id !== chatId
+          ? c
+          : {
+              ...c,
+              unread: c.unread === null ? null : next(c.unread),
+              mentions:
+                mentioned && typeof c.mentions === 'number' ? mentioned(c.mentions) : c.mentions,
+            };
       setList(
         (l) =>
           l && {
             ...l,
-            chats: l.chats.map((c) =>
-              c.id !== chatId
-                ? c
-                : {
-                    ...c,
-                    unread: c.unread === null ? null : next(c.unread),
-                    mentions:
-                      mentioned && typeof c.mentions === 'number'
-                        ? mentioned(c.mentions)
-                        : c.mentions,
-                  },
-            ),
+            chats: l.chats.map(move),
+            ...(l.direct ? { direct: l.direct.map(move) } : {}),
           },
       );
     },
@@ -254,6 +288,29 @@ export function useChat({
           case 'message': {
             const { message, author } = event;
             if (author) setAuthors((known) => ({ ...known, [message.authorId]: author }));
+            // A thread's reply (ADR 0048) is the thread panel's; here it only
+            // calls you when it @mentions you.
+            if (threadParts(message.chatId)) {
+              const me = meRef.current;
+              if (message.authorId !== me && me && message.mentions?.some((m) => m.id === me)) {
+                const parent = threadParts(message.chatId)!.chatId;
+                playCues(chatMessageCues(true, isChatSilenced(parent)));
+                if (!isChatSilenced(parent)) {
+                  notifyRef.current?.({ kind: 'mention', chatId: parent, message, author });
+                }
+              }
+              break;
+            }
+            // Someone wrote to you for the first time (ADR 0047): the list does
+            // not know the chat yet.
+            const known = listRef.current;
+            if (
+              isDirectChatId(message.chatId) &&
+              known &&
+              !(known.direct ?? []).some((d) => d.id === message.chatId)
+            ) {
+              void refresh();
+            }
             const isOpen = message.chatId === openRef.current;
             if (isOpen) {
               setThread((t) =>
@@ -267,11 +324,23 @@ export function useChat({
               const mentioned = Boolean(me && message.mentions?.some((m) => m.id === me));
               const more = (n: number) => Math.min(n + 1, 100);
               setUnread(message.chatId, more, mentioned ? more : undefined);
-              playCues(chatMessageCues(mentioned, isChatSilenced(message.chatId)));
+              // A direct message is written to you: it calls you as a mention
+              // does, though only a real @mention is counted as one.
+              const calls = mentioned || isDirectChatId(message.chatId);
+              playCues(chatMessageCues(calls, isChatSilenced(message.chatId)));
+              if (calls && !isChatSilenced(message.chatId)) {
+                notifyRef.current?.({
+                  kind: isDirectChatId(message.chatId) ? 'direct' : 'mention',
+                  chatId: message.chatId,
+                  message,
+                  author,
+                });
+              }
             }
             break;
           }
           case 'deleted':
+            if (threadParts(event.chatId)) break;
             if (event.chatId === openRef.current) dropMessage(event.messageId);
             // It may have been one of the unread: only the server can say.
             recountSoon();
@@ -286,6 +355,25 @@ export function useChat({
             }
             if (event.chatId === openRef.current) {
               applyToMessage(event.messageId, event.emoji, event.accountId, event.on);
+            }
+            break;
+          case 'thread':
+            // A message in the open chat gained or lost a reply in its thread.
+            if (event.chatId === openRef.current) {
+              const { rootId, thread: summary } = event;
+              setThread(
+                (t) =>
+                  t && {
+                    ...t,
+                    messages: t.messages.map((m) =>
+                      m.id !== rootId
+                        ? m
+                        : summary
+                          ? { ...m, thread: summary }
+                          : { ...m, thread: undefined },
+                    ),
+                  },
+              );
             }
             break;
           case 'people':
@@ -316,7 +404,11 @@ export function useChat({
               }));
             }
             // Read on another of your machines: its count is out of date here.
-            if (event.accountId === meRef.current && event.chatId !== openRef.current) {
+            if (
+              event.accountId === meRef.current &&
+              event.chatId !== openRef.current &&
+              !threadParts(event.chatId)
+            ) {
               void refresh();
             }
             break;
@@ -484,16 +576,46 @@ export function useChat({
     [refresh],
   );
 
+  /**
+   * Opens a direct chat with someone (ADR 0047), making it if need be, and
+   * shows it. Resolves to the server's refusal code, or null.
+   */
+  const openDirect = useCallback(async (accountId: string): Promise<string | null> => {
+    const result = await window.zoia.chat.direct(accountId);
+    if (!result.ok) return result.error;
+    const direct = result.value;
+    setList((l) => {
+      if (!l) return l;
+      const others = (l.direct ?? []).filter((d) => d.id !== direct.id);
+      const kept = (l.direct ?? []).find((d) => d.id === direct.id);
+      return { ...l, direct: [kept ?? direct, ...others] };
+    });
+    dispatchTabs({ type: 'open', id: direct.id });
+    return null;
+  }, []);
+
   const chats: ChatInfo[] = list?.chats ?? [];
+  const direct: ChatInfo[] = (list?.direct ?? []).map(directAsChat);
+  const everyChat = [...chats, ...direct];
   const silenced = useSilencedChats();
+  const openChat = everyChat.find((c) => c.id === openId) ?? null;
   return {
     enabled,
     available,
     chats,
+    /** Your direct chats (ADR 0047), as chats named after who they are with. */
+    direct,
+    /** Any chat or direct chat by id. */
+    find: (id: string) => everyChat.find((c) => c.id === id) ?? null,
+    openDirect,
     max: list?.max ?? 1,
     ceiling: list?.ceiling ?? 1,
     openId,
-    openChat: chats.find((c) => c.id === openId) ?? null,
+    openChat,
+    /** Who can be @mentioned in the open chat: in a direct chat, its two alone. */
+    mentionable: openChat?.peer
+      ? people.filter((p) => p.id === openChat.peer!.id || p.id === me)
+      : people,
     tabs: tabs.ids,
     pinnedTabs: tabs.pinned,
     pin: (id: string, pinned: boolean) => dispatchTabs({ type: 'pin', id, pinned }),
@@ -515,9 +637,9 @@ export function useChat({
     remove: (id: string) => change(window.zoia.chat.remove(id)),
     setLimit: (max: number) => change(window.zoia.chat.setLimit(max)),
     /** What every chat shows, summed: a badge on the way back to the chat. */
-    totalUnread: chats.reduce((sum, c) => sum + shownUnread(c, silenced), 0),
+    totalUnread: everyChat.reduce((sum, c) => sum + shownUnread(c, silenced), 0),
     /** Unread that @mention you, across every chat: a badge of its own. */
-    totalMentions: chats.reduce((sum, c) => sum + (c.mentions ?? 0), 0),
+    totalMentions: everyChat.reduce((sum, c) => sum + (c.mentions ?? 0), 0),
   };
 }
 

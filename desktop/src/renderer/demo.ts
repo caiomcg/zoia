@@ -182,6 +182,8 @@ export function installDemo() {
       sendMedia: unavailable,
       people: () => ok(Object.entries(authors).map(([id, author]) => ({ id, ...author }))),
       commands: () => ok([]),
+      direct: unavailable,
+      typing: done,
       deleteMessage: (chatId, messageId) => {
         messages.set(
           chatId,
@@ -230,6 +232,14 @@ export function installDemo() {
         };
       },
       avatar: async () => null,
+    },
+    notify: { show: async () => false, onClick: subscribe },
+    schedule: {
+      list: () => ok([]),
+      create: unavailable,
+      update: unavailable,
+      remove: unavailable,
+      rsvp: unavailable,
     },
     presence: {
       get: () =>

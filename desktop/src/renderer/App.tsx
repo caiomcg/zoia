@@ -11,10 +11,23 @@ import RemoteGrid, {
 } from './components/RemoteGrid';
 import Sidebar, { useSidebarCollapsed } from './components/Sidebar';
 import ChatList from './components/ChatList';
+import DirectList from './components/DirectList';
+import { EventsPanel, EventCarousel, pinnedEvents, useNow } from './components/EventList';
+import EventDialog from './components/EventDialog';
+import { useSchedule } from './schedule/useSchedule';
+import {
+  listenForNotificationClicks,
+  notify,
+  setNotifyHandler,
+  type NotifyTarget,
+} from './notify/notify';
+import type { ScheduledEvent } from '../shared/ipc';
 import ChatTab from './components/ChatTab';
 import ChatView from './components/ChatView';
 import PeopleList from './components/PeopleList';
 import { useChat } from './chat/useChat';
+import { useThread } from './chat/useThread';
+import ThreadPanel from './components/ThreadPanel';
 import { shownUnread } from './chat/silence';
 import { useSilencedChats } from './chat/silence-store';
 import { usePresence } from './chat/usePresence';
@@ -729,9 +742,45 @@ export default function App({ preview = false }: { preview?: boolean }) {
     usable,
     me: accountId,
     visible: chatShownIfEnabled && focused,
+    // A direct message or an @mention, while you are not reading it.
+    onNotify: ({ kind, chatId, message, author }) => {
+      const name = author?.name ?? t('chat.someone');
+      const where = chat.find(chatId);
+      const body =
+        message.body.replace(/\s+/g, ' ').trim().slice(0, 140) ||
+        (message.attachment?.kind === 'video' ? t('chat.video') : t('chat.photo'));
+      notify({
+        kind,
+        // A person's messages, or a chat's mentions, are one entry under the bell.
+        group: `${kind}:${chatId}`,
+        title:
+          kind === 'direct'
+            ? t('notify.dmFrom', { name })
+            : t('notify.mentionIn', { name, chat: where?.name ?? '' }),
+        body,
+        target: { type: 'chat', id: chatId },
+        actionLabel: t('notify.openChat'),
+      });
+    },
   });
   const chatShown =
     chat.enabled && chatShownIfEnabled && (chat.openId !== null || channel === null);
+  // The thread open beside the chat (ADR 0048), if any. It belongs to the chat
+  // it was opened in: going to another chat puts it away.
+  const [threadRoot, setThreadRoot] = useState<{ chatId: string; rootId: string } | null>(null);
+  useEffect(() => {
+    setThreadRoot((open) => (open && open.chatId === chat.openId ? open : null));
+  }, [chat.openId]);
+  const threadPanel = useThread({
+    chatId: threadRoot?.chatId ?? null,
+    rootId: threadRoot?.rootId ?? null,
+    chatName: chat.openChat?.name ?? '',
+    me: accountId,
+    visible: chatShown && focused,
+    available: chat.available,
+    people: chat.mentionable,
+    knownAuthors: chat.authors,
+  });
   const silencedChats = useSilencedChats();
   const tabsRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -741,6 +790,62 @@ export default function App({ preview = false }: { preview?: boolean }) {
   }, [chat.openId, chatShown]);
   // Who is on the server (ADR 0038), told on the chat's stream.
   const presence = usePresence({ usable: usable && chat.enabled, me: accountId });
+  // Scheduled events (ADR 0050), told on the chat's stream like the rest. One
+  // that starts is a notification (see notify.ts), with the way into its channel.
+  const schedule = useSchedule({
+    usable: usable && chat.enabled,
+    onNotice: (event) => {
+      const where = channels.find((c) => c.id === event.channelId);
+      notify({
+        kind: 'event',
+        group: `event:${event.id}`,
+        title: t('event.startingNow', { title: event.title }),
+        body: where ? `#${where.name}` : (event.description ?? ''),
+        target: { type: 'event', id: event.id, channelId: event.channelId },
+        actionLabel: where ? t('event.join', { channel: where.name }) : t('event.details'),
+      });
+    },
+  });
+  // Following a notification, from the bell or from Windows: join its channel
+  // and show it, or open its chat. Always the app as it is now, so a click long
+  // after the notification arrived still does the right thing.
+  const followRef = useRef<(target: NotifyTarget) => void>(() => {});
+  followRef.current = (target) => {
+    const join = (id: string) => {
+      console.info(`[notify] joining channel ${id} (in ${channel ?? 'none'})`);
+      void switchChannel(id);
+      setView('stage');
+    };
+    if (target.type === 'chat') {
+      chat.open(target.id);
+      setView('chat');
+      return;
+    }
+    if (target.type === 'channel') return join(target.id);
+    // An event: into its channel when it has one that still exists; else the
+    // event itself, to see where and when.
+    const where = target.channelId ? channels.find((c) => c.id === target.channelId) : undefined;
+    if (where) return join(where.id);
+    const event = schedule.events.find((e) => e.id === target.id);
+    if (event) setEventOpen(event);
+  };
+  // Set on every render, not once: nothing can leave a click with no handler.
+  useEffect(() => setNotifyHandler((target) => followRef.current(target)));
+  useEffect(() => listenForNotificationClicks(), []);
+  // The event open in its dialog, or 'new' to schedule one.
+  // The event open in its dialog, or a new one, maybe in a channel already.
+  const [eventOpen, setEventOpen] = useState<
+    ScheduledEvent | { new: true; channelId: string | null } | null
+  >(null);
+  const eventNow = useNow();
+  // On now and coming up this week, in the sidebar's carousel.
+  const pinned = schedule.enabled ? pinnedEvents(schedule.events, eventNow) : [];
+  // Who has written to you and not been read, for a dot in the People tab.
+  const unreadFrom = Object.fromEntries(
+    chat.direct
+      .filter((d) => d.peer && (d.unread ?? 0) > 0)
+      .map((d) => [d.peer!.id, d.unread ?? 0]),
+  );
 
   // When your screen went live, for the live card's clock. A switch keeps it;
   // only stopping the screen clears it.
@@ -1137,7 +1242,7 @@ export default function App({ preview = false }: { preview?: boolean }) {
                 </button>
               )}
               {chat.tabs.map((id) => {
-                const info = chat.chats.find((c) => c.id === id);
+                const info = chat.find(id);
                 if (!info) return null;
                 return (
                   <ChatTab
@@ -1162,7 +1267,29 @@ export default function App({ preview = false }: { preview?: boolean }) {
           )}
           <div className="main-panes">
             {chat.enabled && (
-              <ChatView chat={chat} me={accountId} canModerate={isAdmin} visible={chatShown} />
+              <ChatView
+                chat={chat}
+                me={accountId}
+                canModerate={isAdmin && !chat.openChat?.peer}
+                visible={chatShown}
+                onOpenThread={(message) =>
+                  chat.openId && setThreadRoot({ chatId: chat.openId, rootId: message.id })
+                }
+                openThreadRootId={threadRoot?.rootId ?? null}
+                aside={
+                  threadRoot && (
+                    <ThreadPanel
+                      thread={threadPanel}
+                      chatName={chat.openChat?.name ?? ''}
+                      direct={Boolean(chat.openChat?.peer)}
+                      me={accountId}
+                      canModerate={isAdmin && !chat.openChat?.peer}
+                      visible={chatShown}
+                      onClose={() => setThreadRoot(null)}
+                    />
+                  )
+                }
+              />
             )}
             {/* Behind the chat rather than unmounted: what you watch keeps
               playing, and its sound with it, while you read. */}
@@ -1328,41 +1455,93 @@ export default function App({ preview = false }: { preview?: boolean }) {
           chats={
             chat.enabled
               ? (collapsed) => (
-                  <ChatList
-                    chat={chat}
-                    collapsed={collapsed}
-                    showing={chatShown}
-                    myRole={account?.role}
-                    onOpen={(id) => {
-                      chat.open(id);
-                      setView('chat');
-                    }}
-                    onError={(code) => setChatError(chatErrorText(code))}
-                  />
+                  <>
+                    <ChatList
+                      chat={chat}
+                      collapsed={collapsed}
+                      showing={chatShown}
+                      myRole={account?.role}
+                      onOpen={(id) => {
+                        chat.open(id);
+                        setView('chat');
+                      }}
+                      onError={(code) => setChatError(chatErrorText(code))}
+                    />
+                    <DirectList
+                      chat={chat}
+                      me={accountId}
+                      collapsed={collapsed}
+                      showing={chatShown}
+                      onOpen={(id) => {
+                        chat.open(id);
+                        setView('chat');
+                      }}
+                      onShow={() => setView('chat')}
+                      onError={(code) => setChatError(chatErrorText(code))}
+                    />
+                    {/* Who is around, under the conversations: click someone to write
+                        to them (ADR 0038, 0047). Collapsed, the column is for channels. */}
+                    {presence.enabled && !collapsed && (
+                      <PeopleList
+                        people={chat.people}
+                        presence={presence}
+                        me={accountId}
+                        myRole={account?.role}
+                        collapsed={collapsed}
+                        unreadFrom={unreadFrom}
+                        onMessage={(person) =>
+                          void chat.openDirect(person.id).then((refused) => {
+                            if (refused) setChatError(chatErrorText(refused));
+                            else setView('chat');
+                          })
+                        }
+                      />
+                    )}
+                  </>
                 )
               : undefined
+          }
+          chatsBadge={
+            chat.enabled
+              ? {
+                  unread: chat.totalUnread,
+                  calls: chat.totalMentions > 0 || chat.direct.some((d) => (d.unread ?? 0) > 0),
+                }
+              : undefined
+          }
+          events={
+            schedule.enabled
+              ? {
+                  count: schedule.events.length,
+                  panel: (
+                    <EventsPanel
+                      events={schedule.events}
+                      me={accountId}
+                      now={eventNow}
+                      onOpen={setEventOpen}
+                      onNew={() => setEventOpen({ new: true, channelId: null })}
+                    />
+                  ),
+                  card:
+                    pinned.length > 0 ? (
+                      <EventCarousel
+                        events={pinned}
+                        me={accountId}
+                        channels={channels}
+                        people={chat.people}
+                        now={eventNow}
+                        onJoin={(id) => void switchChannel(id)}
+                        onOpen={setEventOpen}
+                        onAnswer={(event, answer) => void schedule.rsvp(event.id, answer)}
+                      />
+                    ) : null,
+                }
+              : undefined
+          }
+          onScheduleIn={
+            schedule.enabled ? (id) => setEventOpen({ new: true, channelId: id }) : undefined
           }
           presence={presence.enabled ? presence : undefined}
-          peopleOnline={
-            presence.enabled
-              ? chat.people.filter(
-                  (p) => p.id === accountId || (presence.people[p.id] ?? 'offline') !== 'offline',
-                ).length
-              : undefined
-          }
-          people={
-            presence.enabled
-              ? (collapsed) => (
-                  <PeopleList
-                    people={chat.people}
-                    presence={presence}
-                    me={accountId}
-                    myRole={account?.role}
-                    collapsed={collapsed}
-                  />
-                )
-              : undefined
-          }
         />
       </div>
 
@@ -1391,6 +1570,27 @@ export default function App({ preview = false }: { preview?: boolean }) {
             void room.startCamera(constraints);
           }}
           onCancel={() => setCameraOpen(false)}
+        />
+      )}
+
+      {eventOpen && (
+        <EventDialog
+          key={'new' in eventOpen ? `new:${eventOpen.channelId ?? ''}` : eventOpen.id}
+          schedule={schedule}
+          event={'new' in eventOpen ? null : eventOpen}
+          newChannelId={
+            'new' in eventOpen
+              ? (eventOpen.channelId ??
+                channels.find((c) => c.id === channel && !c.away)?.id ??
+                null)
+              : null
+          }
+          channels={channels}
+          people={chat.people}
+          me={accountId}
+          isAdmin={isAdmin}
+          onJoin={(id) => void switchChannel(id)}
+          onClose={() => setEventOpen(null)}
         />
       )}
 

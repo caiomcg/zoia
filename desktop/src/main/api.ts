@@ -31,6 +31,10 @@ import type {
   ChatPerson,
   ChatCommand,
   ChatSendExtras,
+  DirectChatInfo,
+  RsvpAnswer,
+  ScheduledEvent,
+  ScheduledEventInput,
   AddonInfo,
   AddonOutcome,
   AddonPermission,
@@ -623,6 +627,51 @@ export function chatRead(chatId: string, messageId: string) {
     }).then(() => undefined),
   );
 }
+
+/** Opens a direct chat with someone, or finds the one there is (ADR 0047). */
+export function chatDirect(accountId: string) {
+  return attempt(
+    call<{ chat: DirectChatInfo }>('/api/chats/direct', {
+      method: 'POST',
+      body: JSON.stringify({ accountId }),
+    }).then((r) => r.chat),
+  );
+}
+
+/** Says you are writing in a chat (ADR 0049). */
+export function chatTyping(chatId: string) {
+  return attempt(call(chatPath(chatId, '/typing'), { method: 'POST' }).then(() => undefined));
+}
+
+// ---- scheduled events (ADR 0050) -------------------------------------------
+
+const eventPath = (id: string, rest = '') => `/api/schedule/${encodeURIComponent(id)}${rest}`;
+
+export const schedule = {
+  list: () => attempt(call<{ events: ScheduledEvent[] }>('/api/schedule').then((r) => r.events)),
+  create: (input: ScheduledEventInput) =>
+    attempt(
+      call<{ event: ScheduledEvent }>('/api/schedule', {
+        method: 'POST',
+        body: JSON.stringify(input),
+      }).then((r) => r.event),
+    ),
+  update: (id: string, input: ScheduledEventInput) =>
+    attempt(
+      call<{ event: ScheduledEvent }>(eventPath(id), {
+        method: 'PATCH',
+        body: JSON.stringify(input),
+      }).then((r) => r.event),
+    ),
+  remove: (id: string) => attempt(call(eventPath(id), { method: 'DELETE' }).then(() => undefined)),
+  rsvp: (id: string, answer: RsvpAnswer | null) =>
+    attempt(
+      call<{ event: ScheduledEvent }>(eventPath(id, '/rsvp'), {
+        method: 'PUT',
+        body: JSON.stringify({ answer }),
+      }).then((r) => r.event),
+    ),
+};
 
 // ---- presence (ADR 0038) ---------------------------------------------------
 

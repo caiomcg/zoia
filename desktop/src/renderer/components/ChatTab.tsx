@@ -61,7 +61,7 @@ export default function ChatTab({
           </span>
         )}
         <span className="chat-hash" aria-hidden="true">
-          #
+          {chat.peer ? '@' : '#'}
         </span>
         <span className="main-tab-name">{chat.name}</span>
         {mentions > 0 && (

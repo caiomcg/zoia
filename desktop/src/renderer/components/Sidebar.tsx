@@ -11,6 +11,7 @@ import {
 } from 'react';
 import { createPortal } from 'react-dom';
 import ResetButton from './ResetButton';
+import NotificationBell from './NotificationBell';
 import type { RoomMember } from '../livekit/useRoom';
 import type { AccountRole, RoomInfo } from '../../shared/ipc';
 import type { GridTarget } from './RemoteGrid';
@@ -183,15 +184,16 @@ const MAX_FACES = 5;
 
 /**
  * Whether a section of the sidebar (channels, chats) is unfolded, remembered
- * per section. Unfolded unless someone folded it.
+ * per section. As `initial` says (unfolded) until someone folds or opens it.
  */
-export function useFolded(key: string): [boolean, () => void, () => void] {
+export function useFolded(key: string, initial = false): [boolean, () => void, () => void] {
   const storageKey = `zoia.sidebar.${key}Folded`;
   const [folded, setFolded] = useState(() => {
     try {
-      return localStorage.getItem(storageKey) === 'true';
+      const stored = localStorage.getItem(storageKey);
+      return stored === null ? initial : stored === 'true';
     } catch {
-      return false;
+      return initial;
     }
   });
   const save = (value: boolean) => {
@@ -205,13 +207,14 @@ export function useFolded(key: string): [boolean, () => void, () => void] {
   return [folded, () => save(!folded), () => save(false)];
 }
 
-export type SidebarTab = 'rooms' | 'people';
+export type SidebarTab = 'rooms' | 'chats' | 'people';
 
-/** Which of the sidebar's two areas is showing, remembered like the folds. */
+/** Which of the sidebar's areas is showing, remembered like the folds. */
 function useSidebarTab(): [SidebarTab, (tab: SidebarTab) => void] {
   const [tab, setTab] = useState<SidebarTab>(() => {
     try {
-      return localStorage.getItem('zoia.sidebar.tab') === 'people' ? 'people' : 'rooms';
+      const stored = localStorage.getItem('zoia.sidebar.tab');
+      return stored === 'people' || stored === 'chats' ? stored : 'rooms';
     } catch {
       return 'rooms';
     }
@@ -425,8 +428,10 @@ export default function Sidebar({
   onWatchBroadcast,
   onToggleCamera,
   chats,
+  chatsBadge,
   people,
-  peopleOnline,
+  events,
+  onScheduleIn,
   share,
   connection,
   presence,
@@ -472,12 +477,19 @@ export default function Sidebar({
   onWatchBroadcast: (target: GridTarget) => void;
   /** Puts someone's camera on stage, or takes it off again. */
   onToggleCamera: (identity: string) => void;
-  /** The text chats (ADR 0036), listed under the channels. */
+  /** The text chats (ADR 0036) and direct messages (ADR 0047), in their own tab. */
   chats?: (collapsed: boolean) => ReactNode;
+  /** What the Chats tab says while it is not showing: unread, and whether any calls you. */
+  chatsBadge?: { unread: number; calls: boolean };
+  /**
+   * Scheduled events (ADR 0050): how many, the panel the calendar button
+   * opens, and the next one's card, pinned above every tab's list.
+   */
+  events?: { count: number; panel: ReactNode; card: ReactNode | null };
+  /** Right-click a channel: schedule an event in it. */
+  onScheduleIn?: (channelId: string) => void;
   /** Everyone on the server and their status (ADR 0038), under the chats. */
   people?: (collapsed: boolean) => ReactNode;
-  /** How many are on the server now, for the People tab. */
-  peopleOnline?: number;
   /** Screen and camera, in the voice bar; absent, no share buttons. */
   share?: SidebarShare;
   /** The link to the server: the voice bar's colour and its hover card. */
@@ -672,9 +684,27 @@ export default function Sidebar({
   // Collapsed, the current channel is marked by a ring on its badge instead.
   // Two areas: where to go (channels and chats) and who is around (people).
   // Collapsed, there are no tabs and no people: just the channels and chats.
-  const [tab, setTab] = useSidebarTab();
-  const tabbed = !collapsed && !!people;
+  const [storedTab, setStoredTab] = useSidebarTab();
+  // The Events panel stands in for the tab's list while its button is on.
+  const [eventsOpen, setEventsOpen] = useState(false);
+  const setTab = (next: SidebarTab) => {
+    setEventsOpen(false);
+    setStoredTab(next);
+  };
+  // Without chat there is no Chats tab, and without presence no People tab.
+  const tab: SidebarTab =
+    (storedTab === 'chats' && !chats) || (storedTab === 'people' && !people) ? 'rooms' : storedTab;
+  const tabbed = !collapsed && (!!people || !!chats);
   const onPeople = tabbed && tab === 'people';
+  const onChats = tabbed && tab === 'chats';
+  const showEvents = !collapsed && eventsOpen && !!events;
+  // Right-clicking a channel, where: to schedule an event in it.
+  const [channelMenu, setChannelMenu] = useState<{
+    id: string;
+    name: string;
+    x: number;
+    y: number;
+  } | null>(null);
   const channelGroupRef = useRef<HTMLElement>(null);
   const [indicator, setIndicator] = useState<{
     top: number;
@@ -723,7 +753,17 @@ export default function Sidebar({
     const observer = new ResizeObserver(measure);
     observer.observe(group);
     return () => observer.disconnect();
-  }, [channels, currentChannel, collapsed, editing, members, channelsFolded, onPeople]);
+  }, [
+    channels,
+    currentChannel,
+    collapsed,
+    editing,
+    members,
+    channelsFolded,
+    onPeople,
+    onChats,
+    showEvents,
+  ]);
 
   return (
     <aside
@@ -756,31 +796,61 @@ export default function Sidebar({
           <button
             type="button"
             role="tab"
-            aria-selected={tab === 'rooms'}
-            className={tab === 'rooms' ? 'active' : undefined}
+            aria-selected={tab === 'rooms' && !showEvents}
+            className={tab === 'rooms' && !showEvents ? 'active' : undefined}
             onClick={() => setTab('rooms')}
             title={t('sidebar.tabRoomsHint')}
           >
             <IconChannels />
             <span>{t('sidebar.tabRooms')}</span>
           </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tab === 'people'}
-            className={tab === 'people' ? 'active' : undefined}
-            onClick={() => setTab('people')}
-          >
-            <IconPeople />
-            <span>{t('presence.people')}</span>
-            {peopleOnline !== undefined && peopleOnline > 0 && (
-              <span className="sidebar-tab-count">{peopleOnline}</span>
-            )}
-          </button>
+          {chats && (
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === 'chats' && !showEvents}
+              className={tab === 'chats' && !showEvents ? 'active' : undefined}
+              onClick={() => setTab('chats')}
+              title={t('sidebar.tabChatsHint')}
+            >
+              <IconChatBubble />
+              <span>{t('sidebar.tabChats')}</span>
+              {chatsBadge?.calls && (
+                <span className="sidebar-tab-at" aria-label={t('sidebar.tabChatsCalls')}>
+                  @
+                </span>
+              )}
+              {chatsBadge && chatsBadge.unread > 0 && (
+                <span
+                  className="sidebar-tab-unread"
+                  aria-label={t('chat.unread', { count: chatsBadge.unread })}
+                >
+                  {chatsBadge.unread >= 100 ? '99+' : chatsBadge.unread}
+                </span>
+              )}
+            </button>
+          )}
+          {/* The events (ADR 0050): a panel over whichever list is showing. */}
+          {events && (
+            <button
+              type="button"
+              role="tab"
+              aria-selected={showEvents}
+              className={`sidebar-cal${showEvents ? ' active' : ''}`}
+              onClick={() => setEventsOpen((open) => !open)}
+              title={t('event.title')}
+              aria-label={t('event.title')}
+            >
+              <IconCalendarSmall />
+              {events.count > 0 && <span className="sidebar-tab-count">{events.count}</span>}
+            </button>
+          )}
         </div>
       )}
+      {!collapsed && !showEvents && events?.card}
       <div className="sidebar-scroll">
-        {!onPeople && channels.length > 0 && (
+        {showEvents && events?.panel}
+        {!showEvents && !onPeople && !onChats && channels.length > 0 && (
           <section
             className={`member-group channel-group${indicator ? ' has-indicator' : ''}`}
             ref={channelGroupRef}
@@ -842,6 +912,19 @@ export default function Sidebar({
                     <button
                       className={`channel${current ? ' current' : ''}`}
                       onClick={() => onJoinChannel(c.id)}
+                      onContextMenu={
+                        onScheduleIn && !c.away
+                          ? (event) => {
+                              event.preventDefault();
+                              setChannelMenu({
+                                id: c.id,
+                                name: c.name,
+                                x: event.clientX,
+                                y: event.clientY,
+                              });
+                            }
+                          : undefined
+                      }
                       aria-current={current ? 'true' : undefined}
                       // Only when collapsed, where the name is hidden. Expanded, the
                       // name is on screen, and the tooltip only popped up over the
@@ -996,14 +1079,15 @@ export default function Sidebar({
           </section>
         )}
 
-        {!onPeople && chats?.(collapsed)}
+        {/* Their own tab; collapsed, under the channels as faces and initials. */}
+        {!showEvents && (onChats || !tabbed) && chats?.(collapsed)}
 
         {/* Only in its own tab: collapsed, the column is for channels. */}
-        {onPeople && people?.(collapsed)}
+        {!showEvents && onPeople && people?.(collapsed)}
 
         {/* Before the first channel poll lands, or against a server without
             channels, the room's people still need a home. */}
-        {!onPeople && channels.length === 0 && (
+        {!showEvents && !onPeople && !onChats && channels.length === 0 && (
           <section className="member-group">
             <h2 className="member-heading">{t('sidebar.inRoom', { count: liveMembers.length })}</h2>
             {shownMembers.map(({ item: m, key, leaving }) => (
@@ -1125,11 +1209,10 @@ export default function Sidebar({
           <button
             className="sidebar-me-card"
             onClick={(event) => setStatusAnchor(event.currentTarget.getBoundingClientRect())}
-            disabled={!presence?.chosen}
-            title={presence?.chosen ? `${myName}\n${t('presence.choose')}` : myName}
-            aria-label={presence?.chosen ? t('presence.choose') : myName}
-            aria-haspopup={presence?.chosen ? 'menu' : undefined}
-            aria-expanded={presence?.chosen ? statusAnchor !== null : undefined}
+            title={`${myName}\n${presence?.chosen ? t('presence.choose') : t('sidebar.settings')}`}
+            aria-label={`${myName} · ${t('sidebar.settings')}`}
+            aria-haspopup="menu"
+            aria-expanded={statusAnchor !== null}
           >
             <Avatar
               name={myName}
@@ -1138,6 +1221,14 @@ export default function Sidebar({
               role={myRole}
               status={presence?.own}
             />
+            {settingsBadge > 0 && (
+              <span
+                className="settings-dot"
+                aria-label={t('sidebar.settingsPending', { count: settingsBadge })}
+              >
+                {settingsBadge}
+              </span>
+            )}
             <span className="sidebar-who">
               <span className="sidebar-name">{myName}</span>
               {presence?.own && (
@@ -1153,6 +1244,11 @@ export default function Sidebar({
               <button
                 className={`icon-button sidebar-settings sidebar-voice-main${voice.muted ? ' voice-off' : ''}`}
                 onClick={voice.onToggleMute}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  setMicMenuAnchor(e.currentTarget.getBoundingClientRect());
+                  setSpeakerMenuAnchor(null);
+                }}
                 aria-pressed={voice.muted}
                 title={voice.muted ? t('voice.unmute') : t('voice.mute')}
                 aria-label={voice.muted ? t('voice.unmute') : t('voice.mute')}
@@ -1177,6 +1273,11 @@ export default function Sidebar({
               <button
                 className={`icon-button sidebar-settings sidebar-voice-main${voice.deafened ? ' voice-off' : ''}`}
                 onClick={voice.onToggleDeafen}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  setSpeakerMenuAnchor(e.currentTarget.getBoundingClientRect());
+                  setMicMenuAnchor(null);
+                }}
                 aria-pressed={voice.deafened}
                 title={voice.deafened ? t('voice.undeafen') : t('voice.deafen')}
                 aria-label={voice.deafened ? t('voice.undeafen') : t('voice.deafen')}
@@ -1201,35 +1302,16 @@ export default function Sidebar({
             </div>
           </>
         )}
-        {!collapsed && (
-          <button
-            className="icon-button sidebar-settings"
-            onClick={() => onOpenSettings()}
-            title={
-              settingsBadge > 0
-                ? t('sidebar.settingsPending', { count: settingsBadge })
-                : t('sidebar.settings')
-            }
-            aria-label={
-              settingsBadge > 0
-                ? t('sidebar.settingsPending', { count: settingsBadge })
-                : t('sidebar.settings')
-            }
-          >
-            <IconGear />
-            {settingsBadge > 0 && (
-              <span className="settings-dot" aria-hidden="true">
-                {settingsBadge}
-              </span>
-            )}
-          </button>
-        )}
+        {/* Your notifications, grouped, beside your settings (see notify.ts). */}
+        {!collapsed && <NotificationBell />}
       </div>
-      {statusAnchor && presence?.chosen && (
+      {statusAnchor && (
         <StatusMenu
           anchor={statusAnchor}
-          chosen={presence.chosen}
-          onChoose={(status) => void presence.choose(status)}
+          chosen={presence?.chosen ?? null}
+          onChoose={(status) => void presence?.choose(status)}
+          onSettings={() => onOpenSettings()}
+          settingsBadge={settingsBadge}
           onClose={closeStatus}
         />
       )}
@@ -1269,6 +1351,16 @@ export default function Sidebar({
           {...menu}
           onClose={() => setMenu(null)}
           onKick={menu.kick ? () => onKickMember?.(menu.identity, menu.name) : undefined}
+        />
+      )}
+      {channelMenu && onScheduleIn && (
+        <ChannelMenu
+          name={channelMenu.name}
+          x={channelMenu.x}
+          y={channelMenu.y}
+          onJoin={() => onJoinChannel(channelMenu.id)}
+          onSchedule={() => onScheduleIn(channelMenu.id)}
+          onClose={() => setChannelMenu(null)}
         />
       )}
     </aside>
@@ -1734,6 +1826,96 @@ function IconCamera() {
 }
 
 /** A hash, as channels and chats are written: where you go. */
+/** What a right-click on a channel offers: joining it, and scheduling an event there. */
+function ChannelMenu({
+  name,
+  x,
+  y,
+  onJoin,
+  onSchedule,
+  onClose,
+}: {
+  name: string;
+  x: number;
+  y: number;
+  onJoin: () => void;
+  onSchedule: () => void;
+  onClose: () => void;
+}) {
+  const t = useT();
+  const ref = useRef<HTMLDivElement>(null);
+  const place = useFloatingMenu(ref, x, y, onClose);
+  const item = (label: string, act: () => void) => (
+    <button
+      type="button"
+      role="menuitem"
+      className="person-menu-item"
+      onClick={() => {
+        onClose();
+        act();
+      }}
+    >
+      {label}
+    </button>
+  );
+  return createPortal(
+    <div
+      ref={ref}
+      className="member-menu person-menu chat-menu"
+      role="menu"
+      aria-label={name}
+      style={place}
+      onContextMenu={(event) => event.preventDefault()}
+    >
+      <div className="member-menu-head">
+        <span className="member-menu-name">{name}</span>
+      </div>
+      {item(t('sidebar.joinChannel'), onJoin)}
+      {item(t('event.scheduleHere'), onSchedule)}
+    </div>,
+    document.body,
+  );
+}
+
+/** A speech bubble: where people write. */
+function IconChatBubble() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="16"
+      height="16"
+      aria-hidden="true"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M4 5h16a1 1 0 011 1v10a1 1 0 01-1 1H10l-5 4v-4H4a1 1 0 01-1-1V6a1 1 0 011-1z" />
+    </svg>
+  );
+}
+
+/** A calendar page, for the events button. */
+function IconCalendarSmall() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="16"
+      height="16"
+      aria-hidden="true"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <rect x="3.5" y="5" width="17" height="15" rx="2" />
+      <path d="M3.5 10h17M8 3v4M16 3v4" />
+    </svg>
+  );
+}
+
 function IconChannels() {
   return (
     <svg
@@ -1766,27 +1948,6 @@ function IconChevronDown() {
       aria-hidden="true"
     >
       <path d="M6 9l6 6 6-6" />
-    </svg>
-  );
-}
-
-/** Two people: who is around. */
-function IconPeople() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      width="14"
-      height="14"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <circle cx="9" cy="8" r="3.5" />
-      <path d="M2.5 20c.6-3.4 3.3-5.5 6.5-5.5s5.9 2.1 6.5 5.5" />
-      <path d="M16 4.6a3.5 3.5 0 0 1 0 6.8M18 14.8c2 .7 3.2 2.5 3.5 5.2" />
     </svg>
   );
 }
@@ -1957,25 +2118,6 @@ function IconLeave() {
       aria-hidden="true"
     >
       <path d="M10 4H5v16h5M14 8l4 4-4 4M18 12H9" />
-    </svg>
-  );
-}
-
-/** A gear: what settings look like everywhere. */
-function IconGear() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      width="18"
-      height="18"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M10.0 4.9 L10.4 2.1 L13.6 2.1 L14.0 4.9 L15.6 5.6 L17.9 3.9 L20.1 6.1 L18.4 8.4 L19.1 10.0 L21.9 10.4 L21.9 13.6 L19.1 14.0 L18.4 15.6 L20.1 17.9 L17.9 20.1 L15.6 18.4 L14.0 19.1 L13.6 21.9 L10.4 21.9 L10.0 19.1 L8.4 18.4 L6.1 20.1 L3.9 17.9 L5.6 15.6 L4.9 14.0 L2.1 13.6 L2.1 10.4 L4.9 10.0 L5.6 8.4 L3.9 6.1 L6.1 3.9 L8.4 5.6Z" />
-      <circle cx="12" cy="12" r="3.2" />
     </svg>
   );
 }

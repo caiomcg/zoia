@@ -157,6 +157,8 @@ const bridge: ZoiaBridge = {
       ipcRenderer.invoke(IPC.chatSendMedia, chatId, bytes, name, caption, extras),
     people: () => ipcRenderer.invoke(IPC.chatPeople),
     commands: (chatId) => ipcRenderer.invoke(IPC.chatCommands, chatId),
+    direct: (accountId) => ipcRenderer.invoke(IPC.chatDirect, accountId),
+    typing: (chatId) => ipcRenderer.invoke(IPC.chatTyping, chatId),
     deleteMessage: (chatId, messageId) =>
       ipcRenderer.invoke(IPC.chatDeleteMessage, chatId, messageId),
     editMessage: (chatId, messageId, body, mentions) =>
@@ -173,6 +175,21 @@ const bridge: ZoiaBridge = {
       return () => ipcRenderer.removeListener(IPC.chatEvent, listener);
     },
     avatar: (accountId, version) => ipcRenderer.invoke(IPC.chatAvatar, accountId, version),
+  },
+  notify: {
+    show: (id, title, body) => ipcRenderer.invoke(IPC.notifyShow, id, title, body),
+    onClick: (cb) => {
+      const listener = (_event: unknown, id: number) => cb(id);
+      ipcRenderer.on(IPC.notifyClick, listener);
+      return () => ipcRenderer.removeListener(IPC.notifyClick, listener);
+    },
+  },
+  schedule: {
+    list: () => ipcRenderer.invoke(IPC.schedule, 'list'),
+    create: (input) => ipcRenderer.invoke(IPC.schedule, 'create', null, input),
+    update: (id, input) => ipcRenderer.invoke(IPC.schedule, 'update', id, input),
+    remove: (id) => ipcRenderer.invoke(IPC.schedule, 'remove', id),
+    rsvp: (id, answer) => ipcRenderer.invoke(IPC.schedule, 'rsvp', id, answer),
   },
   presence: {
     get: () => ipcRenderer.invoke(IPC.presenceGet),
