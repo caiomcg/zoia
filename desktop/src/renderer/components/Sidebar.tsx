@@ -21,6 +21,7 @@ import StatusMenu from './StatusMenu';
 import QuickDeviceMenu from './QuickDeviceMenu';
 import { useCameraDevices } from '../livekit/useCamera';
 import { useVoiceSettings, setVoiceSettings } from '../voice/settings';
+import { systemDefaultLabel } from '../voice/device-label';
 import type { Section as SettingsSection } from './SettingsDialog';
 import { useFloatingMenu } from './useFloatingMenu';
 import type { VoiceState } from '../voice/useVoice';
@@ -1239,7 +1240,7 @@ export default function Sidebar({
           title={t('voiceSettings.input')}
           devices={devices.microphones}
           selectedId={voiceSettings.microphoneId}
-          defaultLabel={t('voiceSettings.systemDefault')}
+          defaultLabel={systemDefaultLabel(t, devices.microphones)}
           onSelect={(id) => setVoiceSettings({ ...voiceSettings, microphoneId: id })}
           onOpenSettings={() => onOpenSettings('voice')}
           onClose={() => setMicMenuAnchor(null)}
@@ -1251,7 +1252,7 @@ export default function Sidebar({
           title={t('voiceSettings.output')}
           devices={devices.speakers}
           selectedId={voiceSettings.speakerId}
-          defaultLabel={t('voiceSettings.systemDefault')}
+          defaultLabel={systemDefaultLabel(t, devices.speakers)}
           onSelect={(id) => setVoiceSettings({ ...voiceSettings, speakerId: id })}
           onOpenSettings={() => onOpenSettings('voice')}
           onClose={() => setSpeakerMenuAnchor(null)}

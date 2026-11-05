@@ -16,13 +16,22 @@ import {
   ParticipantEvent,
   RoomEvent,
   Track,
+  TrackEvent,
   type LocalAudioTrack,
   type Room,
   type TrackPublishOptions,
 } from 'livekit-client';
 import type { ConnectionState } from '../livekit/useRoom';
 import { tNow } from '../i18n';
-import { captureOptions, getVoiceSettings, subscribeVoiceSettings } from './settings';
+import {
+  availableDeviceId,
+  captureOptions,
+  defaultDeviceKey,
+  defaultDeviceName,
+  getVoiceSettings,
+  subscribeVoiceSettings,
+  type ListedDevice,
+} from './settings';
 import { VOICE_SAMPLE_RATE, VoiceProcessor } from './pipeline';
 import { useSpeaking } from './speaking';
 import { DEAFENED_ATTRIBUTE } from './voice-room';
@@ -88,6 +97,35 @@ function processingKey(): string {
   return JSON.stringify([captureOptions(settings), settings.noiseSuppression]);
 }
 
+/** The microphone a track was captured from: '' for the system default, and which device that was. */
+interface MicrophoneInUse {
+  id: string;
+  defaultKey: string;
+  /** What the system default is called, for the message when falling back to it. */
+  defaultName: string;
+}
+
+function listDevices(): Promise<ListedDevice[]> {
+  return navigator.mediaDevices.enumerateDevices().catch(() => []);
+}
+
+/** The microphone to capture from now: the chosen one if it is plugged in, else the default. */
+async function microphoneNow(): Promise<MicrophoneInUse> {
+  const devices = await listDevices();
+  return {
+    id: availableDeviceId(getVoiceSettings().microphoneId, devices, 'audioinput'),
+    defaultKey: defaultDeviceKey(devices, 'audioinput'),
+    defaultName: defaultDeviceName(devices.filter((d) => d.kind === 'audioinput')),
+  };
+}
+
+/** The message for a chosen microphone that is gone, naming what is used instead. */
+function deviceLostMessage(microphone: MicrophoneInUse): string {
+  return microphone.defaultName
+    ? tNow('voice.deviceLostTo', { name: microphone.defaultName })
+    : tNow('voice.deviceLost');
+}
+
 function mayPublishMicrophone(room: Room): boolean {
   const permissions = room.localParticipant.permissions;
   if (!permissions?.canPublish) return false;
@@ -133,6 +171,12 @@ export function useVoice(roomRef: RefObject<Room | null>, connection: Connection
   const mutedBeforeDeafenRef = useRef(false);
   // The capture options last applied, to tell a change worth a restart.
   const captureRef = useRef(processingKey());
+  // The microphone the live track was captured from, to tell when it must move.
+  const inUseRef = useRef<MicrophoneInUse>({ id: '', defaultKey: '', defaultName: '' });
+  // The device-lost message on screen, if any, to clear it once the device is back.
+  const lostMessageRef = useRef<string | null>(null);
+  // Restarts run one after another: unplugging fires several device changes.
+  const restartsRef = useRef<Promise<void>>(Promise.resolve());
 
   const applyMuted = useCallback(async (next: boolean) => {
     mutedRef.current = next;
@@ -166,31 +210,106 @@ export function useVoice(roomRef: RefObject<Room | null>, connection: Connection
     await applyDeafened(false);
   }, [applyDeafened]);
 
-  const publish = useCallback(async (room: Room) => {
-    await grantArrives(room);
-    const track = await createLocalAudioTrack(captureOptions(getVoiceSettings()));
-    if (voiceRoomRef.current !== room) {
-      track.stop();
-      return;
-    }
-    trackRef.current = track;
-    // Noise suppression and the sensitivity gate, between capture and encoder.
-    contextRef.current ??= new AudioContext({ sampleRate: VOICE_SAMPLE_RATE });
-    track.setAudioContext(contextRef.current);
-    // Without it, the microphone still goes out as captured: being heard with
-    // the noise beats not being heard at all.
-    await track
-      .setProcessor(new VoiceProcessor(room.localParticipant.identity))
-      .catch((err: unknown) =>
-        setError(
-          tNow('voice.processingFailed', {
-            error: err instanceof Error ? err.message : String(err),
-          }),
-        ),
+  /**
+   * Captures the microphone afresh, from the chosen device if it is plugged
+   * in and the system default if not. For a device change, only when the
+   * device in use has to move: restarting for nothing would be a gap heard.
+   */
+  const restartMicrophone = useCallback((onlyIfMoved: boolean) => {
+    const run = async () => {
+      const track = trackRef.current;
+      if (!track) return;
+      const microphone = await microphoneNow();
+      const before = inUseRef.current;
+      const moved =
+        microphone.id !== before.id ||
+        (microphone.id === '' && microphone.defaultKey !== before.defaultKey) ||
+        track.mediaStreamTrack.readyState === 'ended';
+      if (onlyIfMoved && !moved) return;
+      const settings = getVoiceSettings();
+      // One string: the dev console forwards text, and an object reads [object Object].
+      console.info(
+        `[audio] capturing the microphone again: chose ${settings.microphoneId ? 'a device' : 'the system default'}, ` +
+          `using ${microphone.id ? 'that device' : `the system default (${microphone.defaultName})`}, ` +
+          `track was ${track.mediaStreamTrack.readyState}`,
       );
-    if (mutedRef.current) await track.mute();
-    await room.localParticipant.publishTrack(track, PUBLISH_OPTIONS);
+      await track.restartTrack(captureOptions({ ...settings, microphoneId: microphone.id }));
+      if (trackRef.current !== track) return;
+      inUseRef.current = microphone;
+      // Both ways: LiveKit may have muted it when the old device vanished.
+      await (mutedRef.current ? track.mute() : track.unmute());
+      if (settings.microphoneId && !microphone.id) {
+        lostMessageRef.current = deviceLostMessage(microphone);
+        setError(lostMessageRef.current);
+      } else if (lostMessageRef.current) {
+        const shown = lostMessageRef.current;
+        lostMessageRef.current = null;
+        setError((current) => (current === shown ? null : current));
+      }
+    };
+    restartsRef.current = restartsRef.current.then(run).catch((err: unknown) => {
+      console.warn('[audio] could not capture the microphone again', err);
+      setError(
+        tNow('voice.couldNotRestart', {
+          error: err instanceof Error ? err.message : String(err),
+        }),
+      );
+    });
   }, []);
+
+  const publish = useCallback(
+    async (room: Room) => {
+      await grantArrives(room);
+      // A chosen microphone that is not plugged in would fail the whole join.
+      const microphone = await microphoneNow();
+      const settings = getVoiceSettings();
+      const track = await createLocalAudioTrack(
+        captureOptions({ ...settings, microphoneId: microphone.id }),
+      );
+      if (voiceRoomRef.current !== room) {
+        track.stop();
+        return;
+      }
+      trackRef.current = track;
+      inUseRef.current = microphone;
+      if (settings.microphoneId && !microphone.id) {
+        lostMessageRef.current = deviceLostMessage(microphone);
+        setError(lostMessageRef.current);
+      }
+      // When the microphone's device vanishes, LiveKit tries the default itself
+      // and, if that fails mid-unplug, mutes the track. Nobody hears you while
+      // the app says you are unmuted, so a mute that is not ours is undone by
+      // capturing again.
+      track.on(TrackEvent.Muted, () => {
+        if (trackRef.current !== track || mutedRef.current) return;
+        console.info('[audio] microphone muted by LiveKit after a device change; capturing again');
+        restartMicrophone(false);
+      });
+      // Noise suppression and the sensitivity gate, between capture and encoder.
+      // The context only feeds the encoder, so it plays on no device at all
+      // (sinkId none): on the default output, unplugging a headset stalled it,
+      // and with it everything you send.
+      contextRef.current ??= new AudioContext({
+        sampleRate: VOICE_SAMPLE_RATE,
+        sinkId: { type: 'none' },
+      } as AudioContextOptions);
+      track.setAudioContext(contextRef.current);
+      // Without it, the microphone still goes out as captured: being heard with
+      // the noise beats not being heard at all.
+      await track
+        .setProcessor(new VoiceProcessor(room.localParticipant.identity))
+        .catch((err: unknown) =>
+          setError(
+            tNow('voice.processingFailed', {
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          ),
+        );
+      if (mutedRef.current) await track.mute();
+      await room.localParticipant.publishTrack(track, PUBLISH_OPTIONS);
+    },
+    [restartMicrophone],
+  );
 
   const join = useCallback(async () => {
     const room = roomRef.current;
@@ -304,39 +423,21 @@ export function useVoice(roomRef: RefObject<Room | null>, connection: Connection
         if (options === captureRef.current) return;
         captureRef.current = options;
         if (!track) return;
-        void track
-          .restartTrack(captureOptions(getVoiceSettings()))
-          .then(() => (mutedRef.current ? track.mute() : undefined))
-          .catch((err) =>
-            setError(
-              tNow('voice.couldNotRestart', {
-                error: err instanceof Error ? err.message : String(err),
-              }),
-            ),
-          );
+        restartMicrophone(false);
       }),
-    [],
+    [restartMicrophone],
   );
 
-  // An unplugged microphone ends its track. The system default is what
-  // someone expects to fall back to, as the camera does.
+  // A device coming or going moves the microphone: off a chosen one that was
+  // unplugged onto the system default, back onto it when it returns, and onto
+  // whatever Windows makes the default when that one goes.
   useEffect(() => {
-    const onChange = async () => {
-      const track = trackRef.current;
-      const { microphoneId } = getVoiceSettings();
-      if (!track || !microphoneId) return;
-      const devices = await navigator.mediaDevices.enumerateDevices().catch(() => []);
-      if (devices.some((d) => d.kind === 'audioinput' && d.deviceId === microphoneId)) return;
-      setError(tNow('voice.deviceLost'));
-      await track
-        .restartTrack({ ...captureOptions(getVoiceSettings()), deviceId: undefined })
-        .then(() => (mutedRef.current ? track.mute() : undefined))
-        .catch(() => {});
+    const listener = () => {
+      if (trackRef.current) restartMicrophone(true);
     };
-    const listener = () => void onChange();
     navigator.mediaDevices.addEventListener('devicechange', listener);
     return () => navigator.mediaDevices.removeEventListener('devicechange', listener);
-  }, []);
+  }, [restartMicrophone]);
 
   useEffect(
     () => () => {
