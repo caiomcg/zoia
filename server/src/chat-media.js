@@ -23,7 +23,8 @@ export const MEDIA_MAX_BYTES = 10 * 1024 * 1024;
 export const MEDIA_CAP_BYTES = 5 * 1024 ** 3;
 
 const MEDIA_ID = /^[0-9a-f]{16}$/;
-const CHAT_ID = /^[0-9a-f]{8}$/;
+// A chat's folder, or a direct chat's (ADR 0047). A thread keeps its files in its chat's.
+const CHAT_ID = /^(?:[0-9a-f]{8}|dm-[0-9a-f]{16})$/;
 
 export const isMediaId = (id) => typeof id === 'string' && MEDIA_ID.test(id);
 

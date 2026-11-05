@@ -83,6 +83,19 @@ const MIGRATIONS = [
     // edited. The body and mentions are overwritten in place: no history.
     `ALTER TABLE {ks}.messages ADD edited_at timestamp`,
   ],
+  [
+    // Threads (ADR 0048): a summary of the replies to each message that has
+    // any, beside the chat's messages, so a page's is one read. The replies
+    // themselves are messages under the chat id `<chat>~<root id>`.
+    `CREATE TABLE IF NOT EXISTS {ks}.threads (
+       chat_id text,
+       root_id timeuuid,
+       reply_count int,
+       last_reply timeuuid,
+       participants text,
+       PRIMARY KEY (chat_id, root_id)
+     ) WITH gc_grace_seconds = 3600`,
+  ],
 ];
 
 /**
