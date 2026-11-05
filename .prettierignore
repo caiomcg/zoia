@@ -5,3 +5,4 @@ server/data/
 server/public/vendor/
 Caddyfile
 desktop/out/
+.claude/

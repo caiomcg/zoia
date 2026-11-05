@@ -4,7 +4,16 @@ import globals from 'globals';
 export default [
   // desktop/ has its own config; android/ has no JavaScript, only what Gradle
   // generates into its build output.
-  { ignores: ['node_modules/', 'coverage/', 'server/public/vendor/', 'desktop/', 'android/'] },
+  {
+    ignores: [
+      'node_modules/',
+      'coverage/',
+      'server/public/vendor/',
+      'desktop/',
+      'android/',
+      '.claude/',
+    ],
+  },
   js.configs.recommended,
   {
     files: [
