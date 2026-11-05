@@ -14,6 +14,7 @@ import { useEffect, useRef } from 'react';
 import type { RemoteTrack } from 'livekit-client';
 import { useVoiceVolume } from './volumes';
 import { watchSpeaking } from './speaking';
+import { registerAudioSink } from './audioSink';
 
 export interface VoiceTrack {
   identity: string;
@@ -24,7 +25,10 @@ let sharedContext: AudioContext | null = null;
 
 /** One context for every voice: they are mixed in it. */
 function voiceContext(): AudioContext {
-  sharedContext ??= new AudioContext();
+  if (!sharedContext) {
+    sharedContext = new AudioContext();
+    registerAudioSink(sharedContext);
+  }
   if (sharedContext.state === 'suspended') void sharedContext.resume().catch(() => {});
   return sharedContext;
 }

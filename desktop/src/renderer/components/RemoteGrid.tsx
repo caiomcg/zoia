@@ -26,6 +26,7 @@ import {
 } from '../strip-dock';
 import type { MessageKey } from '../../shared/i18n';
 import { clampPairSplit, pairSplitLimits } from '../pair-split';
+import { registerAudioSink } from '../voice/audioSink';
 
 /**
  * Every broadcast in the room, laid out one of two ways:
@@ -341,6 +342,12 @@ function useMediaStream(
   video: RemoteTrack | LocalVideoTrack | null,
   audio: RemoteTrack | null,
 ) {
+  useEffect(() => {
+    const element = ref.current;
+    if (!element) return;
+    return registerAudioSink(element);
+  }, [ref]);
+
   useEffect(() => {
     const element = ref.current;
     if (!element) return;
@@ -688,6 +695,12 @@ function useSnapshot(
  */
 function ListenAudio({ track, audio }: { track: RemoteTrack; audio: AudioSetting }) {
   const ref = useRef<HTMLAudioElement>(null);
+
+  useEffect(() => {
+    const element = ref.current;
+    if (!element) return;
+    return registerAudioSink(element);
+  }, []);
 
   useEffect(() => {
     const element = ref.current;

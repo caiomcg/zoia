@@ -349,7 +349,11 @@ export const es: Messages = {
   'voice.deviceLost': 'Tu micrófono se desconectó. Se usa el predeterminado del sistema.',
   'settings.nav.voice': 'Voz',
   'voiceSettings.microphone': 'Micrófono',
+  'voiceSettings.speaker': 'Dispositivo de salida',
+  'voiceSettings.output': 'Salida',
+  'voiceSettings.testAudio': 'Probar sonido',
   'voiceSettings.systemDefault': 'Predeterminado del sistema',
+  'voiceSettings.voiceSettingsShortcut': 'Ajustes de voz...',
   'voiceSettings.input': 'Entrada',
   'voiceSettings.volume': 'Volumen de entrada',
   'voiceSettings.volumeHint':

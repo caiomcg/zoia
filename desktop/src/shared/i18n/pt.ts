@@ -348,7 +348,11 @@ export const pt: Messages = {
   'voice.deviceLost': 'Seu microfone foi desconectado. Usando o padrão do sistema.',
   'settings.nav.voice': 'Voz',
   'voiceSettings.microphone': 'Microfone',
+  'voiceSettings.speaker': 'Dispositivo de saída',
+  'voiceSettings.output': 'Saída',
+  'voiceSettings.testAudio': 'Testar som',
   'voiceSettings.systemDefault': 'Padrão do sistema',
+  'voiceSettings.voiceSettingsShortcut': 'Configurações de voz...',
   'voiceSettings.input': 'Entrada',
   'voiceSettings.volume': 'Volume de entrada',
   'voiceSettings.volumeHint':

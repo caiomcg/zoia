@@ -12,6 +12,7 @@ import { useSyncExternalStore } from 'react';
 import { MAX_ENTRANCE_SECONDS, MAX_SOUND_SECONDS, type Sound } from '../../shared/soundboard';
 import { soundboardSettings } from './library';
 import { audibleRange, effectsGain, entranceGain, type SoundKind } from './model';
+import { registerAudioSink } from '../voice/audioSink';
 
 /** Long enough not to click when a sound is cut, short enough not to be heard as a fade. */
 const FADE_S = 0.15;
@@ -30,6 +31,7 @@ let masters: Record<SoundKind, GainNode> | null = null;
 function output(): { context: AudioContext; masters: Record<SoundKind, GainNode> } {
   if (!context || !masters) {
     const audio = new AudioContext();
+    registerAudioSink(audio);
     const buses = { effect: audio.createGain(), entrance: audio.createGain() };
     const apply = () => {
       const settings = soundboardSettings.get();

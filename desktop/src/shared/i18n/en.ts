@@ -356,7 +356,11 @@ export const en = {
   'voice.deviceLost': 'Your microphone was disconnected. Using the system default instead.',
   'settings.nav.voice': 'Voice',
   'voiceSettings.microphone': 'Microphone',
+  'voiceSettings.speaker': 'Output device',
+  'voiceSettings.output': 'Output',
+  'voiceSettings.testAudio': 'Test sound',
   'voiceSettings.systemDefault': 'System default',
+  'voiceSettings.voiceSettingsShortcut': 'Voice settings...',
   'voiceSettings.input': 'Input',
   'voiceSettings.volume': 'Input volume',
   'voiceSettings.volumeHint':
