@@ -22,6 +22,7 @@ import {
   type ChatCommand,
 } from '../../shared/ipc';
 import type { ChatController } from '../chat/useChat';
+import { notifyTyping, typingSent, useTypers } from '../chat/typing';
 import { useAccountAvatar } from '../chat/avatars';
 import { continues, lastOwnMessage, newMessagesIndex, sameDay, seenBy } from '../chat/model';
 import {
@@ -94,6 +95,30 @@ function fileProblem(file: File): 'tooLarge' | 'unsupported' | null {
 }
 
 /**
+ * What ChatView needs of a chat: the open chat's useChat, or an open thread's
+ * useThread (ADR 0048), which answers the same calls for the thread's replies.
+ */
+export type ChatViewController = Pick<
+  ChatController,
+  | 'available'
+  | 'openChat'
+  | 'openId'
+  | 'thread'
+  | 'authors'
+  | 'readers'
+  | 'people'
+  | 'readWhenOpened'
+  | 'send'
+  | 'deleteMessage'
+  | 'editMessage'
+  | 'react'
+  | 'loadOlder'
+> & {
+  /** Who can be @mentioned here, when not everyone: a direct chat's two. */
+  mentionable?: ChatPerson[];
+};
+
+/**
  * The open chat (ADR 0036): its messages, newest at the bottom, and a box to
  * write in. Enter sends and Shift+Enter starts a new line. A photo or video
  * goes in by the clip button, by pasting or by dropping it on the chat, and is
@@ -109,12 +134,30 @@ export default function ChatView({
   me,
   canModerate = false,
   visible = true,
+  variant = 'main',
+  header,
+  placeholder,
+  aside,
+  onOpenThread,
+  openThreadRootId = null,
 }: {
-  chat: ChatController;
+  chat: ChatViewController;
   me: string | null;
   /** An admin, who may delete anyone's messages; the server checks it again. */
   canModerate?: boolean;
   visible?: boolean;
+  /** A thread's replies, in the panel beside its chat (ADR 0048), or the chat itself. */
+  variant?: 'main' | 'thread';
+  /** In place of the chat's name at the top. */
+  header?: ReactNode;
+  /** In place of "Message #chat" in the box. */
+  placeholder?: string;
+  /** Beside the messages, such as an open thread. */
+  aside?: ReactNode;
+  /** Opens a message's thread; absent where threads are not offered. */
+  onOpenThread?: (message: ChatMessage) => void;
+  /** The message whose thread is open, marked in the list. */
+  openThreadRootId?: string | null;
 }) {
   const t = useT();
   const { language } = useLanguage();
@@ -183,6 +226,8 @@ export default function ChatView({
 
   const thread = chat.thread;
   const messages = thread?.messages ?? [];
+  // Who else is writing here now (ADR 0049).
+  const typers = useTypers(chat.available ? chat.openId : null, me);
   const lastId = messages.at(-1)?.id;
   const firstId = messages[0]?.id;
 
@@ -271,6 +316,7 @@ export default function ChatView({
       setError(errorText(refused));
       return;
     }
+    if (chat.openId) typingSent(chat.openId);
     stickRef.current = true;
     setDraft('');
     setFile(null);
@@ -306,7 +352,9 @@ export default function ChatView({
   }
 
   // Who the @query at the caret may mean; none shown, none to pick.
-  const suggestions = mention ? matchPeople(chat.people, mention.query.query) : [];
+  const suggestions = mention
+    ? matchPeople(chat.mentionable ?? chat.people, mention.query.query)
+    : [];
   const commandSuggestions = command ? matchCommands(commands, command.query) : [];
   // The mentions and command being written, accented as they will be once
   // sent. Only people picked from the suggestions go out as mentions, so only
@@ -539,6 +587,8 @@ export default function ChatView({
 
   function onDrop(event: DragEvent<HTMLElement>) {
     event.preventDefault();
+    // A thread's panel sits inside its chat's view: one drop, one box.
+    event.stopPropagation();
     setDragging(false);
     if (chat.available) choose(event.dataTransfer.files[0]);
   }
@@ -572,391 +622,502 @@ export default function ChatView({
   const seen = last ? seenBy(last, chat.readers).filter((id) => id !== me) : [];
   const nameOf = (id: string) => chat.authors[id]?.name ?? t('chat.someone');
 
+  const kind = variant === 'thread' ? ' thread-view' : '';
   if (!chat.openChat) {
     return (
-      <section className={`chat-view${visible ? '' : ' chat-hidden'}`}>
+      <section className={`chat-view${kind}${visible ? '' : ' chat-hidden'}`}>
         <p className="chat-empty muted">{t('chat.chooseChat')}</p>
       </section>
     );
   }
+  const peer = chat.openChat.peer;
 
   return (
     <section
-      className={`chat-view${dragging ? ' dragging' : ''}${visible ? '' : ' chat-hidden'}`}
+      className={`chat-view${kind}${aside ? ' with-aside' : ''}${dragging ? ' dragging' : ''}${visible ? '' : ' chat-hidden'}`}
       aria-label={chat.openChat?.name}
-      onDragOver={(event) => {
-        if (!event.dataTransfer.types.includes('Files')) return;
-        event.preventDefault();
-        setDragging(true);
-      }}
-      onDragLeave={(event) => {
-        if (event.currentTarget === event.target) setDragging(false);
-      }}
-      onDrop={onDrop}
     >
-      <header className="chat-header">
-        <span className="chat-hash" aria-hidden="true">
-          #
-        </span>
-        <h2>{chat.openChat?.name}</h2>
-      </header>
-
-      <div className="chat-scroll" ref={scrollRef} onScroll={onScroll}>
-        {!chat.available ? (
-          <p className="chat-empty muted">{t('chat.unavailable')}</p>
-        ) : thread?.loading ? (
-          <p className="chat-empty muted">{t('common.loading')}</p>
-        ) : thread?.error ? (
-          <p className="chat-empty muted">{t('chat.error.load')}</p>
-        ) : messages.length === 0 ? (
-          <p className="chat-empty muted">{t('chat.empty')}</p>
-        ) : (
-          <ol className="chat-messages">
-            {thread?.loadingOlder && <li className="chat-older muted">{t('common.loading')}</li>}
-            {messages.map((m, i) => {
-              const previous = messages[i - 1];
-              const newDay = !previous || !sameDay(previous.sentAt, m.sentAt);
-              return (
-                <MessageRow
-                  key={m.id}
-                  message={m}
-                  author={chat.authors[m.authorId] ?? null}
-                  grouped={!newDay && i !== divider && continues(previous, m)}
-                  dayLabel={newDay ? dayLabel(m.sentAt) : null}
-                  newMessages={i === divider}
-                  time={time.format(new Date(m.sentAt))}
-                  mine={m.authorId === me}
-                  bot={bots.has(m.authorId) || Boolean(chat.authors[m.authorId]?.bot)}
-                  mentionsMe={Boolean(me && m.mentions?.some((x) => x.id === me))}
-                  me={me}
-                  onMediaLoad={onMediaLoad}
-                  onView={setViewing}
-                  onReply={chat.available ? () => reply(m) : undefined}
-                  onReact={
-                    chat.available && me ? (emoji, on) => void react(m, emoji, on) : undefined
-                  }
-                  nameOf={nameOf}
-                  onDelete={
-                    chat.available && (m.authorId === me || canModerate)
-                      ? () => void remove(m)
-                      : undefined
-                  }
-                  editedAt={m.editedAt ? moment.format(new Date(m.editedAt)) : null}
-                  onEdit={chat.available && m.authorId === me ? () => startEdit(m) : undefined}
-                  editing={editingId === m.id && chat.available}
-                  onSaveEdit={(text) => saveEdit(m, text)}
-                  onCancelEdit={stopEdit}
-                  onJump={jumpTo}
-                />
-              );
-            })}
-          </ol>
-        )}
-        {seen.length > 0 && (
-          <p className="chat-seen muted">
-            {t('chat.seenBy', { names: seen.map(nameOf).join(', ') })}
-          </p>
-        )}
-      </div>
-
-      {dragging && (
-        <div className="chat-drop" aria-hidden="true">
-          {t('chat.drop')}
-        </div>
-      )}
-
-      <form
-        className="chat-composer"
-        onSubmit={(event) => {
+      <div
+        className="chat-main"
+        onDragOver={(event) => {
+          if (!event.dataTransfer.types.includes('Files')) return;
           event.preventDefault();
-          void submit();
+          event.stopPropagation();
+          setDragging(true);
         }}
+        onDragLeave={(event) => {
+          if (event.currentTarget === event.target) setDragging(false);
+        }}
+        onDrop={onDrop}
       >
-        {far && (
-          <button type="button" className="chat-jump" onClick={jumpToLatest}>
-            <svg
-              viewBox="0 0 24 24"
-              width="16"
-              height="16"
-              aria-hidden="true"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M12 5v14M6 13l6 6 6-6" />
-            </svg>
-            {t('chat.jumpToLatest')}
-          </button>
+        {header ?? (
+          <header className="chat-header">
+            <span className="chat-hash" aria-hidden="true">
+              {peer ? '@' : '#'}
+            </span>
+            <h2>{chat.openChat?.name}</h2>
+          </header>
         )}
-        {command && commandSuggestions.length > 0 && (
-          <ul className="chat-suggest commands" role="listbox" aria-label={t('chat.commandList')}>
-            {commandSuggestions.map((c, i) => (
-              <li
-                key={`${c.addon}:${c.name}`}
-                role="option"
-                aria-selected={i === command.index}
-                className={i === command.index ? 'active' : undefined}
-                onMouseEnter={() => setCommand({ ...command, index: i })}
-                // Before the box's blur, which would close the list first.
-                onMouseDown={(event) => {
-                  event.preventDefault();
-                  pickCommand(c);
-                }}
-              >
-                <span className="chat-command-name">
-                  !{c.name}
-                  {c.usage && <span className="chat-command-usage"> {c.usage}</span>}
-                </span>
-                <span className="chat-command-about">
-                  {c.description} · {c.addon}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-        {mention && suggestions.length > 0 && (
-          <ul className="chat-suggest" role="listbox" aria-label={t('chat.mentionList')}>
-            {suggestions.map((person, i) => (
-              <Suggestion
-                key={person.id}
-                person={person}
-                active={i === mention.index}
-                onHover={() => setMention({ ...mention, index: i })}
-                onPick={() => pick(person)}
-              />
-            ))}
-          </ul>
-        )}
-        {replyingTo && (
-          <div className="chat-replying">
-            <ReplyQuote
-              reply={{
-                id: replyingTo.id,
-                authorId: replyingTo.authorId,
-                authorName: chat.authors[replyingTo.authorId]?.name ?? null,
-                body: replyingTo.body,
-                kind: replyingTo.attachment?.kind ?? null,
-              }}
-              label={t('chat.replyingTo', {
-                name: chat.authors[replyingTo.authorId]?.name ?? t('chat.someone'),
+
+        <div className="chat-scroll" ref={scrollRef} onScroll={onScroll}>
+          {!chat.available ? (
+            <p className="chat-empty muted">{t('chat.unavailable')}</p>
+          ) : thread?.loading ? (
+            <p className="chat-empty muted">{t('common.loading')}</p>
+          ) : thread?.error ? (
+            <p className="chat-empty muted">{t('chat.error.load')}</p>
+          ) : messages.length === 0 ? (
+            <p className="chat-empty muted">{t('chat.empty')}</p>
+          ) : (
+            <ol className="chat-messages">
+              {thread?.loadingOlder && <li className="chat-older muted">{t('common.loading')}</li>}
+              {messages.map((m, i) => {
+                const previous = messages[i - 1];
+                const newDay = !previous || !sameDay(previous.sentAt, m.sentAt);
+                return (
+                  <MessageRow
+                    key={m.id}
+                    message={m}
+                    author={chat.authors[m.authorId] ?? null}
+                    grouped={!newDay && i !== divider && continues(previous, m)}
+                    dayLabel={newDay ? dayLabel(m.sentAt) : null}
+                    newMessages={i === divider}
+                    time={time.format(new Date(m.sentAt))}
+                    mine={m.authorId === me}
+                    bot={bots.has(m.authorId) || Boolean(chat.authors[m.authorId]?.bot)}
+                    mentionsMe={Boolean(me && m.mentions?.some((x) => x.id === me))}
+                    me={me}
+                    onMediaLoad={onMediaLoad}
+                    onView={setViewing}
+                    onReply={chat.available ? () => reply(m) : undefined}
+                    onReact={
+                      chat.available && me ? (emoji, on) => void react(m, emoji, on) : undefined
+                    }
+                    nameOf={nameOf}
+                    onDelete={
+                      chat.available && (m.authorId === me || canModerate)
+                        ? () => void remove(m)
+                        : undefined
+                    }
+                    editedAt={m.editedAt ? moment.format(new Date(m.editedAt)) : null}
+                    onEdit={chat.available && m.authorId === me ? () => startEdit(m) : undefined}
+                    editing={editingId === m.id && chat.available}
+                    onSaveEdit={(text) => saveEdit(m, text)}
+                    onCancelEdit={stopEdit}
+                    onJump={jumpTo}
+                    onThread={onOpenThread && chat.available ? () => onOpenThread(m) : undefined}
+                    threadOpen={openThreadRootId === m.id}
+                    threadLabel={
+                      m.thread
+                        ? {
+                            count: m.thread.count,
+                            last: m.thread.lastReplyAt
+                              ? time.format(new Date(m.thread.lastReplyAt))
+                              : null,
+                          }
+                        : null
+                    }
+                  />
+                );
               })}
+            </ol>
+          )}
+          {seen.length > 0 && (
+            <p className="chat-seen muted">
+              {t('chat.seenBy', { names: seen.map(nameOf).join(', ') })}
+            </p>
+          )}
+        </div>
+
+        {dragging && (
+          <div className="chat-drop" aria-hidden="true">
+            {t('chat.drop')}
+          </div>
+        )}
+
+        <form
+          className="chat-composer"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void submit();
+          }}
+        >
+          {far && (
+            <button type="button" className="chat-jump" onClick={jumpToLatest}>
+              <svg
+                viewBox="0 0 24 24"
+                width="16"
+                height="16"
+                aria-hidden="true"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M12 5v14M6 13l6 6 6-6" />
+              </svg>
+              {t('chat.jumpToLatest')}
+            </button>
+          )}
+          {command && commandSuggestions.length > 0 && (
+            <ul className="chat-suggest commands" role="listbox" aria-label={t('chat.commandList')}>
+              {commandSuggestions.map((c, i) => (
+                <li
+                  key={`${c.addon}:${c.name}`}
+                  role="option"
+                  aria-selected={i === command.index}
+                  className={i === command.index ? 'active' : undefined}
+                  onMouseEnter={() => setCommand({ ...command, index: i })}
+                  // Before the box's blur, which would close the list first.
+                  onMouseDown={(event) => {
+                    event.preventDefault();
+                    pickCommand(c);
+                  }}
+                >
+                  <span className="chat-command-name">
+                    !{c.name}
+                    {c.usage && <span className="chat-command-usage"> {c.usage}</span>}
+                  </span>
+                  <span className="chat-command-about">
+                    {c.description} · {c.addon}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+          {mention && suggestions.length > 0 && (
+            <ul className="chat-suggest" role="listbox" aria-label={t('chat.mentionList')}>
+              {suggestions.map((person, i) => (
+                <Suggestion
+                  key={person.id}
+                  person={person}
+                  active={i === mention.index}
+                  onHover={() => setMention({ ...mention, index: i })}
+                  onPick={() => pick(person)}
+                />
+              ))}
+            </ul>
+          )}
+          {replyingTo && (
+            <div className="chat-replying">
+              <ReplyQuote
+                reply={{
+                  id: replyingTo.id,
+                  authorId: replyingTo.authorId,
+                  authorName: chat.authors[replyingTo.authorId]?.name ?? null,
+                  body: replyingTo.body,
+                  kind: replyingTo.attachment?.kind ?? null,
+                }}
+                label={t('chat.replyingTo', {
+                  name: chat.authors[replyingTo.authorId]?.name ?? t('chat.someone'),
+                })}
+              />
+              <button
+                type="button"
+                className="channel-action"
+                onClick={() => setReplyingTo(null)}
+                aria-label={t('chat.cancelReply')}
+                title={t('chat.cancelReply')}
+              >
+                ×
+              </button>
+            </div>
+          )}
+          {file && preview && (
+            <div className="chat-pending">
+              {file.type.startsWith('video/') ? (
+                <video src={preview} muted />
+              ) : (
+                <img src={preview} alt="" />
+              )}
+              <span className="chat-pending-name">{file.name}</span>
+              <button
+                type="button"
+                className="channel-action"
+                onClick={() => setFile(null)}
+                aria-label={t('chat.removeAttachment')}
+                title={t('chat.removeAttachment')}
+              >
+                ×
+              </button>
+            </div>
+          )}
+          {picking && chat.available && (
+            <EmojiPicker
+              recent={recentEmoji}
+              onPick={addEmoji}
+              onMore={() => {
+                setPicking(false);
+                textRef.current?.focus();
+                void window.zoia.app.emojiPanel();
+              }}
+              onClose={() => setPicking(false)}
+              toggle={emojiButtonRef}
             />
-            <button
-              type="button"
-              className="channel-action"
-              onClick={() => setReplyingTo(null)}
-              aria-label={t('chat.cancelReply')}
-              title={t('chat.cancelReply')}
-            >
-              ×
-            </button>
-          </div>
-        )}
-        {file && preview && (
-          <div className="chat-pending">
-            {file.type.startsWith('video/') ? (
-              <video src={preview} muted />
-            ) : (
-              <img src={preview} alt="" />
-            )}
-            <span className="chat-pending-name">{file.name}</span>
-            <button
-              type="button"
-              className="channel-action"
-              onClick={() => setFile(null)}
-              aria-label={t('chat.removeAttachment')}
-              title={t('chat.removeAttachment')}
-            >
-              ×
-            </button>
-          </div>
-        )}
-        {picking && chat.available && (
-          <EmojiPicker
-            recent={recentEmoji}
-            onPick={addEmoji}
-            onMore={() => {
-              setPicking(false);
-              textRef.current?.focus();
-              void window.zoia.app.emojiPanel();
-            }}
-            onClose={() => setPicking(false)}
-            toggle={emojiButtonRef}
-          />
-        )}
-        {formatting && (
-          <FormatBar
-            target={textRef}
-            setText={setDraft}
-            max={MESSAGE_MAX}
-            disabled={!chat.available}
-          />
-        )}
-        <div className="chat-composer-row">
-          {/* A textarea cannot style part of its text, so the accents are
+          )}
+          {formatting && (
+            <FormatBar
+              target={textRef}
+              setText={setDraft}
+              max={MESSAGE_MAX}
+              disabled={!chat.available}
+            />
+          )}
+          <div className="chat-composer-row">
+            {/* A textarea cannot style part of its text, so the accents are
               painted by a copy of it laid out the same way behind it: its
               text is invisible, only the accents' backgrounds show, and the
               box's own text, caret, selection and IME stay untouched. */}
-          <div className="chat-input">
-            {accents.length > 0 && (
-              <div className="chat-input-backdrop" ref={backdropRef} aria-hidden="true">
-                {splitHighlights(draft, accents).map((part, i) =>
-                  part.kind ? (
-                    <mark key={i} className={part.kind}>
-                      {part.text}
-                    </mark>
-                  ) : (
-                    part.text
-                  ),
-                )}
-                {/* A last line break only takes up a line with something after it. */}
-                {String.fromCharCode(0x200b)}
-              </div>
-            )}
-            <textarea
-              ref={textRef}
-              value={draft}
-              rows={1}
-              maxLength={MESSAGE_MAX}
+            <div className="chat-input">
+              {accents.length > 0 && (
+                <div className="chat-input-backdrop" ref={backdropRef} aria-hidden="true">
+                  {splitHighlights(draft, accents).map((part, i) =>
+                    part.kind ? (
+                      <mark key={i} className={part.kind}>
+                        {part.text}
+                      </mark>
+                    ) : (
+                      part.text
+                    ),
+                  )}
+                  {/* A last line break only takes up a line with something after it. */}
+                  {String.fromCharCode(0x200b)}
+                </div>
+              )}
+              <textarea
+                ref={textRef}
+                value={draft}
+                rows={1}
+                maxLength={MESSAGE_MAX}
+                disabled={!chat.available}
+                placeholder={
+                  file
+                    ? t('chat.caption')
+                    : (placeholder ??
+                      (peer
+                        ? t('chat.placeholderDirect', { name: peer.name })
+                        : t('chat.placeholder', { chat: chat.openChat.name })))
+                }
+                aria-label={
+                  placeholder ??
+                  (peer
+                    ? t('chat.placeholderDirect', { name: peer.name })
+                    : t('chat.placeholder', { chat: chat.openChat?.name ?? '' }))
+                }
+                onChange={(event) => {
+                  setDraft(event.target.value);
+                  findMention(event.target.value, event.target.selectionStart);
+                  if (event.target.value.trim() && chat.openId) notifyTyping(chat.openId);
+                }}
+                onSelect={(event) =>
+                  findMention(event.currentTarget.value, event.currentTarget.selectionStart)
+                }
+                onBlur={() => {
+                  setMention(null);
+                  setCommand(null);
+                }}
+                onKeyDown={onKeyDown}
+                onPaste={onPaste}
+                onScroll={(event) => {
+                  if (backdropRef.current)
+                    backdropRef.current.scrollTop = event.currentTarget.scrollTop;
+                }}
+              />
+            </div>
+            {/* Kept from taking the focus, so the selection stays for the bar to style. */}
+            <button
+              type="button"
+              className={`chat-attach chat-format-toggle${formatting ? ' active' : ''}`}
               disabled={!chat.available}
-              placeholder={
-                file
-                  ? t('chat.caption')
-                  : chat.openChat
-                    ? t('chat.placeholder', { chat: chat.openChat.name })
-                    : t('chat.unavailable')
-              }
-              aria-label={t('chat.placeholder', { chat: chat.openChat?.name ?? '' })}
-              onChange={(event) => {
-                setDraft(event.target.value);
-                findMention(event.target.value, event.target.selectionStart);
-              }}
-              onSelect={(event) =>
-                findMention(event.currentTarget.value, event.currentTarget.selectionStart)
-              }
-              onBlur={() => {
-                setMention(null);
-                setCommand(null);
-              }}
-              onKeyDown={onKeyDown}
-              onPaste={onPaste}
-              onScroll={(event) => {
-                if (backdropRef.current)
-                  backdropRef.current.scrollTop = event.currentTarget.scrollTop;
-              }}
-            />
-          </div>
-          {/* Kept from taking the focus, so the selection stays for the bar to style. */}
-          <button
-            type="button"
-            className={`chat-attach chat-format-toggle${formatting ? ' active' : ''}`}
-            disabled={!chat.available}
-            onMouseDown={(event) => event.preventDefault()}
-            onClick={toggleFormatting}
-            aria-pressed={formatting}
-            aria-label={t('chat.format')}
-            title={formatting ? t('chat.format.hide') : t('chat.format.show')}
-          >
-            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
-              <path
-                d="M4 17L9 5l5 12M5.7 13h6.6"
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={toggleFormatting}
+              aria-pressed={formatting}
+              aria-label={t('chat.format')}
+              title={formatting ? t('chat.format.hide') : t('chat.format.show')}
+            >
+              <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+                <path
+                  d="M4 17L9 5l5 12M5.7 13h6.6"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+                <path
+                  d="M14 20l6.5-6.5a1.4 1.4 0 00-2-2L12 18l-.5 2.5z"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </button>
+            {/* Kept from taking the focus, so the emoji goes where the caret is. */}
+            <button
+              ref={emojiButtonRef}
+              type="button"
+              className={`chat-attach chat-emoji${picking ? ' active' : ''}`}
+              disabled={!chat.available}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => setPicking((open) => !open)}
+              aria-expanded={picking}
+              aria-label={t('chat.emoji')}
+              title={t('chat.emoji')}
+            >
+              <svg
+                viewBox="0 0 24 24"
+                width="18"
+                height="18"
+                aria-hidden="true"
                 fill="none"
                 stroke="currentColor"
                 strokeWidth="2"
                 strokeLinecap="round"
                 strokeLinejoin="round"
-              />
-              <path
-                d="M14 20l6.5-6.5a1.4 1.4 0 00-2-2L12 18l-.5 2.5z"
+              >
+                <circle cx="12" cy="12" r="9" />
+                <path d="M8.5 14.5a4.5 4.5 0 007 0M9 9.5h.01M15 9.5h.01" />
+              </svg>
+            </button>
+            {/* Beside send, where the eye ends up after typing. */}
+            <button
+              type="button"
+              className="chat-attach"
+              disabled={!chat.available || sending}
+              onClick={() => fileInputRef.current?.click()}
+              aria-label={t('chat.attach')}
+              title={t('chat.attach')}
+            >
+              <svg
+                viewBox="0 0 24 24"
+                width="18"
+                height="18"
+                aria-hidden="true"
                 fill="none"
                 stroke="currentColor"
-                strokeWidth="1.6"
+                strokeWidth="2"
+                strokeLinecap="round"
                 strokeLinejoin="round"
-              />
-            </svg>
-          </button>
-          {/* Kept from taking the focus, so the emoji goes where the caret is. */}
-          <button
-            ref={emojiButtonRef}
-            type="button"
-            className={`chat-attach chat-emoji${picking ? ' active' : ''}`}
-            disabled={!chat.available}
-            onMouseDown={(event) => event.preventDefault()}
-            onClick={() => setPicking((open) => !open)}
-            aria-expanded={picking}
-            aria-label={t('chat.emoji')}
-            title={t('chat.emoji')}
-          >
-            <svg
-              viewBox="0 0 24 24"
-              width="18"
-              height="18"
-              aria-hidden="true"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
+              >
+                <path d="M21 11.5l-8.5 8.5a5 5 0 01-7-7L14 4.5a3.5 3.5 0 015 5l-8.5 8.5a2 2 0 01-3-3L15 7.5" />
+              </svg>
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept={ACCEPT}
+              hidden
+              onChange={(event) => {
+                choose(event.target.files?.[0]);
+                event.target.value = '';
+              }}
+            />
+            <button
+              type="submit"
+              className="chat-send"
+              disabled={!chat.available || sending || (!draft.trim() && !file)}
+              aria-label={sending ? t('chat.sending') : t('chat.send')}
+              title={sending ? t('chat.sending') : t('chat.send')}
             >
-              <circle cx="12" cy="12" r="9" />
-              <path d="M8.5 14.5a4.5 4.5 0 007 0M9 9.5h.01M15 9.5h.01" />
-            </svg>
-          </button>
-          {/* Beside send, where the eye ends up after typing. */}
-          <button
-            type="button"
-            className="chat-attach"
-            disabled={!chat.available || sending}
-            onClick={() => fileInputRef.current?.click()}
-            aria-label={t('chat.attach')}
-            title={t('chat.attach')}
-          >
-            <svg
-              viewBox="0 0 24 24"
-              width="18"
-              height="18"
-              aria-hidden="true"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M21 11.5l-8.5 8.5a5 5 0 01-7-7L14 4.5a3.5 3.5 0 015 5l-8.5 8.5a2 2 0 01-3-3L15 7.5" />
-            </svg>
-          </button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept={ACCEPT}
-            hidden
-            onChange={(event) => {
-              choose(event.target.files?.[0]);
-              event.target.value = '';
-            }}
-          />
-          <button
-            type="submit"
-            className="chat-send"
-            disabled={!chat.available || sending || (!draft.trim() && !file)}
-            aria-label={sending ? t('chat.sending') : t('chat.send')}
-            title={sending ? t('chat.sending') : t('chat.send')}
-          >
-            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="currentColor">
-              <path d="M3.4 20.4l17.45-7.48a1 1 0 000-1.84L3.4 3.6a.99.99 0 00-1.39.91L2 9.12c0 .5.37.93.87.99L17 12 2.87 13.88c-.5.07-.87.5-.87 1l.01 4.61c0 .71.73 1.2 1.39.91z" />
-            </svg>
-          </button>
-        </div>
-        {error && <p className="chat-error">{error}</p>}
-      </form>
+              <svg
+                viewBox="0 0 24 24"
+                width="18"
+                height="18"
+                aria-hidden="true"
+                fill="currentColor"
+              >
+                <path d="M3.4 20.4l17.45-7.48a1 1 0 000-1.84L3.4 3.6a.99.99 0 00-1.39.91L2 9.12c0 .5.37.93.87.99L17 12 2.87 13.88c-.5.07-.87.5-.87 1l.01 4.61c0 .71.73 1.2 1.39.91z" />
+              </svg>
+            </button>
+          </div>
+          {error && <p className="chat-error">{error}</p>}
+          <p className="chat-typing" aria-live="polite">
+            {typers.length > 0 && (
+              <>
+                <TypingDots />
+                {typers.length === 1
+                  ? t('chat.typingOne', { name: typers[0]! })
+                  : typers.length === 2
+                    ? t('chat.typingTwo', { first: typers[0]!, second: typers[1]! })
+                    : t('chat.typingMany')}
+              </>
+            )}
+          </p>
+        </form>
+      </div>
+      {aside}
 
       {viewing && thread && (
         <MediaViewer chatId={thread.chatId} attachment={viewing} onClose={() => setViewing(null)} />
       )}
       {dialog}
     </section>
+  );
+}
+
+/** Three dots that rise in turn, beside who is typing. */
+function TypingDots() {
+  return (
+    <span className="typing-dots" aria-hidden="true">
+      <span />
+      <span />
+      <span />
+    </span>
+  );
+}
+
+/** "3 replies · last at 10:42" under a message with a thread, which opens it. */
+function ThreadLink({
+  count,
+  last,
+  open,
+  onOpen,
+}: {
+  count: number;
+  last: string | null;
+  open: boolean;
+  onOpen?: () => void;
+}) {
+  const t = useT();
+  const replies =
+    count === 1
+      ? t('chat.thread.repliesOne')
+      : t('chat.thread.replies', { count: count >= 1000 ? '999+' : count });
+  return (
+    <button
+      type="button"
+      className={`chat-thread-link${open ? ' open' : ''}`}
+      onClick={onOpen}
+      disabled={!onOpen}
+    >
+      <IconThread />
+      <span className="chat-thread-count">{replies}</span>
+      {last && (
+        <span className="chat-thread-last">{t('chat.thread.lastReply', { time: last })}</span>
+      )}
+    </button>
+  );
+}
+
+/** Two speech bubbles: a conversation of its own. */
+export function IconThread() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="16"
+      height="16"
+      aria-hidden="true"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M4 5h11a1 1 0 011 1v7a1 1 0 01-1 1H9l-4 3v-3H4a1 1 0 01-1-1V6a1 1 0 011-1z" />
+      <path d="M16 9h4a1 1 0 011 1v7a1 1 0 01-1 1h-1v3l-4-3h-4a1 1 0 01-1-1v-1" />
+    </svg>
   );
 }
 
@@ -983,6 +1144,9 @@ function MessageRow({
   onSaveEdit,
   onCancelEdit,
   onJump,
+  onThread,
+  threadOpen = false,
+  threadLabel = null,
 }: {
   message: ChatMessage;
   author: ChatAuthor;
@@ -1016,6 +1180,12 @@ function MessageRow({
   onCancelEdit: () => void;
   /** Scrolls to the message a reply answers. */
   onJump: (id: string) => void;
+  /** Opens its thread (ADR 0048); absent where threads are not offered. */
+  onThread?: () => void;
+  /** Its thread is the one open beside the chat. */
+  threadOpen?: boolean;
+  /** Its thread's replies, as shown under it; null without any. */
+  threadLabel?: { count: number; last: string | null } | null;
 }) {
   const t = useT();
   const name = author?.name ?? t('chat.someone');
@@ -1060,12 +1230,12 @@ function MessageRow({
           if (editing) return;
           const link =
             (event.target as Element).closest<HTMLAnchorElement>('a.chat-link')?.href ?? null;
-          if (!link && !onReply && !onDelete) return;
+          if (!link && !onReply && !onDelete && !onThread) return;
           event.preventDefault();
           setMenu({ x: event.clientX, y: event.clientY, link });
         }}
       >
-        {(onReply || onReact || onDelete || onEdit) && !editing && (
+        {(onReply || onReact || onDelete || onEdit || onThread) && !editing && (
           <span className={`chat-actions${picking ? ' open' : ''}`} ref={actionsRef}>
             {picking && onReact && (
               <span className="chat-react-pick" role="menu" aria-label={t('chat.react')}>
@@ -1108,6 +1278,16 @@ function MessageRow({
                 title={t('chat.reply')}
               >
                 <IconReply />
+              </button>
+            )}
+            {onThread && (
+              <button
+                type="button"
+                onClick={onThread}
+                aria-label={t('chat.thread.open')}
+                title={t('chat.thread.open')}
+              >
+                <IconThread />
               </button>
             )}
             {onEdit && (
@@ -1181,6 +1361,14 @@ function MessageRow({
               </div>
             )
           )}
+          {threadLabel && (
+            <ThreadLink
+              count={threadLabel.count}
+              last={threadLabel.last}
+              open={threadOpen}
+              onOpen={onThread}
+            />
+          )}
           {reactions.length > 0 && (
             <div className="chat-reactions">
               {reactions.map((r) => {
@@ -1213,6 +1401,7 @@ function MessageRow({
           y={menu.y}
           onClose={() => setMenu(null)}
           onReply={onReply}
+          onThread={onThread}
           onDelete={onDelete}
         />
       )}
@@ -1231,6 +1420,7 @@ function MessageMenu({
   y,
   onClose,
   onReply,
+  onThread,
   onDelete,
 }: {
   /** Who wrote it, naming the menu. */
@@ -1240,6 +1430,7 @@ function MessageMenu({
   y: number;
   onClose: () => void;
   onReply?: () => void;
+  onThread?: () => void;
   onDelete?: () => void;
 }) {
   const t = useT();
@@ -1274,10 +1465,11 @@ function MessageMenu({
             window.open(link, '_blank', 'noreferrer'),
           )}
           {item(t('chat.copyLink'), <IconCopy />, () => void navigator.clipboard.writeText(link))}
-          {(onReply || onDelete) && <hr className="person-menu-divider" />}
+          {(onReply || onDelete || onThread) && <hr className="person-menu-divider" />}
         </>
       )}
       {onReply && item(t('chat.reply'), <IconReply />, onReply)}
+      {onThread && item(t('chat.thread.open'), <IconThread />, onThread)}
       {onDelete && item(t('chat.deleteMessage'), <IconTrash />, onDelete, true)}
     </div>,
     document.body,

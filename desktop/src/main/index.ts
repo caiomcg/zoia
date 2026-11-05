@@ -4,6 +4,7 @@ import {
   ipcMain,
   Menu,
   MessageChannelMain,
+  Notification,
   type MessagePortMain,
   powerMonitor,
   screen,
@@ -31,7 +32,7 @@ import * as soundboard from './soundboard';
 import { isShortcutAction } from '../shared/shortcuts';
 import { isLanguagePreference } from '../shared/i18n';
 import { CHAT_MEDIA_MAX_BYTES, IDLE_AWAY_MS, IPC, PRESENCES } from '../shared/ipc';
-import type { ChatSendExtras, GpuStatus } from '../shared/ipc';
+import type { ChatSendExtras, GpuStatus, ScheduledEventInput } from '../shared/ipc';
 import {
   checkForUpdate,
   getUpdaterConfig,
@@ -539,6 +540,28 @@ function registerIpc(): void {
     api.chatSend(String(chatId), String(body), sendExtras(extras)),
   );
   ipcMain.handle(IPC.chatPeople, () => api.chatPeople());
+  ipcMain.handle(IPC.chatDirect, (_event, accountId: unknown) => api.chatDirect(String(accountId)));
+  ipcMain.handle(IPC.chatTyping, (_event, chatId: unknown) => api.chatTyping(String(chatId)));
+  // Scheduled events (ADR 0050): one channel, the action first, as addons do.
+  ipcMain.handle(IPC.schedule, (_event, action: unknown, id: unknown, input: unknown) => {
+    const fields = (input && typeof input === 'object' ? input : {}) as ScheduledEventInput;
+    switch (action) {
+      case 'list':
+        return api.schedule.list();
+      case 'create':
+        return api.schedule.create(fields);
+      case 'update':
+        return api.schedule.update(String(id), fields);
+      case 'remove':
+        return api.schedule.remove(String(id));
+      case 'rsvp': {
+        const answer = (['going', 'maybe', 'no'] as const).find((a) => a === input) ?? null;
+        return api.schedule.rsvp(String(id), answer);
+      }
+      default:
+        return { ok: false, error: 'unknown_action' };
+    }
+  });
   ipcMain.handle(IPC.chatCommands, (_event, chatId: string) => api.chatCommands(String(chatId)));
   // The super admin's addons (ADR 0041). One channel, each action checked
   // here and again by the server, which decides who may.
@@ -640,6 +663,25 @@ function registerIpc(): void {
       ? api.presenceSet(status as (typeof PRESENCES)[number])
       : { ok: false, error: 'invalid_presence' },
   );
+  // Windows' own notifications (see renderer/notify/notify.ts). Silent: Zoia
+  // plays its own sounds. A click brings the window forward and tells it which.
+  ipcMain.handle(IPC.notifyShow, (_event, id: unknown, title: unknown, body: unknown) => {
+    if (!Notification.isSupported()) return false;
+    const shown = new Notification({
+      title: String(title).slice(0, 200),
+      body: String(body).slice(0, 400),
+      silent: true,
+      icon: join(__dirname, '../../build/icon.png'),
+    });
+    shown.on('click', () => {
+      showWindow(mainWindow);
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send(IPC.notifyClick, Number(id));
+      }
+    });
+    shown.show();
+    return true;
+  });
   ipcMain.handle(IPC.chatAvatar, (_event, accountId: unknown, version: unknown) =>
     typeof accountId === 'string' && typeof version === 'string'
       ? api.fetchAccountAvatar(accountId, version)
@@ -1117,6 +1159,10 @@ if (!isFirstInstance) {
     void runUpdateCheck(false);
   });
 }
+
+// Windows shows notifications only from an app that names itself, and ties
+// them to the Start menu shortcut the installer makes with the same id.
+if (process.platform === 'win32') app.setAppUserModelId('com.github.caiomcg.zoia');
 
 app.whenReady().then(async () => {
   // The second copy is on its way out; it must not open a window first.

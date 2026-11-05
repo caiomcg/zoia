@@ -166,6 +166,27 @@ export function groupReactions(rows) {
 
 const COLUMNS = 'id, author_id, body, attachment, reply_to, mentions, edited_at';
 
+/** Replies a thread's summary counts at most; past it, the badge says "many". */
+export const THREAD_COUNT_MAX = 1000;
+
+/** People a thread's summary names, the latest to reply first. */
+const THREAD_PARTICIPANTS_MAX = 5;
+
+/**
+ * The chat id a thread's replies are kept under (ADR 0048): the chat and the
+ * message they answer. Every message route takes it as a chat id.
+ */
+export const threadIdOf = (chatId, rootId) => `${chatId}~${rootId}`;
+
+/** A thread's summary as it is sent with its root message. */
+function toSummary(row) {
+  return {
+    count: row.reply_count ?? 0,
+    lastReplyAt: row.last_reply ? row.last_reply.getDate().toISOString() : null,
+    participants: parseJson(row.participants) ?? [],
+  };
+}
+
 /**
  * @param {object} options
  * @param {import('cassandra-driver').Client} options.client a connected client
@@ -426,8 +447,100 @@ export function createMessageStore({ client, keyspace }) {
       return { unread: Math.min(unread, cap), mentions: Math.min(mentions, cap) };
     },
 
-    /** Deletes every message, reaction and read marker of a chat that is being removed. */
+    /**
+     * The thread summaries of messages `rootIds` in `chatId`, as root id ->
+     * { count, lastReplyAt, participants }. A message without replies is not
+     * in the map.
+     */
+    async threads({ chatId, rootIds }) {
+      const uuids = rootIds.map(parseMessageId).filter(Boolean);
+      if (uuids.length === 0) return {};
+      const result = await client.execute(
+        `SELECT root_id, reply_count, last_reply, participants FROM ${t('threads')}
+         WHERE chat_id = ? AND root_id IN ?`,
+        [chatId, uuids],
+        prepared,
+      );
+      const out = {};
+      for (const row of result.rows) out[row.root_id.toString()] = toSummary(row);
+      return out;
+    },
+
+    /**
+     * Counts a thread's replies again and stores the summary, after one is
+     * written or deleted. Recounting rather than adding one keeps it right
+     * when two replies land at once, without a lightweight transaction (the
+     * keyspace's tablets refuse them). Resolves to the summary, or null when
+     * no reply is left.
+     */
+    async refreshThread({ chatId, rootId }) {
+      const root = parseMessageId(rootId);
+      if (!root) return null;
+      const replies = await this.page({
+        chatId: threadIdOf(chatId, rootId),
+        since: root.getDate().toISOString(),
+        limit: THREAD_COUNT_MAX,
+      });
+      if (replies.length === 0) {
+        await client.execute(
+          `DELETE FROM ${t('threads')} WHERE chat_id = ? AND root_id = ?`,
+          [chatId, root],
+          prepared,
+        );
+        return null;
+      }
+      const participants = [...new Set(replies.map((m) => m.authorId))].slice(
+        0,
+        THREAD_PARTICIPANTS_MAX,
+      );
+      const last = parseMessageId(replies[0].id);
+      await client.execute(
+        `INSERT INTO ${t('threads')} (chat_id, root_id, reply_count, last_reply, participants)
+         VALUES (?, ?, ?, ?, ?)`,
+        [chatId, root, replies.length, last, JSON.stringify(participants)],
+        prepared,
+      );
+      return {
+        count: replies.length,
+        lastReplyAt: replies[0].sentAt,
+        participants,
+      };
+    },
+
+    /** Deletes a thread's replies and its summary, when the message it answers goes. */
+    async removeThread({ chatId, rootId }) {
+      const root = parseMessageId(rootId);
+      if (!root) return;
+      await this.removeChat({
+        chatId: threadIdOf(chatId, rootId),
+        since: root.getDate().toISOString(),
+      });
+      await client.execute(
+        `DELETE FROM ${t('threads')} WHERE chat_id = ? AND root_id = ?`,
+        [chatId, root],
+        prepared,
+      );
+    },
+
+    /**
+     * Deletes every message, reaction and read marker of a chat that is being
+     * removed, and its threads with theirs.
+     */
     async removeChat({ chatId, since }) {
+      const threads = await client.execute(
+        `SELECT root_id FROM ${t('threads')} WHERE chat_id = ?`,
+        [chatId],
+        { ...prepared, fetchSize: 5000 },
+      );
+      for (const row of threads.rows) {
+        await this.removeChat({
+          chatId: threadIdOf(chatId, row.root_id.toString()),
+          since: row.root_id.getDate().toISOString(),
+        });
+      }
+      if (threads.rows.length > 0) {
+        await client.execute(`DELETE FROM ${t('threads')} WHERE chat_id = ?`, [chatId], prepared);
+      }
       for (const bucket of bucketsBetween(bucketOf(Date.now()), sinceBucket(since))) {
         await client.execute(
           `DELETE FROM ${t('messages')} WHERE chat_id = ? AND bucket = ?`,

@@ -92,6 +92,33 @@ export function toChatEvent(event: string, data: string): ChatEvent | null {
   ) {
     return { type: 'renamed', accountId: payload.accountId, name: payload.name };
   }
+  if (
+    event === 'typing' &&
+    typeof payload.chatId === 'string' &&
+    typeof payload.accountId === 'string'
+  ) {
+    return {
+      type: 'typing',
+      chatId: payload.chatId,
+      accountId: payload.accountId,
+      name: typeof payload.name === 'string' ? payload.name : '',
+    };
+  }
+  if (event === 'thread' && typeof payload.chatId === 'string') {
+    return {
+      type: 'thread',
+      chatId: payload.chatId,
+      rootId: String(payload.rootId),
+      thread: (payload.thread ?? null) as Extract<ChatEvent, { type: 'thread' }>['thread'],
+    };
+  }
+  if (event === 'schedule') return { type: 'schedule' };
+  if (event === 'event_starting' && payload.event && typeof payload.event === 'object') {
+    return {
+      type: 'event_starting',
+      event: payload.event as Extract<ChatEvent, { type: 'event_starting' }>['event'],
+    };
+  }
   if (event === 'presence' && typeof payload.accountId === 'string') {
     const status = SHOWN.find((s) => s === payload.status);
     return status ? { type: 'presence', accountId: payload.accountId, status } : null;

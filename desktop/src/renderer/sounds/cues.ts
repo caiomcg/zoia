@@ -7,7 +7,14 @@
  */
 
 export type CueEvent =
-  'join' | 'leave' | 'streamStart' | 'streamStop' | 'viewerJoin' | 'viewerLeave' | 'mention';
+  | 'join'
+  | 'leave'
+  | 'streamStart'
+  | 'streamStop'
+  | 'viewerJoin'
+  | 'viewerLeave'
+  | 'mention'
+  | 'eventStart';
 
 export const CUE_EVENTS: readonly CueEvent[] = [
   'join',
@@ -17,6 +24,7 @@ export const CUE_EVENTS: readonly CueEvent[] = [
   'viewerJoin',
   'viewerLeave',
   'mention',
+  'eventStart',
 ];
 
 export type CueStyle = 'chime' | 'pop' | 'soft';
@@ -52,6 +60,8 @@ export const DEFAULT_SOUND_SETTINGS: SoundSettings = {
     viewerJoin: { enabled: true, style: 'soft', pitch: 0, volume: 0.6 },
     viewerLeave: { enabled: true, style: 'soft', pitch: 0, volume: 0.6 },
     mention: { enabled: true, style: 'chime', pitch: 0, volume: 1 },
+    // An event you said you would come to has started (ADR 0050).
+    eventStart: { enabled: true, style: 'chime', pitch: 0, volume: 1 },
   },
 };
 
@@ -278,6 +288,8 @@ const PATTERNS: Partial<Record<CueEvent, number[]>> = {
   leave: [7, 0],
   streamStart: [0, 4, 7],
   streamStop: [7, 4, 0],
+  // A fanfare's rising arpeggio, to the octave: something is starting.
+  eventStart: [0, 4, 7, 12],
 };
 
 export function notesFor(event: CueEvent, cue: Pick<CueSettings, 'style' | 'pitch'>): Note[] {

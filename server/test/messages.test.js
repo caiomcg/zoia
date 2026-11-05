@@ -24,6 +24,7 @@ import {
   parseMessageId,
   previousBucket,
   replySnapshot,
+  threadIdOf,
 } from '../src/messages.js';
 import { connectInBackground, connectScylla, isKeyspaceName } from '../src/scylla.js';
 
@@ -426,6 +427,34 @@ describe(
       await store.removeChat({ chatId: 'c7', since });
       assert.deepEqual(await store.page({ chatId: 'c7', since }), []);
       assert.equal((await store.readMarkers('c7')).size, 0);
+    });
+
+    test('a thread is counted from its replies, and goes with its chat (ADR 0048)', async () => {
+      const root = await store.send({ chatId: 'c8', authorId: 'ana00000', body: 'pergunta' });
+      const thread = threadIdOf('c8', root.id);
+      assert.equal(await store.refreshThread({ chatId: 'c8', rootId: root.id }), null);
+      await store.send({ chatId: thread, authorId: 'bia00000', body: 'r1' });
+      await store.send({ chatId: thread, authorId: 'ana00000', body: 'r2' });
+      const summary = await store.refreshThread({ chatId: 'c8', rootId: root.id });
+      assert.equal(summary.count, 2);
+      assert.deepEqual(summary.participants, ['ana00000', 'bia00000']);
+      const found = await store.threads({ chatId: 'c8', rootIds: [root.id] });
+      assert.equal(found[root.id].count, 2);
+      assert.equal(found[root.id].lastReplyAt, summary.lastReplyAt);
+
+      await store.removeChat({ chatId: 'c8', since });
+      assert.deepEqual(await store.page({ chatId: thread, since }), []);
+      assert.deepEqual(await store.threads({ chatId: 'c8', rootIds: [root.id] }), {});
+    });
+
+    test('removing a thread deletes its replies and summary', async () => {
+      const root = await store.send({ chatId: 'c9', authorId: 'ana00000', body: 'p' });
+      const thread = threadIdOf('c9', root.id);
+      await store.send({ chatId: thread, authorId: 'bia00000', body: 'r' });
+      await store.refreshThread({ chatId: 'c9', rootId: root.id });
+      await store.removeThread({ chatId: 'c9', rootId: root.id });
+      assert.deepEqual(await store.page({ chatId: thread, since }), []);
+      assert.deepEqual(await store.threads({ chatId: 'c9', rootIds: [root.id] }), {});
     });
   },
 );

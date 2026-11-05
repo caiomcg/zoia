@@ -18,6 +18,15 @@ export function memoryMessages() {
   // [{ chatId, messageId, emoji, accountId }], oldest first.
   const reactions = [];
   const place = (id) => sent.findIndex((m) => m.id === id);
+  function summaryOf(chatId, rootId) {
+    const replies = sent.filter((m) => m.chatId === `${chatId}~${rootId}`).reverse();
+    if (replies.length === 0) return null;
+    return {
+      count: replies.length,
+      lastReplyAt: replies[0].sentAt,
+      participants: [...new Set(replies.map((m) => m.authorId))].slice(0, 5),
+    };
+  }
   return {
     async send({ chatId, authorId, body, attachment = null, replyTo = null, mentions = [] }) {
       const id = TimeUuid.now();
@@ -105,6 +114,25 @@ export function memoryMessages() {
         unread: unread.length,
         mentions: unread.filter((m) => m.mentions.some((x) => x.id === accountId)).length,
       };
+    },
+    // Thread summaries (ADR 0048), counted from what is in `sent`.
+    async threads({ chatId, rootIds }) {
+      const out = {};
+      for (const rootId of rootIds) {
+        const summary = summaryOf(chatId, rootId);
+        if (summary) out[rootId] = summary;
+      }
+      return out;
+    },
+    async refreshThread({ chatId, rootId }) {
+      return summaryOf(chatId, rootId);
+    },
+    removedThreads: [],
+    async removeThread({ chatId, rootId }) {
+      this.removedThreads.push(`${chatId}~${rootId}`);
+      for (let i = sent.length - 1; i >= 0; i -= 1) {
+        if (sent[i].chatId === `${chatId}~${rootId}`) sent.splice(i, 1);
+      }
     },
     removed: [],
     async removeChat({ chatId }) {

@@ -15,9 +15,16 @@ import { CHAT_MEDIA_SCHEME, type ActionOutcome } from '../shared/ipc';
 import { getServerUrl } from './config';
 import { saveName } from './media-name';
 
+/**
+ * A chat's id, a direct chat's (ADR 0047), or a thread's in either (ADR 0048):
+ * the chat's id, a tilde and the message the thread answers.
+ */
+const CHAT =
+  '(?:[0-9a-f]{8}|dm-[0-9a-f]{16})(?:~[0-9a-f]{8}-[0-9a-f]{4}-1[0-9a-f]{3}-[0-9a-f]{4}-[0-9a-f]{12})?';
+
 /** zoia-media://file/<chat id>/<media id>; anything else is not asked for. */
-const MEDIA_PATH = /^\/([0-9a-f]{8})\/([0-9a-f]{16})$/;
-const CHAT_ID = /^[0-9a-f]{8}$/;
+const MEDIA_PATH = new RegExp(`^/(${CHAT})/([0-9a-f]{16})$`);
+const CHAT_ID = new RegExp(`^${CHAT}$`);
 const MEDIA_ID = /^[0-9a-f]{16}$/;
 
 /**

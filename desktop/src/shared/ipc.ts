@@ -148,11 +148,29 @@ export interface ChatInfo {
   unread: number | null;
   /** How many of those @mention you; absent from a server before mentions were counted. */
   mentions?: number | null;
+  /** Set for a direct chat (ADR 0047): who it is with. Its name is theirs. */
+  peer?: { id: string; name: string; avatar: string | null };
+}
+
+/**
+ * A direct chat (ADR 0047): yours and one other person's, seen by nobody
+ * else. Its id starts with `dm-`.
+ */
+export interface DirectChatInfo {
+  id: string;
+  /** Who it is with. */
+  peer: { id: string; name: string; avatar: string | null };
+  unread: number | null;
+  mentions?: number | null;
+  /** When either of you last wrote in it; null when nobody has yet. */
+  lastMessageAt: string | null;
 }
 
 /** The chats, how many there may be, and whether messages can be reached. */
 export interface ChatList {
   chats: ChatInfo[];
+  /** Your direct chats, newest conversation first; absent from older servers. */
+  direct?: DirectChatInfo[];
   max: number;
   /** The most the super admin may allow. */
   ceiling: number;
@@ -178,6 +196,28 @@ export interface ChatMessage {
   editedAt?: string | null;
   /** Emoji people reacted with, in the order first used. */
   reactions?: ChatReaction[];
+  /** The replies in its thread (ADR 0048), when it has any. */
+  thread?: ThreadSummary;
+}
+
+/** How many replies a message's thread has, when the last came, and who wrote them. */
+export interface ThreadSummary {
+  count: number;
+  lastReplyAt: string | null;
+  /** Account ids, the latest to reply first, up to five. */
+  participants: string[];
+}
+
+/** Whether a chat id is a direct chat's (ADR 0047). */
+export const isDirectChatId = (id: string) => /^dm-[0-9a-f]{16}$/.test(id);
+
+/** The chat id a thread's replies are kept under (ADR 0048): its chat and its message. */
+export const threadIdOf = (chatId: string, rootId: string) => `${chatId}~${rootId}`;
+
+/** A thread id's chat and message, or null for any other chat id. */
+export function threadParts(id: string): { chatId: string; rootId: string } | null {
+  const at = id.indexOf('~');
+  return at === -1 ? null : { chatId: id.slice(0, at), rootId: id.slice(at + 1) };
 }
 
 /** One emoji on a message, and who reacted with it, in the order they did. */
@@ -352,6 +392,42 @@ export interface ChatPage {
   authors: Record<string, ChatAuthor>;
   /** Account id -> the last message id they have read. */
   readers: Record<string, string>;
+  /** A thread's page comes with the message it answers (ADR 0048). */
+  root?: ChatMessage;
+}
+
+/** How a scheduled event repeats (ADR 0050); null is once. */
+export type Recurrence = 'daily' | 'weekly' | 'monthly';
+
+/** An answer to a scheduled event (ADR 0050). */
+export type RsvpAnswer = 'going' | 'maybe' | 'no';
+
+/** A scheduled event (ADR 0050). */
+export interface ScheduledEvent {
+  id: string;
+  title: string;
+  description: string | null;
+  startsAt: string;
+  /** How long it lasts; absent from a server before durations, which means two hours. */
+  durationMinutes?: number;
+  /** How it repeats: when one occurrence ends, it moves on to the next. */
+  recurrence?: Recurrence | null;
+  /** The channel it happens in, if it names one. */
+  channelId: string | null;
+  createdBy: string | null;
+  creatorName: string | null;
+  /** Account id -> answer. */
+  rsvps: Record<string, RsvpAnswer>;
+}
+
+/** What may be set when scheduling an event or changing one. */
+export interface ScheduledEventInput {
+  title?: string;
+  description?: string | null;
+  startsAt?: string;
+  durationMinutes?: number;
+  recurrence?: Recurrence | null;
+  channelId?: string | null;
 }
 
 /** What the server pushes while the app is listening. */
@@ -379,6 +455,14 @@ export type ChatEvent =
   | { type: 'people' }
   /** Someone changed their display name. */
   | { type: 'renamed'; accountId: string; name: string }
+  /** Someone is writing in a chat (ADR 0049); said every few seconds while they do. */
+  | { type: 'typing'; chatId: string; accountId: string; name: string }
+  /** A message's thread gained or lost a reply (ADR 0048); null when none is left. */
+  | { type: 'thread'; chatId: string; rootId: string; thread: ThreadSummary | null }
+  /** The scheduled events changed (ADR 0050). */
+  | { type: 'schedule' }
+  /** An event you said you would come to has started. */
+  | { type: 'event_starting'; event: ScheduledEvent }
   /** The stream itself: connected, or lost and retrying. */
   | { type: 'stream'; connected: boolean };
 
@@ -652,6 +736,11 @@ export const IPC = {
   chatReact: 'zoia:chat:react',
   chatSaveMedia: 'zoia:chat:saveMedia',
   chatCommands: 'zoia:chat:commands',
+  chatDirect: 'zoia:chat:direct',
+  chatTyping: 'zoia:chat:typing',
+  schedule: 'zoia:schedule',
+  notifyShow: 'zoia:notify:show',
+  notifyClick: 'zoia:notify:click',
   addons: 'zoia:addons',
   presenceGet: 'zoia:presence:get',
   presenceSet: 'zoia:presence:set',

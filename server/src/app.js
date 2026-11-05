@@ -18,6 +18,7 @@ import { fixedChannels } from './channels.js';
 import { AVATAR_MAX_BYTES, imageType, isAvatarId } from './avatars.js';
 import { canManage, isAdmin } from './accounts.js';
 import { chatRoutes, createChatHub } from './chat-routes.js';
+import { scheduleRoutes } from './schedule-routes.js';
 import { addonRoutes } from './addon-routes.js';
 import { addonAdminRoutes } from './addon-admin.js';
 import { createAddonHostClient } from './addon-host.js';
@@ -45,6 +46,9 @@ export function createApp({
   avatarStore = null,
   accountStore = null,
   chatStore = null,
+  // Direct messages (ADR 0047) and scheduled events (ADR 0050).
+  directChatStore = null,
+  eventStore = null,
   messageStore = () => null,
   chatMediaStore = null,
   // Installed addons (ADR 0041); without it there is no addon API.
@@ -1269,6 +1273,7 @@ export function createApp({
       '/api/chats',
       chatRoutes({
         chats: chatStore,
+        directChats: directChatStore,
         messages: messageStore,
         media: chatMediaStore,
         accountStore,
@@ -1282,10 +1287,29 @@ export function createApp({
         commandsIn: addonStore ? (chatId) => addonStore.commandsIn(chatId) : null,
         // Tests shorten these; undefined keeps the defaults.
         sendLimit: config.chat?.sendLimit,
+        typingLimit: config.chat?.typingLimit,
         heartbeatMs: config.chat?.heartbeatMs,
         logger,
       }),
     );
+  }
+
+  // ---- scheduled events (ADR 0050) ----------------------------------------
+  // Told on the chat's stream, like everything else that changes while the
+  // app is open. The sweep that announces them is started by the server
+  // (index.js); tests run it by hand from app.locals.
+
+  if (eventStore && accountStore) {
+    const schedule = scheduleRoutes({
+      events: eventStore,
+      channels: channelSet,
+      accountStore,
+      hub: chatHub,
+      requireSession,
+      writeLimit: config.schedule?.writeLimit,
+    });
+    app.use('/api/schedule', schedule.router);
+    app.locals.scheduleSweep = schedule.sweep;
   }
 
   // maxAge 0 with etags means the browser revalidates and gets a 304 when

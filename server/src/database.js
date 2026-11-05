@@ -114,6 +114,38 @@ export const TABLES = {
       createdAt: 'text',
     },
   },
+  // Direct messages between two accounts (ADR 0047). The pair, the lower id
+  // first; the messages are in ScyllaDB under this id, as a chat's are.
+  direct_chats: {
+    fields: {
+      id: 'text',
+      memberA: 'text',
+      memberB: 'text',
+      createdAt: 'text',
+      createdBy: 'text',
+      lastMessageAt: 'text',
+    },
+  },
+  // Scheduled events (ADR 0050), with who answered what.
+  events: {
+    fields: {
+      id: 'text',
+      title: 'text',
+      description: 'text',
+      startsAt: 'text',
+      channelId: 'text',
+      createdBy: 'text',
+      createdAt: 'text',
+      updatedAt: 'text',
+      notifiedAt: 'text',
+      // accountId -> 'going' | 'maybe' | 'no'
+      rsvps: 'json',
+      // How long it lasts; null, from before durations, is the default two hours.
+      durationMinutes: 'integer',
+      // 'daily' | 'weekly' | 'monthly', or null for once.
+      recurrence: 'text',
+    },
+  },
 };
 
 /**
@@ -224,6 +256,51 @@ const MIGRATIONS = [
     created_at TEXT NOT NULL,
     UNIQUE (addon_id, chat_id)
   ) STRICT;
+  `,
+  `
+  -- Direct messages (ADR 0047): one chat per pair of accounts, the lower id
+  -- first so a pair cannot be written twice the other way round. It goes with
+  -- either account.
+  CREATE TABLE direct_chats (
+    id TEXT PRIMARY KEY,
+    member_a TEXT NOT NULL REFERENCES accounts (id) ON DELETE CASCADE,
+    member_b TEXT NOT NULL REFERENCES accounts (id) ON DELETE CASCADE,
+    created_at TEXT NOT NULL,
+    created_by TEXT,
+    last_message_at TEXT,
+    UNIQUE (member_a, member_b),
+    CHECK (member_a < member_b)
+  ) STRICT;
+
+  CREATE INDEX direct_chats_by_b ON direct_chats (member_b);
+
+  -- Scheduled events (ADR 0050). Answers are JSON on the row: a few dozen
+  -- people, read with the event every time.
+  CREATE TABLE events (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    description TEXT,
+    starts_at TEXT NOT NULL,
+    channel_id TEXT,
+    created_by TEXT REFERENCES accounts (id) ON DELETE SET NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT,
+    notified_at TEXT,
+    rsvps TEXT NOT NULL DEFAULT '{}'
+  ) STRICT;
+
+  CREATE INDEX events_by_start ON events (starts_at);
+  `,
+  `
+  -- How long an event lasts (ADR 0050), so it can end. Null is two hours.
+  ALTER TABLE events ADD COLUMN duration_minutes INTEGER
+    CHECK (duration_minutes IS NULL OR duration_minutes BETWEEN 5 AND 20160);
+  `,
+  `
+  -- An event that repeats (ADR 0050): when one occurrence ends, it moves on
+  -- to the next. Null is once.
+  ALTER TABLE events ADD COLUMN recurrence TEXT
+    CHECK (recurrence IS NULL OR recurrence IN ('daily', 'weekly', 'monthly'));
   `,
 ];
 

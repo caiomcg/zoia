@@ -7518,13 +7518,31 @@ button.danger:active:not(:disabled),
   border-bottom-right-radius: 0;
 }
 
+/* The device arrow shows only while the button is pointed at, or its menu
+   is open: picking a microphone is occasional, the arrow constant clutter.
+   Right-clicking the button opens the same menu. */
 .sidebar-footer .sidebar-voice-group .sidebar-voice-arrow {
-  width: 14px;
+  width: 0;
   height: 30px;
   padding: 0;
+  overflow: hidden;
   border-top-left-radius: 0;
   border-bottom-left-radius: 0;
-  opacity: 0.7;
+  opacity: 0;
+  transition:
+    width 0.12s ease,
+    opacity 0.12s ease;
+}
+
+.sidebar-footer .sidebar-voice-group:hover .sidebar-voice-arrow,
+.sidebar-footer .sidebar-voice-group:focus-within .sidebar-voice-arrow,
+.sidebar-footer .sidebar-voice-group .sidebar-voice-arrow.open {
+  width: 14px;
+  opacity: 0.8;
+}
+
+.sidebar-footer .sidebar-voice-group:not(:hover):not(:focus-within) .sidebar-voice-main {
+  border-radius: 6px;
 }
 
 .sidebar-voice-group .sidebar-voice-arrow:hover,
@@ -7627,4 +7645,1540 @@ button.danger:active:not(:disabled),
   color: var(--text);
   background: var(--raised);
   outline: none;
+}
+
+/* ---- threads (ADR 0048) --------------------------------------------------- */
+
+/* The chat's own column; beside it, an open thread. */
+.chat-main {
+  position: relative;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.chat-view.with-aside {
+  flex-direction: row;
+}
+
+.thread-panel {
+  display: flex;
+  flex: 0 0 auto;
+  width: min(400px, 42%);
+  min-width: 280px;
+  border-left: 1px solid var(--border);
+}
+
+/* Inside its chat's view, not over it. */
+.chat-view.thread-view {
+  position: relative;
+  inset: auto;
+  flex: 1;
+  border: none;
+  border-radius: 0;
+  background: var(--surface);
+}
+
+.thread-panel > .chat-view.thread-view {
+  width: 100%;
+}
+
+.thread-header svg {
+  flex: 0 0 auto;
+  color: var(--muted);
+}
+
+.thread-where {
+  overflow: hidden;
+  font-size: 13px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.thread-close {
+  margin-left: auto;
+  font-size: 18px;
+}
+
+.thread-root {
+  display: flex;
+  gap: 10px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+}
+
+.thread-root .chat-content {
+  min-width: 0;
+}
+
+.chat-thread-link {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  margin-top: 4px;
+  padding: 3px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.chat-thread-link:hover:not(:disabled),
+.chat-thread-link.open {
+  background: var(--surface-2);
+  border-color: var(--border);
+}
+
+.chat-thread-last {
+  font-weight: 400;
+  color: var(--muted);
+}
+
+/* ---- typing (ADR 0049) ---------------------------------------------------- */
+
+/* Always there, so the box does not jump when someone starts or stops. */
+.chat-typing {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  min-height: 14px;
+  margin: -4px 2px -6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.typing-dots {
+  display: inline-flex;
+  gap: 3px;
+}
+
+.typing-dots span {
+  width: 4px;
+  height: 4px;
+  background: currentColor;
+  border-radius: 50%;
+  animation: typing-dot 1.2s ease-in-out infinite;
+}
+
+.typing-dots span:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.typing-dots span:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes typing-dot {
+  0%,
+  60%,
+  100% {
+    opacity: 0.35;
+    transform: translateY(0);
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .typing-dots span {
+    animation: none;
+  }
+}
+
+/* ---- direct messages (ADR 0047) ------------------------------------------ */
+
+.member.person.clickable {
+  cursor: pointer;
+}
+
+.direct-avatar .avatar {
+  width: 20px;
+  height: 20px;
+  font-size: 9px;
+}
+
+.direct-empty {
+  margin: 2px 8px 6px;
+  font-size: 12px;
+}
+
+.direct-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 2px 4px 6px;
+  padding: 6px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.direct-picker input {
+  width: 100%;
+}
+
+.direct-picker ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.direct-picker li {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 5px 6px;
+  font-size: 13px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.direct-picker li.active {
+  color: #fff;
+  background: var(--accent);
+}
+
+.direct-picker .avatar {
+  width: 22px;
+  height: 22px;
+  font-size: 9px;
+}
+
+/* ---- scheduled events (ADR 0050) ----------------------------------------- */
+
+.channel.event-row {
+  align-items: center;
+}
+
+.event-date {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 32px;
+  line-height: 1;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.event-month {
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--danger);
+  text-transform: uppercase;
+}
+
+.event-day {
+  margin-top: 2px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.event-row.live .event-date {
+  border-color: var(--live);
+}
+
+.event-row.soon .event-date {
+  border-color: var(--warn);
+}
+
+.event-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.event-text .channel-name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.event-when {
+  overflow: hidden;
+  font-size: 11px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.event-row.live .event-when {
+  color: var(--live);
+}
+
+/* Your answer, as a dot: green going, amber maybe, grey not. */
+.event-mine {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.event-mine.going {
+  background: var(--live);
+}
+
+.event-mine.maybe {
+  background: var(--warn);
+}
+
+.event-mine.no {
+  background: var(--muted);
+}
+
+/* An event (ADR 0050), opened or being scheduled: a card over the app. */
+.picker.event-dialog {
+  position: relative;
+  width: min(440px, calc(100vw - 32px));
+  max-height: min(640px, calc(100vh - 48px));
+  padding: 22px 22px 18px;
+  overflow-y: auto;
+}
+
+.event-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  font-size: 18px;
+  line-height: 1;
+  color: var(--muted);
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+}
+
+.event-close:hover {
+  color: var(--text);
+  background: var(--surface-2);
+}
+
+.event-form,
+.event-details {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.event-form h2 {
+  margin: 0 32px 0 0;
+  font-size: 17px;
+}
+
+.event-form .settings-field > span {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.event-optional {
+  font-weight: 400;
+  opacity: 0.8;
+}
+
+.event-form input,
+.event-form textarea,
+.event-form select {
+  font-size: 14px;
+}
+
+.event-form input:focus,
+.event-form textarea:focus,
+.event-form select:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.event-form textarea {
+  resize: vertical;
+  min-height: 72px;
+  line-height: 1.4;
+}
+
+/* Date and time side by side; the browser's own pickers, drawn dark. */
+.event-when-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  gap: 8px;
+}
+
+.event-when-row input {
+  color-scheme: dark;
+}
+
+.event-picks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.event-pick {
+  padding: 4px 10px;
+  font-size: 12px;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 99px;
+}
+
+.event-pick:hover {
+  color: var(--text);
+  border-color: var(--muted);
+}
+
+.event-pick.on {
+  color: var(--text);
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  border-color: var(--accent);
+}
+
+.event-footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  justify-content: flex-end;
+  padding-top: 4px;
+}
+
+.event-spacer {
+  flex: 1;
+}
+
+/* Secondary actions as text, so the one that matters stands out. */
+button.event-quiet {
+  padding: 8px 10px;
+  color: var(--muted);
+  background: transparent;
+  border-color: transparent;
+}
+
+button.event-quiet:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--surface-2);
+}
+
+button.event-quiet.danger-text {
+  color: var(--danger);
+}
+
+button.event-quiet.danger-text:hover:not(:disabled) {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+}
+
+/* The event: its day as a tile, then what, when and where. */
+.event-hero {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  padding-right: 28px;
+}
+
+.event-tile {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  overflow: hidden;
+  width: 52px;
+  text-align: center;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.event-tile.live {
+  border-color: var(--live);
+}
+
+.event-tile-month {
+  padding: 3px 0;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: #fff;
+  text-transform: uppercase;
+  background: var(--danger);
+}
+
+.event-tile.live .event-tile-month {
+  background: var(--live);
+}
+
+.event-tile-day {
+  padding: 4px 0 6px;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.event-hero-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.event-hero-text h2 {
+  margin: 0;
+  font-size: 19px;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.event-hero-text p {
+  margin: 0;
+}
+
+.event-hero-when {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  align-items: baseline;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.event-relative {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.event-relative.live {
+  font-weight: 700;
+  color: var(--live);
+}
+
+.event-hero-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  align-items: center;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.event-channel-pill {
+  display: inline-flex;
+  gap: 3px;
+  padding: 1px 8px;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--surface-2);
+  border-radius: 99px;
+}
+
+.event-description {
+  margin: 0;
+  padding: 10px 12px;
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-line;
+  background: var(--bg);
+  border-radius: 8px;
+  overflow-wrap: anywhere;
+}
+
+.event-live-tag {
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff;
+  background: var(--live);
+  border-radius: 9px;
+}
+
+/* Your answer: one control in three parts, the chosen one tinted. */
+.event-rsvp {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  padding: 3px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+}
+
+.event-answer {
+  padding: 7px 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+}
+
+.event-answer:hover {
+  color: var(--text);
+}
+
+.event-answer.on.going {
+  color: var(--live);
+  background: color-mix(in srgb, var(--live) 18%, transparent);
+}
+
+.event-answer.on.maybe {
+  color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 18%, transparent);
+}
+
+.event-answer.on.no {
+  color: var(--text);
+  background: var(--raised);
+}
+
+.event-attendees {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.event-attendee-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.event-attendee-label {
+  flex: none;
+  min-width: 64px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.event-faces {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+
+.event-face .avatar {
+  width: 26px;
+  height: 26px;
+  font-size: 10px;
+}
+
+.event-faces-more {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.event-nobody {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* In the Events panel: a light row to schedule one, not a heavy bar. */
+button.events-new {
+  margin: 0 6px 8px;
+  padding: 7px 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  text-align: left;
+  background: transparent;
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+}
+
+button.events-new:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+/* ---- sidebar: Chats tab and events (ADR 0047, 0050) ---------------------- */
+
+/* The events button: a narrow segment at the end of the tabs. */
+.sidebar-tabs button.sidebar-cal {
+  flex: none;
+  padding: 0 8px;
+}
+
+.sidebar-tabs button > span.sidebar-tab-unread,
+.sidebar-tabs button > span.sidebar-tab-at {
+  flex: none;
+  overflow: visible;
+}
+
+.sidebar-tab-unread {
+  min-width: 16px;
+  padding: 0 5px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 15px;
+  color: #fff;
+  text-align: center;
+  background: var(--danger);
+  border-radius: 8px;
+}
+
+.sidebar-tab-at {
+  font-weight: 800;
+  color: var(--accent);
+}
+
+/* The next event, pinned above every tab's list: only while there is one. A
+   quiet two-line row with the date beside it, like the rows under it. */
+.event-card {
+  display: grid;
+  flex: none;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 1px 10px;
+  align-items: center;
+  margin: 0 10px 6px;
+  padding: 6px 8px;
+  font: inherit;
+  text-align: left;
+  color: var(--text);
+  cursor: pointer;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+}
+
+.event-card:hover {
+  background: var(--surface-2);
+  border-radius: 6px;
+}
+
+.event-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.event-card .event-date {
+  grid-row: span 2;
+}
+
+.event-card.live .event-date {
+  border-color: var(--live);
+}
+
+.event-card-title {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.event-card-title span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.event-card-meta {
+  overflow: hidden;
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.event-card-going {
+  color: var(--live);
+}
+
+/* A channel's next event, on its row. */
+.channel-event {
+  flex: none;
+  padding: 1px 6px;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 16%, transparent);
+  border-radius: 99px;
+}
+
+.events-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.events-panel-head h2 {
+  margin: 4px 8px 6px;
+  font-size: 14px;
+}
+
+.person-unread {
+  margin-left: auto;
+}
+
+/* A time of day, 24-hour, with Zoia's own list instead of the system picker. */
+.time-field {
+  position: relative;
+}
+
+.time-field input {
+  width: 100%;
+  padding-right: 32px;
+  font-variant-numeric: tabular-nums;
+}
+
+.time-field-icon {
+  position: absolute;
+  top: 50%;
+  right: 10px;
+  color: var(--muted);
+  pointer-events: none;
+  transform: translateY(-50%);
+}
+
+.time-field-list {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  left: 0;
+  z-index: 20;
+  max-height: 200px;
+  margin: 0;
+  padding: 4px;
+  overflow-y: auto;
+  list-style: none;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.4);
+}
+
+.time-field-list li {
+  padding: 5px 10px;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.time-field-list li:hover,
+.time-field-list li.near {
+  background: var(--raised);
+}
+
+.time-field-list li.on {
+  color: #fff;
+  background: var(--accent);
+}
+
+.event-card-now {
+  font-weight: 700;
+  color: var(--live);
+}
+
+/* ---- the pinned events: a carousel (ADR 0050) ---------------------------- */
+
+.event-carousel {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0 10px 6px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+.event-carousel-window {
+  overflow: hidden;
+  border-radius: 6px;
+}
+
+.event-carousel-track {
+  display: flex;
+  align-items: flex-start;
+  transition: transform 0.45s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .event-carousel-track {
+    transition: none;
+  }
+}
+
+.event-slide {
+  position: relative;
+  flex: 0 0 100%;
+  min-width: 0;
+}
+
+/* In the carousel, the card is the slide: no margin or rule of its own. */
+.event-carousel .event-card {
+  width: 100%;
+  margin: 0;
+  padding: 6px 30px 6px 8px;
+  border-bottom: none;
+  border-radius: 6px;
+}
+
+.event-carousel.held .event-card {
+  background: var(--surface-2);
+}
+
+.event-card-more {
+  display: flex;
+  grid-column: 1 / -1;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 6px;
+  animation: fade-in 150ms ease both;
+}
+
+.event-card-description {
+  display: -webkit-box;
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text);
+  white-space: pre-line;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
+
+.event-card-faces {
+  display: flex;
+  gap: 3px;
+  align-items: center;
+}
+
+.event-card-faces .avatar {
+  width: 20px;
+  height: 20px;
+  font-size: 8px;
+}
+
+.event-card-hint {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.event-card-details {
+  position: absolute;
+  top: 6px;
+  right: 4px;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  color: var(--muted);
+  background: transparent;
+  border: none;
+  border-radius: 5px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.event-carousel.held .event-card-details,
+.event-card-details:focus-visible {
+  opacity: 1;
+}
+
+.event-card-details:hover {
+  color: var(--text);
+  background: var(--raised);
+}
+
+.event-dots {
+  display: flex;
+  gap: 5px;
+  justify-content: center;
+}
+
+.event-dots button {
+  width: 6px;
+  height: 6px;
+  padding: 0;
+  background: var(--border);
+  border: none;
+  border-radius: 50%;
+}
+
+.event-dots button.on {
+  width: 14px;
+  background: var(--accent);
+  border-radius: 3px;
+}
+
+.event-dots button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* The pinned event's details, beside the sidebar while it is pointed at. */
+.event-popup {
+  position: fixed;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 290px;
+  padding: 14px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgb(0 0 0 / 0.45);
+  transform: translateX(-100%);
+  animation: fade-in 120ms ease both;
+}
+
+.event-popup p {
+  margin: 0;
+}
+
+.event-popup-head {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.event-tile.small {
+  width: 40px;
+}
+
+.event-tile.small .event-tile-day {
+  padding: 3px 0 4px;
+  font-size: 17px;
+}
+
+.event-popup-title {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.event-popup-title b {
+  font-size: 15px;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.event-popup-description {
+  display: -webkit-box;
+  overflow: hidden;
+  font-size: 13px;
+  line-height: 1.45;
+  white-space: pre-line;
+  -webkit-line-clamp: 6;
+  -webkit-box-orient: vertical;
+  overflow-wrap: anywhere;
+}
+
+/* Arrows over the carousel's edges, shown while it is pointed at. */
+.event-carousel-window {
+  position: relative;
+  touch-action: pan-y;
+  user-select: none;
+}
+
+.event-arrow {
+  position: absolute;
+  top: 50%;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0 0 2px;
+  font-size: 16px;
+  line-height: 1;
+  color: var(--text);
+  background: var(--raised);
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  box-shadow: 0 2px 6px rgb(0 0 0 / 0.35);
+  opacity: 0;
+  transform: translateY(-50%);
+  transition: opacity 0.15s;
+}
+
+.event-arrow.prev {
+  left: 2px;
+}
+
+.event-arrow.next {
+  right: 2px;
+}
+
+.event-carousel.held .event-arrow,
+.event-arrow:focus-visible {
+  opacity: 1;
+}
+
+.event-arrow:hover {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+/* With more than one event the arrows' room is kept all the time, so the
+   card never shifts when they appear. */
+.event-carousel .event-card {
+  padding-right: 8px;
+}
+
+.event-carousel.multi .event-card {
+  padding-inline: 28px;
+}
+
+.event-rsvp.small .event-answer {
+  padding: 5px 6px;
+  font-size: 12px;
+}
+
+.event-popup-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.event-popup-actions button {
+  padding: 6px 12px;
+  font-size: 13px;
+}
+
+.event-row.ended {
+  opacity: 0.6;
+}
+
+/* ---- an event's day, as a calendar page, at every size (ADR 0050) -------- */
+
+.date-tile {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  overflow: hidden;
+  text-align: center;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+}
+
+.date-tile-month {
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  color: #fff;
+  text-transform: uppercase;
+  background: var(--danger);
+}
+
+.date-tile-day {
+  font-weight: 700;
+  line-height: 1;
+  color: var(--text);
+}
+
+.date-tile.live {
+  border-color: var(--live);
+}
+
+.date-tile.live .date-tile-month {
+  background: var(--live);
+}
+
+.date-tile.ended .date-tile-month {
+  background: var(--raised);
+}
+
+.date-tile.sm {
+  width: 32px;
+  border-radius: 6px;
+}
+
+.date-tile.sm .date-tile-month {
+  padding: 1px 0;
+  font-size: 8px;
+}
+
+.date-tile.sm .date-tile-day {
+  padding: 3px 0 4px;
+  font-size: 13px;
+}
+
+.date-tile.md {
+  width: 42px;
+}
+
+.date-tile.md .date-tile-month {
+  padding: 2px 0;
+  font-size: 9px;
+}
+
+.date-tile.md .date-tile-day {
+  padding: 4px 0 5px;
+  font-size: 17px;
+}
+
+.date-tile.lg {
+  width: 52px;
+  border-radius: 10px;
+}
+
+.date-tile.lg .date-tile-month {
+  padding: 3px 0;
+  font-size: 10px;
+}
+
+.date-tile.lg .date-tile-day {
+  padding: 4px 0 6px;
+  font-size: 22px;
+}
+
+/* ---- the carousel, without arrows: drag or scroll to move ---------------- */
+
+.event-carousel-window {
+  cursor: grab;
+}
+
+.event-carousel-window.dragging {
+  cursor: grabbing;
+}
+
+.event-carousel-window.dragging .event-carousel-track {
+  transition: none;
+}
+
+.event-carousel .event-card,
+.event-carousel.multi .event-card {
+  padding: 6px 28px 6px 8px;
+}
+
+.event-carousel .event-card .date-tile {
+  grid-row: span 2;
+}
+
+.event-dismiss {
+  position: absolute;
+  top: 6px;
+  right: 4px;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  font-size: 15px;
+  line-height: 1;
+  color: var(--muted);
+  background: transparent;
+  border: none;
+  border-radius: 5px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.event-carousel.held .event-dismiss,
+.event-dismiss:focus-visible {
+  opacity: 1;
+}
+
+.event-dismiss:hover {
+  color: var(--text);
+  background: var(--raised);
+}
+
+.event-when-range {
+  color: var(--muted);
+}
+
+.event-duration-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
+  gap: 8px;
+}
+
+/* A repeating event (ADR 0050): how often, beside where. */
+.event-repeats {
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.event-repeats-icon {
+  color: var(--muted);
+}
+
+/* ---- the bell in your bar, and its list (see notify.ts) ------------------ */
+
+.notify-bell {
+  position: relative;
+}
+
+.notify-bell.open {
+  color: var(--text);
+  background: var(--raised);
+}
+
+.notify-badge {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  min-width: 15px;
+  padding: 0 4px;
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 14px;
+  color: #fff;
+  text-align: center;
+  background: var(--danger);
+  border: 2px solid var(--bg);
+  border-radius: 8px;
+  box-sizing: content-box;
+}
+
+/* Something new: the bell rings once. */
+.notify-bell.pulse svg {
+  animation: bell-ring 0.9s ease;
+  transform-origin: 50% 10%;
+}
+
+@keyframes bell-ring {
+  0%,
+  100% {
+    transform: rotate(0);
+  }
+  15% {
+    transform: rotate(16deg);
+  }
+  30% {
+    transform: rotate(-14deg);
+  }
+  45% {
+    transform: rotate(10deg);
+  }
+  60% {
+    transform: rotate(-6deg);
+  }
+  75% {
+    transform: rotate(3deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .notify-bell.pulse svg {
+    animation: none;
+  }
+}
+
+.notify-panel {
+  position: fixed;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  width: 320px;
+  max-height: min(440px, 70vh);
+  overflow: hidden;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgb(0 0 0 / 0.45);
+  animation: pop-in 150ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.notify-panel header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.notify-panel header button {
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+.notify-panel ul {
+  margin: 0;
+  padding: 4px;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.notify-empty {
+  margin: 0;
+  padding: 18px 16px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--muted);
+  text-align: center;
+}
+
+.notify-entry {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  width: 100%;
+  padding: 8px;
+  font: inherit;
+  text-align: left;
+  color: var(--text);
+  background: transparent;
+  border: none;
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.notify-entry:hover {
+  background: var(--raised);
+}
+
+.notify-entry.unread {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.notify-entry-icon {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  color: #fff;
+  background: var(--accent);
+  border-radius: 7px;
+}
+
+.notify-entry.event .notify-entry-icon {
+  background: var(--live);
+}
+
+.notify-entry.mention .notify-entry-icon {
+  color: #1c2027;
+  background: var(--warn);
+}
+
+.notify-entry-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.notify-entry-title {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  min-width: 0;
+  font-size: 13px;
+}
+
+.notify-entry-title b {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.notify-count {
+  flex: none;
+  padding: 0 6px;
+  font-size: 10px;
+  font-weight: 700;
+  color: #fff;
+  background: var(--accent);
+  border-radius: 8px;
+}
+
+.notify-entry-body {
+  display: -webkit-box;
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--muted);
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow-wrap: anywhere;
+}
+
+.notify-entry-meta {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.notify-entry-meta em {
+  font-style: normal;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+/* Settings › Notifications: kinds down, places across. */
+.notify-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.notify-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 72px 72px;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 4px;
+  font-size: 13px;
+  border-bottom: 1px solid var(--border);
+}
+
+.notify-row input {
+  justify-self: center;
+  accent-color: var(--accent);
+}
+
+.notify-head {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+  text-align: center;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.notify-test {
+  align-self: flex-start;
+}
+
+/* Your card opens your menu: status, notifications, settings. The admins'
+   count of sign-ups sits on your picture now the gear is gone. */
+.sidebar-me-card {
+  position: relative;
+}
+
+.sidebar-me-card .settings-dot {
+  top: 2px;
+  left: 26px;
+  right: auto;
+}
+
+.status-menu-action {
+  align-items: center;
+  gap: 10px;
+}
+
+.status-menu-action svg {
+  flex: none;
+  margin: 0 2px;
+  color: var(--muted);
+}
+
+.status-menu-action .nav-count {
+  margin-left: auto;
 }

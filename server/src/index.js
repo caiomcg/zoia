@@ -17,6 +17,7 @@ import { createMessageStore } from './messages.js';
 import { createMediaStore } from './chat-media.js';
 import { createApp } from './app.js';
 import { createChatHub } from './chat-routes.js';
+import { startScheduleSweep } from './schedule-routes.js';
 import { createIdleSweeper } from './idle.js';
 
 try {
@@ -33,6 +34,8 @@ const {
   accounts: accountStore,
   chats: chatStore,
   addons: addonStore,
+  directChats: directChatStore,
+  events: eventStore,
 } = openStores({
   databaseFile: config.databaseFile,
   maxPending: config.accounts.maxPending,
@@ -111,6 +114,8 @@ const app = createApp({
   avatarStore,
   accountStore,
   chatStore,
+  directChatStore,
+  eventStore,
   addonStore,
   messageStore: () => messageStore,
   chatMediaStore: createMediaStore({
@@ -118,6 +123,9 @@ const app = createApp({
     capBytes: config.chat.mediaCapBytes,
   }),
 });
+
+// Scheduled events are announced as they start (ADR 0050).
+if (app.locals.scheduleSweep) startScheduleSweep(app.locals.scheduleSweep);
 
 // Nobody sits in a channel for long neither sharing nor watching; ADR 0037.
 if (config.idleKickMinutes > 0 || config.awayKickMinutes > 0) {

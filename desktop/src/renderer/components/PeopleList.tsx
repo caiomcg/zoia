@@ -14,6 +14,7 @@ import { useAccountAvatar } from '../chat/avatars';
 import { byPresence, type Dot } from '../chat/status';
 import type { PresenceController } from '../chat/usePresence';
 import Avatar from './Avatar';
+import { SectionHeading, useFolded } from './Sidebar';
 import { useT } from '../i18n';
 
 /**
@@ -27,6 +28,8 @@ export default function PeopleList({
   me,
   myRole,
   collapsed,
+  onMessage,
+  unreadFrom = {},
 }: {
   /** Everyone let in; the chat's list of who can be @mentioned. */
   people: ChatPerson[];
@@ -36,6 +39,10 @@ export default function PeopleList({
   /** Yours: an admin can right-click someone to manage their account. */
   myRole?: AccountRole;
   collapsed: boolean;
+  /** Opens a direct chat with someone (ADR 0047); absent without direct messages. */
+  onMessage?: (person: ChatPerson) => void;
+  /** Unread direct messages from each person, by account id. */
+  unreadFrom?: Record<string, number>;
 }) {
   const t = useT();
   const [menu, setMenu] = useState<{ person: ChatPerson; x: number; y: number } | null>(null);
@@ -43,12 +50,24 @@ export default function PeopleList({
   const isAdmin = myRole === 'admin' || myRole === 'super_admin';
   const listed = byPresence(people, presence.people);
   const isThere = (p: (typeof listed)[number]) => p.status !== 'offline' || p.id === me;
+  // Under the conversations in the Chats tab: who is there, open; everyone
+  // else folded until asked for.
+  const [onlineFolded, toggleOnline] = useFolded('online');
+  const [offlineFolded, toggleOffline] = useFolded('offline', true);
   const groups = [
-    { key: 'online', title: t('presence.online'), people: listed.filter(isThere) },
+    {
+      key: 'online',
+      title: t('presence.online'),
+      people: listed.filter(isThere),
+      folded: onlineFolded,
+      toggle: toggleOnline,
+    },
     {
       key: 'offline',
       title: t('presence.offline'),
       people: collapsed ? [] : listed.filter((p) => !isThere(p)),
+      folded: offlineFolded,
+      toggle: toggleOffline,
     },
   ];
 
@@ -59,32 +78,48 @@ export default function PeopleList({
           group.people.length > 0 && (
             <div className="people-block" key={group.key}>
               {!collapsed && (
-                <h2 className="member-heading">
-                  {group.title} — {group.people.length}
-                </h2>
+                <SectionHeading
+                  title={group.title}
+                  count={group.people.length}
+                  folded={group.folded}
+                  onToggle={group.toggle}
+                />
               )}
-              {group.people.map((p) => (
+              {(collapsed || !group.folded
+                ? group.people
+                : group.people.filter((p) => (unreadFrom[p.id] ?? 0) > 0)
+              ).map((p) => (
                 <Person
                   key={p.id}
                   person={p}
                   status={p.id === me ? (presence.own ?? p.status) : p.status}
                   isMe={p.id === me}
-                  // Never yourself: your own account is in Settings.
+                  unread={unreadFrom[p.id] ?? 0}
+                  // Never yourself: your own account is in Settings, and a
+                  // bot is not someone to write to.
                   onContextMenu={
-                    isAdmin && p.id !== me
+                    p.id !== me && (isAdmin || (onMessage && !p.bot))
                       ? (event) => {
                           event.preventDefault();
                           setMenu({ person: p, x: event.clientX, y: event.clientY });
                         }
                       : undefined
                   }
+                  onClick={onMessage && p.id !== me && !p.bot ? () => onMessage(p) : undefined}
                 />
               ))}
             </div>
           ),
       )}
-      {menu && myRole && (
-        <PersonMenu {...menu} myRole={myRole} onClose={closeMenu} key={menu.person.id} />
+      {menu && (
+        <PersonMenu
+          {...menu}
+          myRole={myRole ?? 'user'}
+          admin={isAdmin}
+          onMessage={onMessage && !menu.person.bot ? () => onMessage(menu.person) : undefined}
+          onClose={closeMenu}
+          key={menu.person.id}
+        />
       )}
     </section>
   );
@@ -95,20 +130,39 @@ function Person({
   status,
   isMe,
   onContextMenu,
+  onClick,
+  unread = 0,
 }: {
   person: ChatPerson & { status: ShownPresence };
   status: Dot;
   isMe: boolean;
   onContextMenu?: (event: MouseEvent) => void;
+  /** Opens a direct chat with them. */
+  onClick?: () => void;
+  /** Their direct messages to you not yet read. */
+  unread?: number;
 }) {
   const t = useT();
   const image = useAccountAvatar(person.id, person.avatar);
   const offline = status === 'offline' || status === 'invisible';
   return (
     <div
-      className={`member person${offline ? ' offline' : ''}`}
-      title={`${person.name} · ${t(`presence.${status}`)}${onContextMenu ? `\n${t('admin.manageHint')}` : ''}`}
+      className={`member person${offline ? ' offline' : ''}${onClick ? ' clickable' : ''}`}
+      title={`${person.name} · ${t(`presence.${status}`)}${onClick ? `\n${t('chat.direct.hint')}` : ''}`}
       onContextMenu={onContextMenu}
+      onClick={onClick}
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onKeyDown={
+        onClick
+          ? (event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                onClick();
+              }
+            }
+          : undefined
+      }
     >
       <Avatar
         name={person.name}
@@ -120,12 +174,22 @@ function Person({
       />
       <span className="member-name">{person.name}</span>
       {isMe && <span className="you-tag">{t('common.youTag')}</span>}
+      {unread > 0 && (
+        <span
+          className="chat-unread person-unread"
+          aria-label={t('chat.direct.unreadFrom', { count: unread })}
+          title={t('chat.direct.unreadFrom', { count: unread })}
+        >
+          {unread >= 100 ? '99+' : unread}
+        </span>
+      )}
     </div>
   );
 }
 
 /**
- * What an admin may do to someone's account, at the pointer: the same as
+ * What a right-click on someone offers: a direct message (ADR 0047), to
+ * anyone; and to an admin, what may be done to their account, the same as
  * Settings › Accounts, by the same rules (an admin manages users, only the
  * super admin manages admins, nobody the super admin). The server checks
  * each again; hiding one is only so nobody is offered what will be refused.
@@ -135,12 +199,17 @@ function PersonMenu({
   x,
   y,
   myRole,
+  admin,
+  onMessage,
   onClose,
 }: {
   person: ChatPerson;
   x: number;
   y: number;
   myRole: AccountRole;
+  /** Whether to offer the account's management at all. */
+  admin: boolean;
+  onMessage?: () => void;
   onClose: () => void;
 }) {
   const t = useT();
@@ -157,6 +226,7 @@ function PersonMenu({
   const place = useFloatingMenu(ref, x, y, onClose, shape);
 
   useEffect(() => {
+    if (!admin) return undefined;
     let live = true;
     void window.zoia.admin.accounts().then((outcome) => {
       if (!live) return;
@@ -166,7 +236,7 @@ function PersonMenu({
     return () => {
       live = false;
     };
-  }, [person.id, t]);
+  }, [person.id, t, admin]);
 
   async function act(action: AdminAction, options?: AdminActionOptions) {
     if (!account || account === 'missing') return;
@@ -215,7 +285,20 @@ function PersonMenu({
         </span>
       </div>
 
-      {issued ? (
+      {onMessage && (
+        <button
+          type="button"
+          role="menuitem"
+          className="person-menu-item"
+          onClick={() => {
+            onClose();
+            onMessage();
+          }}
+        >
+          {t('chat.direct.send')}
+        </button>
+      )}
+      {!admin ? null : issued ? (
         <div className="person-menu-code" role="status">
           <span className="muted">
             {t('admin.codeBody', {

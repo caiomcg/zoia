@@ -31,6 +31,13 @@ import VoiceSettingsSection from './VoiceSettings';
 import { playCue } from '../sounds/synth';
 import ReleaseNotesDialog from './ReleaseNotesDialog';
 import { useExit } from '../presence';
+import {
+  NOTIFY_KINDS,
+  notify,
+  setNotifyPrefs,
+  useNotifyPrefs,
+  type NotifyKind,
+} from '../notify/notify';
 import { SettingsCard, SettingsToggle } from './SettingsCard';
 
 export type Section =
@@ -42,6 +49,7 @@ export type Section =
   | 'voice'
   | 'general'
   | 'sounds'
+  | 'notifications'
   | 'updates'
   | 'about';
 
@@ -72,6 +80,7 @@ const SECTIONS: { id: Section; label: MessageKey; adminOnly?: boolean; superOnly
   { id: 'voice', label: 'settings.nav.voice' },
   { id: 'general', label: 'settings.nav.general' },
   { id: 'sounds', label: 'settings.nav.sounds' },
+  { id: 'notifications', label: 'settings.nav.notifications' },
   { id: 'updates', label: 'settings.nav.updates' },
   { id: 'about', label: 'settings.nav.about' },
 ];
@@ -207,6 +216,7 @@ export default function SettingsDialog({
             {section === 'voice' && <VoiceSettingsSection />}
             {section === 'general' && <GeneralSection />}
             {section === 'sounds' && <SoundsSection />}
+            {section === 'notifications' && <NotificationsSection />}
             {section === 'updates' && <UpdatesSection />}
             {section === 'about' && <AboutSection />}
           </div>
@@ -608,6 +618,69 @@ function LimitField({ label, limit }: { label: string; limit: ServerLimit }) {
   );
 }
 
+const NOTIFY_LABELS: Record<NotifyKind, MessageKey> = {
+  event: 'notify.kind.event',
+  direct: 'notify.kind.direct',
+  mention: 'notify.kind.mention',
+};
+
+/**
+ * Where each kind of notification is said (see notify.ts): as a card in Zoia,
+ * and from Windows while Zoia is not in front. Kept on this machine.
+ */
+function NotificationsSection() {
+  const t = useT();
+  const prefs = useNotifyPrefs();
+  const set = (place: 'inApp' | 'system', kind: NotifyKind, on: boolean) =>
+    setNotifyPrefs({ ...prefs, [place]: { ...prefs[place], [kind]: on } });
+  return (
+    <>
+      <h3>{t('settings.nav.notifications')}</h3>
+      <SettingsCard id="settings-notifications" title={t('settings.nav.notifications')}>
+        <p className="muted settings-card-note">{t('notify.intro')}</p>
+        <div className="notify-grid" role="table">
+          <div className="notify-row notify-head" role="row">
+            <span role="columnheader" />
+            <span role="columnheader">{t('notify.inApp')}</span>
+            <span role="columnheader">{t('notify.system')}</span>
+          </div>
+          {NOTIFY_KINDS.map((kind) => (
+            <div className="notify-row" role="row" key={kind}>
+              <span role="rowheader">{t(NOTIFY_LABELS[kind])}</span>
+              <input
+                type="checkbox"
+                role="cell"
+                aria-label={`${t(NOTIFY_LABELS[kind])} · ${t('notify.inApp')}`}
+                checked={prefs.inApp[kind]}
+                onChange={(e) => set('inApp', kind, e.target.checked)}
+              />
+              <input
+                type="checkbox"
+                role="cell"
+                aria-label={`${t(NOTIFY_LABELS[kind])} · ${t('notify.system')}`}
+                checked={prefs.system[kind]}
+                onChange={(e) => set('system', kind, e.target.checked)}
+              />
+            </div>
+          ))}
+        </div>
+        <button
+          type="button"
+          className="notify-test"
+          onClick={() =>
+            notify(
+              { kind: 'event', group: 'example', title: 'Zoia', body: t('notify.example') },
+              { evenInFront: true },
+            )
+          }
+        >
+          {t('notify.test')}
+        </button>
+      </SettingsCard>
+    </>
+  );
+}
+
 const CUE_LABELS: Record<CueEvent, MessageKey> = {
   join: 'sounds.event.join',
   leave: 'sounds.event.leave',
@@ -616,6 +689,7 @@ const CUE_LABELS: Record<CueEvent, MessageKey> = {
   viewerJoin: 'sounds.event.viewerJoin',
   viewerLeave: 'sounds.event.viewerLeave',
   mention: 'sounds.event.mention',
+  eventStart: 'sounds.event.eventStart',
 };
 
 /**
