@@ -92,11 +92,13 @@ function InboxPanel({
     };
   }, [onClose]);
 
-  // Above the bell, its right edge with the bell's, kept on screen.
-  const style = {
-    bottom: window.innerHeight - anchor.top + 8,
-    right: Math.max(8, window.innerWidth - anchor.right - 8),
-  };
+  // Under the bell at the top of the window, above it lower down; its right
+  // edge with the bell's, kept on screen.
+  const right = Math.max(8, window.innerWidth - anchor.right);
+  const style =
+    anchor.top < window.innerHeight / 2
+      ? { top: anchor.bottom + 6, right }
+      : { bottom: window.innerHeight - anchor.top + 8, right };
 
   return createPortal(
     <div

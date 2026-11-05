@@ -226,16 +226,21 @@ export class VoiceProcessor implements TrackProcessor<Track.Kind.Audio, AudioPro
   name = 'zoia-voice';
   processedTrack?: MediaStreamTrack;
   private graph: VoiceGraph | null = null;
-  // LiveKit passes the context to init only: a restart (restartTrack) brings
-  // the new track alone.
+  // Kept from the first init (our 48 kHz context): LiveKit's publishTrack calls
+  // setAudioContext with the room's default-rate context (e.g. 96 kHz), which
+  // would otherwise replace ours and run RNNoise at the wrong sample rate.
   private context: AudioContext | null = null;
+  private track: MediaStreamTrack | null = null;
 
   /** `identity` is yours, for your own ring. */
   constructor(private readonly identity?: string) {}
 
   async init({ track, audioContext }: AudioProcessorOptions) {
-    this.context = audioContext ?? this.context;
+    if (!this.context || audioContext?.sampleRate === VOICE_SAMPLE_RATE) {
+      this.context = audioContext ?? this.context;
+    }
     if (!this.context) throw new Error('No audio context for the microphone');
+    this.track = track;
     this.graph = await buildVoiceGraph(this.context, track, {
       gate: true,
       speaker: this.identity,
@@ -244,6 +249,12 @@ export class VoiceProcessor implements TrackProcessor<Track.Kind.Audio, AudioPro
   }
 
   async restart(options: AudioProcessorOptions) {
+    // LiveKit's publishTrack replaces track.audioContext with the room's own
+    // context and calls restart with the same MediaStreamTrack; keep the graph
+    // already built on our 48 kHz context.
+    if (this.graph && options.track === this.track && options.audioContext !== this.context) {
+      return;
+    }
     this.graph?.destroy();
     this.graph = null;
     await this.init(options);
@@ -252,6 +263,7 @@ export class VoiceProcessor implements TrackProcessor<Track.Kind.Audio, AudioPro
   async destroy() {
     this.graph?.destroy();
     this.graph = null;
+    this.track = null;
     this.processedTrack = undefined;
   }
 }

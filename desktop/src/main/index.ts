@@ -1161,8 +1161,11 @@ if (!isFirstInstance) {
 }
 
 // Windows shows notifications only from an app that names itself, and ties
-// them to the Start menu shortcut the installer makes with the same id.
-if (process.platform === 'win32') app.setAppUserModelId('com.github.caiomcg.zoia');
+// them to the Start menu shortcut the installer makes with the same id. The
+// installed app only: a development build claiming the id taught Windows to
+// show Electron's icon for the installed Zoia.
+if (process.platform === 'win32' && app.isPackaged)
+  app.setAppUserModelId('com.github.caiomcg.zoia');
 
 app.whenReady().then(async () => {
   // The second copy is on its way out; it must not open a window first.

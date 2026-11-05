@@ -28,6 +28,7 @@ import PeopleList from './components/PeopleList';
 import { useChat } from './chat/useChat';
 import { useThread } from './chat/useThread';
 import ThreadPanel from './components/ThreadPanel';
+import NotificationBell from './components/NotificationBell';
 import { shownUnread } from './chat/silence';
 import { useSilencedChats } from './chat/silence-store';
 import { usePresence } from './chat/usePresence';
@@ -1148,8 +1149,9 @@ export default function App({ preview = false }: { preview?: boolean }) {
         </div>
 
         {/* Screen and camera live in the sidebar's voice bar now, with the
-            rest of what you send (ADR 0039). */}
-        <div className="topbar-right" />
+            rest of what you send (ADR 0039). Notifications sit at the top
+            right, where they are looked for, whatever the sidebar shows. */}
+        <div className="topbar-right">{usable && <NotificationBell />}</div>
       </header>
 
       {roomError && <Banner onDismiss={() => dismiss('room', roomError)}>{roomError}</Banner>}
@@ -1452,21 +1454,35 @@ export default function App({ preview = false }: { preview?: boolean }) {
               ? (identity) => void kickMember(identity)
               : undefined
           }
+          textChats={
+            chat.enabled
+              ? (collapsed) => (
+                  <ChatList
+                    chat={chat}
+                    collapsed={collapsed}
+                    showing={chatShown}
+                    myRole={account?.role}
+                    onOpen={(id) => {
+                      chat.open(id);
+                      setView('chat');
+                    }}
+                    onError={(code) => setChatError(chatErrorText(code))}
+                  />
+                )
+              : undefined
+          }
+          onMessageMember={(name) => {
+            const person = chat.people.find((p) => p.name === name && p.id !== accountId && !p.bot);
+            if (!person) return;
+            void chat.openDirect(person.id).then((refused) => {
+              if (refused) setChatError(chatErrorText(refused));
+              else setView('chat');
+            });
+          }}
           chats={
             chat.enabled
               ? (collapsed) => (
                   <>
-                    <ChatList
-                      chat={chat}
-                      collapsed={collapsed}
-                      showing={chatShown}
-                      myRole={account?.role}
-                      onOpen={(id) => {
-                        chat.open(id);
-                        setView('chat');
-                      }}
-                      onError={(code) => setChatError(chatErrorText(code))}
-                    />
                     <DirectList
                       chat={chat}
                       me={accountId}
@@ -1504,8 +1520,10 @@ export default function App({ preview = false }: { preview?: boolean }) {
           chatsBadge={
             chat.enabled
               ? {
-                  unread: chat.totalUnread,
-                  calls: chat.totalMentions > 0 || chat.direct.some((d) => (d.unread ?? 0) > 0),
+                  // Direct messages alone: the chats everyone sees show their
+                  // own counts on the Channels tab.
+                  unread: chat.direct.reduce((sum, d) => sum + (d.unread ?? 0), 0),
+                  calls: chat.direct.some((d) => (d.unread ?? 0) > 0),
                 }
               : undefined
           }

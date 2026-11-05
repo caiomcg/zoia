@@ -12,6 +12,7 @@
 
 import {
   availableDeviceId,
+  defaultDeviceKey,
   getVoiceSettings,
   subscribeVoiceSettings,
   type ListedDevice,
@@ -23,13 +24,19 @@ const registeredElements = new Set<HTMLMediaElement>();
 // The outputs last listed; null until the first listing, when the choice is
 // trusted rather than routing everything to the default for a moment.
 let outputs: readonly ListedDevice[] | null = null;
-// The sink every target is routed to, to re-route only on a change.
+// The sink every target is routed to, and which device the default was, to
+// re-route only when the device in use changes.
 let currentSink: string | null = null;
+let currentDefaultKey = '';
 
 /** The output to play on now: the chosen one if it is plugged in, else the default. */
 function sinkNow(): string {
   const { speakerId } = getVoiceSettings();
   return outputs ? availableDeviceId(speakerId, outputs, 'audiooutput') : speakerId;
+}
+
+function defaultKeyNow(): string {
+  return outputs ? defaultDeviceKey(outputs, 'audiooutput') : '';
 }
 
 function applySink(target: AudioContext | HTMLMediaElement, sinkId: string): void {
@@ -54,15 +61,25 @@ export function registerAudioSink(target: AudioContext | HTMLMediaElement): () =
 
   if (target instanceof AudioContext) {
     registeredContexts.add(target);
-    // Losing its device can stop a context; this shows when it happens.
-    target.addEventListener('statechange', () =>
-      console.info(`[audio] playback context is ${target.state}`),
-    );
-    target.addEventListener('error', (event) =>
-      console.warn('[audio] playback context failed on its device', event),
-    );
+    // Losing its device can stop a context; nothing here suspends a registered
+    // context on purpose, so one that stops while still registered is resumed.
+    const onStateChange = () => {
+      if (!registeredContexts.has(target)) return;
+      console.info(`[audio] playback context is ${target.state}`);
+      if (target.state !== 'running' && target.state !== 'closed') {
+        void target
+          .resume()
+          .catch((err: unknown) => console.warn('[audio] could not resume playback', err));
+      }
+    };
+    const onError = (event: Event) =>
+      console.warn('[audio] playback context failed on its device', event);
+    target.addEventListener('statechange', onStateChange);
+    target.addEventListener('error', onError);
     return () => {
       registeredContexts.delete(target);
+      target.removeEventListener('statechange', onStateChange);
+      target.removeEventListener('error', onError);
     };
   } else {
     registeredElements.add(target);
@@ -75,8 +92,11 @@ export function registerAudioSink(target: AudioContext | HTMLMediaElement): () =
 /** Routes every active target to the sink in use, if that changed. */
 function routeAll(): void {
   const sink = sinkNow();
-  if (sink === currentSink) return;
+  const defaultKey = defaultKeyNow();
+  const defaultMoved = sink === '' && defaultKey !== currentDefaultKey;
+  if (sink === currentSink && !defaultMoved) return;
   currentSink = sink;
+  currentDefaultKey = defaultKey;
   for (const ctx of registeredContexts) {
     applySink(ctx, sink);
   }

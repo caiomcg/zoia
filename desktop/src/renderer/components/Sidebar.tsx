@@ -11,7 +11,6 @@ import {
 } from 'react';
 import { createPortal } from 'react-dom';
 import ResetButton from './ResetButton';
-import NotificationBell from './NotificationBell';
 import type { RoomMember } from '../livekit/useRoom';
 import type { AccountRole, RoomInfo } from '../../shared/ipc';
 import type { GridTarget } from './RemoteGrid';
@@ -429,6 +428,8 @@ export default function Sidebar({
   onWatchBroadcast,
   onToggleCamera,
   chats,
+  textChats,
+  onMessageMember,
   chatsBadge,
   people,
   events,
@@ -478,8 +479,12 @@ export default function Sidebar({
   onWatchBroadcast: (target: GridTarget) => void;
   /** Puts someone's camera on stage, or takes it off again. */
   onToggleCamera: (identity: string) => void;
-  /** The text chats (ADR 0036) and direct messages (ADR 0047), in their own tab. */
+  /** Direct messages (ADR 0047) and the people on the server, in the Chats tab. */
   chats?: (collapsed: boolean) => ReactNode;
+  /** The text chats everyone sees (ADR 0036), above the voice channels. */
+  textChats?: (collapsed: boolean) => ReactNode;
+  /** Double-clicking someone in a channel: write to them (ADR 0047), by their name. */
+  onMessageMember?: (name: string) => void;
   /** What the Chats tab says while it is not showing: unread, and whether any calls you. */
   chatsBadge?: { unread: number; calls: boolean };
   /**
@@ -673,6 +678,7 @@ export default function Sidebar({
     onToggleCamera,
     collapsed,
     speaking: voice?.speaking,
+    onMessage: onMessageMember,
   };
   // Which channel is being renamed, or 'new' while one is being named.
   const [editing, setEditing] = useState<string | null>(null);
@@ -1040,6 +1046,11 @@ export default function Sidebar({
                                   ? (event) => openMenu(event, p.identity, p.name, p.role)
                                   : undefined
                               }
+                              onDoubleClick={
+                                onMessageMember && !p.bot
+                                  ? () => onMessageMember(p.name)
+                                  : undefined
+                              }
                               {...dragFrom(p.identity, p.role, c.id)}
                             >
                               <Avatar
@@ -1079,6 +1090,9 @@ export default function Sidebar({
             )}
           </section>
         )}
+
+        {/* The chats everyone sees, under the voice channels. */}
+        {!showEvents && !onPeople && !onChats && textChats?.(collapsed)}
 
         {/* Their own tab; collapsed, under the channels as faces and initials. */}
         {!showEvents && (onChats || !tabbed) && chats?.(collapsed)}
@@ -1222,14 +1236,6 @@ export default function Sidebar({
               role={myRole}
               status={presence?.own}
             />
-            {settingsBadge > 0 && (
-              <span
-                className="settings-dot"
-                aria-label={t('sidebar.settingsPending', { count: settingsBadge })}
-              >
-                {settingsBadge}
-              </span>
-            )}
             <span className="sidebar-who">
               <span className="sidebar-name">{myName}</span>
               {presence?.own && (
@@ -1303,8 +1309,30 @@ export default function Sidebar({
             </div>
           </>
         )}
-        {/* Your notifications, grouped, beside your settings (see notify.ts). */}
-        {!collapsed && <NotificationBell />}
+        {/* Settings, one click away: in your menu too, but there it was hidden. */}
+        {!collapsed && (
+          <button
+            className="icon-button sidebar-settings"
+            onClick={() => onOpenSettings()}
+            title={
+              settingsBadge > 0
+                ? t('sidebar.settingsPending', { count: settingsBadge })
+                : t('sidebar.settings')
+            }
+            aria-label={
+              settingsBadge > 0
+                ? t('sidebar.settingsPending', { count: settingsBadge })
+                : t('sidebar.settings')
+            }
+          >
+            <IconGear />
+            {settingsBadge > 0 && (
+              <span className="settings-dot" aria-hidden="true">
+                {settingsBadge}
+              </span>
+            )}
+          </button>
+        )}
       </div>
       {statusAnchor && (
         <StatusMenu
@@ -1538,9 +1566,12 @@ function MemberRow({
   collapsed,
   onContextMenu,
   speaking,
+  onMessage,
 }: {
   /** Who is speaking in voice right now. */
   speaking?: ReadonlySet<string>;
+  /** Double-click: write to them. Never yourself, never a bot. */
+  onMessage?: (name: string) => void;
   /** Admins only: opens what they may do to this person. */
   onContextMenu?: (event: ReactMouseEvent) => void;
   member: RoomMember;
@@ -1584,6 +1615,7 @@ function MemberRow({
       aria-label={live ? t('sidebar.watchLive', { name: m.name }) : undefined}
       onContextMenu={onContextMenu}
       onClick={live ? () => onWatch(target) : undefined}
+      onDoubleClick={onMessage && !m.isLocal && !m.bot ? () => onMessage(m.name) : undefined}
       onKeyDown={
         live
           ? (event) => {
@@ -2119,6 +2151,26 @@ function IconLeave() {
       aria-hidden="true"
     >
       <path d="M10 4H5v16h5M14 8l4 4-4 4M18 12H9" />
+    </svg>
+  );
+}
+
+/** A gear: settings. */
+function IconGear() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="18"
+      height="18"
+      aria-hidden="true"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z" />
     </svg>
   );
 }

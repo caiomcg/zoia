@@ -33,6 +33,7 @@ import {
   type ListedDevice,
 } from './settings';
 import { VOICE_SAMPLE_RATE, VoiceProcessor } from './pipeline';
+import { registerAudioSink } from './audioSink';
 import { useSpeaking } from './speaking';
 import { DEAFENED_ATTRIBUTE } from './voice-room';
 
@@ -163,6 +164,7 @@ export function useVoice(roomRef: RefObject<Room | null>, connection: Connection
   const trackRef = useRef<LocalAudioTrack | null>(null);
   // The 48 kHz context the processing runs in, for as long as voice is on.
   const contextRef = useRef<AudioContext | null>(null);
+  const unregisterSinkRef = useRef<(() => void) | null>(null);
   // The room voice was joined in. Another room, or none, means it is over.
   const voiceRoomRef = useRef<Room | null>(null);
   const mutedRef = useRef(muted);
@@ -202,6 +204,8 @@ export function useVoice(roomRef: RefObject<Room | null>, connection: Connection
     voiceRoomRef.current = null;
     await track?.stopProcessor().catch(() => {});
     track?.stop();
+    unregisterSinkRef.current?.();
+    unregisterSinkRef.current = null;
     void contextRef.current?.close().catch(() => {});
     contextRef.current = null;
     setState('off');
@@ -286,13 +290,16 @@ export function useVoice(roomRef: RefObject<Room | null>, connection: Connection
         restartMicrophone(false);
       });
       // Noise suppression and the sensitivity gate, between capture and encoder.
-      // The context only feeds the encoder, so it plays on no device at all
-      // (sinkId none): on the default output, unplugging a headset stalled it,
-      // and with it everything you send.
-      contextRef.current ??= new AudioContext({
-        sampleRate: VOICE_SAMPLE_RATE,
-        sinkId: { type: 'none' },
-      } as AudioContextOptions);
+      // Nothing in the graph connects to context.destination, so nothing plays
+      // out loud, but the context still needs a real output device's clock:
+      // sinkId none runs on Chromium's software timer (FakeAudioWorker), whose
+      // jitter causes FIFO underruns that make RNNoise pump the voice volume.
+      // Registering with audioSink moves and resumes the context if its output
+      // device is unplugged.
+      if (!contextRef.current) {
+        contextRef.current = new AudioContext({ sampleRate: VOICE_SAMPLE_RATE });
+        unregisterSinkRef.current = registerAudioSink(contextRef.current);
+      }
       track.setAudioContext(contextRef.current);
       // Without it, the microphone still goes out as captured: being heard with
       // the noise beats not being heard at all.
