@@ -2803,6 +2803,42 @@ button.danger {
   background: var(--surface-2);
 }
 
+/* People are to click, drag and right-click, not text to copy: no I-beam over
+   a name or a face's initials, and no selection dragged across them. Covers
+   rows in a channel and the people list, the faces under other channels and
+   on events, direct-message rows, your own card, menus about someone and the
+   hover card of someone sharing. Chat messages, their authors and inputs
+   stay selectable, and so do menus that hold a text box (the soundboard).
+   Cursors are only defaulted here: buttons and clickable or
+   draggable rows set their own (pointer, grab) with more specific rules. */
+.member,
+.channel-people,
+.channel.direct,
+.sidebar-me,
+.sidebar-me-card,
+.person-menu,
+.member-menu-head,
+.member-menu-volume,
+.member-menu-check,
+.member-preview,
+.event-faces,
+.event-card-faces,
+.avatar {
+  user-select: none;
+}
+
+.member,
+.channel-people,
+.person-menu,
+.member-menu-head,
+.member-menu-volume,
+.member-menu-check,
+.member-preview,
+.event-faces,
+.event-card-faces {
+  cursor: default;
+}
+
 .member-name {
   overflow: hidden;
   font-size: 14px;
