@@ -51,6 +51,11 @@ updates:
       interval: monthly
     commit-message:
       prefix: 'ci'
+    ignore:
+      # From v6 its caching is a separate, proprietary component under
+      # Gradle's Terms of Use, accepted by upgrading. Stay on v5 by choice.
+      - dependency-name: gradle/actions
+        update-types: ['version-update:semver-major']
 
   - package-ecosystem: docker
     directory: /
