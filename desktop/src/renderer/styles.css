@@ -3508,7 +3508,6 @@ button.danger {
 }
 
 .voice-share-button {
-  position: relative;
   width: 30px;
   height: 30px;
   color: var(--muted);
@@ -3527,23 +3526,6 @@ button.danger {
 .voice-share-button.live,
 .voice-share-button.live:hover:not(:disabled) {
   color: var(--live);
-}
-
-.voice-share-dot {
-  position: absolute;
-  top: 4px;
-  right: 4px;
-  width: 6px;
-  height: 6px;
-  background: var(--live);
-  border-radius: 50%;
-  animation: share-live-pulse 1.6s ease-in-out infinite;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .voice-share-dot {
-    animation: none;
-  }
 }
 
 /* Collapsed: stacked above your picture. */
@@ -4041,15 +4023,6 @@ button.danger {
 
 .status-light.idle .status-dot {
   background: var(--muted);
-}
-
-/* ---- share controls ------------------------------------------------------ */
-
-/* A live share's dot, in the voice bar's camera and screen buttons. */
-@keyframes share-live-pulse {
-  50% {
-    opacity: 0.35;
-  }
 }
 
 /* ---- camera dialog ------------------------------------------------------- */

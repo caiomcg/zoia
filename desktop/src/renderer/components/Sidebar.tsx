@@ -1721,7 +1721,6 @@ function ShareButtons({
           aria-pressed={b.live}
         >
           {b.icon}
-          {b.live && <span className="voice-share-dot" aria-hidden="true" />}
         </button>
       ))}
     </div>
