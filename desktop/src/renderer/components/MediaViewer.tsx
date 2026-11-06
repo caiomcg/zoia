@@ -31,6 +31,7 @@ export default function MediaViewer({
   const [view, setView] = useState<View>(FIT);
   const [dragging, setDragging] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Where a press started, and the view then: a drag moves from there.
   const press = useRef<{ x: number; y: number; view: View; moved: boolean } | null>(null);
@@ -115,6 +116,16 @@ export default function MediaViewer({
     setView((v) => zoomAt(v, v.scale * Math.exp(-event.deltaY * 0.0015), at, shown, stage));
   }
 
+  async function copy() {
+    setError(null);
+    const result = await window.zoia.chat.copyMedia(chatId, attachment.id).catch(() => null);
+    if (!result?.ok) setError(t('chat.viewer.copyFailed'));
+    else {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    }
+  }
+
   async function download() {
     setSaving(true);
     setError(null);
@@ -147,6 +158,11 @@ export default function MediaViewer({
           </span>
         )}
         {error && <span className="media-viewer-error">{error}</span>}
+        {!isVideo && (
+          <button type="button" className="media-viewer-button" onClick={() => void copy()}>
+            {copied ? t('chat.viewer.copied') : t('chat.copyImage')}
+          </button>
+        )}
         <button
           type="button"
           className="media-viewer-button"

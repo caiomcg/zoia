@@ -15,6 +15,11 @@ import type { RemoteTrack } from 'livekit-client';
 import { useVoiceVolume } from './volumes';
 import { watchSpeaking } from './speaking';
 import { registerAudioSink } from './audioSink';
+import { useDucked } from './duck';
+
+// How fast voices fade under you while you hear yourself, and come back.
+const DUCK_DOWN_S = 0.03;
+const DUCK_UP_S = 0.15;
 
 export interface VoiceTrack {
   identity: string;
@@ -37,6 +42,7 @@ function Voice({ identity, track }: VoiceTrack) {
   const ref = useRef<HTMLAudioElement>(null);
   const gainRef = useRef<GainNode | null>(null);
   const volume = useVoiceVolume(identity);
+  const ducked = useDucked();
 
   useEffect(() => {
     const element = ref.current;
@@ -74,8 +80,14 @@ function Voice({ identity, track }: VoiceTrack) {
   }, [track]);
 
   useEffect(() => {
-    if (gainRef.current) gainRef.current.gain.value = volume;
-  }, [volume]);
+    const gain = gainRef.current;
+    if (!gain) return;
+    gain.gain.setTargetAtTime(
+      ducked ? 0 : volume,
+      gain.context.currentTime,
+      ducked ? DUCK_DOWN_S : DUCK_UP_S,
+    );
+  }, [volume, ducked]);
 
   return <audio ref={ref} autoPlay muted />;
 }

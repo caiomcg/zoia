@@ -3,7 +3,8 @@
  * done to it on the way, and the global shortcuts.
  *
  * Every change applies to the live microphone at once; the meter shows what
- * the channel hears, and where the sensitivity cuts it off.
+ * the channel hears, and where the sensitivity cuts it off. Hear yourself
+ * plays it back, on the chosen output, while this section is open.
  */
 
 import { useCallback, useEffect, useState } from 'react';
@@ -357,11 +358,14 @@ function Shortcuts({ state, recording, record, cancel, clear }: ReturnType<typeo
   );
 }
 
-export default function VoiceSettingsSection() {
+/** `closing` is the dialog fading out: Hear yourself stops at once, not when it is gone. */
+export default function VoiceSettingsSection({ closing = false }: { closing?: boolean }) {
   const t = useT();
   const settings = useVoiceSettings();
   const { devices } = useCameraDevices();
-  const mic = useMicLevel(settings);
+  // Off on every visit: it lives and dies with this section, never in the background.
+  const [hearing, setHearing] = useState(false);
+  const mic = useMicLevel(settings, hearing && !closing);
   const shortcuts = useShortcuts();
   const pushToTalk = shortcuts.state?.bindings.pushToTalk?.label ?? null;
 
@@ -477,6 +481,19 @@ export default function VoiceSettingsSection() {
             {levelHint}
           </p>
         </div>
+
+        <label className="voice-toggle">
+          <span>
+            {t('voiceSettings.monitor')}
+            <small className="muted">{t('voiceSettings.monitorHint')}</small>
+          </span>
+          <input
+            type="checkbox"
+            role="switch"
+            checked={hearing}
+            onChange={(event) => setHearing(event.target.checked)}
+          />
+        </label>
       </section>
 
       <section className="voice-card" aria-labelledby="voice-processing">

@@ -41,6 +41,7 @@ import type {
   AddonPreview,
   Presence,
   PresenceState,
+  GifResult,
 } from '../shared/ipc';
 import { getServerUrl } from './config';
 
@@ -531,6 +532,13 @@ export function chatPeople() {
 }
 
 /** The ! commands a chat offers, for autocomplete (ADR 0041). */
+/** GIFs from KLIPY through the server (ADR 0051): trending, or a search. */
+export function chatGifs(query: string, page: number) {
+  const params = new URLSearchParams({ page: String(page) });
+  if (query) params.set('q', query.slice(0, 100));
+  return attempt(call<{ gifs: GifResult[]; more: boolean }>(`/api/gifs?${params}`));
+}
+
 export function chatCommands(chatId: string) {
   return attempt(
     call<{ commands: ChatCommand[] }>(`/api/chats/${encodeURIComponent(chatId)}/commands`).then(

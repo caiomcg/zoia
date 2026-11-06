@@ -2803,6 +2803,42 @@ button.danger {
   background: var(--surface-2);
 }
 
+/* People are to click, drag and right-click, not text to copy: no I-beam over
+   a name or a face's initials, and no selection dragged across them. Covers
+   rows in a channel and the people list, the faces under other channels and
+   on events, direct-message rows, your own card, menus about someone and the
+   hover card of someone sharing. Chat messages, their authors and inputs
+   stay selectable, and so do menus that hold a text box (the soundboard).
+   Cursors are only defaulted here: buttons and clickable or
+   draggable rows set their own (pointer, grab) with more specific rules. */
+.member,
+.channel-people,
+.channel.direct,
+.sidebar-me,
+.sidebar-me-card,
+.person-menu,
+.member-menu-head,
+.member-menu-volume,
+.member-menu-check,
+.member-preview,
+.event-faces,
+.event-card-faces,
+.avatar {
+  user-select: none;
+}
+
+.member,
+.channel-people,
+.person-menu,
+.member-menu-head,
+.member-menu-volume,
+.member-menu-check,
+.member-preview,
+.event-faces,
+.event-card-faces {
+  cursor: default;
+}
+
 .member-name {
   overflow: hidden;
   font-size: 14px;
@@ -3508,7 +3544,6 @@ button.danger {
 }
 
 .voice-share-button {
-  position: relative;
   width: 30px;
   height: 30px;
   color: var(--muted);
@@ -3527,23 +3562,6 @@ button.danger {
 .voice-share-button.live,
 .voice-share-button.live:hover:not(:disabled) {
   color: var(--live);
-}
-
-.voice-share-dot {
-  position: absolute;
-  top: 4px;
-  right: 4px;
-  width: 6px;
-  height: 6px;
-  background: var(--live);
-  border-radius: 50%;
-  animation: share-live-pulse 1.6s ease-in-out infinite;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .voice-share-dot {
-    animation: none;
-  }
 }
 
 /* Collapsed: stacked above your picture. */
@@ -4041,15 +4059,6 @@ button.danger {
 
 .status-light.idle .status-dot {
   background: var(--muted);
-}
-
-/* ---- share controls ------------------------------------------------------ */
-
-/* A live share's dot, in the voice bar's camera and screen buttons. */
-@keyframes share-live-pulse {
-  50% {
-    opacity: 0.35;
-  }
 }
 
 /* ---- camera dialog ------------------------------------------------------- */
@@ -9206,4 +9215,132 @@ button.events-new:hover {
 
 .topbar .notify-badge {
   border-color: var(--surface);
+}
+
+/* Notification sounds: each mutable, each with its own volume. */
+.notify-sounds {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.notify-sounds-title {
+  font-weight: 600;
+}
+
+.notify-sound {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(120px, 1.2fr) 56px;
+  gap: 12px;
+  align-items: center;
+}
+
+.notify-sound-toggle {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  cursor: pointer;
+}
+
+.notify-sound.off .settings-range {
+  opacity: 0.45;
+}
+
+.notify-sound-percent {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+/* GIFs (ADR 0051): the picker over the message box, and a GIF sent. */
+.chat-gif-button {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.chat-gif-picker {
+  position: absolute;
+  right: 12px;
+  bottom: calc(100% - 4px);
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: min(380px, calc(100% - 24px));
+  height: 380px;
+  padding: 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  animation: pop-in 0.12s ease-out;
+}
+
+.chat-gif-search {
+  width: 100%;
+}
+
+/* No browser outline or clear button: the field's own border shows focus. */
+.chat-gif-search input:focus-visible {
+  outline: none;
+}
+
+.chat-gif-search input::-webkit-search-cancel-button {
+  display: none;
+}
+
+.chat-gif-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.chat-gif-grid {
+  columns: 2;
+  column-gap: 6px;
+}
+
+.chat-gif-item {
+  display: block;
+  width: 100%;
+  margin: 0 0 6px;
+  padding: 0;
+  overflow: hidden;
+  cursor: pointer;
+  background: var(--raised);
+  border: none;
+  border-radius: 6px;
+  break-inside: avoid;
+}
+
+.chat-gif-item img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.chat-gif-item:hover,
+.chat-gif-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.chat-gif-note {
+  margin: 12px 0;
+  text-align: center;
+}
+
+.chat-gif-credit {
+  font-size: 10px;
+  color: var(--muted);
+  text-align: right;
+}
+
+.chat-gif {
+  display: block;
+  max-width: min(320px, 100%);
+  max-height: 260px;
+  margin-top: 4px;
+  border-radius: 8px;
 }

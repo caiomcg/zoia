@@ -10,7 +10,16 @@
 
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { app, dialog, net, protocol, type BrowserWindow } from 'electron';
+import {
+  app,
+  clipboard,
+  ClipboardItem,
+  dialog,
+  nativeImage,
+  net,
+  protocol,
+  type BrowserWindow,
+} from 'electron';
 import { CHAT_MEDIA_SCHEME, type ActionOutcome } from '../shared/ipc';
 import { getServerUrl } from './config';
 import { saveName } from './media-name';
@@ -57,6 +66,33 @@ export async function saveMedia(
     return { ok: true, value: { saved: true } };
   } catch {
     return { ok: false, error: 'save_failed' };
+  }
+}
+
+/**
+ * Puts a chat photo on the clipboard, as the picture itself, to paste into
+ * any app. Fetched here, signed in: the window's copy is on a scheme of its
+ * own that a page cannot read back into a picture.
+ */
+export async function copyMedia(chatId: string, mediaId: string): Promise<ActionOutcome> {
+  const base = getServerUrl();
+  if (!base || !CHAT_ID.test(chatId) || !MEDIA_ID.test(mediaId)) {
+    return { ok: false, error: 'not_found' };
+  }
+  try {
+    const response = await net.fetch(`${base}/api/chats/${chatId}/media/${mediaId}`, {
+      credentials: 'include',
+    });
+    if (!response.ok) return { ok: false, error: `http_${response.status}` };
+    const image = nativeImage.createFromBuffer(Buffer.from(await response.arrayBuffer()));
+    // PNG and JPEG decode here; a format that does not comes back empty.
+    if (image.isEmpty()) return { ok: false, error: 'unsupported' };
+    // As PNG, which every app pastes, whatever the photo was sent as.
+    const png = new Blob([new Uint8Array(image.toPNG())], { type: 'image/png' });
+    await clipboard.write([new ClipboardItem({ 'image/png': png })]);
+    return { ok: true, value: undefined };
+  } catch {
+    return { ok: false, error: 'copy_failed' };
   }
 }
 

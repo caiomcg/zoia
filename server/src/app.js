@@ -18,6 +18,7 @@ import { fixedChannels } from './channels.js';
 import { AVATAR_MAX_BYTES, imageType, isAvatarId } from './avatars.js';
 import { canManage, isAdmin } from './accounts.js';
 import { chatRoutes, createChatHub } from './chat-routes.js';
+import { gifRoutes } from './gif-routes.js';
 import { scheduleRoutes } from './schedule-routes.js';
 import { addonRoutes } from './addon-routes.js';
 import { addonAdminRoutes } from './addon-admin.js';
@@ -1311,6 +1312,12 @@ export function createApp({
     app.use('/api/schedule', schedule.router);
     app.locals.scheduleSweep = schedule.sweep;
   }
+
+  // GIFs from KLIPY (ADR 0051), searched here so the key stays on the server.
+  app.use(
+    '/api/gifs',
+    gifRoutes({ apiKey: config.gifs?.apiKey, requireSession, limit: config.gifs?.limit }),
+  );
 
   // maxAge 0 with etags means the browser revalidates and gets a 304 when
   // nothing changed. An hour of caching meant a deploy did not reach anyone

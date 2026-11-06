@@ -23,7 +23,7 @@ import * as encoder from './encoder';
 import * as capture from './capture';
 import { createChatStream } from './chat-stream';
 import { createIdleWatch } from './idle-watch';
-import { handleMediaScheme, registerMediaScheme, saveMedia } from './chat-media';
+import { copyMedia, handleMediaScheme, registerMediaScheme, saveMedia } from './chat-media';
 import { getCloseToTray, installTray, setCloseToTray, showWindow } from './tray';
 import { isDevToolsEnabled, openDevTools, setDevToolsEnabled } from './devtools';
 import * as language from './language';
@@ -644,6 +644,15 @@ function registerIpc(): void {
         typeof name === 'string' ? name : null,
         String(type),
       ),
+  );
+  ipcMain.handle(IPC.chatGifs, (_event, query: unknown, page: unknown) =>
+    api.chatGifs(
+      typeof query === 'string' ? query : '',
+      Math.max(1, Math.floor(Number(page) || 1)),
+    ),
+  );
+  ipcMain.handle(IPC.chatCopyMedia, (_event, chatId: unknown, mediaId: unknown) =>
+    copyMedia(String(chatId), String(mediaId)),
   );
   ipcMain.handle(IPC.chatRead, (_event, chatId: unknown, messageId: unknown) =>
     api.chatRead(String(chatId), String(messageId)),

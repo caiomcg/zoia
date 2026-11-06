@@ -213,7 +213,7 @@ export default function SettingsDialog({
                 hardwareAvailable={hardwareAvailable ?? false}
               />
             )}
-            {section === 'voice' && <VoiceSettingsSection />}
+            {section === 'voice' && <VoiceSettingsSection closing={closing} />}
             {section === 'general' && <GeneralSection />}
             {section === 'sounds' && <SoundsSection />}
             {section === 'notifications' && <NotificationsSection />}
@@ -631,8 +631,19 @@ const NOTIFY_LABELS: Record<NotifyKind, MessageKey> = {
 function NotificationsSection() {
   const t = useT();
   const prefs = useNotifyPrefs();
+  const sounds = useSoundSettings();
   const set = (place: 'inApp' | 'system', kind: NotifyKind, on: boolean) =>
     setNotifyPrefs({ ...prefs, [place]: { ...prefs[place], [kind]: on } });
+  // The sounds notifications make are cues (Settings › Sounds): events have
+  // their own, and mentions and direct messages share the mention one.
+  const updateSound = (event: 'eventStart' | 'mention', patch: Partial<CueSettings>) => {
+    const cue = { ...sounds.cues[event], ...patch };
+    setSoundSettings({ ...sounds, cues: { ...sounds.cues, [event]: cue } });
+    return cue;
+  };
+  const preview = (event: 'eventStart' | 'mention', cue = sounds.cues[event]) => {
+    if (cue.enabled) playCue(event, cue, sounds.volume);
+  };
   return (
     <>
       <h3>{t('settings.nav.notifications')}</h3>
@@ -664,15 +675,58 @@ function NotificationsSection() {
             </div>
           ))}
         </div>
+        <div className="notify-sounds">
+          <span className="notify-sounds-title">{t('notify.sounds')}</span>
+          {(
+            [
+              ['eventStart', 'notify.soundEvents'],
+              ['mention', 'notify.soundMessages'],
+            ] as const
+          ).map(([event, label]) => {
+            const cue = sounds.cues[event];
+            const percent = Math.round(cue.volume * 100);
+            return (
+              <div key={event} className={`notify-sound ${cue.enabled ? '' : 'off'}`}>
+                <label className="notify-sound-toggle">
+                  <input
+                    type="checkbox"
+                    checked={cue.enabled}
+                    onChange={(e) =>
+                      preview(event, updateSound(event, { enabled: e.target.checked }))
+                    }
+                  />
+                  <span>{t(label)}</span>
+                </label>
+                <input
+                  className="settings-range"
+                  type="range"
+                  min={0}
+                  max={100}
+                  value={percent}
+                  disabled={!cue.enabled}
+                  aria-label={`${t(label)}: ${t('sounds.volume')}`}
+                  onChange={(e) => updateSound(event, { volume: Number(e.target.value) / 100 })}
+                  onPointerUp={() => preview(event)}
+                  onKeyUp={() => preview(event)}
+                />
+                <span className="notify-sound-percent">
+                  {cue.enabled ? `${percent}%` : t('notify.soundOff')}
+                </span>
+              </div>
+            );
+          })}
+          <small className="muted">{t('notify.soundsHint')}</small>
+        </div>
         <button
           type="button"
           className="notify-test"
-          onClick={() =>
+          onClick={() => {
             notify(
               { kind: 'event', group: 'example', title: 'Zoia', body: t('notify.example') },
               { evenInFront: true },
-            )
-          }
+            );
+            preview('eventStart');
+          }}
         >
           {t('notify.test')}
         </button>

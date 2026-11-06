@@ -27,6 +27,7 @@ import {
 import type { MessageKey } from '../../shared/i18n';
 import { clampPairSplit, pairSplitLimits } from '../pair-split';
 import { registerAudioSink } from '../voice/audioSink';
+import { useDucked } from '../voice/duck';
 
 /**
  * Every broadcast in the room, laid out one of two ways:
@@ -695,6 +696,8 @@ function useSnapshot(
  */
 function ListenAudio({ track, audio }: { track: RemoteTrack; audio: AudioSetting }) {
   const ref = useRef<HTMLAudioElement>(null);
+  // Quiet while you hear yourself (duck.ts).
+  const ducked = useDucked();
 
   useEffect(() => {
     const element = ref.current;
@@ -714,9 +717,9 @@ function ListenAudio({ track, audio }: { track: RemoteTrack; audio: AudioSetting
   useEffect(() => {
     const element = ref.current;
     if (!element) return;
-    element.muted = audio.muted;
+    element.muted = audio.muted || ducked;
     element.volume = audio.volume;
-  }, [audio.muted, audio.volume]);
+  }, [audio.muted, audio.volume, ducked]);
 
   return <audio ref={ref} autoPlay />;
 }

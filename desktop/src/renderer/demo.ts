@@ -201,6 +201,8 @@ export function installDemo() {
         return ok(message);
       },
       saveMedia: unavailable,
+      copyMedia: unavailable,
+      gifs: unavailable,
       react: (chatId, messageId, emoji, on) => {
         const message = messages.get(chatId)?.find((m) => m.id === messageId);
         if (message) message.reactions = applyReaction(message.reactions, emoji, me, on);

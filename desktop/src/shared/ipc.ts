@@ -84,6 +84,18 @@ export interface IssuedCode {
  * that is not one; the renderer turns it into words.
  */
 export type AuthOutcome = { ok: true; status: PairingStatus } | { ok: false; error: string };
+/** A GIF from KLIPY, as the server trims it (ADR 0051). */
+export interface GifResult {
+  id: string;
+  title: string;
+  /** What is sent: a medium GIF. */
+  url: string;
+  /** What the picker shows: a small one. */
+  preview: string;
+  width: number;
+  height: number;
+}
+
 export type ActionOutcome<T = undefined> = { ok: true; value: T } | { ok: false; error: string };
 
 /** An addon's bot (ADR 0041), as an admin sees it to give it a picture. */
@@ -735,6 +747,8 @@ export const IPC = {
   chatEditMessage: 'zoia:chat:editMessage',
   chatReact: 'zoia:chat:react',
   chatSaveMedia: 'zoia:chat:saveMedia',
+  chatCopyMedia: 'zoia:chat:copyMedia',
+  chatGifs: 'zoia:chat:gifs',
   chatCommands: 'zoia:chat:commands',
   chatDirect: 'zoia:chat:direct',
   chatTyping: 'zoia:chat:typing',

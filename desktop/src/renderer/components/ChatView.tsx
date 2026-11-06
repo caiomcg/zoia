@@ -20,6 +20,7 @@ import {
   type ChatReaction,
   type ChatReply,
   type ChatCommand,
+  type GifResult,
 } from '../../shared/ipc';
 import type { ChatController } from '../chat/useChat';
 import { notifyTyping, typingSent, useTypers } from '../chat/typing';
@@ -37,6 +38,8 @@ import { composerHighlights, splitHighlights } from '../chat/highlight';
 import { insertText, pushRecent } from '../chat/emoji';
 import Avatar from './Avatar';
 import EmojiPicker from './EmojiPicker';
+import GifPicker from './GifPicker';
+import { isGifMessage } from '../chat/gif';
 import MediaViewer from './MediaViewer';
 import MessageText, { ExcerptText } from './MessageText';
 import { shortcutAction } from '../chat/format';
@@ -204,6 +207,9 @@ export default function ChatView({
   const fileInputRef = useRef<HTMLInputElement>(null);
   // The emoji beside the message box, and the button that opens them.
   const [picking, setPicking] = useState(false);
+  const [gifPicking, setGifPicking] = useState(false);
+  const gifButtonRef = useRef<HTMLButtonElement>(null);
+  const gifsOn = useGifsOn();
   const [recentEmoji, setRecentEmoji] = useState(readRecentEmoji);
   // The formatting bar over the message box, as Teams has, opened by its button.
   const [formatting, setFormatting] = useState(readFormatBar);
@@ -300,6 +306,25 @@ export default function ChatView({
     }
     setError(null);
     setFile(next);
+  }
+
+  /** Sends a GIF as its own message, keeping whatever is typed (ADR 0051). */
+  async function sendGif(gif: GifResult) {
+    if (sending) return;
+    setGifPicking(false);
+    setSending(true);
+    setError(null);
+    const refused = await chat.send(gif.url, undefined, {
+      ...(replyingTo ? { replyTo: replyingTo.id } : {}),
+      mentions: [],
+    });
+    setSending(false);
+    if (refused) {
+      setError(errorText(refused));
+      return;
+    }
+    stickRef.current = true;
+    setReplyingTo(null);
   }
 
   async function submit() {
@@ -843,6 +868,13 @@ export default function ChatView({
               </button>
             </div>
           )}
+          {gifPicking && chat.available && (
+            <GifPicker
+              onPick={(gif) => void sendGif(gif)}
+              onClose={() => setGifPicking(false)}
+              toggle={gifButtonRef}
+            />
+          )}
           {picking && chat.available && (
             <EmojiPicker
               recent={recentEmoji}
@@ -981,6 +1013,23 @@ export default function ChatView({
                 <path d="M8.5 14.5a4.5 4.5 0 007 0M9 9.5h.01M15 9.5h.01" />
               </svg>
             </button>
+            {gifsOn && (
+              <button
+                ref={gifButtonRef}
+                type="button"
+                className={`chat-attach chat-gif-button${gifPicking ? ' active' : ''}`}
+                disabled={!chat.available || sending}
+                onClick={() => {
+                  setPicking(false);
+                  setGifPicking((open) => !open);
+                }}
+                aria-expanded={gifPicking}
+                aria-label={t('chat.gif')}
+                title={t('chat.gif')}
+              >
+                GIF
+              </button>
+            )}
             {/* Beside send, where the eye ends up after typing. */}
             <button
               type="button"
@@ -1230,7 +1279,7 @@ function MessageRow({
           if (editing) return;
           const link =
             (event.target as Element).closest<HTMLAnchorElement>('a.chat-link')?.href ?? null;
-          if (!link && !onReply && !onDelete && !onThread) return;
+          // Every message can be copied: its words, or its photo.
           event.preventDefault();
           setMenu({ x: event.clientX, y: event.clientY, link });
         }}
@@ -1347,6 +1396,15 @@ function MessageRow({
           )}
           {editing ? (
             <EditBox initial={message.body} onSave={onSaveEdit} onCancel={onCancelEdit} />
+          ) : isGifMessage(message.body) ? (
+            <img
+              className="chat-gif"
+              src={message.body.trim()}
+              alt={t('chat.gif')}
+              loading="lazy"
+              draggable={false}
+              onLoad={onMediaLoad}
+            />
           ) : message.body ? (
             <MessageText
               body={message.body}
@@ -1397,6 +1455,12 @@ function MessageRow({
         <MessageMenu
           name={name}
           link={menu.link}
+          text={message.body || null}
+          onCopyImage={
+            message.attachment?.type.startsWith('image/')
+              ? () => void copyImage(message.chatId, message.attachment!.id)
+              : undefined
+          }
           x={menu.x}
           y={menu.y}
           onClose={() => setMenu(null)}
@@ -1416,6 +1480,8 @@ function MessageRow({
 function MessageMenu({
   name,
   link,
+  text,
+  onCopyImage,
   x,
   y,
   onClose,
@@ -1426,6 +1492,9 @@ function MessageMenu({
   /** Who wrote it, naming the menu. */
   name: string;
   link: string | null;
+  /** The message's words, for Copy message; null for a photo alone. */
+  text: string | null;
+  onCopyImage?: () => void;
   x: number;
   y: number;
   onClose: () => void;
@@ -1465,8 +1534,14 @@ function MessageMenu({
             window.open(link, '_blank', 'noreferrer'),
           )}
           {item(t('chat.copyLink'), <IconCopy />, () => void navigator.clipboard.writeText(link))}
-          {(onReply || onDelete || onThread) && <hr className="person-menu-divider" />}
+          <hr className="person-menu-divider" />
         </>
+      )}
+      {text &&
+        item(t('chat.copyMessage'), <IconCopy />, () => void navigator.clipboard.writeText(text))}
+      {onCopyImage && item(t('chat.copyImage'), <IconCopy />, onCopyImage)}
+      {(text || onCopyImage) && (onReply || onDelete || onThread) && (
+        <hr className="person-menu-divider" />
       )}
       {onReply && item(t('chat.reply'), <IconReply />, onReply)}
       {onThread && item(t('chat.thread.open'), <IconThread />, onThread)}
@@ -1656,7 +1731,9 @@ function ReplyQuote({ reply, label }: { reply: ChatReply; label?: string }) {
       </span>
     );
   }
-  const what = reply.body ? (
+  const what = isGifMessage(reply.body) ? (
+    t('chat.gif')
+  ) : reply.body ? (
     <ExcerptText body={reply.body} />
   ) : reply.kind === 'video' ? (
     t('chat.video')
@@ -1884,4 +1961,38 @@ function IconPencil() {
       <path d="M16.5 3.5a2.12 2.12 0 013 3L7 19l-4 1 1-4z" />
     </svg>
   );
+}
+
+/** Copies a chat photo, as the picture, through main (see chat-media.ts). */
+export async function copyImage(chatId: string, mediaId: string): Promise<boolean> {
+  const result = await window.zoia.chat.copyMedia(chatId, mediaId).catch(() => ({ ok: false }));
+  return result.ok;
+}
+
+// Whether this server has GIFs (a KLIPY key): asked once, and the GIF button
+// shows only if so (ADR 0051).
+let gifsKnown: boolean | null = null;
+let gifsAsking: Promise<boolean> | null = null;
+
+function useGifsOn(): boolean {
+  const [on, setOn] = useState(gifsKnown ?? false);
+  useEffect(() => {
+    if (gifsKnown !== null) return;
+    gifsAsking ??= window.zoia.chat
+      .gifs('', 1)
+      .then((r) => r.ok)
+      .catch(() => false)
+      .then((ok) => {
+        // A failure other than "off" may pass; ask again next time.
+        if (ok) gifsKnown = true;
+        else gifsAsking = null;
+        return ok;
+      });
+    let live = true;
+    void gifsAsking.then((ok) => live && setOn(ok));
+    return () => {
+      live = false;
+    };
+  }, []);
+  return on;
 }
