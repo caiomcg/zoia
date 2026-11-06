@@ -1,4 +1,8 @@
-/** Open text chats, pinned ones first. Closing the last stays closed. */
+/**
+ * Open text chats: the pinned ones first, which stay, and one more that cycles.
+ * Opening a chat that has no tab takes the place of the unpinned one, so tabs
+ * never pile up; pin a chat to keep it. Closing the last stays closed.
+ */
 export interface ChatTabs {
   ids: string[];
   pinned: string[];
@@ -14,7 +18,10 @@ export const EMPTY_CHAT_TABS: ChatTabs = {
 };
 
 type Action =
-  | { type: 'sync'; ids: string[] }
+  /** `saved`: the pins kept from last time, restored when the tabs start. */
+  | { type: 'sync'; ids: string[]; saved?: readonly string[] }
+  /** Drag a tab onto another: it takes that tab's place, within its own group. */
+  | { type: 'move'; id: string; to: string }
   | { type: 'open'; id: string }
   | { type: 'close'; id: string }
   | { type: 'pin'; id: string; pinned: boolean }
@@ -27,7 +34,7 @@ export function chatTabs(state: ChatTabs, action: Action): ChatTabs {
     case 'open':
       return {
         ...state,
-        ids: state.ids.includes(action.id) ? state.ids : [...state.ids, action.id],
+        ids: state.ids.includes(action.id) ? state.ids : [...state.pinned, action.id],
         activeId: action.id,
         initialized: true,
       };
@@ -56,10 +63,34 @@ export function chatTabs(state: ChatTabs, action: Action): ChatTabs {
         ids: [...pinned, ...state.ids.filter((id) => !pinned.includes(id))],
       };
     }
+    case 'move': {
+      if (action.id === action.to) return state;
+      const pinned = state.pinned.includes(action.id);
+      if (!state.ids.includes(action.to) || pinned !== state.pinned.includes(action.to)) {
+        return state;
+      }
+      const place = (list: string[]) => {
+        if (!list.includes(action.id)) return list;
+        const from = list.indexOf(action.id);
+        const to = list.indexOf(action.to);
+        const next = list.filter((id) => id !== action.id);
+        next.splice(to, 0, action.id);
+        return from === to ? list : next;
+      };
+      return { ...state, ids: place(state.ids), pinned: place(state.pinned) };
+    }
     case 'sync': {
       const first = action.ids[0];
       if (!state.initialized && first) {
-        return { ...EMPTY_CHAT_TABS, ids: [first], activeId: first, initialized: true };
+        // Last time's pins that still exist, in their order, then the default chat.
+        const pinned = [...new Set(action.saved ?? [])].filter((id) => action.ids.includes(id));
+        return {
+          ...EMPTY_CHAT_TABS,
+          ids: pinned.includes(first) ? pinned : [...pinned, first],
+          pinned,
+          activeId: first,
+          initialized: true,
+        };
       }
       let next = state;
       for (const id of state.ids) {

@@ -33,8 +33,9 @@ describe('notification settings', () => {
     const prefs = parseNotifyPrefs(
       JSON.stringify({ inApp: { direct: false }, system: { event: false, mention: 'no' } }),
     );
-    assert.deepEqual(prefs.inApp, { event: true, direct: false, mention: true });
-    assert.deepEqual(prefs.system, { event: false, direct: true, mention: true });
+    assert.deepEqual(prefs.inApp, { event: true, direct: false, mention: true, alert: true });
+    // The app's own errors stay in Zoia unless someone asks for them in Windows.
+    assert.deepEqual(prefs.system, { event: false, direct: true, mention: true, alert: false });
   });
 });
 

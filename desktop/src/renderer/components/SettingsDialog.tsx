@@ -622,6 +622,7 @@ const NOTIFY_LABELS: Record<NotifyKind, MessageKey> = {
   event: 'notify.kind.event',
   direct: 'notify.kind.direct',
   mention: 'notify.kind.mention',
+  alert: 'notify.kind.alert',
 };
 
 /**

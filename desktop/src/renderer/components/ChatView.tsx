@@ -237,9 +237,16 @@ export default function ChatView({
   const lastId = messages.at(-1)?.id;
   const firstId = messages[0]?.id;
 
+  // A different chat starts at its bottom, whatever the last one was scrolled to.
+  const shownChatRef = useRef<string | undefined>(undefined);
   useLayoutEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
+    if (shownChatRef.current !== thread?.chatId) {
+      shownChatRef.current = thread?.chatId;
+      stickRef.current = true;
+      anchorRef.current = null;
+    }
     if (anchorRef.current !== null) {
       el.scrollTop = el.scrollHeight - anchorRef.current;
       anchorRef.current = null;
@@ -247,6 +254,23 @@ export default function ChatView({
       el.scrollTop = el.scrollHeight;
     }
   }, [lastId, firstId, thread?.chatId, visible]);
+
+  // Opening a chat lands on its newest message, and stays there while what is
+  // above it settles: pictures, GIFs, link cards and fonts grow the list after
+  // the first paint, which otherwise left a chat opened in its middle.
+  const loaded = Boolean(thread && !thread.loading);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return undefined;
+    const keep = () => {
+      if (anchorRef.current === null && stickRef.current) el.scrollTop = el.scrollHeight;
+    };
+    const observer = new ResizeObserver(keep);
+    observer.observe(el);
+    const list = el.querySelector('.chat-messages');
+    if (list) observer.observe(list);
+    return () => observer.disconnect();
+  }, [thread?.chatId, loaded]);
 
   // Each chat keeps its draft; files, replies and edits belong to the active view.
   useLayoutEffect(() => {

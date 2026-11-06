@@ -10,9 +10,10 @@
 
 import { useSyncExternalStore } from 'react';
 
-export type NotifyKind = 'event' | 'direct' | 'mention';
+/** `alert`: the app's own errors and warnings, which used to be banners. */
+export type NotifyKind = 'event' | 'direct' | 'mention' | 'alert';
 
-export const NOTIFY_KINDS: readonly NotifyKind[] = ['event', 'direct', 'mention'];
+export const NOTIFY_KINDS: readonly NotifyKind[] = ['event', 'direct', 'mention', 'alert'];
 
 /** Where each kind is said: under the bell, and by Windows. */
 export interface NotifyPrefs {
@@ -21,8 +22,9 @@ export interface NotifyPrefs {
 }
 
 export const DEFAULT_NOTIFY_PREFS: NotifyPrefs = {
-  inApp: { event: true, direct: true, mention: true },
-  system: { event: true, direct: true, mention: true },
+  inApp: { event: true, direct: true, mention: true, alert: true },
+  // Windows is for what people do; the app's own troubles stay in Zoia.
+  system: { event: true, direct: true, mention: true, alert: false },
 };
 
 const PREFS_KEY = 'zoia.notifications';
@@ -86,9 +88,12 @@ export function useNotifyPrefs(): NotifyPrefs {
  */
 export type NotifyTarget =
   | { type: 'channel'; id: string }
-  | { type: 'chat'; id: string }
+  /** `thread`: a reply's thread, opened beside its chat. */
+  | { type: 'chat'; id: string; thread?: string }
   /** An event: its channel when it has one the app knows, else the event itself. */
-  | { type: 'event'; id: string; channelId: string | null };
+  | { type: 'event'; id: string; channelId: string | null }
+  /** Something the app does: an alert's button, such as restarting. */
+  | { type: 'action'; id: 'restart-unelevated' };
 
 /** One entry under the bell: one thing, or several of the same grouped. */
 export interface InboxItem {
@@ -107,6 +112,8 @@ export interface InboxItem {
   target?: NotifyTarget;
   /** What clicking it does, in words: "Join Sineminha". */
   actionLabel?: string;
+  /** How bad an alert is: red for an error, amber for a warning. */
+  tone?: 'error' | 'warn';
 }
 
 /** Entries kept at most; the oldest go. */
@@ -133,6 +140,7 @@ export function addToInbox(
         at: item.at,
         target: item.target,
         actionLabel: item.actionLabel,
+        tone: item.tone,
         count: same.count + 1,
       }
     : { ...item, count: 1, read: false };
@@ -274,11 +282,19 @@ export function notify(
     body: string;
     target?: NotifyTarget;
     actionLabel?: string;
+    tone?: 'error' | 'warn';
   },
-  /** Show Windows' one even with Zoia in front: the example in Settings. */
-  { evenInFront = false }: { evenInFront?: boolean } = {},
+  {
+    evenInFront = false,
+    bell = true,
+  }: {
+    /** Show Windows' one even with Zoia in front: the example in Settings. */
+    evenInFront?: boolean;
+    /** False: Windows only, nothing under the bell (a direct message has its own badge). */
+    bell?: boolean;
+  } = {},
 ) {
-  if (prefs.inApp[input.kind]) {
+  if (bell && prefs.inApp[input.kind]) {
     inbox = addToInbox(inbox, { ...input, id: nextId++, at: Date.now() });
     changed();
   }

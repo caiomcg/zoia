@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import Banner from './components/Banner';
+import BellAlerts from './components/BellAlerts';
 import CameraDialog from './components/CameraDialog';
 import AuthScreen from './components/AuthScreen';
 import WaitingScreen from './components/WaitingScreen';
@@ -55,6 +55,8 @@ import { primeAvatar, publishAvatarVersions, type EncodedAvatar } from './avatar
 import {
   DEFAULT_PRESET_ID,
   QUALITY_PRESETS,
+  threadIdOf,
+  threadParts,
   type BroadcastMode,
   type GpuStatus,
   type PairingStatus,
@@ -87,9 +89,6 @@ const MOVE_RECHECK_MS = 1_200;
  */
 const ACCOUNT_POLL_MS = 30_000;
 const ADMIN_POLL_MS = 10_000;
-
-/** How long "you were disconnected" stays: long enough to be read on coming back. */
-const DISCONNECT_NOTICE_MS = 60_000;
 
 /**
  * Who to list in a channel being hopped to, before its room has connected:
@@ -152,7 +151,6 @@ export default function App({ preview = false }: { preview?: boolean }) {
   );
   const [gpu, setGpu] = useState<GpuStatus | null>(null);
   const [stageError, setStageError] = useState<string | null>(null);
-  const [dismissed, setDismissed] = useState<Set<string>>(new Set());
   // The channel this device is in, or wants to be in. None at launch: the app
   // lists the channels and joins one only when it is clicked.
   const [channel, setChannel] = useState<string | null>(demo ? 'demo-stage' : null);
@@ -474,7 +472,15 @@ export default function App({ preview = false }: { preview?: boolean }) {
     if (!kicked) return;
     clearKicked();
     void leaveChannel().then(() =>
-      setChannelNotice(t(kicked === 'idle' ? 'channel.error.idle' : 'channel.error.removed')),
+      setChannelNotice(
+        t(
+          kicked === 'idle'
+            ? 'channel.error.idle'
+            : kicked === 'elsewhere'
+              ? 'channel.error.elsewhere'
+              : 'channel.error.removed',
+        ),
+      ),
     );
     // Only a new disconnect acts; leaveChannel is read as it is now.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -746,36 +752,46 @@ export default function App({ preview = false }: { preview?: boolean }) {
   }, [channel]);
   const [chatError, setChatError] = useState<string | null>(null);
   const chatShownIfEnabled = channel === null || view === 'chat';
+  // The thread open beside the chat (ADR 0048), if any. It belongs to the chat
+  // it was opened in: going to another chat puts it away (below).
+  const [threadRoot, setThreadRoot] = useState<{ chatId: string; rootId: string } | null>(null);
   const chat = useChat({
     usable,
     me: accountId,
     visible: chatShownIfEnabled && focused,
-    // A direct message or an @mention, while you are not reading it.
+    // Its replies are read as they arrive, as the open chat's messages are.
+    openThreadId: threadRoot ? threadIdOf(threadRoot.chatId, threadRoot.rootId) : null,
+    // A direct message, a reply in a direct chat's thread, or an @mention,
+    // while you are not reading it.
     onNotify: ({ kind, chatId, message, author }) => {
       const name = author?.name ?? t('chat.someone');
       const where = chat.find(chatId);
       const body =
         message.body.replace(/\s+/g, ' ').trim().slice(0, 140) ||
         (message.attachment?.kind === 'video' ? t('chat.video') : t('chat.photo'));
-      notify({
-        kind,
-        // A person's messages, or a chat's mentions, are one entry under the bell.
-        group: `${kind}:${chatId}`,
-        title:
-          kind === 'direct'
-            ? t('notify.dmFrom', { name })
-            : t('notify.mentionIn', { name, chat: where?.name ?? '' }),
-        body,
-        target: { type: 'chat', id: chatId },
-        actionLabel: t('notify.openChat'),
-      });
+      notify(
+        {
+          kind,
+          // A person's messages, or a chat's mentions, are one entry under the bell.
+          group: `${kind}:${chatId}`,
+          title:
+            kind === 'direct'
+              ? t('notify.dmFrom', { name })
+              : t('notify.mentionIn', { name, chat: where?.name ?? '' }),
+          body,
+          // A reply goes straight to its thread.
+          target: { type: 'chat', id: chatId, thread: threadParts(message.chatId)?.rootId },
+          actionLabel: t('notify.openChat'),
+        },
+        // A direct message already shows on the Chats tab and beside its
+        // sender; the bell is for mentions and events.
+        { bell: kind !== 'direct' },
+      );
     },
   });
   const chatShown =
     chat.enabled && chatShownIfEnabled && (chat.openId !== null || channel === null);
-  // The thread open beside the chat (ADR 0048), if any. It belongs to the chat
-  // it was opened in: going to another chat puts it away.
-  const [threadRoot, setThreadRoot] = useState<{ chatId: string; rootId: string } | null>(null);
+  // Going to another chat puts its thread away.
   useEffect(() => {
     setThreadRoot((open) => (open && open.chatId === chat.openId ? open : null));
   }, [chat.openId]);
@@ -796,8 +812,43 @@ export default function App({ preview = false }: { preview?: boolean }) {
       ?.querySelector('[role="tab"][aria-selected="true"]')
       ?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   }, [chat.openId, chatShown]);
+  // Ctrl+Tab and Ctrl+Shift+Tab go round the tabs as the strip shows them:
+  // the channel's first, while in one, then the chats, wrapping at the ends.
+  const cycleTabsRef = useRef<(back: boolean) => void>(() => {});
+  cycleTabsRef.current = (back) => {
+    if (!chat.enabled) return;
+    const strip: (string | null)[] = [...(channel !== null ? [null] : []), ...chat.tabs];
+    if (strip.length < 2) return;
+    const here = strip.indexOf(chatShown ? chat.openId : null);
+    const next = strip[(Math.max(here, 0) + (back ? -1 : 1) + strip.length) % strip.length];
+    if (next === null) {
+      setView('stage');
+    } else {
+      chat.open(next as string);
+      setView('chat');
+    }
+  };
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Tab' || !e.ctrlKey || e.altKey || e.metaKey) return;
+      e.preventDefault();
+      cycleTabsRef.current(e.shiftKey);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
   // Who is on the server (ADR 0038), told on the chat's stream.
   const presence = usePresence({ usable: usable && chat.enabled, me: accountId });
+  // An admin may rename you. The chat stream says so at once, so your own
+  // name follows rather than waiting for the next account poll. Only when the
+  // list changes: a rename of your own sets it first, and the list catches up.
+  const myListedName = chat.people.find((p) => p.id === accountId)?.name;
+  useEffect(() => {
+    if (!myListedName) return;
+    setStatus((prev) =>
+      prev && prev.deviceName !== myListedName ? { ...prev, deviceName: myListedName } : prev,
+    );
+  }, [myListedName]);
   // Scheduled events (ADR 0050), told on the chat's stream like the rest. One
   // that starts is a notification (see notify.ts), with the way into its channel.
   const schedule = useSchedule({
@@ -826,10 +877,15 @@ export default function App({ preview = false }: { preview?: boolean }) {
     };
     if (target.type === 'chat') {
       chat.open(target.id);
+      setThreadRoot(target.thread ? { chatId: target.id, rootId: target.thread } : null);
       setView('chat');
       return;
     }
     if (target.type === 'channel') return join(target.id);
+    if (target.type === 'action') {
+      if (target.id === 'restart-unelevated') void window.zoia.app.restartUnelevated();
+      return;
+    }
     // An event: into its channel when it has one that still exists; else the
     // event itself, to see where and when.
     const where = target.channelId ? channels.find((c) => c.id === target.channelId) : undefined;
@@ -853,6 +909,13 @@ export default function App({ preview = false }: { preview?: boolean }) {
     chat.direct
       .filter((d) => d.peer && (d.unread ?? 0) > 0)
       .map((d) => [d.peer!.id, d.unread ?? 0]),
+  );
+  // The same, by name: a room knows people by machine, not account, and names
+  // are unique on the server.
+  const unreadByName = Object.fromEntries(
+    chat.direct
+      .filter((d) => d.peer && (d.unread ?? 0) > 0)
+      .map((d) => [d.peer!.name, d.unread ?? 0]),
   );
 
   // When your screen went live, for the live card's clock. A switch keeps it;
@@ -882,12 +945,6 @@ export default function App({ preview = false }: { preview?: boolean }) {
     return <WaitingScreen status={status} onChange={setStatus} />;
   }
   if (!booted) return <Splash />;
-
-  /** Messages are keyed by content, so a new one reappears after a dismissal. */
-  const show = (key: string, text: string | null | undefined) =>
-    text && !dismissed.has(`${key}:${text}`) ? text : null;
-  const dismiss = (key: string, text: string) =>
-    setDismissed((prev) => new Set(prev).add(`${key}:${text}`));
 
   async function handlePick(source: SourceInfo) {
     setPickerOpen(false);
@@ -1068,31 +1125,12 @@ export default function App({ preview = false }: { preview?: boolean }) {
     );
   }
 
-  const roomError = show('room', room.error);
-  const roomNotice = show('room-notice', room.roomNotice);
-  const broadcastError = show('broadcast', room.broadcastError);
-  const gpuError = show('gpu', gpuCast.error);
-  const audioWarning = show('audio', room.audioWarning);
-  const voiceMessage = show('voice', voice.error);
-  const stageMessage = show('stage', stageError);
   // Windows refused to capture a window (E_ACCESSDENIED, in every capture
   // path's errors). Elevated, restarting fixes it; otherwise the window's own
   // program runs as administrator, and only a whole screen can be shared.
   const accessDenied = [room.broadcastError, gpuCast.error, stageError].some((e) =>
     e?.includes('0x80070005'),
   );
-  // Shown again after a refused share even if dismissed at start.
-  const elevatedNotice = show(
-    accessDenied ? 'elevated-refused' : 'elevated',
-    elevated ? t('elevated.message') : null,
-  );
-  const protectedNotice = show(
-    'protected-window',
-    !elevated && accessDenied ? t('capture.protectedWindow') : null,
-  );
-  const channelMessage = show('channel', channelError);
-  const chatMessage = show('chat', chatError);
-  const gpuWarning = gpuLive ? show('gpustatus', gpuCast.status?.error) : null;
   const activeRemoteIds = new Set(room.remoteScreens.map((screen) => screen.participantIdentity));
   const loadingBroadcasts: LoadingBroadcast[] = room.members
     .filter(
@@ -1161,68 +1199,44 @@ export default function App({ preview = false }: { preview?: boolean }) {
         <div className="topbar-right">{usable && <NotificationBell />}</div>
       </header>
 
-      {roomError && <Banner onDismiss={() => dismiss('room', roomError)}>{roomError}</Banner>}
-      {voiceMessage && (
-        <Banner tone="warn" onDismiss={() => dismiss('voice', voiceMessage)}>
-          {voiceMessage}
-        </Banner>
-      )}
       {/* Everyone else in voice, heard while you are in it. */}
       <VoiceAudio tracks={voice.state === 'on' ? room.voiceTracks : []} />
-      {roomNotice && (
-        <Banner tone="warn" onDismiss={() => dismiss('room-notice', roomNotice)}>
-          {roomNotice}
-        </Banner>
-      )}
-      {broadcastError && (
-        <Banner onDismiss={() => dismiss('broadcast', broadcastError)}>{broadcastError}</Banner>
-      )}
-      {gpuError && <Banner onDismiss={() => dismiss('gpu', gpuError)}>{gpuError}</Banner>}
-      {elevatedNotice && (
-        <Banner
-          tone="warn"
-          onDismiss={() => dismiss(accessDenied ? 'elevated-refused' : 'elevated', elevatedNotice)}
-          action={{
-            label: t('elevated.restart'),
-            onClick: () => void window.zoia.app.restartUnelevated(),
-          }}
-        >
-          {elevatedNotice}
-        </Banner>
-      )}
-      {protectedNotice && (
-        <Banner tone="warn" onDismiss={() => dismiss('protected-window', protectedNotice)}>
-          {protectedNotice}
-        </Banner>
-      )}
-      {stageMessage && (
-        <Banner onDismiss={() => dismiss('stage', stageMessage)}>{stageMessage}</Banner>
-      )}
-      {channelMessage && (
-        <Banner onDismiss={() => dismiss('channel', channelMessage)}>{channelMessage}</Banner>
-      )}
-      {/* Cleared rather than remembered as dismissed: the next disconnect,
-        with the same words, must show again. */}
-      {channelNotice && (
-        <Banner
-          tone="warn"
-          autoDismissMs={DISCONNECT_NOTICE_MS}
-          onDismiss={() => setChannelNotice(null)}
-        >
-          {channelNotice}
-        </Banner>
-      )}
-      {chatMessage && <Banner onDismiss={() => dismiss('chat', chatMessage)}>{chatMessage}</Banner>}
-      {audioWarning && (
-        <Banner tone="warn" onDismiss={() => dismiss('audio', audioWarning)}>
-          {audioWarning}
-        </Banner>
-      )}
-      {gpuWarning && (
-        <Banner tone="warn" onDismiss={() => dismiss('gpustatus', gpuWarning)}>
-          {gpuWarning}
-        </Banner>
-      )}
+      {/* Errors and warnings go under the bell, not over the window. */}
+      <BellAlerts
+        alerts={[
+          { key: 'room', text: room.error },
+          { key: 'voice', text: voice.error, tone: 'warn' },
+          { key: 'room-notice', text: room.roomNotice, tone: 'warn' },
+          { key: 'broadcast', text: room.broadcastError },
+          { key: 'gpu', text: gpuCast.error },
+          {
+            key: accessDenied ? 'elevated-refused' : 'elevated',
+            text: elevated ? t('elevated.message') : null,
+            tone: 'warn',
+            action: {
+              target: { type: 'action', id: 'restart-unelevated' },
+              label: t('elevated.restart'),
+            },
+          },
+          {
+            key: 'protected-window',
+            text: !elevated && accessDenied ? t('capture.protectedWindow') : null,
+            tone: 'warn',
+          },
+          { key: 'stage', text: stageError },
+          { key: 'channel', text: channelError },
+          // Cleared once told: the next disconnect, with the same words, is told too.
+          {
+            key: 'channel-notice',
+            text: channelNotice,
+            tone: 'warn',
+            onTold: () => setChannelNotice(null),
+          },
+          { key: 'chat', text: chatError },
+          { key: 'audio', text: room.audioWarning, tone: 'warn' },
+          { key: 'gpustatus', text: gpuLive ? gpuCast.status?.error : null, tone: 'warn' },
+        ]}
+      />
 
       <div className="body">
         <main className={`main${chatShown ? ' chat-full' : ''}`}>
@@ -1269,6 +1283,7 @@ export default function App({ preview = false }: { preview?: boolean }) {
                       if (chat.tabs.length === 1) setView('stage');
                     }}
                     onPin={(pinned) => chat.pin(id, pinned)}
+                    onMove={(dragged) => chat.move(dragged, id)}
                   />
                 );
               })}
@@ -1478,6 +1493,7 @@ export default function App({ preview = false }: { preview?: boolean }) {
                 )
               : undefined
           }
+          unreadByName={unreadByName}
           onMessageMember={(name) => {
             const person = chat.people.find((p) => p.name === name && p.id !== accountId && !p.bot);
             if (!person) return;
@@ -1530,7 +1546,6 @@ export default function App({ preview = false }: { preview?: boolean }) {
                   // Direct messages alone: the chats everyone sees show their
                   // own counts on the Channels tab.
                   unread: chat.direct.reduce((sum, d) => sum + (d.unread ?? 0), 0),
-                  calls: chat.direct.some((d) => (d.unread ?? 0) > 0),
                 }
               : undefined
           }

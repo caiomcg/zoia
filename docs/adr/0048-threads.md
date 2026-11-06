@@ -43,12 +43,16 @@ chat's, never in the chat's own partitions: the chat's pages do not change.
 In the app, a message's actions offer "Reply in thread", and a message with replies says how
 many and when the last came. Either opens the thread in a panel beside the chat, with the
 message at the top and a box to reply. Unread replies in threads are not counted in the
-chat's badge; an @mention in one plays the mention sound.
+chat's badge; an @mention in one plays the mention sound and is a notification. In a direct
+chat (ADR 0047) every reply from the other person is written to you, so it calls you as a
+direct message does: the sound, and a notification that opens the direct chat. Neither
+happens while that thread is open on screen with the window in front, as no message does
+while its chat is.
 
 ## Consequences
 
 - **No unread count for threads.** You find out about a reply by its line under the message,
-  or by being mentioned. Following a thread, and its own unread badge, are not built.
+  by being mentioned, or, in a direct chat, by its notification. Following a thread, and its own unread badge, are not built.
 - **A thread past 1000 replies shows "999+"** and its participants are those of its latest
   thousand replies: the recount reads no further.
 - **Each reply costs a recount**: one paged read of the thread and one write. Threads are

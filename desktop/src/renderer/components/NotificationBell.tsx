@@ -145,7 +145,7 @@ function Entry({ item, onOpen }: { item: InboxItem; onOpen: () => void }) {
     <li>
       <button
         type="button"
-        className={`notify-entry ${item.kind}${item.read ? '' : ' unread'}`}
+        className={`notify-entry ${item.kind}${item.tone ? ` tone-${item.tone}` : ''}${item.read ? '' : ' unread'}`}
         onClick={onOpen}
       >
         <span className="notify-entry-icon" aria-hidden="true">
@@ -218,6 +218,14 @@ function KindIcon({ kind }: { kind: NotifyKind }) {
       <svg {...common}>
         <rect x="3.5" y="5" width="17" height="15" rx="2" />
         <path d="M3.5 10h17M8 3v4M16 3v4" />
+      </svg>
+    );
+  }
+  if (kind === 'alert') {
+    return (
+      <svg {...common}>
+        <path d="M12 3l10 18H2L12 3z" />
+        <path d="M12 10v5M12 18h.01" />
       </svg>
     );
   }

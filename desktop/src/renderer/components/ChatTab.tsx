@@ -3,6 +3,10 @@ import { createPortal } from 'react-dom';
 import type { ChatInfo } from '../../shared/ipc';
 import { useT } from '../i18n';
 import { useFloatingMenu } from './useFloatingMenu';
+import { useAccountAvatar } from '../chat/avatars';
+import Avatar from './Avatar';
+
+const TAB_DRAG = 'application/x-zoia-chat-tab';
 
 /** A zaba: a chat tab with its own close control and pin menu. */
 export default function ChatTab({
@@ -13,7 +17,10 @@ export default function ChatTab({
   onOpen,
   onClose,
   onPin,
+  onMove,
 }: {
+  /** Another tab dropped on this one: it takes this one's place. */
+  onMove: (draggedId: string) => void;
   chat: ChatInfo;
   current: boolean;
   unread: number;
@@ -24,11 +31,35 @@ export default function ChatTab({
 }) {
   const t = useT();
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const [over, setOver] = useState(false);
   const mentions = chat.mentions ?? 0;
+  // A direct chat's tab wears the other person's picture, not an @.
+  const image = useAccountAvatar(chat.peer?.id ?? '', chat.peer?.avatar);
   return (
     <div
-      className={`main-tab chat-tab${current ? ' current' : ''}${pinned ? ' pinned' : ''}`}
+      className={`main-tab chat-tab${current ? ' current' : ''}${pinned ? ' pinned' : ''}${over ? ' drop-target' : ''}`}
       role="presentation"
+      // Drag a tab onto another to put it there: pinned ones among the
+      // pinned, the rest after them.
+      draggable
+      onDragStart={(event) => {
+        event.dataTransfer.setData(TAB_DRAG, chat.id);
+        event.dataTransfer.effectAllowed = 'move';
+      }}
+      onDragOver={(event) => {
+        if (!event.dataTransfer.types.includes(TAB_DRAG)) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'move';
+        setOver(true);
+      }}
+      onDragLeave={() => setOver(false)}
+      onDrop={(event) => {
+        setOver(false);
+        const dragged = event.dataTransfer.getData(TAB_DRAG);
+        if (!dragged) return;
+        event.preventDefault();
+        onMove(dragged);
+      }}
       onMouseDown={(event) => {
         // Avoid starting the browser's middle-button autoscroll.
         if (event.button === 1) event.preventDefault();
@@ -60,9 +91,15 @@ export default function ChatTab({
             <IconPin />
           </span>
         )}
-        <span className="chat-hash" aria-hidden="true">
-          {chat.peer ? '@' : '#'}
-        </span>
+        {chat.peer ? (
+          <span className="chat-tab-avatar" aria-hidden="true">
+            <Avatar name={chat.name} image={image} live={false} />
+          </span>
+        ) : (
+          <span className="chat-hash" aria-hidden="true">
+            #
+          </span>
+        )}
         <span className="main-tab-name">{chat.name}</span>
         {mentions > 0 && (
           <span

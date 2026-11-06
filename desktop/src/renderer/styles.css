@@ -238,12 +238,6 @@ button:disabled {
   font-size: 13px;
   margin-top: 14px;
 }
-.error.banner {
-  margin: 0;
-  padding: 8px 16px;
-  background: color-mix(in srgb, var(--danger) 18%, transparent);
-}
-
 .muted {
   color: var(--muted);
   font-size: 13px;
@@ -1129,10 +1123,6 @@ button.danger {
   color: #0b0d10;
   background: var(--accent);
   border-radius: 999px;
-}
-
-.error.banner {
-  margin: 0;
 }
 
 /* ---- source picker ------------------------------------------------------ */
@@ -2244,12 +2234,6 @@ button.danger {
   border-color: #f5a623;
 }
 
-.banner.warn {
-  color: #f5a623;
-  background: rgb(245 166 35 / 0.1);
-  border: 1px solid rgb(245 166 35 / 0.35);
-}
-
 .stats-readout {
   font-size: 11px;
   font-variant-numeric: tabular-nums;
@@ -2464,7 +2448,8 @@ button.danger {
 }
 
 .member[draggable='true'],
-.channel-people [draggable='true'] {
+.channel-people [draggable='true'],
+.channel-members [draggable='true'] {
   cursor: grab;
 }
 
@@ -3867,66 +3852,6 @@ button.danger {
   cursor: not-allowed;
 }
 
-/* ---- banners ------------------------------------------------------------- */
-
-.banner {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  margin: 0;
-  padding: 8px 14px;
-  font-size: 13px;
-}
-
-.banner-text {
-  flex: 1;
-}
-
-.banner-close {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  padding: 0;
-  color: inherit;
-  background: rgb(0 0 0 / 0.18);
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-}
-
-.banner-close:hover {
-  background: rgb(0 0 0 / 0.32);
-}
-
-/* What fixes the banner's problem, beside its close. */
-.banner-action {
-  flex: 0 0 auto;
-  padding: 3px 10px;
-  font-size: 12px;
-  font-weight: 600;
-  color: inherit;
-  background: rgb(0 0 0 / 0.22);
-  border: 1px solid rgb(255 255 255 / 0.25);
-  border-radius: 6px;
-}
-
-.banner-action:hover {
-  background: rgb(0 0 0 / 0.36);
-}
-
-.banner.error {
-  color: #fff;
-  background: var(--danger);
-}
-
-.banner.warn {
-  color: #1a1b1e;
-  background: var(--warn);
-}
-
 /* ---- camera picker ------------------------------------------------------- */
 
 .camera-row {
@@ -4143,9 +4068,9 @@ button.danger {
  * Short and cheap on purpose: people use Zoia while gaming or encoding, so
  * everything here animates only opacity and transform, finishes within about
  * 200ms, and never moves over live video. Exits exist only where they carry
- * meaning (someone leaving, a dismissed banner); presence.ts and Banner.tsx
- * keep those on screen for LEAVE_MS while they fade. All of it is switched off
- * for "reduce motion" at the end of this section. */
+ * meaning (someone leaving); presence.ts keeps those on screen for LEAVE_MS
+ * while they fade. All of it is switched off for "reduce motion" at the end of
+ * this section. */
 
 @keyframes fade-in {
   from {
@@ -4326,16 +4251,6 @@ button.danger {
   animation: shimmer 1.4s ease-in-out infinite;
 }
 
-/* Banners: drop in from the top bar, lift away when dismissed. */
-.banner {
-  animation: drop-in 180ms ease both;
-}
-
-.banner.leaving {
-  animation: lift-out 180ms ease both;
-  pointer-events: none;
-}
-
 /* The main actions press in slightly, so a click is felt. */
 button.primary:active:not(:disabled),
 button.danger:active:not(:disabled),
@@ -4358,16 +4273,13 @@ button.danger:active:not(:disabled),
   .avatar-live,
   .tile-slot,
   .thumb,
-  .thumb-blank.loading,
-  .banner,
-  .banner.leaving {
+  .thumb-blank.loading {
     animation: none;
   }
 
-  /* Still hidden, so a leaving row or banner does not flash back at full
+  /* Still hidden, so a leaving row does not flash back at full
    * opacity for the moment before it is removed. */
   .member.leaving,
-  .banner.leaving,
   .picker-backdrop.closing,
   .language-list.closing {
     opacity: 0;
@@ -4588,16 +4500,6 @@ button.danger:active:not(:disabled),
 
 .waiting-spinner {
   margin: 22px auto 8px;
-}
-
-/* A banner's own action: an inline link inside its text, not a second bar. */
-.banner .link-button {
-  padding: 0;
-  font-weight: 600;
-  color: inherit;
-  text-decoration: underline;
-  background: none;
-  border: none;
 }
 
 .settings-subheading {
@@ -6695,6 +6597,32 @@ button.danger:active:not(:disabled),
   justify-content: flex-end;
 }
 
+/* An admin renaming someone: a confirm dialog with a field in it. */
+.rename-dialog h3 {
+  margin: 0 0 8px;
+  font-size: 15px;
+}
+
+.rename-dialog p {
+  margin-bottom: 12px;
+}
+
+.rename-dialog input {
+  width: 100%;
+  box-sizing: border-box;
+  margin-bottom: 14px;
+  padding: 9px 10px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font: inherit;
+}
+
+.rename-dialog .settings-error {
+  margin: -6px 0 14px;
+}
+
 /* ---- soundboard (ADR 0040) ----------------------------------------------- */
 
 /* Above its button in the footer, as your status is, and somewhere to work:
@@ -8322,8 +8250,7 @@ button.events-new:hover {
   padding: 0 8px;
 }
 
-.sidebar-tabs button > span.sidebar-tab-unread,
-.sidebar-tabs button > span.sidebar-tab-at {
+.sidebar-tabs button > span.sidebar-tab-unread {
   flex: none;
   overflow: visible;
 }
@@ -8338,11 +8265,6 @@ button.events-new:hover {
   text-align: center;
   background: var(--danger);
   border-radius: 8px;
-}
-
-.sidebar-tab-at {
-  font-weight: 800;
-  color: var(--accent);
 }
 
 /* The next event, pinned above every tab's list: only while there is one. A
@@ -8433,7 +8355,14 @@ button.events-new:hover {
 }
 
 .person-unread {
+  display: flex;
   margin-left: auto;
+  color: var(--accent);
+}
+
+.person-unread svg {
+  width: 14px;
+  height: 14px;
 }
 
 /* A time of day, 24-hour, with Zoia's own list instead of the system picker. */
@@ -9066,6 +8995,43 @@ button.events-new:hover {
   background: var(--warn);
 }
 
+.notify-entry.tone-error,
+.notify-entry.tone-warn {
+  --tone: var(--danger);
+  background: color-mix(in srgb, var(--tone) 8%, transparent);
+  box-shadow: inset 3px 0 0 var(--tone);
+  border-radius: 0 7px 7px 0;
+}
+
+.notify-entry.tone-warn {
+  --tone: var(--warn);
+}
+
+.notify-entry.tone-error.unread,
+.notify-entry.tone-warn.unread {
+  background: color-mix(in srgb, var(--tone) 18%, transparent);
+}
+
+.notify-entry.tone-error:hover,
+.notify-entry.tone-warn:hover {
+  background: color-mix(in srgb, var(--tone) 24%, transparent);
+}
+
+.notify-entry.tone-error .notify-entry-icon {
+  color: #fff;
+  background: var(--danger);
+}
+
+.notify-entry.tone-warn .notify-entry-icon {
+  color: #1c2027;
+  background: var(--warn);
+}
+
+.notify-entry.tone-error .notify-entry-title,
+.notify-entry.tone-warn .notify-entry-title {
+  color: var(--tone);
+}
+
 .notify-entry-text {
   display: flex;
   flex-direction: column;
@@ -9357,4 +9323,25 @@ button.events-new:hover {
 /* Maybe and Can't go under Join: two halves, not two of three slots. */
 .event-rsvp.two {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+/* A direct chat's tab: the other person's picture where a chat has its #. */
+.chat-tab-avatar {
+  display: flex;
+}
+
+.chat-tab-avatar .avatar {
+  width: 18px;
+  height: 18px;
+  font-size: 8px;
+}
+
+/* Their unread direct messages, at the end of someone's row in a channel. */
+.member .member-unread {
+  margin-left: auto;
+}
+
+/* A chat tab being dragged over another: where it will go. */
+.chat-tab.drop-target {
+  box-shadow: inset 2px 0 0 var(--accent);
 }
