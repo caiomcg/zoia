@@ -93,6 +93,8 @@ export function loadConfig(env = process.env) {
     },
     // What addons are told the server is called.
     serverName: env.SERVER_NAME ?? null,
+    // KLIPY's app key for GIF search (ADR 0051); unset turns GIFs off.
+    gifs: { apiKey: env.KLIPY_API_KEY || undefined },
     // Minutes someone may sit in a channel neither sharing nor watching before
     // the server kicks them (ADR 0037). 0 turns it off.
     idleKickMinutes: Number(env.IDLE_KICK_MINUTES ?? 30),

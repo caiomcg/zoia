@@ -56,6 +56,7 @@ record that supersedes it, so the history stays legible.
 | [0048](0048-threads.md) | Threads, kept as chats of their own | proposed |
 | [0049](0049-typing-indicator.md) | Typing indicator, said and forgotten | proposed |
 | [0050](0050-scheduled-events.md) | Scheduled events, with answers and a call when they start | proposed |
+| [0051](0051-gifs-from-klipy.md) | GIFs from KLIPY, searched through the server | proposed |
 
 ## The two that explain the most
 
