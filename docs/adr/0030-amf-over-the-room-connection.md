@@ -59,6 +59,12 @@ third of it on a link that later measured 140Mbps. An estimate that sits below w
 without climbing for three readings counts as falling too, or a broadcast starting above its
 link would never come down.
 
+None of this runs while the sender is paused. Dynacast switches the layer off while nobody
+watches, and an estimate with no traffic behind it sits low and flat, which the rule above took
+for a link that could not carry the stream: a broadcast opened late was opened at the floor, and
+only sharing again fixed it. When the layer comes back on, adaptation starts over as a new
+broadcast does, from the preset with a fresh warm-up.
+
 A drop also remembers the rate it came from, and rises stop 15% short of it, the ceiling lifting
 0.2% a second. Chromium's estimate reads far above the link while the link has room (211Mbps on
 one that carried ~15), so climbing to the preset on its word sawed a broadcast between the preset

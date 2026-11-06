@@ -17,7 +17,7 @@
  */
 
 import { captureBorderEnabled } from '../capture-border';
-import { createBitrateController, limitsFor } from './adaptive-bitrate';
+import { createSenderAdaptation, limitsFor } from './adaptive-bitrate';
 
 interface TrackGenerator extends MediaStreamTrack {
   writable: WritableStream<VideoFrame>;
@@ -137,12 +137,16 @@ export function createNativeVideo(
    * preset's bitrate went out whatever the link could carry.
    */
   const startAdapting = () => {
-    const controller = createBitrateController(limitsFor(quality.maxBitrate));
-    const startedAt = performance.now();
+    const controller = createSenderAdaptation(limitsFor(quality.maxBitrate), performance.now());
     let busy = false;
     adaptTimer = setInterval(() => {
       if (stopped || busy || !sender) return;
       busy = true;
+      // Dynacast switches the layer off while nobody watches; the estimate
+      // then measures nothing and must not steer the encoder.
+      const sending = sender
+        .getParameters()
+        .encodings.some((encoding) => encoding.active !== false);
       void sender
         .getStats()
         .then(async (report) => {
@@ -157,7 +161,7 @@ export function createNativeVideo(
             }
           });
           const current = controller.current;
-          const next = controller.step(available, performance.now() - startedAt);
+          const next = controller.step(available, performance.now(), sending);
           if (next === current || stopped) return;
           await window.zoia.nativeVideo.setBitrate(next);
           console.log(
