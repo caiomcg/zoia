@@ -181,6 +181,22 @@ export function IconTrash() {
 
 /** Faces shown under a channel you are not in, before the rest become "+N". */
 const MAX_FACES = 5;
+const NO_UNREAD: Readonly<Record<string, number>> = {};
+
+/** How many direct messages from someone wait to be read, as a pill. */
+function UnreadFrom({ count }: { count: number }) {
+  const t = useT();
+  if (count <= 0) return null;
+  return (
+    <span
+      className="chat-unread member-unread"
+      aria-label={t('chat.direct.unreadFrom', { count })}
+      title={t('chat.direct.unreadFrom', { count })}
+    >
+      {count >= 100 ? '99+' : count}
+    </span>
+  );
+}
 
 /**
  * Whether a section of the sidebar (channels, chats) is unfolded, remembered
@@ -430,6 +446,7 @@ export default function Sidebar({
   chats,
   textChats,
   onMessageMember,
+  unreadByName = NO_UNREAD,
   chatsBadge,
   people,
   events,
@@ -485,8 +502,10 @@ export default function Sidebar({
   textChats?: (collapsed: boolean) => ReactNode;
   /** Double-clicking someone in a channel: write to them (ADR 0047), by their name. */
   onMessageMember?: (name: string) => void;
+  /** Direct messages not yet read, by who wrote them: a count beside them in a channel. */
+  unreadByName?: Readonly<Record<string, number>>;
   /** What the Chats tab says while it is not showing: unread, and whether any calls you. */
-  chatsBadge?: { unread: number; calls: boolean };
+  chatsBadge?: { unread: number };
   /**
    * Scheduled events (ADR 0050): how many, the panel the calendar button
    * opens, and the next one's card, pinned above every tab's list.
@@ -679,6 +698,7 @@ export default function Sidebar({
     collapsed,
     speaking: voice?.speaking,
     onMessage: onMessageMember,
+    unreadByName,
   };
   // Which channel is being renamed, or 'new' while one is being named.
   const [editing, setEditing] = useState<string | null>(null);
@@ -822,11 +842,6 @@ export default function Sidebar({
             >
               <IconChatBubble />
               <span>{t('sidebar.tabChats')}</span>
-              {chatsBadge?.calls && (
-                <span className="sidebar-tab-at" aria-label={t('sidebar.tabChatsCalls')}>
-                  @
-                </span>
-              )}
               {chatsBadge && chatsBadge.unread > 0 && (
                 <span
                   className="sidebar-tab-unread"
@@ -1027,9 +1042,47 @@ export default function Sidebar({
                         />
                       ))}
                     </div>
+                  ) : !collapsed ? (
+                    othersInChannel(c, here).length > 0 && (
+                      // Everyone in other channels too, one below the other,
+                      // with their names: who is where reads without joining.
+                      <div className="channel-members">
+                        {othersInChannel(c, here).map((p) => (
+                          <div
+                            key={p.identity}
+                            className="member"
+                            title={[
+                              p.role ? `${p.name} · ${t(`account.role.${p.role}`)}` : p.name,
+                              ...(mayKick(p.identity) ? [t('sidebar.kickHint')] : []),
+                            ].join('\n')}
+                            onContextMenu={
+                              mayKick(p.identity)
+                                ? (event) => openMenu(event, p.identity, p.name, p.role)
+                                : undefined
+                            }
+                            onDoubleClick={
+                              onMessageMember && !p.bot ? () => onMessageMember(p.name) : undefined
+                            }
+                            {...dragFrom(p.identity, p.role, c.id)}
+                          >
+                            <span className="avatar-wrap">
+                              <Avatar
+                                name={p.name}
+                                identity={p.identity}
+                                live={c.broadcasters.some((b) => b.identity === p.identity)}
+                                role={p.role}
+                                bot={p.bot}
+                              />
+                            </span>
+                            <span className="member-name">{p.name}</span>
+                            {!p.bot && <UnreadFrom count={unreadByName[p.name] ?? 0} />}
+                          </div>
+                        ))}
+                      </div>
+                    )
                   ) : (
                     othersInChannel(c, here).length > 0 && (
-                      // Just faces until you join: enough to see who is where,
+                      // Collapsed, just faces: enough to see who is where,
                       // and past a handful, how many more.
                       <div className="channel-people">
                         {othersInChannel(c, here)
@@ -1567,7 +1620,9 @@ function MemberRow({
   onContextMenu,
   speaking,
   onMessage,
+  unreadByName,
 }: {
+  unreadByName: Readonly<Record<string, number>>;
   /** Who is speaking in voice right now. */
   speaking?: ReadonlySet<string>;
   /** Double-click: write to them. Never yourself, never a bot. */
@@ -1646,6 +1701,7 @@ function MemberRow({
       </span>
       <span className="member-name">{m.name}</span>
       {m.isLocal && <span className="you-tag">{t('common.youTag')}</span>}
+      {!m.isLocal && !m.bot && !collapsed && <UnreadFrom count={unreadByName[m.name] ?? 0} />}
       <PlayingSound identity={m.identity} />
       {/* Everyone here is in voice, so only silence is news: hearing
           nothing, which also mutes, or just a muted microphone. */}
@@ -1910,7 +1966,7 @@ function ChannelMenu({
 }
 
 /** A speech bubble: where people write. */
-function IconChatBubble() {
+export function IconChatBubble() {
   return (
     <svg
       viewBox="0 0 24 24"

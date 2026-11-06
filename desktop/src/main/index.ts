@@ -354,10 +354,11 @@ function registerIpc(): void {
   ipcMain.handle(IPC.adminAccounts, () => api.attempt(api.adminAccounts().then((r) => r.accounts)));
   ipcMain.handle(
     IPC.adminAction,
-    (_event, id: string, action: string, options?: { role?: unknown }) =>
+    (_event, id: string, action: string, options?: { role?: unknown; name?: unknown }) =>
       api.attempt(
         api.adminAction(String(id), String(action), {
           ...(options?.role === 'admin' || options?.role === 'user' ? { role: options.role } : {}),
+          ...(typeof options?.name === 'string' ? { name: options.name } : {}),
         }),
       ),
   );

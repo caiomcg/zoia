@@ -29,6 +29,7 @@ import { playCues } from '../sounds/useSoundCues';
 import { chatMessageCues, shownUnread } from './silence';
 import { isChatSilenced, useSilencedChats } from './silence-store';
 import { chatTabs, EMPTY_CHAT_TABS } from './tabs';
+import { chatCallFor } from './notice';
 
 export interface ChatThread {
   chatId: string;
@@ -61,7 +62,7 @@ export function directAsChat(direct: DirectChatInfo): ChatInfo {
   };
 }
 
-/** A message that calls you: written to you directly, or @mentioning you. */
+/** A message that calls you (see notice.ts): written to you directly, or @mentioning you. */
 export interface ChatNotice {
   kind: 'direct' | 'mention';
   /** Where to go to read it: the chat, or the chat a thread is in. */
@@ -74,6 +75,7 @@ export function useChat({
   usable,
   me,
   visible,
+  openThreadId = null,
   onNotify,
 }: {
   /** Signed in and approved. */
@@ -82,6 +84,8 @@ export function useChat({
   me: string | null;
   /** Whether the open chat's messages are on screen and the window has focus. */
   visible: boolean;
+  /** The thread open beside the chat (ADR 0048), as `<chat>~<message>`, if any. */
+  openThreadId?: string | null;
   /** A message calls you while you are not reading it: tell the person. */
   onNotify?: (notice: ChatNotice) => void;
 }) {
@@ -111,6 +115,8 @@ export function useChat({
   meRef.current = me;
   const visibleRef = useRef(visible);
   visibleRef.current = visible;
+  const openThreadRef = useRef(openThreadId);
+  openThreadRef.current = openThreadId;
   const threadRef = useRef(thread);
   threadRef.current = thread;
   const listRef = useRef(list);
@@ -178,13 +184,20 @@ export function useChat({
 
   // Start with the default chat. A removed chat closes its tab; list refreshes
   // never reopen a tab the person closed.
+  // Pins are kept on this machine for each account, and come back when the
+  // tabs start.
   useEffect(() => {
-    if (!list) return;
+    // Not before knowing whose pins they are, or none would come back.
+    if (!list || !me) return;
     dispatchTabs({
       type: 'sync',
       ids: [...list.chats.map((c) => c.id), ...(list.direct ?? []).map((d) => d.id)],
+      saved: loadPins(me),
     });
-  }, [list]);
+  }, [list, me]);
+  useEffect(() => {
+    if (tabs.initialized) savePins(me, tabs.pinned);
+  }, [me, tabs.initialized, tabs.pinned]);
 
   const available = list?.available ?? false;
   useEffect(() => {
@@ -288,17 +301,24 @@ export function useChat({
           case 'message': {
             const { message, author } = event;
             if (author) setAuthors((known) => ({ ...known, [message.authorId]: author }));
+            // Whether it calls you (see notice.ts): written to you, or naming you.
+            const call = chatCallFor({
+              message,
+              me: meRef.current,
+              openId: openRef.current,
+              openThreadId: openThreadRef.current,
+              visible: visibleRef.current,
+            });
+            const tell = () => {
+              if (!call) return;
+              const silenced = isChatSilenced(call.chatId);
+              playCues(chatMessageCues(true, silenced));
+              if (!silenced) notifyRef.current?.({ ...call, message, author });
+            };
             // A thread's reply (ADR 0048) is the thread panel's; here it only
-            // calls you when it @mentions you.
+            // calls you, when it is written to you or @mentions you.
             if (threadParts(message.chatId)) {
-              const me = meRef.current;
-              if (message.authorId !== me && me && message.mentions?.some((m) => m.id === me)) {
-                const parent = threadParts(message.chatId)!.chatId;
-                playCues(chatMessageCues(true, isChatSilenced(parent)));
-                if (!isChatSilenced(parent)) {
-                  notifyRef.current?.({ kind: 'mention', chatId: parent, message, author });
-                }
-              }
+              tell();
               break;
             }
             // Someone wrote to you for the first time (ADR 0047): the list does
@@ -324,19 +344,10 @@ export function useChat({
               const mentioned = Boolean(me && message.mentions?.some((m) => m.id === me));
               const more = (n: number) => Math.min(n + 1, 100);
               setUnread(message.chatId, more, mentioned ? more : undefined);
-              // A direct message is written to you: it calls you as a mention
-              // does, though only a real @mention is counted as one.
-              const calls = mentioned || isDirectChatId(message.chatId);
-              playCues(chatMessageCues(calls, isChatSilenced(message.chatId)));
-              if (calls && !isChatSilenced(message.chatId)) {
-                notifyRef.current?.({
-                  kind: isDirectChatId(message.chatId) ? 'direct' : 'mention',
-                  chatId: message.chatId,
-                  message,
-                  author,
-                });
-              }
             }
+            // A direct message is written to you: it calls you as a mention
+            // does, though only a real @mention is counted as one.
+            tell();
             break;
           }
           case 'deleted':
@@ -619,6 +630,8 @@ export function useChat({
     tabs: tabs.ids,
     pinnedTabs: tabs.pinned,
     pin: (id: string, pinned: boolean) => dispatchTabs({ type: 'pin', id, pinned }),
+    /** Drags a tab onto another's place, pinned among pinned, the rest among the rest. */
+    move: (id: string, to: string) => dispatchTabs({ type: 'move', id, to }),
     open: (id: string) => dispatchTabs({ type: 'open', id }),
     close: (id: string) => dispatchTabs({ type: 'close', id }),
     thread: thread?.chatId === openId ? thread : null,
@@ -644,3 +657,25 @@ export function useChat({
 }
 
 export type ChatController = ReturnType<typeof useChat>;
+
+const PINS_KEY = 'zoia.chatPins.';
+
+/** The chat tabs pinned last time on this machine, for this account. */
+function loadPins(me: string | null): string[] {
+  if (!me) return [];
+  try {
+    const stored: unknown = JSON.parse(localStorage.getItem(PINS_KEY + me) ?? '[]');
+    return Array.isArray(stored) ? stored.filter((id): id is string => typeof id === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+function savePins(me: string | null, pinned: readonly string[]) {
+  if (!me) return;
+  try {
+    localStorage.setItem(PINS_KEY + me, JSON.stringify(pinned));
+  } catch {
+    // Remembering is a convenience; the pins hold until the app closes.
+  }
+}

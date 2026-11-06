@@ -7,7 +7,14 @@ import {
 } from 'react';
 import { createPortal } from 'react-dom';
 import type { ChatPerson, RoomInfo, RsvpAnswer, ScheduledEvent } from '../../shared/ipc';
-import { answers, endOf, eventState, isPinned } from '../schedule/model';
+import {
+  answers,
+  endOf,
+  eventState,
+  isPinned,
+  answerOnJoin,
+  canJoinEvent,
+} from '../schedule/model';
 import { useAccountAvatar } from '../chat/avatars';
 import Avatar from './Avatar';
 import DateTile from './DateTile';
@@ -134,7 +141,6 @@ export function EventCarousel({
   people,
   now,
   onJoin,
-  onOpen,
   onAnswer,
 }: {
   events: ScheduledEvent[];
@@ -143,7 +149,6 @@ export function EventCarousel({
   people: ChatPerson[];
   now: number;
   onJoin: (channelId: string) => void;
-  onOpen: (event: ScheduledEvent) => void;
   /** Your answer; null takes it back. */
   onAnswer: (event: ScheduledEvent, answer: RsvpAnswer | null) => void;
 }) {
@@ -276,8 +281,7 @@ export function EventCarousel({
               channels={channels}
               now={now}
               hidden={i !== shown}
-              onJoin={onJoin}
-              onOpen={onOpen}
+              onReveal={open}
               onDismiss={() => dismiss(event.id)}
             />
           ))}
@@ -310,7 +314,6 @@ export function EventCarousel({
           onEnter={open}
           onLeave={closeSoon}
           onJoin={onJoin}
-          onOpen={onOpen}
           onAnswer={onAnswer}
         />
       )}
@@ -333,7 +336,6 @@ function EventPopup({
   onEnter,
   onLeave,
   onJoin,
-  onOpen,
   onAnswer,
 }: {
   event: ScheduledEvent;
@@ -345,7 +347,6 @@ function EventPopup({
   onEnter: () => void;
   onLeave: () => void;
   onJoin: (channelId: string) => void;
-  onOpen: (event: ScheduledEvent) => void;
   onAnswer: (event: ScheduledEvent, answer: RsvpAnswer | null) => void;
 }) {
   const t = useT();
@@ -354,6 +355,13 @@ function EventPopup({
   const who = answers(event);
   const mine = me ? (event.rsvps[me] ?? null) : null;
   const channel = event.channelId ? channels.find((c) => c.id === event.channelId) : undefined;
+  const joinable = canJoinEvent(state);
+  const join = () => {
+    if (!channel) return;
+    const answer = answerOnJoin(mine);
+    if (answer) onAnswer(event, answer);
+    onJoin(channel.id);
+  };
   // Left of the sidebar, its top level with the carousel, kept on screen.
   const top = Math.max(8, Math.min(anchor.top, window.innerHeight - 340));
   return createPortal(
@@ -388,10 +396,10 @@ function EventPopup({
         </p>
       )}
       {event.description && <p className="event-popup-description">{event.description}</p>}
-      {(['going', 'maybe'] as const).map(
+      {(['going', 'maybe', 'no'] as const).map(
         (a) =>
           who[a].length > 0 && (
-            <div className="event-attendee-row" key={a}>
+            <div className={`event-attendee-row ${a}`} key={a}>
               <span className="event-attendee-label">
                 {t(`event.answer.${a}`)} · {who[a].length}
               </span>
@@ -406,29 +414,50 @@ function EventPopup({
             </div>
           ),
       )}
-      <div className="event-rsvp small" role="group" aria-label={t('event.yourAnswer')}>
-        {ANSWERS.map((a) => (
-          <button
-            key={a}
-            type="button"
-            className={`event-answer ${a}${mine === a ? ' on' : ''}`}
-            aria-pressed={mine === a}
-            onClick={() => onAnswer(event, mine === a ? null : a)}
-          >
-            {t(`event.answer.${a}`)}
-          </button>
-        ))}
-      </div>
-      <div className="event-popup-actions">
-        <button type="button" className="event-quiet" onClick={() => onOpen(event)}>
-          {t('event.details')}
-        </button>
-        {channel && (
-          <button type="button" className="primary" onClick={() => onJoin(channel.id)}>
+      {/* Joining counts as going (ADR 0050): while it is on, Join leads and
+          says so; before, the question is all there is to do. */}
+      {joinable && channel ? (
+        <>
+          <button type="button" className="primary event-join" onClick={join}>
             {t('event.join', { channel: channel.name })}
           </button>
-        )}
-      </div>
+          <p className="event-join-note">
+            {mine === 'going' ? t('event.youreGoing') : t('event.joinMarksGoing')}
+          </p>
+          <div className="event-rsvp small two" role="group" aria-label={t('event.yourAnswer')}>
+            {(['maybe', 'no'] as const).map((a) => (
+              <button
+                key={a}
+                type="button"
+                className={`event-answer ${a}${mine === a ? ' on' : ''}`}
+                aria-pressed={mine === a}
+                onClick={() => onAnswer(event, mine === a ? null : a)}
+              >
+                {t(`event.answer.${a}`)}
+              </button>
+            ))}
+          </div>
+        </>
+      ) : (
+        state !== 'ended' && (
+          <>
+            <span className="event-ask">{t('event.areYouGoing')}</span>
+            <div className="event-rsvp small" role="group" aria-label={t('event.yourAnswer')}>
+              {ANSWERS.map((a) => (
+                <button
+                  key={a}
+                  type="button"
+                  className={`event-answer ${a}${mine === a ? ' on' : ''}`}
+                  aria-pressed={mine === a}
+                  onClick={() => onAnswer(event, mine === a ? null : a)}
+                >
+                  {t(`event.answer.${a}`)}
+                </button>
+              ))}
+            </div>
+          </>
+        )
+      )}
     </div>,
     document.body,
   );
@@ -440,8 +469,7 @@ function EventSlide({
   channels,
   now,
   hidden,
-  onJoin,
-  onOpen,
+  onReveal,
   onDismiss,
 }: {
   event: ScheduledEvent;
@@ -450,8 +478,8 @@ function EventSlide({
   now: number;
   /** Not the one showing: out of the tab order. */
   hidden: boolean;
-  onJoin: (channelId: string) => void;
-  onOpen: (event: ScheduledEvent) => void;
+  /** Shows the popup: the card never joins by itself, so people answer first. */
+  onReveal: () => void;
   onDismiss: () => void;
 }) {
   const t = useT();
@@ -468,12 +496,8 @@ function EventSlide({
         className={`event-card${live ? ' live' : ''}`}
         tabIndex={hidden ? -1 : 0}
         draggable={false}
-        onClick={() => (channel ? onJoin(channel.id) : onOpen(event))}
-        aria-label={
-          channel
-            ? t('event.joinFor', { title: event.title, channel: channel.name })
-            : t('event.openCard', { title: event.title })
-        }
+        onClick={onReveal}
+        aria-label={t('event.openCard', { title: event.title })}
       >
         <DateTile iso={event.startsAt} size="sm" state={state} />
         <span className="event-card-title">

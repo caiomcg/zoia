@@ -5,6 +5,7 @@ import {
   RAISE_STEP,
   WARMUP_MS,
   createBitrateController,
+  createSenderAdaptation,
   limitsFor,
   nextBitrate,
   nextCeiling,
@@ -211,5 +212,45 @@ describe('a link smaller than the preset', () => {
   test('a ceiling stops a rise, but never lowers a rate that did not drop', () => {
     assert.equal(nextBitrate(12 * M, 211 * M, 211 * M, later, preset, 13 * M), 13 * M);
     assert.equal(nextBitrate(14 * M, 211 * M, 211 * M, later, preset, 13 * M), 14 * M);
+  });
+});
+
+/**
+ * Dynacast switches the layer off while nobody watches, so the estimate a
+ * broadcast nobody has opened yet reads is one with no traffic behind it.
+ */
+describe('a broadcast nobody is watching yet', () => {
+  const preset = limitsFor(20 * M);
+
+  /** Unwatched for a minute, with the flat estimate an idle sender gives. */
+  function unwatched(paused: boolean) {
+    const adaptation = createSenderAdaptation(preset, 0);
+    let target = preset.max;
+    for (let s = 1; s <= 60; s++) target = adaptation.step(1.5 * M, s * 1000, !paused);
+    return target;
+  }
+
+  test('read as a sending stream, the flat estimate walks the rate down to its floor', () => {
+    // What happened before: the viewer who opened it got the floor.
+    assert.equal(unwatched(false), preset.floor);
+  });
+
+  test('while the sender is paused, the estimate changes nothing', () => {
+    assert.equal(unwatched(true), preset.max);
+  });
+
+  test('when it sends again, it starts over from the preset, warming up again', () => {
+    const adaptation = createSenderAdaptation(preset, 0);
+    // Watched, then dropped on real congestion, then nobody watching.
+    for (let s = 1; s <= 30; s++) adaptation.step(s < 20 ? 211 * M : 2 * M, s * 1000, true);
+    assert.ok(adaptation.current < preset.max);
+    adaptation.step(2 * M, 31_000, false);
+    // A viewer arrives: the preset, as a new broadcast would.
+    assert.equal(adaptation.step(2 * M, 32_000, true), preset.max);
+    assert.equal(adaptation.ceiling, preset.max);
+    // And the estimate, climbing again on real traffic, is left alone at first.
+    for (let s = 33; s < 32 + WARMUP_MS / 1000; s++) {
+      assert.equal(adaptation.step(3 * M, s * 1000, true), preset.max);
+    }
   });
 });

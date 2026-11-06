@@ -9,6 +9,7 @@ import type {
 import { publishAvatarVersions } from '../avatars';
 import { useT } from '../i18n';
 import Avatar from './Avatar';
+import RenameDialog from './RenameDialog';
 
 /**
  * Settings › Accounts, for admins (ADR 0031): sign-ups waiting for approval
@@ -32,6 +33,7 @@ export default function AccountsSection({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [issued, setIssued] = useState<{ name: string; code: IssuedCode } | null>(null);
+  const [renaming, setRenaming] = useState<AdminAccount | null>(null);
 
   const load = useCallback(async () => {
     const outcome = await window.zoia.admin.accounts();
@@ -86,6 +88,15 @@ export default function AccountsSection({
 
       {issued && (
         <CodeCard name={issued.name} issued={issued.code} onDismiss={() => setIssued(null)} />
+      )}
+
+      {renaming && (
+        <RenameDialog
+          accountId={renaming.id}
+          name={renaming.name}
+          onDone={() => void load()}
+          onClose={() => setRenaming(null)}
+        />
       )}
 
       {accounts && (
@@ -159,6 +170,13 @@ export default function AccountsSection({
                 </span>
                 {canManage(account) && (
                   <span className="admin-actions compact">
+                    <IconAction
+                      label={t('admin.rename')}
+                      disabled={busy === account.id}
+                      onClick={() => setRenaming(account)}
+                    >
+                      <IconPencil />
+                    </IconAction>
                     <IconAction
                       label={t('admin.reset')}
                       disabled={busy === account.id}
@@ -254,6 +272,15 @@ const ICON = {
   strokeLinejoin: 'round',
   'aria-hidden': true,
 } as const;
+
+function IconPencil() {
+  return (
+    <svg {...ICON}>
+      <path d="M4 20h4L19 9l-4-4L4 16z" />
+      <path d="M13.5 6.5l4 4" />
+    </svg>
+  );
+}
 
 function IconKey() {
   return (

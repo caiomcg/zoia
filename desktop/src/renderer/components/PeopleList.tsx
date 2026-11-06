@@ -14,7 +14,8 @@ import { useAccountAvatar } from '../chat/avatars';
 import { byPresence, type Dot } from '../chat/status';
 import type { PresenceController } from '../chat/usePresence';
 import Avatar from './Avatar';
-import { SectionHeading, useFolded } from './Sidebar';
+import RenameDialog from './RenameDialog';
+import { IconChatBubble, SectionHeading, useFolded } from './Sidebar';
 import { useT } from '../i18n';
 
 /**
@@ -47,6 +48,8 @@ export default function PeopleList({
   const t = useT();
   const [menu, setMenu] = useState<{ person: ChatPerson; x: number; y: number } | null>(null);
   const closeMenu = useCallback(() => setMenu(null), []);
+  // Who an admin is renaming, from the menu; the dialog outlives the menu.
+  const [renaming, setRenaming] = useState<ChatPerson | null>(null);
   const isAdmin = myRole === 'admin' || myRole === 'super_admin';
   const listed = byPresence(people, presence.people);
   const isThere = (p: (typeof listed)[number]) => p.status !== 'offline' || p.id === me;
@@ -117,8 +120,17 @@ export default function PeopleList({
           myRole={myRole ?? 'user'}
           admin={isAdmin}
           onMessage={onMessage && !menu.person.bot ? () => onMessage(menu.person) : undefined}
+          onRename={() => setRenaming(menu.person)}
           onClose={closeMenu}
           key={menu.person.id}
+        />
+      )}
+      {renaming && (
+        // The new name comes back to this list from the server, as any rename does.
+        <RenameDialog
+          accountId={renaming.id}
+          name={renaming.name}
+          onClose={() => setRenaming(null)}
         />
       )}
     </section>
@@ -174,13 +186,15 @@ function Person({
       />
       <span className="member-name">{person.name}</span>
       {isMe && <span className="you-tag">{t('common.youTag')}</span>}
+      {/* Who wrote to you: a bubble beside them. How many is on the Chats tab. */}
       {unread > 0 && (
         <span
-          className="chat-unread person-unread"
+          className="person-unread"
+          role="img"
           aria-label={t('chat.direct.unreadFrom', { count: unread })}
           title={t('chat.direct.unreadFrom', { count: unread })}
         >
-          {unread >= 100 ? '99+' : unread}
+          <IconChatBubble />
         </span>
       )}
     </div>
@@ -201,6 +215,7 @@ function PersonMenu({
   myRole,
   admin,
   onMessage,
+  onRename,
   onClose,
 }: {
   person: ChatPerson;
@@ -210,6 +225,8 @@ function PersonMenu({
   /** Whether to offer the account's management at all. */
   admin: boolean;
   onMessage?: () => void;
+  /** Opens the dialog to give them a new name. */
+  onRename: () => void;
   onClose: () => void;
 }) {
   const t = useT();
@@ -324,6 +341,18 @@ function PersonMenu({
       ) : (
         loaded && (
           <>
+            <button
+              type="button"
+              role="menuitem"
+              className="person-menu-item"
+              disabled={busy}
+              onClick={() => {
+                onClose();
+                onRename();
+              }}
+            >
+              {t('admin.rename')}
+            </button>
             <button
               type="button"
               role="menuitem"

@@ -190,3 +190,58 @@ export function createBitrateController(
     },
   };
 }
+
+export interface SenderAdaptation {
+  /**
+   * One reading, once a second: Chromium's estimate, the time now, and
+   * whether the sender has a layer switched on. Returns the new target.
+   */
+  step(available: number | undefined, nowMs: number, sending: boolean): number;
+  readonly current: number;
+  readonly ceiling: number;
+}
+
+/**
+ * The controller, for a sender that can be paused under it.
+ *
+ * With dynacast, LiveKit switches a published layer off while nobody is
+ * subscribed to it, so a broadcast nobody is watching yet sends nothing.
+ * Chromium's estimate then has no traffic to measure and sits low and flat,
+ * which is what the controller reads as a link that cannot carry the stream
+ * ("stalled"). It went down before anyone was watching, and whoever opened
+ * the broadcast later got that rate: a soft picture that sharing again, with
+ * a fresh controller, fixed.
+ *
+ * So nothing is read while the sender is paused, and when it sends again the
+ * controller starts over as a new broadcast does: from the preset, with a
+ * fresh warm-up while the estimate climbs on real traffic.
+ */
+export function createSenderAdaptation(
+  limits: AdaptiveBitrateLimits,
+  startedAtMs: number,
+): SenderAdaptation {
+  let controller = createBitrateController(limits);
+  let startedAt = startedAtMs;
+  let paused = false;
+  return {
+    step(available, nowMs, sending) {
+      if (!sending) {
+        paused = true;
+        return controller.current;
+      }
+      if (paused) {
+        paused = false;
+        controller = createBitrateController(limits);
+        startedAt = nowMs;
+        return controller.current;
+      }
+      return controller.step(available, nowMs - startedAt);
+    },
+    get current() {
+      return controller.current;
+    },
+    get ceiling() {
+      return controller.ceiling;
+    },
+  };
+}

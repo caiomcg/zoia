@@ -65,11 +65,12 @@ export interface AccountDevice {
   current: boolean;
 }
 
-export type AdminAction = 'approve' | 'reject' | 'disable' | 'enable' | 'reset' | 'role';
+export type AdminAction = 'approve' | 'reject' | 'disable' | 'enable' | 'reset' | 'role' | 'name';
 
-/** What some admin actions need: `role` the new role. */
+/** What some admin actions need: `role` the new role, `name` the new display name. */
 export interface AdminActionOptions {
   role?: 'admin' | 'user';
+  name?: string;
 }
 
 /** A one-time code an admin hands on, to set a forgotten password. */
