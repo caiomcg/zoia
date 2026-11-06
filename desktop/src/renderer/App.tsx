@@ -217,7 +217,8 @@ export default function App({ preview = false }: { preview?: boolean }) {
   voiceRef.current = voice;
   const toggleMute = useCallback(() => {
     const current = voiceRef.current;
-    if (current.state !== 'on') return;
+    // Without a microphone there is nothing to unmute, nor a tone to say so.
+    if (current.state !== 'on' || current.noMicrophone) return;
     const volume = getSoundSettings().volume;
     if (current.muted) {
       // Unmuting while deafened undeafens too, which would silence a tone
@@ -1441,6 +1442,7 @@ export default function App({ preview = false }: { preview?: boolean }) {
           voice={{
             state: voice.state,
             muted: voice.muted,
+            noMicrophone: voice.noMicrophone,
             deafened: voice.deafened,
             speaking: voice.speaking,
             onToggleMute: toggleMute,

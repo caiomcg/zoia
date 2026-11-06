@@ -477,6 +477,11 @@ export const es: Messages = {
   'voice.deafenedInVoice': 'En la voz, sin escuchar',
   'voice.mutedInVoice': 'En la voz, micrófono apagado',
   'voice.couldNotJoin': 'No se pudo unir a la voz: {error}',
+  'voice.noMicrophone':
+    'No se encontró ningún micrófono. Estás en la voz para escuchar y ver; conecta uno para hablar.',
+  'voice.microphoneUnavailable':
+    'No se pudo abrir el micrófono, así que estás en la voz para escuchar y ver: {error}',
+  'voice.noMicrophoneButton': 'Sin micrófono: elige uno',
   'voice.couldNotRestart': 'No se pudo cambiar el micrófono: {error}',
   'voice.noGrant': 'el servidor no permitió el micrófono a tiempo',
   'voice.deviceLost': 'Tu micrófono se desconectó. Se usa el predeterminado del sistema.',

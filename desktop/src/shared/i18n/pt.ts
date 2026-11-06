@@ -475,6 +475,11 @@ export const pt: Messages = {
   'voice.deafenedInVoice': 'Na voz, sem ouvir',
   'voice.mutedInVoice': 'Na voz, microfone desligado',
   'voice.couldNotJoin': 'Não foi possível entrar na voz: {error}',
+  'voice.noMicrophone':
+    'Nenhum microfone encontrado. Você está na voz para ouvir e assistir; conecte um para falar.',
+  'voice.microphoneUnavailable':
+    'Não foi possível abrir o microfone, então você está na voz para ouvir e assistir: {error}',
+  'voice.noMicrophoneButton': 'Sem microfone: escolha um',
   'voice.couldNotRestart': 'Não foi possível trocar o microfone: {error}',
   'voice.noGrant': 'o servidor não liberou o microfone a tempo',
   'voice.deviceLost': 'Seu microfone foi desconectado. Usando o padrão do sistema.',

@@ -86,6 +86,8 @@ export interface SidebarLive {
 export interface SidebarVoice {
   state: VoiceState;
   muted: boolean;
+  /** In voice with no microphone to capture: listening only. */
+  noMicrophone?: boolean;
   deafened: boolean;
   /** Who is speaking right now, yourself included. */
   speaking: ReadonlySet<string>;
@@ -1303,15 +1305,33 @@ export default function Sidebar({
             <div className="sidebar-voice-group">
               <button
                 className={`icon-button sidebar-settings sidebar-voice-main${voice.muted ? ' voice-off' : ''}`}
-                onClick={voice.onToggleMute}
+                onClick={(e) => {
+                  // Nothing to unmute: the button offers a microphone instead.
+                  if (!voice.noMicrophone) return voice.onToggleMute();
+                  e.stopPropagation();
+                  setMicMenuAnchor(micMenuAnchor ? null : e.currentTarget.getBoundingClientRect());
+                  setSpeakerMenuAnchor(null);
+                }}
                 onContextMenu={(e) => {
                   e.preventDefault();
                   setMicMenuAnchor(e.currentTarget.getBoundingClientRect());
                   setSpeakerMenuAnchor(null);
                 }}
                 aria-pressed={voice.muted}
-                title={voice.muted ? t('voice.unmute') : t('voice.mute')}
-                aria-label={voice.muted ? t('voice.unmute') : t('voice.mute')}
+                title={
+                  voice.noMicrophone
+                    ? t('voice.noMicrophoneButton')
+                    : voice.muted
+                      ? t('voice.unmute')
+                      : t('voice.mute')
+                }
+                aria-label={
+                  voice.noMicrophone
+                    ? t('voice.noMicrophoneButton')
+                    : voice.muted
+                      ? t('voice.unmute')
+                      : t('voice.mute')
+                }
               >
                 <IconMic muted={voice.muted} />
               </button>

@@ -483,6 +483,11 @@ export const en = {
   'voice.deafenedInVoice': 'In voice, not listening',
   'voice.mutedInVoice': 'In voice, microphone off',
   'voice.couldNotJoin': 'Could not join voice: {error}',
+  'voice.noMicrophone':
+    'No microphone found. You are in voice to listen and watch; plug one in to talk.',
+  'voice.microphoneUnavailable':
+    'Could not open the microphone, so you are in voice to listen and watch: {error}',
+  'voice.noMicrophoneButton': 'No microphone: choose one',
   'voice.couldNotRestart': 'Could not change the microphone: {error}',
   'voice.noGrant': 'the server did not allow the microphone in time',
   'voice.deviceLost': 'Your microphone was disconnected. Using the system default instead.',

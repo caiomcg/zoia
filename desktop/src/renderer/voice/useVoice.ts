@@ -4,7 +4,10 @@
  *
  * Every channel is a voice channel: App joins on connecting, and leaving the
  * channel leaves voice, since the server forgets the participant with it.
- * Joining asks the server for the microphone alone, then publishes it. The
+ * Joining asks the server for the microphone alone, then publishes it. With
+ * no microphone to capture, voice is joined to listen only: you hear everyone
+ * and watch every stream, and the microphone is published once one turns up.
+ * The
  * audio is never mixed on the server: each voice goes to every listener as its
  * own Opus stream, and each app plays them together (VoiceAudio). So all the
  * cleaning up of a voice happens here, before the encoder.
@@ -127,6 +130,17 @@ function deviceLostMessage(microphone: MicrophoneInUse): string {
     : tNow('voice.deviceLost');
 }
 
+/** The message for voice joined without a microphone, saying why. */
+function noMicrophoneMessage(err: unknown, devices: readonly ListedDevice[]): string {
+  const none =
+    !devices.some((d) => d.kind === 'audioinput') ||
+    (err instanceof DOMException && err.name === 'NotFoundError');
+  if (none) return tNow('voice.noMicrophone');
+  return tNow('voice.microphoneUnavailable', {
+    error: err instanceof Error ? err.message : String(err),
+  });
+}
+
 function mayPublishMicrophone(room: Room): boolean {
   const permissions = room.localParticipant.permissions;
   if (!permissions?.canPublish) return false;
@@ -160,6 +174,11 @@ export function useVoice(roomRef: RefObject<Room | null>, connection: Connection
   // Who is speaking, worked out from the sound itself (speaking.ts).
   const speaking = useSpeaking();
   const [error, setError] = useState<string | null>(null);
+  // In voice without a microphone: listening only, until one can be captured.
+  const [noMicrophone, setNoMicrophoneState] = useState(false);
+  const noMicrophoneRef = useRef(false);
+  // The no-microphone message on screen, if any, to clear it once one is captured.
+  const noMicMessageRef = useRef<string | null>(null);
 
   const trackRef = useRef<LocalAudioTrack | null>(null);
   // The 48 kHz context the processing runs in, for as long as voice is on.
@@ -214,6 +233,8 @@ export function useVoice(roomRef: RefObject<Room | null>, connection: Connection
     void contextRef.current?.close().catch(() => {});
     contextRef.current = null;
     setState('off');
+    noMicrophoneRef.current = false;
+    setNoMicrophoneState(false);
     hearingSelfRef.current = null;
     // Deafen is part of being in voice: left on outside it, nothing would
     // play and there would be no button to say why.
@@ -273,12 +294,35 @@ export function useVoice(roomRef: RefObject<Room | null>, connection: Connection
       // A chosen microphone that is not plugged in would fail the whole join.
       const microphone = await microphoneNow();
       const settings = getVoiceSettings();
-      const track = await createLocalAudioTrack(
-        captureOptions({ ...settings, microphoneId: microphone.id }),
-      );
+      let track: LocalAudioTrack;
+      try {
+        track = await createLocalAudioTrack(
+          captureOptions({ ...settings, microphoneId: microphone.id }),
+        );
+      } catch (err) {
+        // No microphone, or none that can be opened: still in voice, to hear
+        // everyone and watch the streams. A device change tries again.
+        if (voiceRoomRef.current !== room) return;
+        console.info('[audio] no microphone to capture; in voice to listen only', err);
+        noMicrophoneRef.current = true;
+        setNoMicrophoneState(true);
+        noMicMessageRef.current = noMicrophoneMessage(err, await listDevices());
+        setError(noMicMessageRef.current);
+        return;
+      }
       if (voiceRoomRef.current !== room) {
         track.stop();
         return;
+      }
+      if (noMicrophoneRef.current) {
+        console.info('[audio] a microphone is available now; publishing it');
+        noMicrophoneRef.current = false;
+        setNoMicrophoneState(false);
+      }
+      if (noMicMessageRef.current) {
+        const shown = noMicMessageRef.current;
+        noMicMessageRef.current = null;
+        setError((current) => (current === shown ? null : current));
       }
       trackRef.current = track;
       inUseRef.current = microphone;
@@ -324,6 +368,21 @@ export function useVoice(roomRef: RefObject<Room | null>, connection: Connection
     [restartMicrophone],
   );
 
+  /**
+   * In voice without a microphone, tries to capture one again: for a device
+   * plugged in, or another chosen in Settings. Queued with the restarts.
+   */
+  const retryMicrophone = useCallback(() => {
+    const run = async () => {
+      const room = voiceRoomRef.current;
+      if (!room || trackRef.current || !noMicrophoneRef.current) return;
+      await publish(room);
+    };
+    restartsRef.current = restartsRef.current.then(run).catch((err: unknown) => {
+      console.warn('[audio] could not publish the microphone', err);
+    });
+  }, [publish]);
+
   const join = useCallback(async () => {
     const room = roomRef.current;
     if (!room || voiceRoomRef.current) return;
@@ -362,6 +421,8 @@ export function useVoice(roomRef: RefObject<Room | null>, connection: Connection
    */
   const setMuted = useCallback(
     async (next: boolean) => {
+      // Nothing to unmute without a microphone; the choice stays as it was.
+      if (!next && noMicrophoneRef.current) return;
       if (!next && deafenedRef.current) await applyDeafened(false);
       rememberMuted(next);
       await applyMuted(next);
@@ -470,10 +531,13 @@ export function useVoice(roomRef: RefObject<Room | null>, connection: Connection
         // suppression need a restart, which rebuilds the processing too.
         if (options === captureRef.current) return;
         captureRef.current = options;
-        if (!track) return;
+        if (!track) {
+          retryMicrophone();
+          return;
+        }
         restartMicrophone(false);
       }),
-    [restartMicrophone],
+    [restartMicrophone, retryMicrophone],
   );
 
   // A device coming or going moves the microphone: off a chosen one that was
@@ -482,10 +546,11 @@ export function useVoice(roomRef: RefObject<Room | null>, connection: Connection
   useEffect(() => {
     const listener = () => {
       if (trackRef.current) restartMicrophone(true);
+      else retryMicrophone();
     };
     navigator.mediaDevices.addEventListener('devicechange', listener);
     return () => navigator.mediaDevices.removeEventListener('devicechange', listener);
-  }, [restartMicrophone]);
+  }, [restartMicrophone, retryMicrophone]);
 
   useEffect(
     () => () => {
@@ -497,7 +562,9 @@ export function useVoice(roomRef: RefObject<Room | null>, connection: Connection
 
   return {
     state,
-    muted,
+    // Without a microphone nobody hears you, which is what muted shows.
+    muted: muted || noMicrophone,
+    noMicrophone,
     deafened,
     speaking,
     error,
