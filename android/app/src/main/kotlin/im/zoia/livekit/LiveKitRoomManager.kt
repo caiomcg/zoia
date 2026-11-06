@@ -167,6 +167,49 @@ class LiveKitRoomManager(
     val currentSound: StateFlow<String?> = _currentSound.asStateFlow()
 
     private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+    private val audioPrefs = context.getSharedPreferences("zoia_audio_settings", Context.MODE_PRIVATE)
+
+    private val _micVolume = MutableStateFlow(audioPrefs.getFloat("mic_volume", 1.0f))
+    val micVolume: StateFlow<Float> = _micVolume.asStateFlow()
+
+    private val _outputVolume = MutableStateFlow(audioPrefs.getFloat("output_volume", 1.0f))
+    val outputVolume: StateFlow<Float> = _outputVolume.asStateFlow()
+
+    fun setMicVolume(volume: Float) {
+        val clamped = volume.coerceIn(0.1f, 2.0f)
+        _micVolume.value = clamped
+        audioPrefs.edit().putFloat("mic_volume", clamped).apply()
+        applyAudioVolumes()
+    }
+
+    fun setOutputVolume(volume: Float) {
+        val clamped = volume.coerceIn(0.0f, 2.0f)
+        _outputVolume.value = clamped
+        audioPrefs.edit().putFloat("output_volume", clamped).apply()
+        applyAudioVolumes()
+    }
+
+    fun applyAudioVolumes() {
+        val micVol = _micVolume.value.toDouble()
+        val outVol = _outputVolume.value.toDouble()
+        val currentRoom = room ?: return
+
+        try {
+            currentRoom.localParticipant.audioTrackPublications.forEach { (_, track) ->
+                if (track is AudioTrack) {
+                    track.rtcTrack?.setVolume(micVol)
+                }
+            }
+
+            currentRoom.remoteParticipants.values.forEach { participant ->
+                participant.audioTrackPublications.forEach { (_, track) ->
+                    if (track is AudioTrack) {
+                        track.rtcTrack?.setVolume(outVol)
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+    }
 
     private val _availableOutputs = MutableStateFlow<List<AudioDevice>>(emptyList())
     val availableOutputs: StateFlow<List<AudioDevice>> = _availableOutputs.asStateFlow()
@@ -478,6 +521,7 @@ class LiveKitRoomManager(
                 announcedWatching = null
             }
         }
+        applyAudioVolumes()
     }
 
     private inline fun <reified T : Track> feedsOf(
@@ -524,6 +568,7 @@ class LiveKitRoomManager(
                 _isInVoice.value = true
                 if (!_isMicrophoneMuted.value) {
                     currentRoom.localParticipant.setMicrophoneEnabled(true)
+                    applyAudioVolumes()
                 }
                 updateStreamsList()
                 true
@@ -554,6 +599,9 @@ class LiveKitRoomManager(
             scope.launch {
                 try {
                     room?.localParticipant?.setMicrophoneEnabled(!muted)
+                    if (!muted) {
+                        applyAudioVolumes()
+                    }
                 } catch (_: Exception) {}
             }
         }

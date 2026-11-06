@@ -63,6 +63,8 @@ fun AudioSettingsDialog(
     val selectedOutput by roomManager.selectedOutput.collectAsState()
     val availableInputs by roomManager.availableInputs.collectAsState()
     val selectedInputId by roomManager.selectedInputId.collectAsState()
+    val micVolume by roomManager.micVolume.collectAsState()
+    val outputVolume by roomManager.outputVolume.collectAsState()
     val isInVoice by roomManager.isInVoice.collectAsState()
     val isMicMuted by roomManager.isMicrophoneMuted.collectAsState()
 
@@ -83,7 +85,7 @@ fun AudioSettingsDialog(
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "Dispositivos de Áudio",
+                    text = "Áudio e Microfone",
                     color = Color.White,
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Bold
@@ -158,6 +160,50 @@ fun AudioSettingsDialog(
                                     }
                                 }
                             }
+
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    text = "Volume da Saída",
+                                    color = Color(0xFFB0B7C3),
+                                    fontSize = 13.sp
+                                )
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    if (outputVolume != 1.0f) {
+                                        Text(
+                                            text = "Redefinir",
+                                            color = Color(0xFF4E75FF),
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            modifier = Modifier
+                                                .clickable { roomManager.setOutputVolume(1.0f) }
+                                                .padding(end = 8.dp)
+                                        )
+                                    }
+                                    Text(
+                                        text = "${(outputVolume * 100).toInt()}%",
+                                        color = Color.White,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                            Slider(
+                                value = outputVolume,
+                                onValueChange = { roomManager.setOutputVolume(it) },
+                                valueRange = 0f..2f,
+                                steps = 19,
+                                colors = SliderDefaults.colors(
+                                    thumbColor = Color(0xFF4E75FF),
+                                    activeTrackColor = Color(0xFF4E75FF),
+                                    inactiveTrackColor = Color(0xFF222630)
+                                ),
+                                modifier = Modifier.fillMaxWidth()
+                            )
                         }
                     }
 
@@ -250,6 +296,62 @@ fun AudioSettingsDialog(
                                     }
                                 }
                             }
+
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    text = "Sensibilidade / Ganho do Microfone",
+                                    color = Color(0xFFB0B7C3),
+                                    fontSize = 13.sp
+                                )
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    if (micVolume != 1.0f) {
+                                        Text(
+                                            text = "Redefinir",
+                                            color = Color(0xFF4E75FF),
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            modifier = Modifier
+                                                .clickable { roomManager.setMicVolume(1.0f) }
+                                                .padding(end = 8.dp)
+                                        )
+                                    }
+                                    Text(
+                                        text = "${(micVolume * 100).toInt()}%",
+                                        color = if (micVolume > 1.0f) Color(0xFFFFB74D) else Color.White,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                            Slider(
+                                value = micVolume,
+                                onValueChange = { roomManager.setMicVolume(it) },
+                                valueRange = 0.1f..2.0f,
+                                steps = 18,
+                                colors = SliderDefaults.colors(
+                                    thumbColor = if (micVolume > 1.0f) Color(0xFFFFB74D) else Color(0xFF23A55A),
+                                    activeTrackColor = if (micVolume > 1.0f) Color(0xFFFFB74D) else Color(0xFF23A55A),
+                                    inactiveTrackColor = Color(0xFF222630)
+                                ),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Text(
+                                text = if (micVolume < 1.0f) {
+                                    "Atenuado: reduz o volume da sua voz caso o microfone esteja alto para os outros."
+                                } else if (micVolume > 1.0f) {
+                                    "Amplificado: aumenta a captação do microfone."
+                                } else {
+                                    "Padrão (100%): diminua para 50%–70% se sua voz estiver soando muito alta."
+                                },
+                                color = Color(0xFF8E95A5),
+                                fontSize = 12.sp,
+                                lineHeight = 16.sp
+                            )
                         }
                     }
 
