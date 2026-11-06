@@ -104,3 +104,16 @@ export function minutesBetween(from: string, to: string): number | null {
   const b = fromLocalInput(to);
   return a && b ? Math.round((Date.parse(b) - Date.parse(a)) / 60_000) : null;
 }
+
+/**
+ * Joining an event's room is saying you are going: the answer to send when
+ * someone joins from an event, or null when they already said so.
+ */
+export function answerOnJoin(mine: RsvpAnswer | null | undefined): RsvpAnswer | null {
+  return mine === 'going' ? null : 'going';
+}
+
+/** Only an event that is on has a room to join from it; before, it asks. */
+export function canJoinEvent(state: ReturnType<typeof eventState>): boolean {
+  return state === 'live';
+}

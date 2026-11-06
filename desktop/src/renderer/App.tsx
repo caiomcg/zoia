@@ -1556,7 +1556,6 @@ export default function App({ preview = false }: { preview?: boolean }) {
                         people={chat.people}
                         now={eventNow}
                         onJoin={(id) => void switchChannel(id)}
-                        onOpen={setEventOpen}
                         onAnswer={(event, answer) => void schedule.rsvp(event.id, answer)}
                       />
                     ) : null,

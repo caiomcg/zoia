@@ -8757,18 +8757,6 @@ button.events-new:hover {
   font-size: 12px;
 }
 
-.event-popup-actions {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-  justify-content: flex-end;
-}
-
-.event-popup-actions button {
-  padding: 6px 12px;
-  font-size: 13px;
-}
-
 .event-row.ended {
   opacity: 0.6;
 }
@@ -9343,4 +9331,30 @@ button.events-new:hover {
   max-height: 260px;
   margin-top: 4px;
   border-radius: 8px;
+}
+
+/* Event popup (E2): Join leads while the event is on, and says it counts. */
+.event-popup .event-join {
+  width: 100%;
+}
+
+.event-join-note {
+  margin: -4px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.event-ask {
+  font-weight: 600;
+}
+
+/* Who can't go is listed too, quieter than who is coming. */
+.event-attendee-row.no .event-card-faces,
+.event-attendee-row.no .event-faces {
+  opacity: 0.55;
+}
+
+/* Maybe and Can't go under Join: two halves, not two of three slots. */
+.event-rsvp.two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }

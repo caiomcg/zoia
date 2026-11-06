@@ -19,6 +19,8 @@ import {
   minutesBetween,
   shiftLocal,
   toLocalInput,
+  answerOnJoin,
+  canJoinEvent,
 } from '../schedule/model';
 import DateTile from './DateTile';
 import { formatSpan } from './EventList';
@@ -455,10 +457,10 @@ function EventDetails({
       </div>
 
       <div className="event-attendees">
-        {(['going', 'maybe'] as const).map(
+        {(['going', 'maybe', 'no'] as const).map(
           (a) =>
             who[a].length > 0 && (
-              <div className="event-attendee-row" key={a}>
+              <div className={`event-attendee-row ${a}`} key={a}>
                 <span className="event-attendee-label">
                   {t(`event.answer.${a}`)} · {who[a].length}
                 </span>
@@ -490,11 +492,15 @@ function EventDetails({
             </button>
           </>
         )}
-        {channel && (
+        {/* Joining counts as going; there is a room to join only while it is on. */}
+        {channel && canJoinEvent(state) && (
           <button
             type="button"
             className="primary"
+            title={mine === 'going' ? undefined : t('event.joinMarksGoing')}
             onClick={() => {
+              const going = answerOnJoin(mine);
+              if (going) void schedule.rsvp(event.id, going);
               onJoin(channel.id);
               onClose();
             }}
