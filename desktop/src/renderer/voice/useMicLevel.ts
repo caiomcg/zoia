@@ -22,6 +22,7 @@ import {
 } from './settings';
 import { buildVoiceGraph, peakOf, VOICE_SAMPLE_RATE, type VoiceGraph } from './pipeline';
 import { registerAudioSink } from './audioSink';
+import { setDucked } from './duck';
 
 /** How much of the level falls away per frame, so the meter settles rather than flickers. */
 const DECAY = 0.92;
@@ -57,13 +58,25 @@ export function useMicLevel(settings: CaptureSettings, monitor = false): MicLeve
     let graph: VoiceGraph | null = null;
     let unregisterSink: (() => void) | null = null;
     let playing = false;
+    // One channel on both ears: down to mono as it is sent, then spread.
+    let toSpeakers: GainNode | null = null;
+    // Everyone else is held down for as long as you listen to yourself.
+    const duck = () => setDucked(playing);
     let raf = 0;
 
     const setPlaying = (on: boolean) => {
       if (!graph || !context || on === playing) return;
       playing = on;
-      if (on) graph.gated.connect(context.destination);
-      else graph.gated.disconnect(context.destination);
+      if (!toSpeakers) {
+        toSpeakers = context.createGain();
+        toSpeakers.channelCount = 1;
+        toSpeakers.channelCountMode = 'explicit';
+        toSpeakers.channelInterpretation = 'speakers';
+        toSpeakers.connect(context.destination);
+      }
+      if (on) graph.gated.connect(toSpeakers);
+      else graph.gated.disconnect(toSpeakers);
+      duck();
     };
 
     void (async () => {
@@ -124,6 +137,8 @@ export function useMicLevel(settings: CaptureSettings, monitor = false): MicLeve
       cancelAnimationFrame(raf);
       if (setPlayingRef.current === setPlaying) setPlayingRef.current = null;
       setPlaying(false);
+      setDucked(false);
+      toSpeakers?.disconnect();
       graph?.destroy();
       unregisterSink?.();
       stream?.getTracks().forEach((t) => t.stop());

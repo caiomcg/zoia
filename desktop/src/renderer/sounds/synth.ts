@@ -4,6 +4,7 @@
  * change is a parameter, not a new asset, and nothing is added to app.asar.
  */
 
+import { isDucked } from '../voice/duck';
 import {
   notesFor,
   voiceFor,
@@ -41,7 +42,8 @@ export function playCue(
 
 /** Plays `notes` in `voice`, at `volume` of the cue level. */
 function playNotes(voice: StyleVoice, notes: readonly Note[], volume: number): void {
-  if (volume <= 0) return;
+  // Hearing yourself is deafen: no cues either (duck.ts).
+  if (volume <= 0 || isDucked()) return;
   let ctx: AudioContext;
   try {
     ctx = audioContext();

@@ -187,12 +187,17 @@ export function useVoice(roomRef: RefObject<Room | null>, connection: Connection
     if (track) await (next ? track.mute() : track.unmute());
   }, []);
 
+  // Hear yourself: deafened for the call while Zoia's sound stays on here,
+  // so the monitor plays. Whether you were deafened before, to go back to it.
+  const hearingSelfRef = useRef<{ wasDeafened: boolean } | null>(null);
+
   const applyDeafened = useCallback(async (next: boolean) => {
     if (deafenedRef.current === next) return;
     deafenedRef.current = next;
     setDeafenedState(next);
     await Promise.all([
-      window.zoia.voice.deafen(next).catch(() => {}),
+      // Hearing yourself leaves the sound on: duck.ts holds the rest down.
+      window.zoia.voice.deafen(next && !hearingSelfRef.current).catch(() => {}),
       announceDeafened(voiceRoomRef.current, next),
     ]);
   }, []);
@@ -209,6 +214,7 @@ export function useVoice(roomRef: RefObject<Room | null>, connection: Connection
     void contextRef.current?.close().catch(() => {});
     contextRef.current = null;
     setState('off');
+    hearingSelfRef.current = null;
     // Deafen is part of being in voice: left on outside it, nothing would
     // play and there would be no button to say why.
     await applyDeafened(false);
@@ -378,6 +384,41 @@ export function useVoice(roomRef: RefObject<Room | null>, connection: Connection
     [applyMuted, applyDeafened],
   );
 
+  /**
+   * Hear yourself (Settings › Voice) is deafen, literally: your microphone is
+   * off to the call and everyone sees you deafened. Only Zoia's sound is left
+   * on, for the monitor to play; everything else is held down (duck.ts). Off,
+   * you are back as you were, unless you undeafened meanwhile.
+   */
+  const setHearingSelf = useCallback(
+    async (on: boolean) => {
+      if (on) {
+        if (hearingSelfRef.current) return;
+        const wasDeafened = deafenedRef.current;
+        hearingSelfRef.current = { wasDeafened };
+        if (wasDeafened) {
+          await window.zoia.voice.deafen(false).catch(() => {});
+        } else {
+          mutedBeforeDeafenRef.current = mutedRef.current;
+          await applyDeafened(true);
+          await applyMuted(true);
+        }
+        return;
+      }
+      const before = hearingSelfRef.current;
+      if (!before) return;
+      hearingSelfRef.current = null;
+      if (!deafenedRef.current) return;
+      if (before.wasDeafened) {
+        await window.zoia.voice.deafen(true).catch(() => {});
+      } else {
+        await applyDeafened(false);
+        await applyMuted(mutedBeforeDeafenRef.current);
+      }
+    },
+    [applyMuted, applyDeafened],
+  );
+
   // A channel switch, a sign-out or a lost connection ends voice: the server
   // forgets it with the participant, so this app has to as well. Reconnecting
   // keeps the same room, and voice with it.
@@ -465,5 +506,6 @@ export function useVoice(roomRef: RefObject<Room | null>, connection: Connection
     leave,
     setMuted,
     setDeafened,
+    setHearingSelf,
   };
 }

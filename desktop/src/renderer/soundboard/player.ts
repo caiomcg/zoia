@@ -8,6 +8,7 @@
  * one they were playing. Every sound stops at its kind's limit, fading out.
  */
 
+import { isDucked, subscribeDucked } from '../voice/duck';
 import { useSyncExternalStore } from 'react';
 import { MAX_ENTRANCE_SECONDS, MAX_SOUND_SECONDS, type Sound } from '../../shared/soundboard';
 import { soundboardSettings } from './library';
@@ -33,12 +34,15 @@ function output(): { context: AudioContext; masters: Record<SoundKind, GainNode>
     const audio = new AudioContext();
     registerAudioSink(audio);
     const buses = { effect: audio.createGain(), entrance: audio.createGain() };
+    // Silent while you hear yourself, as deafen would have it (duck.ts).
     const apply = () => {
       const settings = soundboardSettings.get();
-      buses.effect.gain.value = effectsGain(settings);
-      buses.entrance.gain.value = entranceGain(settings);
+      const on = isDucked() ? 0 : 1;
+      buses.effect.gain.value = effectsGain(settings) * on;
+      buses.entrance.gain.value = entranceGain(settings) * on;
     };
     apply();
+    subscribeDucked(apply);
     buses.effect.connect(audio.destination);
     buses.entrance.connect(audio.destination);
     soundboardSettings.subscribe(apply);

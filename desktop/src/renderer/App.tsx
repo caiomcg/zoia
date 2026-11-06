@@ -29,6 +29,7 @@ import { useChat } from './chat/useChat';
 import { useThread } from './chat/useThread';
 import ThreadPanel from './components/ThreadPanel';
 import NotificationBell from './components/NotificationBell';
+import { useDucked } from './voice/duck';
 import { shownUnread } from './chat/silence';
 import { useSilencedChats } from './chat/silence-store';
 import { usePresence } from './chat/usePresence';
@@ -242,6 +243,12 @@ export default function App({ preview = false }: { preview?: boolean }) {
       setTimeout(() => void voiceRef.current.setDeafened(true), VOICE_CUE_MS);
     }
   }, []);
+  // Hear yourself is deafen while it is on (useVoice's setHearingSelf).
+  const hearingSelf = useDucked();
+  useEffect(() => {
+    if (voiceRef.current.state !== 'on') return;
+    void voiceRef.current.setHearingSelf(hearingSelf);
+  }, [hearingSelf]);
   // The soundboard (ADR 0040): what others play, and playing to them.
   const soundboard = useSoundboard(room.room, room.state, voice);
   // The sound someone arrives with (ADR 0046), after their join cue.
