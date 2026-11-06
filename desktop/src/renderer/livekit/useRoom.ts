@@ -507,8 +507,11 @@ export const MOVE_TOPIC = 'zoia.move';
  */
 export const KICK_TOPIC = 'zoia.kick';
 
-/** Why the server kicked this machine: an admin did, or it sat idle. */
-export type KickReason = 'admin' | 'idle';
+/**
+ * Why the server kicked this machine: an admin did, it sat idle, or the same
+ * account joined a channel from another machine.
+ */
+export type KickReason = 'admin' | 'idle' | 'elsewhere';
 
 /** Where an admin asked this machine to go. */
 export interface MoveRequest {
@@ -950,7 +953,7 @@ export function useRoom() {
               const { reason } = JSON.parse(new TextDecoder().decode(payload)) as {
                 reason?: string;
               };
-              setKicked(reason === 'idle' ? 'idle' : 'admin');
+              setKicked(reason === 'idle' || reason === 'elsewhere' ? reason : 'admin');
             }
           } catch {
             // Not a message this version understands.

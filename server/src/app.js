@@ -16,7 +16,8 @@ import rateLimit from 'express-rate-limit';
 import { NotStageHolderError, WHIP_SUFFIX } from './whip.js';
 import { fixedChannels } from './channels.js';
 import { AVATAR_MAX_BYTES, imageType, isAvatarId } from './avatars.js';
-import { canManage, isAdmin } from './accounts.js';
+import { canManage, isAdmin, isBot } from './accounts.js';
+import { MAX_NAME_LENGTH } from './names.js';
 import { chatRoutes, createChatHub } from './chat-routes.js';
 import { gifRoutes } from './gif-routes.js';
 import { scheduleRoutes } from './schedule-routes.js';
@@ -258,6 +259,39 @@ export function createApp({
     }
   }
 
+  /**
+   * Gives an account a new display name and tells everyone: the chat stream,
+   * for every app's lists, and LiveKit, for the name on every tile. The same
+   * whoever asks, the person (/api/name) or an admin, so both are checked
+   * alike. Answers the renamed account, or `null` once it has refused.
+   */
+  async function setName(accountId, raw, res) {
+    const name = String(raw ?? '').trim();
+    if (!name) return res.status(400).json({ error: 'name_required' }) && null;
+    if (name.length > MAX_NAME_LENGTH) {
+      return res.status(400).json({ error: 'name_too_long' }) && null;
+    }
+
+    // The account's name, so it is the person's on every machine of theirs.
+    const result = await accountStore.rename(accountId, name);
+    // One name per server, so nobody is mistaken for someone else.
+    if (result.reason === 'name_taken') {
+      return res.status(409).json({ error: 'name_taken' }) && null;
+    }
+    if (!result.ok) return res.status(404).json({ error: 'unknown_account' }) && null;
+
+    // No separate session state to update: the name is read back out of the
+    // store on every request, so the record *is* the source of truth and the
+    // next token issued carries the new name. Everyone else's app shows names
+    // it already has, so it is told; the renamed person's own app included.
+    chatHub.publish('renamed', { accountId, name });
+    // And LiveKit, for the name on every tile and in every channel's list.
+    await renameAccount(accountId, name).catch((err) =>
+      logger.warn(`[name] could not rename in the channels: ${err.message}`),
+    );
+    return result.account;
+  }
+
   /** What a client is told about who it is signed in as. */
   async function describe(user) {
     return {
@@ -316,10 +350,37 @@ export function createApp({
       // expire, while in use every day.
       touchFor(req.user);
       res.json({ ...result, quality: config.quality });
+      // One machine of an account in the channels at a time: joining from
+      // this one takes any other out of its channel, told why. It stays
+      // signed in, chats and all, and may join again, which takes this one
+      // out in turn. After the answer, so the join is not kept waiting.
+      void kickOtherMachines(req.user).catch((err) =>
+        logger.warn(
+          `[token] could not take ${req.user.accountId}'s other machines out: ${err.message}`,
+        ),
+      );
     } catch (err) {
       next(err);
     }
   });
+
+  /** Kicks every other machine of `user`'s account out of whichever channel it is in. */
+  async function kickOtherMachines(user) {
+    if (!user.accountId) return;
+    const others = (await deviceStore.listByAccount(user.accountId))
+      .map((d) => d.id)
+      .filter((id) => id !== user.id);
+    if (others.length === 0) return;
+    const where = await whereAll();
+    await Promise.all(
+      others
+        .filter((id) => where.has(id))
+        .map(async (id) => {
+          await kick(where.get(id).stage, id, 'elsewhere', { graceMs: kickGraceMs });
+          logger.info(`[token] ${id} (${user.accountId}) left its channel: joined on ${user.id}`);
+        }),
+    );
+  }
 
   // Codes are guessed at harder than a login would be: one is worth an
   // account. Only failures count.
@@ -744,6 +805,24 @@ export function createApp({
     }
   });
 
+  // Renames someone, by the same rules as the other account actions (an admin
+  // renames users, only the super admin renames admins, nobody the super
+  // admin) and with the same checks as renaming yourself, which is
+  // /api/name. A bot's name is its addon's (ADR 0041).
+  app.post('/api/admin/accounts/:id/name', requireAdmin, async (req, res, next) => {
+    try {
+      const target = await manageable(req, res);
+      if (!target) return;
+      if (isBot(target)) return adminRefuse(res, 'unknown_account');
+      const account = await setName(target.id, req.body?.name, res);
+      if (!account) return;
+      logger.info(`[admin] ${req.user.accountId} renamed ${target.id}`);
+      res.json({ account });
+    } catch (err) {
+      next(err);
+    }
+  });
+
   // ---- broadcast slots ---------------------------------------------------
   // Publishing is a runtime permission, granted independently per participant.
 
@@ -1000,26 +1079,8 @@ export function createApp({
 
   app.post('/api/name', requireSession, async (req, res, next) => {
     try {
-      const name = String(req.body?.name ?? '').trim();
-      if (!name) return res.status(400).json({ error: 'name_required' });
-      if (name.length > 32) return res.status(400).json({ error: 'name_too_long' });
-
-      // The account's name, so it is the person's on every machine of theirs.
-      const result = await accountStore.rename(req.user.accountId, name);
-      // One name per server, so nobody is mistaken for someone else.
-      if (result.reason === 'name_taken') return res.status(409).json({ error: 'name_taken' });
-      if (!result.ok) return res.status(404).json({ error: 'unknown_account' });
-
-      // No separate session state to update: the name is read back out of
-      // the store on every request, so the record *is* the source of truth
-      // and the next token issued carries the new name. Everyone else's app
-      // shows names it already has, so it is told.
-      chatHub.publish('renamed', { accountId: req.user.accountId, name });
-      // And LiveKit, for the name on every tile and in every channel's list.
-      await renameAccount(req.user.accountId, name).catch((err) =>
-        logger.warn(`[name] could not rename in the channels: ${err.message}`),
-      );
-      res.json({ ok: true, name });
+      const account = await setName(req.user.accountId, req.body?.name, res);
+      if (account) res.json({ ok: true, name: account.name });
     } catch (err) {
       next(err);
     }

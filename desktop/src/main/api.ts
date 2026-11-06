@@ -186,7 +186,11 @@ export function adminAccounts() {
 }
 
 /** One admin action on one account. `reset` answers with the code to hand on. */
-export function adminAction(id: string, action: string, options: { role?: AccountRole } = {}) {
+export function adminAction(
+  id: string,
+  action: string,
+  options: { role?: AccountRole; name?: string } = {},
+) {
   return call<{ account?: AdminAccount } & Partial<IssuedCode>>(
     `/api/admin/accounts/${encodeURIComponent(id)}/${encodeURIComponent(action)}`,
     { method: 'POST', body: JSON.stringify(options) },

@@ -618,7 +618,7 @@ describe('administration', () => {
     const bob = await person('bob@example.com');
     const carol = await person('carol@example.com');
     assert.equal((await bob.agent.get('/api/admin/accounts')).status, 403);
-    for (const action of ['approve', 'reject', 'disable', 'enable', 'reset', 'role']) {
+    for (const action of ['approve', 'reject', 'disable', 'enable', 'reset', 'role', 'name']) {
       const res = await bob.agent.post(`/api/admin/accounts/${carol.account.id}/${action}`);
       assert.equal(res.status, 403, action);
     }
@@ -680,6 +680,91 @@ describe('administration', () => {
     assert.equal((await role(owner, bob, 'user')).status, 200);
     // Read from the store on every request, so a demotion is immediate.
     assert.equal((await bob.agent.get('/api/admin/accounts')).status, 403);
+  });
+
+  test('an admin renames users, the super admin admins too, nobody the super admin', async () => {
+    const owner = await person('owner@example.com', 'super_admin');
+    const admin = await person('admin@example.com', 'admin');
+    const other = await person('other@example.com', 'admin');
+    const bob = await person('bob@example.com');
+    const carol = await person('carol@example.com');
+    const rename = (who, target, name) =>
+      who.agent.post(`/api/admin/accounts/${target.account.id}/name`).send({ name });
+
+    const renamed = await rename(admin, bob, '  Robert  ');
+    assert.equal(renamed.status, 200);
+    assert.equal(renamed.body.account.name, 'Robert');
+    assert.ok(!('hash' in renamed.body.account) && !('salt' in renamed.body.account));
+    assert.equal((await accounts.get(bob.account.id)).name, 'Robert');
+    // Read back on Bob's own next request, so his app and his next token agree.
+    assert.equal((await bob.agent.get('/api/session')).body.name, 'Robert');
+
+    assert.equal((await rename(admin, other, 'Otto')).status, 403);
+    assert.equal((await rename(admin, owner, 'Boss')).status, 403);
+    assert.equal((await rename(admin, admin, 'Me')).status, 403, 'yourself is /api/name');
+    assert.equal((await rename(owner, other, 'Otto')).status, 200);
+    assert.equal((await rename(owner, owner, 'Boss')).status, 403);
+    assert.equal((await rename(carol, bob, 'Bobby')).status, 403, 'a user renames nobody');
+    assert.equal((await accounts.get(bob.account.id)).name, 'Robert');
+    assert.equal((await accounts.get(owner.account.id)).name, 'owner');
+  });
+
+  test('a rename by an admin is checked like your own', async () => {
+    const admin = await person('admin@example.com', 'admin');
+    const bob = await person('bob@example.com');
+    await person('carol@example.com');
+    const rename = (name) =>
+      admin.agent.post(`/api/admin/accounts/${bob.account.id}/name`).send({ name });
+
+    assert.equal((await rename('   ')).status, 400);
+    assert.equal((await rename('x'.repeat(33))).status, 400);
+    const taken = await rename('CARÓL');
+    assert.equal(taken.status, 409);
+    assert.equal(taken.body.error, 'name_taken');
+    assert.equal((await rename('x'.repeat(32))).status, 200);
+    const missing = await admin.agent.post('/api/admin/accounts/nobody/name').send({ name: 'X' });
+    assert.equal(missing.status, 404);
+  });
+
+  test('a rename by an admin reaches everyone, and the room, as your own does', async () => {
+    const admin = await person('admin@example.com', 'admin');
+    const bob = await person('bob@example.com');
+    const laptop = await login('bob@example.com', PASSWORD, 'Desktop');
+    rooms.participants = [{ identity: bob.id }, { identity: laptop.id }, { identity: admin.id }];
+    frames.length = 0;
+
+    const res = await admin.agent
+      .post(`/api/admin/accounts/${bob.account.id}/name`)
+      .send({ name: 'Robert' });
+    assert.equal(res.status, 200);
+    const told = frames.filter((f) => f.startsWith('event: renamed\n'));
+    assert.equal(told.length, 1);
+    assert.deepEqual(JSON.parse(told[0].split('data: ')[1]), {
+      accountId: bob.account.id,
+      name: 'Robert',
+    });
+    const inRoom = rooms.updates.filter((u) => u.name === 'Robert').map((u) => u.identity);
+    assert.deepEqual(inRoom.sort(), [bob.id, laptop.id].sort());
+  });
+
+  test('a bot is not renamed from here: its name is its addon’s', async () => {
+    const owner = await person('owner@example.com', 'super_admin');
+    const checked = validateManifest({
+      id: 'zouve',
+      name: 'Zouve',
+      version: '1.0.0',
+      image: `ghcr.io/caiomcg/zouve@sha256:${'a'.repeat(64)}`,
+      permissions: ['bots.create'],
+    });
+    const { addon } = await createAddonStore({ db, logger: quiet() }).install({
+      repo: 'caiomcg/zouve',
+      manifest: checked.manifest,
+      by: 'test',
+    });
+    const { account: bot } = await accounts.createBot({ addonId: addon.id, name: 'Zouve' });
+    const res = await owner.agent.post(`/api/admin/accounts/${bot.id}/name`).send({ name: 'X' });
+    assert.equal(res.status, 404);
+    assert.equal((await accounts.get(bot.id)).name, 'Zouve');
   });
 
   test('the channel list tells you your own role, as it stands now', async () => {
@@ -992,6 +1077,28 @@ describe('admins move people between channels', () => {
     ]);
     assert.deepEqual(lounge.removed, [bob.id, `${bob.id}-gpu`]);
     assert.equal((await admin.agent.post(`/api/admin/devices/${bob.id}/kick`)).status, 409);
+  });
+
+  test("joining from one machine takes the account's other machines out of their channel", async () => {
+    const bob = await person('bob@example.com');
+    const laptop = await login('bob@example.com', PASSWORD, 'Laptop');
+    const carol = await person('carol@example.com');
+    enter(lounge, laptop.id);
+    enter(lobby, carol.id);
+
+    assert.equal((await bob.agent.post('/api/token').send({ room: 'zoia' })).status, 200);
+    for (let i = 0; i < 50 && lounge.removed.length === 0; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    assert.deepEqual(lounge.sent, [
+      { to: [laptop.id], topic: 'zoia.kick', message: { reason: 'elsewhere' } },
+    ]);
+    assert.deepEqual(
+      lounge.removed.filter((id) => !id.endsWith('-gpu')),
+      [laptop.id],
+    );
+    // Someone else's machine, and the one joining, are left alone.
+    assert.deepEqual(lobby.removed, []);
   });
 
   test('kicking follows the rules of disconnecting', async () => {
