@@ -38,6 +38,7 @@ import type {
   AddonPreview,
   Presence,
   PresenceState,
+  GifResult,
 } from '../shared/ipc';
 import type { SoundPage } from '../shared/soundboard';
 
@@ -262,6 +263,10 @@ export interface ZoiaBridge {
       name: string | null,
       type: string,
     ): Promise<ActionOutcome<{ saved: boolean }>>;
+    /** Puts a chat photo on the clipboard, as a picture. */
+    copyMedia(chatId: string, mediaId: string): Promise<ActionOutcome>;
+    /** GIFs from KLIPY (ADR 0051): trending with no query, else a search. */
+    gifs(query: string, page: number): Promise<ActionOutcome<{ gifs: GifResult[]; more: boolean }>>;
     /** Adds your emoji to a message, or takes it off with `on` false. */
     react(chatId: string, messageId: string, emoji: string, on: boolean): Promise<ActionOutcome>;
     read(chatId: string, messageId: string): Promise<ActionOutcome>;
