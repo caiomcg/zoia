@@ -111,7 +111,7 @@ Each fails in a way that looks like an app bug. Details in [docs/SELF_HOSTING.md
 |---|---|
 | Adding or changing a feature | [.claude/skills/zoia-feature](.claude/skills/zoia-feature/SKILL.md) |
 | How the pieces fit | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), `docs/adr/` |
-| Running your own server | [docs/SELF_HOSTING.md](docs/SELF_HOSTING.md); the author's own: [docs/RUNBOOK.md](docs/RUNBOOK.md) |
+| Running your own server | [.claude/skills/zoia-self-host](.claude/skills/zoia-self-host/SKILL.md), [docs/SELF_HOSTING.md](docs/SELF_HOSTING.md); the author's own: [docs/RUNBOOK.md](docs/RUNBOOK.md) |
 | Writing an addon | [docs/addons/](docs/addons/README.md) |
 | Builds, installers, updates | [docs/DISTRIBUTING.md](docs/DISTRIBUTING.md) |
 | Contributing, CI | [CONTRIBUTING.md](CONTRIBUTING.md) |
