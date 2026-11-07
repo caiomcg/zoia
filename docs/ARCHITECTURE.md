@@ -3,7 +3,7 @@
 ## The shape of it
 
 ```
-  BROADCASTER (Windows desktop app)             YOUR SERVER
+  BROADCASTER (desktop app, on Windows)         YOUR SERVER
 ┌────────────────────────────────┐        ┌──────────────────────────────┐
 │  MAIN process                  │        │  caddy :443                  │
 │   ├ desktopCapturer → sources  │        │    zoia.<domain>  → app      │
@@ -26,6 +26,11 @@ a refused connection rather than reaching a service — see
 
 The server does not transcode. One stream arrives, N copies leave, and the CPU cost is
 forwarding packets rather than touching pixels.
+
+On macOS the app is the same, but capture and audio come from ScreenCaptureKit, which sends
+the system's audio rather than one application's, and there is no GPU path
+([ADR 0025](adr/0025-macos-client.md)). Beside these, compose runs **ScyllaDB** for chat
+messages and the **addon host** for addon containers (below).
 
 ## Why there is a desktop app at all
 
@@ -73,10 +78,11 @@ which has no hardware encoder on Windows:
 Windows Graphics Capture ─► D3D11 ─► NVENC / AMF / QSV ─► ffmpeg ─► WHIP ─► LiveKit SFU ─► the room
 ```
 
-It's **opt-in**, via a checkbox in the share picker, and works on NVIDIA, AMD and Intel
+**Currently switched off in the app** while it is made reliable on more machines. When on,
+it's **opt-in**, via a checkbox in the share picker, and works on NVIDIA, AMD and Intel
 GPUs from anywhere. The SFU accepts WHIP natively at `https://<sfu-host>/whip/v1`, so it
 uses the same hostname and the same UDP 7882 as everything else. The server hands out a
-publish-only token, and only to the stage holder. [ADR 0009](adr/0009-hardware-encoding.md)
+publish-only token, and only to the participant who owns that broadcast slot. [ADR 0009](adr/0009-hardware-encoding.md)
 covers why Chromium can't do this.
 [ADR 0011](adr/0011-hardware-encoding-over-the-internet.md) covers how it became
 multi-vendor and reachable from anywhere, and why the separate Ingress service it used to
@@ -95,12 +101,17 @@ go through was removed.
 4. `POST /api/token` mints a LiveKit JWT. Everyone joins **subscribe-only** —
    `canPublish: false` — regardless of any stored role.
 5. To broadcast, the client calls `POST /api/stage/claim`. The server raises that
-   participant's permission with `updateParticipant` only if nobody else already holds it.
-6. The client connects to `wss://sfu.<domain>`, authenticates with the JWT, and publishes or
+   participant's own permission with `updateParticipant`, for its own slot only: anyone may
+   broadcast while others do.
+6. Voice is granted the same way: `POST /api/voice/join` grants the microphone alone
+   (`canPublishSources: [MICROPHONE]`), which is not a broadcast slot.
+7. The client connects to `wss://sfu.<domain>`, authenticates with the JWT, and publishes or
    subscribes.
 
 Accounts, approval and roles: [ADR 0031](adr/0031-accounts-with-admin-approval.md). The stage:
-[ADR 0005](adr/0005-one-tier-claimable-stage.md).
+[ADR 0005](adr/0005-one-tier-claimable-stage.md), with a slot per person since
+[ADR 0013](adr/0013-multiple-broadcast-slots.md). Voice:
+[ADR 0039](adr/0039-voice-channels.md).
 
 ## Text chat
 
@@ -134,6 +145,23 @@ approved account sees every one ([ADR 0036](adr/0036-text-chat-in-scylladb.md)).
 - **Reactions** are rows beside the messages, under the same chat-and-month partition key,
   so a page's reactions are one more read per month it spans.
 
+## Voice
+
+Every channel is a voice channel: the app joins voice with the channel. Each speaker sends one
+Opus stream and each listener mixes what it receives locally; nothing is mixed on the server.
+The microphone-only grant composes with a broadcast slot, so joining or leaving voice never
+ends a share ([ADR 0039](adr/0039-voice-channels.md)).
+
+## Addons
+
+An addon is a container image from a GitHub release, installed by the super admin
+([ADR 0041](adr/0041-addons.md)). The **addon host** (`addon-host/`) is the only container
+holding the Docker socket; it answers only the app, pulls by digest, and runs each addon
+read-only, without capabilities, in a network of its own. The addon talks to the app over
+`/api/addon/v1` with a bearer token, every route behind one permission re-read per request.
+A bot that may speak gets a token publishing the microphone alone, minted for that bot only.
+How to write one: [docs/addons](addons/README.md).
+
 ## Keeping channels tidy
 
 An admin can disconnect someone from their channel: the server tells that app why on a data
@@ -151,8 +179,8 @@ forwards out.
 
 **Tokens carry the authorization, not the client.** LiveKit validates the grant server-side
 on every publish attempt, so a client editing its own JavaScript achieves nothing.
-`canPublish` is computed in `server/src/token.js` from server state and never from anything
-the client sends.
+Join tokens from `server/src/token.js` never carry `canPublish`; publishing is granted at
+runtime by `server/src/stage.js`, from server state and never from anything the client sends.
 
 **Stage state is derived, not stored.** "Who is broadcasting" is read from LiveKit's
 participant list rather than kept in a variable. A variable is wrong the moment a
@@ -207,9 +235,11 @@ zoia/
 │   │                chats.js · messages.js · chat-routes.js · chat-media.js · idle.js
 │   ├── bin/         keytool.js — super admin, reset codes, devices, backups
 │   └── public/      the static landing page (no client JavaScript)
-├── desktop/         Electron + React, Windows x64
+├── addon-host/      the sidecar that runs addon containers; holds the Docker socket
+├── desktop/         Electron + React, Windows x64 and macOS
 │   ├── src/main/    sources · audio (WASAPI) · nvenc · capture · sign-in
 │   ├── src/renderer/  the UI, the player, the LiveKit hooks
-│   └── native/      C++ addon: Windows Graphics Capture + NVENC
-└── docs/            this, the runbook, self-hosting, and the ADRs
+│   └── native/      C++ addon: Windows Graphics Capture + NVENC / AMF
+├── android/         the Android viewer (on hold)
+└── docs/            this, the runbook, self-hosting, addons, and the ADRs
 ```

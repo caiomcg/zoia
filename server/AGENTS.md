@@ -7,7 +7,8 @@ The Node app: accounts, LiveKit tokens, chat, schedule and the addon API. Root
 
 | Path | Holds |
 |---|---|
-| `src/index.js` | Express app, routes, middleware wiring |
+| `src/index.js` | Entry point: wires config, the database, LiveKit and the stores into the app |
+| `src/app.js` | `createApp`: the Express app, its routes and middleware (tests start it in-process) |
 | `src/config.js` | Env parsing and validation, fail-fast on startup |
 | `src/accounts.js` | Accounts: email, password, role, approval, reset and claim codes |
 | `src/devices.js` | One credential per machine signed in to an account |
