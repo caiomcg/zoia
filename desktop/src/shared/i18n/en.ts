@@ -462,6 +462,26 @@ export const en = {
   'picker.leagueShare': 'Share LoL',
   'picker.leagueGameBadge': 'LoL • Match',
   'picker.leagueClientBadge': 'LoL • Client / Select',
+  'picker.browserVideoWarn':
+    '{browser} is open without the video fix: videos playing in it may show up black for viewers.',
+  'picker.browserVideoReady': '{browser} is ready: its videos show up in the broadcast.',
+  'picker.browserVideoFix': 'Restart {browser} with the fix',
+  'picker.browserVideoFixing': 'Restarting {browser}…',
+  'picker.browserVideoCheck': 'Check again',
+  'picker.browserVideoChecking': 'Checking browsers…',
+  'picker.browserVideoConfirm':
+    '{browser} will close and reopen with its tabs restored, using a setting that keeps its videos from showing up black in the broadcast. Its shortcuts on the taskbar, Start menu and desktop get the setting too, so it stays on next time.',
+  'picker.browserVideoConfirmFirefox':
+    '{browser} will close and reopen with its tabs restored, with the settings that keep its videos from showing up black in the broadcast turned off for good. They can be turned back on in about:config.',
+  'picker.browserVideoUndo': 'Undo the fix',
+  'picker.browserVideoUndoConfirm':
+    '{browser} will close and reopen with its tabs restored, without the video fix. Its shortcuts lose the setting too. Videos playing in it may show up black for viewers again.',
+  'picker.browserVideoUndoConfirmFirefox':
+    '{browser} will close and reopen with its tabs restored, with its video settings back to their defaults. Videos playing in it may show up black for viewers again.',
+  'picker.browserVideoConfirmButton': 'Restart {browser}',
+  'picker.browserVideoStillRunning':
+    '{browser} did not close. Close its windows yourself, then try again.',
+  'picker.browserVideoFailed': 'Could not restart {browser}: {error}',
 
   // ---- camera
   'camera.title': 'Share your camera',

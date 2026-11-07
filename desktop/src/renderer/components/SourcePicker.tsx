@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { QUALITY_PRESETS, type SourceInfo } from '../../shared/ipc';
 import { findLeagueSources, isLeagueClient, isLeagueGame } from '../../shared/league';
+import type { BrowserVideoStatus } from '../../shared/browser-video';
 import { useT } from '../i18n';
+import { useConfirm } from './ConfirmDialog';
 
 /**
  * Quality lives here rather than in the top bar because this is the moment it
@@ -197,6 +199,8 @@ export default function SourcePicker({
             )}
             {filtered.length === 0 && <p className="muted">{t('picker.none')}</p>}
 
+            <BrowserVideoNotice />
+
             <div className="picker-game-tip">
               <span className="picker-game-tip-icon">💡</span>
               <p className="picker-game-tip-text">
@@ -233,6 +237,123 @@ export default function SourcePicker({
           <button onClick={onCancel}>{t('common.cancel')}</button>
         </footer>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Whether the open browsers will show their videos in the broadcast, with a
+ * way to restart one that will not (src/shared/browser-video.ts). Checked
+ * once when the picker opens, since reading the browsers' command lines
+ * takes about a second, and again on request.
+ */
+function BrowserVideoNotice() {
+  const t = useT();
+  const { confirm, dialog } = useConfirm();
+  const [statuses, setStatuses] = useState<BrowserVideoStatus[] | null>(null);
+  const [checking, setChecking] = useState(false);
+  const [fixing, setFixing] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const supported = window.zoia.app.platform === 'win32';
+
+  const check = useCallback(async () => {
+    setChecking(true);
+    try {
+      setStatuses(await window.zoia.browserVideo.status());
+    } catch (err) {
+      console.warn('[browser-video] status failed:', err);
+      setStatuses([]);
+    } finally {
+      setChecking(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (supported) void check();
+  }, [supported, check]);
+
+  /** Turns the fix on, or with `on` false takes it away again; both restart the browser. */
+  const fix = async (status: BrowserVideoStatus, on: boolean) => {
+    const browser = status.name;
+    const firefox = status.kind === 'firefox';
+    const question = on
+      ? firefox
+        ? 'picker.browserVideoConfirmFirefox'
+        : 'picker.browserVideoConfirm'
+      : firefox
+        ? 'picker.browserVideoUndoConfirmFirefox'
+        : 'picker.browserVideoUndoConfirm';
+    const yes = await confirm(
+      t(question, { browser }),
+      t('picker.browserVideoConfirmButton', { browser }),
+    );
+    if (!yes) return;
+    setFixing(status.id);
+    setMessage(null);
+    try {
+      const result = on
+        ? await window.zoia.browserVideo.fix(status.id)
+        : await window.zoia.browserVideo.undo(status.id);
+      if (result.ok) {
+        // The browser takes a moment to come back; check once it has.
+        await new Promise((r) => setTimeout(r, 3000));
+        await check();
+      } else if (result.reason === 'still-running') {
+        setMessage(t('picker.browserVideoStillRunning', { browser }));
+      } else {
+        setMessage(
+          t('picker.browserVideoFailed', { browser, error: result.error ?? result.reason }),
+        );
+      }
+    } finally {
+      setFixing(null);
+    }
+  };
+
+  if (!supported) return null;
+  const running = (statuses ?? []).filter((s) => s.running);
+  if (!checking && running.length === 0 && !message) return dialog;
+
+  return (
+    <div className="picker-browser-video">
+      {checking && !statuses && <p className="muted">{t('picker.browserVideoChecking')}</p>}
+      {running.map((s) =>
+        s.ready ? (
+          <div key={s.id} className="picker-browser-video-ready">
+            <p>✓ {t('picker.browserVideoReady', { browser: s.name })}</p>
+            <button
+              type="button"
+              className="picker-browser-video-undo"
+              disabled={fixing !== null}
+              onClick={() => void fix(s, false)}
+            >
+              {fixing === s.id
+                ? t('picker.browserVideoFixing', { browser: s.name })
+                : t('picker.browserVideoUndo')}
+            </button>
+          </div>
+        ) : (
+          <div key={s.id} className="picker-browser-video-warn">
+            <p>⚠ {t('picker.browserVideoWarn', { browser: s.name })}</p>
+            <div className="picker-browser-video-actions">
+              <button type="button" disabled={fixing !== null} onClick={() => void fix(s, true)}>
+                {fixing === s.id
+                  ? t('picker.browserVideoFixing', { browser: s.name })
+                  : t('picker.browserVideoFix', { browser: s.name })}
+              </button>
+              <button
+                type="button"
+                disabled={checking || fixing !== null}
+                onClick={() => void check()}
+              >
+                {t('picker.browserVideoCheck')}
+              </button>
+            </div>
+          </div>
+        ),
+      )}
+      {message && <p className="error">{message}</p>}
+      {dialog}
     </div>
   );
 }

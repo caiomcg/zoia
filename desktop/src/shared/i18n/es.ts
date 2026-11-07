@@ -457,6 +457,26 @@ export const es: Messages = {
   'picker.leagueShare': 'Compartir LoL',
   'picker.leagueGameBadge': 'LoL • Partida',
   'picker.leagueClientBadge': 'LoL • Cliente / Selección',
+  'picker.browserVideoWarn':
+    '{browser} está abierto sin el ajuste de video: los videos que se reproducen en él pueden verse negros para quienes miran.',
+  'picker.browserVideoReady': '{browser} está listo: sus videos se ven en la transmisión.',
+  'picker.browserVideoFix': 'Reiniciar {browser} con el ajuste',
+  'picker.browserVideoFixing': 'Reiniciando {browser}…',
+  'picker.browserVideoCheck': 'Comprobar de nuevo',
+  'picker.browserVideoChecking': 'Comprobando navegadores…',
+  'picker.browserVideoConfirm':
+    '{browser} se cerrará y volverá a abrirse con sus pestañas restauradas, usando una configuración que evita que sus videos se vean negros en la transmisión. Sus accesos directos en la barra de tareas, el menú Inicio y el escritorio también reciben la configuración, para que siga activa la próxima vez.',
+  'picker.browserVideoConfirmFirefox':
+    '{browser} se cerrará y volverá a abrirse con sus pestañas restauradas, con las configuraciones que hacen que sus videos se vean negros en la transmisión desactivadas para siempre. Se pueden volver a activar en about:config.',
+  'picker.browserVideoUndo': 'Deshacer el ajuste',
+  'picker.browserVideoUndoConfirm':
+    '{browser} se cerrará y volverá a abrirse con sus pestañas restauradas, sin el ajuste de video. Sus accesos directos también pierden la configuración. Los videos que se reproducen en él pueden volver a verse negros para quienes miran.',
+  'picker.browserVideoUndoConfirmFirefox':
+    '{browser} se cerrará y volverá a abrirse con sus pestañas restauradas, con sus configuraciones de video de vuelta a los valores predeterminados. Los videos que se reproducen en él pueden volver a verse negros para quienes miran.',
+  'picker.browserVideoConfirmButton': 'Reiniciar {browser}',
+  'picker.browserVideoStillRunning':
+    '{browser} no se cerró. Cierra sus ventanas y vuelve a intentarlo.',
+  'picker.browserVideoFailed': 'No se pudo reiniciar {browser}: {error}',
 
   'camera.title': 'Compartir tu cámara',
   'camera.camera': 'Cámara',

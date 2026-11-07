@@ -455,6 +455,26 @@ export const pt: Messages = {
   'picker.leagueShare': 'Transmitir LoL',
   'picker.leagueGameBadge': 'LoL • Partida',
   'picker.leagueClientBadge': 'LoL • Cliente / Seleção',
+  'picker.browserVideoWarn':
+    'O {browser} está aberto sem o ajuste de vídeo: vídeos tocando nele podem aparecer pretos para quem assiste.',
+  'picker.browserVideoReady': 'O {browser} está pronto: os vídeos dele aparecem na transmissão.',
+  'picker.browserVideoFix': 'Reiniciar o {browser} com o ajuste',
+  'picker.browserVideoFixing': 'Reiniciando o {browser}…',
+  'picker.browserVideoCheck': 'Verificar de novo',
+  'picker.browserVideoChecking': 'Verificando navegadores…',
+  'picker.browserVideoConfirm':
+    'O {browser} vai fechar e abrir de novo com as abas restauradas, usando uma configuração que evita que os vídeos dele apareçam pretos na transmissão. Os atalhos dele na barra de tarefas, no Menu Iniciar e na Área de Trabalho também recebem a configuração, para ela continuar valendo da próxima vez.',
+  'picker.browserVideoConfirmFirefox':
+    'O {browser} vai fechar e abrir de novo com as abas restauradas, com as configurações que fazem os vídeos dele aparecerem pretos na transmissão desligadas de vez. Dá para religar em about:config.',
+  'picker.browserVideoUndo': 'Desfazer ajuste',
+  'picker.browserVideoUndoConfirm':
+    'O {browser} vai fechar e abrir de novo com as abas restauradas, sem o ajuste de vídeo. Os atalhos dele também perdem a configuração. Vídeos tocando nele podem voltar a aparecer pretos para quem assiste.',
+  'picker.browserVideoUndoConfirmFirefox':
+    'O {browser} vai fechar e abrir de novo com as abas restauradas, com as configurações de vídeo voltando ao padrão. Vídeos tocando nele podem voltar a aparecer pretos para quem assiste.',
+  'picker.browserVideoConfirmButton': 'Reiniciar o {browser}',
+  'picker.browserVideoStillRunning':
+    'O {browser} não fechou. Feche as janelas dele e tente de novo.',
+  'picker.browserVideoFailed': 'Não foi possível reiniciar o {browser}: {error}',
 
   'camera.title': 'Compartilhar sua câmera',
   'camera.camera': 'Câmera',
