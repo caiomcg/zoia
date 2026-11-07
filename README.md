@@ -24,21 +24,24 @@ notifications, your music and your other calls stay out of the stream.
 
 ## What it does
 
-- **Share a window, a screen, or a camera.** Multiple people can share at once, and each
-  viewer chooses which broadcasts to watch.
-- **Send that application's audio, and only that.** Sharing a whole screen is silent on
-  purpose — the only audio a screen has is everything at once.
-- **Ask for the stage.** Whoever is sharing can hand over or say no. If they have wandered
-  off, you can take it after thirty seconds.
+- **Share a window, a screen, or a camera** — or a camera beside your screen. Anyone in a
+  channel can share at the same time as everyone else, and each viewer chooses which
+  broadcasts to watch.
+- **Send that application's audio, and only that** (Windows). Sharing a whole screen is
+  silent on purpose — the only audio a screen has is everything at once.
 - **Switch what you share** without stopping, so the picture never drops for viewers.
 - **Preview a camera first**, with device pickers and a level meter, before anything is
   published.
-- **Channels.** Everyone picks a channel to be in, and shares and watches there. Admins add,
-  rename and remove channels, and drag people from one to another.
-- **Text chats**, beside the channels and independent of them: messages, photos and videos,
-  replies, emoji reactions, @mentions with autocompletion and an alert when you are mentioned,
-  unread counts and who has seen what. Channel and
-  chat names can carry an emoji.
+- **Channels with voice.** Everyone picks a channel to be in, and talks, shares and watches
+  there, with noise suppression, push-to-talk shortcuts, a soundboard and an entrance sound of
+  your own. Admins add, rename and remove channels, and drag people from one to another.
+- **Text chats**, beside the channels and independent of them: messages, photos, videos and
+  GIFs, formatting, replies and threads, emoji reactions, edits, @mentions with an alert, and
+  unread counts. **Direct messages** between two people, seen by them alone.
+- **Scheduled events** with RSVPs, announced in the app when they start.
+- **Addons.** The server's super admin installs bots from GitHub, such as a music player for
+  voice; each gets only the permissions it was granted. Write your own:
+  [docs/addons](docs/addons/README.md).
 - **Accounts, approved by an admin.** Anyone can sign up with an email and password; an
   admin lets them in. Admins can disable someone, reset a password or sign out one machine,
   all from the app.
@@ -49,13 +52,14 @@ notifications, your music and your other calls stay out of the stream.
 ## How it works
 
 ```
-  Windows desktop app                         your server
+  desktop app (Windows, macOS)                your server
  ┌──────────────────────┐                ┌────────────────────────┐
  │  window / screen     │   WebRTC       │  Caddy  (TLS)          │
- │  camera              │ ─────────────► │    ├── app   (Node)    │ ── accounts, tokens,
+ │  camera, voice       │ ─────────────► │    ├── app   (Node)    │ ── accounts, tokens,
  │  app audio (WASAPI)  │                │    │     └── ScyllaDB  │    the stage, chat
- │  chat                │                │    └── LiveKit (SFU)   │
- └──────────────────────┘                └────────────────────────┘
+ │  chat                │                │    ├── LiveKit (SFU)   │
+ └──────────────────────┘                │    └── addon host      │ ── addon containers
+                                         └────────────────────────┘
                                                    │  many streams in,
                                                    ▼  selected streams out
                                             viewers (desktop app)           
@@ -102,8 +106,10 @@ You need a Linux box that can reach the internet, a domain, and Docker.
 ```bash
 git clone https://github.com/caiomcg/zoia.git
 cd zoia
-cp .env.example .env        # fill in the secrets
+./scripts/gen-env.sh zoia.your-domain.com sfu.your-domain.com > .env
+chmod 600 .env              # then add your Cloudflare API token to it
 docker compose up -d
+bash scripts/preflight.sh   # checks DNS, ports and certificates
 ```
 
 Then sign up from the app yourself, and make that account the super admin — the one who
@@ -208,8 +214,9 @@ Stated plainly, because finding these out later is worse:
 - **Hardware encoding is opt-in and newer than the rest.** It covers NVIDIA, AMD and
   Intel GPUs, but only NVIDIA has been confirmed on real hardware. See
   [above](#hardware-encoding-whip).
-- **One room, many broadcasters.** Each participant can publish one stream; viewers can
-  subscribe to one or more streams. This is built for a handful of friends, not a platform.
+- **A handful of friends, not a platform.** Each person shares one stream at a time (plus a
+  camera), and every viewer of it costs the server upload bandwidth. Channels start at a
+  limit of ten.
 - **One audio stream at a time for viewers.** Multiple videos can be visible together, but only
   one stream is audible by default; each viewer can activate another stream and adjust volume.
 - **Chat photos and videos share a 5 GB cap** on the server's disk. Past it the oldest are
@@ -226,7 +233,9 @@ Stated plainly, because finding these out later is worse:
 | [Architecture](docs/ARCHITECTURE.md) | How the pieces fit, and the audio path in detail |
 | [Runbook](docs/RUNBOOK.md) | Day-to-day operation, and a long list of symptoms with their real causes |
 | [Security](docs/SECURITY.md) | What this protects against, and what it does not |
+| [Addons](docs/addons/README.md) | Write, publish and install an addon |
 | [Decision records](docs/adr/README.md) | Why it is built this way, including what was tried and abandoned |
+| [Contributing](CONTRIBUTING.md) | Development setup and what CI enforces |
 
 ## Contributing
 
