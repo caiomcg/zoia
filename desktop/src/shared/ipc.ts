@@ -778,6 +778,8 @@ export const IPC = {
   sourcesTitle: 'zoia:sources:title',
   sourcesLeague: 'zoia:sources:league',
   sourcesWindows: 'zoia:sources:windows',
+  browserVideoStatus: 'zoia:browser-video:status',
+  browserVideoFix: 'zoia:browser-video:fix',
   languageGet: 'zoia:language:get',
   languageSet: 'zoia:language:set',
   audioStart: 'zoia:audio:start',

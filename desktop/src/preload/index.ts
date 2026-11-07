@@ -117,6 +117,11 @@ const bridge: ZoiaBridge = {
     league: () => ipcRenderer.invoke(IPC.sourcesLeague),
     windows: () => ipcRenderer.invoke(IPC.sourcesWindows),
   },
+  browserVideo: {
+    status: () => ipcRenderer.invoke(IPC.browserVideoStatus),
+    fix: (id) => ipcRenderer.invoke(IPC.browserVideoFix, id, true),
+    undo: (id) => ipcRenderer.invoke(IPC.browserVideoFix, id, false),
+  },
   encoder: {
     start: (options) => ipcRenderer.invoke(IPC.encoderStart, options),
     stop: () => ipcRenderer.invoke(IPC.encoderStop),
