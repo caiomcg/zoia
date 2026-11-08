@@ -272,11 +272,13 @@ docker compose exec app node server/bin/keytool.js device:revoke <deviceId>
 
 Right-click someone in the channel list and choose **Disconnect**: their app leaves its
 channel and says an admin disconnected it; the chats stay open, and they can join again. It is not a ban; keeping someone out is
-Disable, above. The server also disconnects anyone who has sat in a channel for
-`IDLE_KICK_MINUTES` (thirty) neither sharing nor watching. Both are logged:
+Disable, above. The server also acts on anyone who has sat in a channel for
+`IDLE_KICK_MINUTES` (thirty) away from their computer, neither sharing nor watching:
+it moves them to the away channel if there is one, and disconnects them otherwise.
+All of it is logged:
 
 ```bash
-docker compose logs app | grep -E '\[admin\].*kicked|\[idle\] kicked'
+docker compose logs app | grep -E '\[admin\].*kicked|\[idle\] (kicked|moved)'
 ```
 
 ### Chat photos and videos disappear

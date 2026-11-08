@@ -138,9 +138,12 @@ approved account sees every one ([ADR 0036](adr/0036-text-chat-in-scylladb.md)).
 
 An admin can disconnect someone from their channel: the server tells that app why on a data
 message, then removes it from its room, and the app leaves the channel and says so. The
-chats stay open to it. Every minute the server also disconnects anyone who has been in a
-channel for thirty minutes neither sharing nor watching, which it reads from the
-`zoia.watching` attribute each app sets ([ADR 0037](adr/0037-kicks-and-idle-removal.md)).
+chats stay open to it. Every minute the server also looks for anyone who has been in a
+channel for thirty minutes away from their computer, neither sharing nor watching, which it
+reads from the `zoia.watching` attribute each app sets and from each app's idle report
+([ADR 0037](adr/0037-kicks-and-idle-removal.md), [0038](adr/0038-presence.md)). They are
+moved to the away channel if there is one ([ADR 0044](adr/0044-away-channel.md)), and
+disconnected otherwise.
 
 ## Why these choices
 

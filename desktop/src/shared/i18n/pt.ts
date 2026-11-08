@@ -61,7 +61,9 @@ export const pt: Messages = {
   'channel.error.elsewhere':
     'Você entrou em um canal em outro dispositivo, então este saiu. Você pode entrar de novo aqui.',
   'channel.error.idle':
-    'Você foi desconectado do canal após um tempo sem compartilhar nem assistir ninguém. Você pode entrar de novo.',
+    'Você foi desconectado do canal após um tempo longe do computador. Você pode entrar de novo.',
+  'channel.notice.movedAway':
+    'Você foi movido para o canal ausente após um tempo longe do computador. Escolha qualquer canal para voltar.',
   'channel.error.kickFailed': 'Não foi possível desconectar ({code}).',
   'channel.error.notEmpty': 'Só é possível apagar um canal vazio.',
   'channel.error.isDefault': 'O canal principal não pode ser apagado.',
