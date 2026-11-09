@@ -1,4 +1,5 @@
 import type { ShortcutAction, ShortcutEvent, ShortcutsState } from '../shared/shortcuts';
+import type { BrowserVideoFix, BrowserVideoStatus } from '../shared/browser-video';
 import type {
   PairingStatus,
   RoomsList,
@@ -161,6 +162,18 @@ export interface ZoiaBridge {
     league(): Promise<{ game: SourceInfo | null; client: SourceInfo | null }>;
     /** The open shareable windows, without thumbnails: cheap enough to poll. */
     windows(): Promise<SourceInfo[]>;
+  };
+  /**
+   * Browsers whose videos can reach a broadcast black, and the restart with
+   * the flags that stops it (src/shared/browser-video.ts). Windows only.
+   */
+  browserVideo: {
+    /** Each known browser: running, and running with the flags. Takes about a second. */
+    status(): Promise<BrowserVideoStatus[]>;
+    /** Closes the browser, adds the flags to its shortcuts and reopens it with its tabs. */
+    fix(id: string): Promise<BrowserVideoFix>;
+    /** The same restart, taking the flags or preferences away again. */
+    undo(id: string): Promise<BrowserVideoFix>;
   };
   /** The hardware-encoding path: ffmpeg + NVENC + WHIP, bypassing Chromium. */
   encoder: {

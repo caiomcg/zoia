@@ -18,6 +18,7 @@ import * as config from './config';
 import * as api from './api';
 import { isElevated, restartUnelevated } from './elevation';
 import * as sources from './sources';
+import { browserVideoStatus, setBrowserVideoFix } from './browser-video';
 import * as audioCapture from './audio';
 import * as encoder from './encoder';
 import * as capture from './capture';
@@ -476,6 +477,12 @@ function registerIpc(): void {
   ipcMain.handle(IPC.sourcesInstant, () => sources.instantSources());
   ipcMain.handle(IPC.sourcesLeague, () => sources.findLeagueWindows());
   ipcMain.handle(IPC.sourcesWindows, () => sources.listWindows());
+  ipcMain.handle(IPC.browserVideoStatus, () => browserVideoStatus());
+  ipcMain.handle(IPC.browserVideoFix, (_event, id: unknown, on: unknown) =>
+    typeof id === 'string'
+      ? setBrowserVideoFix(id, on !== false)
+      : { ok: false, reason: 'not-found' },
+  );
   ipcMain.handle(
     IPC.sourcesSelect,
     (_event, source: { id: string; name: string; processId: number | null }) => {

@@ -137,6 +137,11 @@ export function installDemo() {
       league: async () => ({ game: null, client: null }),
       windows: async () => [],
     },
+    browserVideo: {
+      status: async () => [],
+      fix: async () => ({ ok: false as const, reason: 'unsupported' as const }),
+      undo: async () => ({ ok: false as const, reason: 'unsupported' as const }),
+    },
     encoder: { start: unsupported, stop: noop, onStatus: subscribe },
     nativeVideo: {
       start: unsupported,
