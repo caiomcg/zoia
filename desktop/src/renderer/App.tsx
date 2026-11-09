@@ -236,8 +236,8 @@ export default function App({ preview = false }: { preview?: boolean }) {
     if (current.deafened) {
       void current.setDeafened(false).then(() => playVoiceCue('undeafen', volume));
     } else {
-      // Deafening silences every Zoia sound, its own tone included, so the
-      // tone plays out first.
+      // Deafening silences cues, its own tone included, so the tone plays
+      // out first.
       playVoiceCue('deafen', volume);
       setTimeout(() => void voiceRef.current.setDeafened(true), VOICE_CUE_MS);
     }

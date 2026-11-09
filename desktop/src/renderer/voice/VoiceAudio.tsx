@@ -7,7 +7,7 @@
  * an audio element allows; the volume is yours alone (volumes.ts). The muted
  * element stays: Chromium only pulls a remote stream that something plays.
  *
- * Deafen is not done here: it silences every sound Zoia plays, from main.
+ * Deafened, or hearing yourself, every voice is held at zero (deafen.ts, duck.ts).
  */
 
 import { useEffect, useRef } from 'react';
@@ -16,6 +16,7 @@ import { useVoiceVolume } from './volumes';
 import { watchSpeaking } from './speaking';
 import { registerAudioSink } from './audioSink';
 import { useDucked } from './duck';
+import { useDeafenedHere } from './deafen';
 
 // How fast voices fade under you while you hear yourself, and come back.
 const DUCK_DOWN_S = 0.03;
@@ -43,6 +44,8 @@ function Voice({ identity, track }: VoiceTrack) {
   const gainRef = useRef<GainNode | null>(null);
   const volume = useVoiceVolume(identity);
   const ducked = useDucked();
+  const deafened = useDeafenedHere();
+  const silent = ducked || deafened;
 
   useEffect(() => {
     const element = ref.current;
@@ -83,11 +86,11 @@ function Voice({ identity, track }: VoiceTrack) {
     const gain = gainRef.current;
     if (!gain) return;
     gain.gain.setTargetAtTime(
-      ducked ? 0 : volume,
+      silent ? 0 : volume,
       gain.context.currentTime,
-      ducked ? DUCK_DOWN_S : DUCK_UP_S,
+      silent ? DUCK_DOWN_S : DUCK_UP_S,
     );
-  }, [volume, ducked]);
+  }, [volume, silent]);
 
   return <audio ref={ref} autoPlay muted />;
 }

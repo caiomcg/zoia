@@ -129,8 +129,6 @@ export interface ZoiaBridge {
     /** Grants the microphone; false when this machine is not in the room yet. */
     join(): Promise<boolean>;
     leave(): Promise<{ ok: boolean }>;
-    /** Silences every sound Zoia plays, in every window, or lets it play again. */
-    deafen(deafened: boolean): Promise<void>;
   };
   /**
    * The global shortcuts: voice's (ADR 0039) and the soundboard pads'

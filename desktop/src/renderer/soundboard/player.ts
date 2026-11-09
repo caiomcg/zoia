@@ -2,13 +2,14 @@
  * Plays soundboard sounds on this machine (ADR 0040), through a gain of their
  * own: the effects' volume, apart from voices and from the cues. Entrance
  * sounds (ADR 0046) go through another, with a volume of their own. Deafen
- * silences both with everything else Zoia plays, from main.
+ * silences both (deafen.ts).
  *
  * One sound per person, whatever its kind: a new one from someone cuts the
  * one they were playing. Every sound stops at its kind's limit, fading out.
  */
 
 import { isDucked, subscribeDucked } from '../voice/duck';
+import { isDeafenedHere, subscribeDeafened } from '../voice/deafen';
 import { useSyncExternalStore } from 'react';
 import { MAX_ENTRANCE_SECONDS, MAX_SOUND_SECONDS, type Sound } from '../../shared/soundboard';
 import { soundboardSettings } from './library';
@@ -34,15 +35,16 @@ function output(): { context: AudioContext; masters: Record<SoundKind, GainNode>
     const audio = new AudioContext();
     registerAudioSink(audio);
     const buses = { effect: audio.createGain(), entrance: audio.createGain() };
-    // Silent while you hear yourself, as deafen would have it (duck.ts).
+    // Silent while deafened or hearing yourself (deafen.ts, duck.ts).
     const apply = () => {
       const settings = soundboardSettings.get();
-      const on = isDucked() ? 0 : 1;
+      const on = isDucked() || isDeafenedHere() ? 0 : 1;
       buses.effect.gain.value = effectsGain(settings) * on;
       buses.entrance.gain.value = entranceGain(settings) * on;
     };
     apply();
     subscribeDucked(apply);
+    subscribeDeafened(apply);
     buses.effect.connect(audio.destination);
     buses.entrance.connect(audio.destination);
     soundboardSettings.subscribe(apply);

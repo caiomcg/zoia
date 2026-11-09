@@ -491,7 +491,7 @@ export const es: Messages = {
   // ---- voz (ADR 0039)
   'voice.mute': 'Silenciar micrófono',
   'voice.unmute': 'Activar micrófono',
-  'voice.deafen': 'Ensordecer: silenciar todo el sonido',
+  'voice.deafen': 'Ensordecer: silenciar voces y sonidos, no las transmisiones',
   'voice.undeafen': 'Dejar de ensordecer',
   'voice.volume': 'Volumen de voz',
   'voice.volumeOf': 'Volumen de la voz de {name}',

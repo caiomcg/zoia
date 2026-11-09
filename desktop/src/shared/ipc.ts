@@ -764,7 +764,6 @@ export const IPC = {
   stageRelease: 'zoia:stage:release',
   voiceJoin: 'zoia:voice:join',
   voiceLeave: 'zoia:voice:leave',
-  voiceDeafen: 'zoia:voice:deafen',
   shortcutsGet: 'zoia:shortcuts:get',
   shortcutsRecord: 'zoia:shortcuts:record',
   shortcutsCancel: 'zoia:shortcuts:cancel',

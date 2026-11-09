@@ -92,7 +92,6 @@ const bridge: ZoiaBridge = {
   voice: {
     join: () => ipcRenderer.invoke(IPC.voiceJoin),
     leave: () => ipcRenderer.invoke(IPC.voiceLeave),
-    deafen: (deafened) => ipcRenderer.invoke(IPC.voiceDeafen, deafened),
   },
   shortcuts: {
     get: () => ipcRenderer.invoke(IPC.shortcutsGet),

@@ -31,7 +31,7 @@ code, its files, settings keys and the room topic.
 **A sound is played by a message, and heard by each listener playing it.** The app sends
 `{slug, name, url}` on the `zoia.soundboard` topic. Every other app in the room checks it,
 fetches the file, and plays it through a gain of its own: the effects' volume, under deafen
-like every other Zoia sound. The sender's app plays it too as it sends it, through the same
+like voices and cues (ADR 0039). The sender's app plays it too as it sends it, through the same
 gain, so they hear what they played; the panel's preview plays a sound for them alone.
 
 **The server takes no part.** Nothing in it changes, and no grant does. So each listener holds

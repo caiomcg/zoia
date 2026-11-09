@@ -39,6 +39,7 @@ import { VOICE_SAMPLE_RATE, VoiceProcessor } from './pipeline';
 import { registerAudioSink } from './audioSink';
 import { useSpeaking } from './speaking';
 import { DEAFENED_ATTRIBUTE } from './voice-room';
+import { setDeafenedHere } from './deafen';
 
 export type VoiceState = 'off' | 'joining' | 'on';
 
@@ -206,19 +207,17 @@ export function useVoice(roomRef: RefObject<Room | null>, connection: Connection
     if (track) await (next ? track.mute() : track.unmute());
   }, []);
 
-  // Hear yourself: deafened for the call while Zoia's sound stays on here,
-  // so the monitor plays. Whether you were deafened before, to go back to it.
+  // Hear yourself: deafened for the call, the monitor still playing (it is
+  // not one of deafen's sounds). Whether you were deafened before, to go back to it.
   const hearingSelfRef = useRef<{ wasDeafened: boolean } | null>(null);
 
   const applyDeafened = useCallback(async (next: boolean) => {
     if (deafenedRef.current === next) return;
     deafenedRef.current = next;
     setDeafenedState(next);
-    await Promise.all([
-      // Hearing yourself leaves the sound on: duck.ts holds the rest down.
-      window.zoia.voice.deafen(next && !hearingSelfRef.current).catch(() => {}),
-      announceDeafened(voiceRoomRef.current, next),
-    ]);
+    // Voices, the soundboard and cues; never a broadcast (deafen.ts).
+    setDeafenedHere(next);
+    await announceDeafened(voiceRoomRef.current, next);
   }, []);
 
   /** Ends voice here, without telling the server: for a room that is already gone. */
@@ -447,8 +446,8 @@ export function useVoice(roomRef: RefObject<Room | null>, connection: Connection
 
   /**
    * Hear yourself (Settings › Voice) is deafen, literally: your microphone is
-   * off to the call and everyone sees you deafened. Only Zoia's sound is left
-   * on, for the monitor to play; everything else is held down (duck.ts). Off,
+   * off to the call and everyone sees you deafened. The monitor still plays;
+   * everything else, broadcasts included, is held down (duck.ts). Off,
    * you are back as you were, unless you undeafened meanwhile.
    */
   const setHearingSelf = useCallback(
@@ -457,9 +456,7 @@ export function useVoice(roomRef: RefObject<Room | null>, connection: Connection
         if (hearingSelfRef.current) return;
         const wasDeafened = deafenedRef.current;
         hearingSelfRef.current = { wasDeafened };
-        if (wasDeafened) {
-          await window.zoia.voice.deafen(false).catch(() => {});
-        } else {
+        if (!wasDeafened) {
           mutedBeforeDeafenRef.current = mutedRef.current;
           await applyDeafened(true);
           await applyMuted(true);
@@ -470,9 +467,7 @@ export function useVoice(roomRef: RefObject<Room | null>, connection: Connection
       if (!before) return;
       hearingSelfRef.current = null;
       if (!deafenedRef.current) return;
-      if (before.wasDeafened) {
-        await window.zoia.voice.deafen(true).catch(() => {});
-      } else {
+      if (!before.wasDeafened) {
         await applyDeafened(false);
         await applyMuted(mutedBeforeDeafenRef.current);
       }
@@ -555,7 +550,7 @@ export function useVoice(roomRef: RefObject<Room | null>, connection: Connection
   useEffect(
     () => () => {
       trackRef.current?.stop();
-      void window.zoia.voice.deafen(false).catch(() => {});
+      setDeafenedHere(false);
     },
     [],
   );

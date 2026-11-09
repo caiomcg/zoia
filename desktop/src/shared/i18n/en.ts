@@ -497,7 +497,7 @@ export const en = {
   // ---- voice (ADR 0039)
   'voice.mute': 'Mute microphone',
   'voice.unmute': 'Unmute microphone',
-  'voice.deafen': 'Deafen: silence every sound',
+  'voice.deafen': 'Deafen: silence voices and sounds, not broadcasts',
   'voice.undeafen': 'Undeafen',
   'voice.volume': 'Voice volume',
   'voice.volumeOf': '{name}’s voice volume',

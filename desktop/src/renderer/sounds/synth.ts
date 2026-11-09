@@ -5,6 +5,7 @@
  */
 
 import { isDucked } from '../voice/duck';
+import { isDeafenedHere } from '../voice/deafen';
 import {
   notesFor,
   voiceFor,
@@ -42,8 +43,8 @@ export function playCue(
 
 /** Plays `notes` in `voice`, at `volume` of the cue level. */
 function playNotes(voice: StyleVoice, notes: readonly Note[], volume: number): void {
-  // Hearing yourself is deafen: no cues either (duck.ts).
-  if (volume <= 0 || isDucked()) return;
+  // Deafened, or hearing yourself: no cues either (deafen.ts, duck.ts).
+  if (volume <= 0 || isDucked() || isDeafenedHere()) return;
   let ctx: AudioContext;
   try {
     ctx = audioContext();

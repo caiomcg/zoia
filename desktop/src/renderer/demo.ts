@@ -120,7 +120,7 @@ export function installDemo() {
       setLimit: unavailable,
     },
     stage: { get: unsupported, claim: unsupported, release: async () => ({ ok: true }) },
-    voice: { join: async () => false, leave: async () => ({ ok: true }), deafen: noop },
+    voice: { join: async () => false, leave: async () => ({ ok: true }) },
     shortcuts: {
       get: async () => shortcuts,
       record: async () => null,

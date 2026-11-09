@@ -77,6 +77,12 @@ key-up, so main uses a native input hook (`uiohook-napi`), loaded optionally lik
 capture and running only while something is bound. A short tone confirms every mute and
 deafen, from a button or a shortcut.
 
+**Deafen silences the voice chat, not the broadcasts.** Deafened, the app plays no voice,
+soundboard or entrance sound and no cue, but the lives you watch keep their sound: each has a
+mute of its own, and deafening to talk less should not cost the stream. It started as muting
+every window's audio from main (`setAudioMuted`), which silenced broadcasts too; it is now a
+renderer flag (`voice/deafen.ts`) read by each of those sounds' players.
+
 **Android listens.** It plays everyone in voice and publishes nothing.
 
 ## Consequences

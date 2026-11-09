@@ -56,7 +56,6 @@ if (process.env.ZOIA_USER_DATA) app.setPath('userData', process.env.ZOIA_USER_DA
 registerMediaScheme();
 
 let mainWindow: BrowserWindow | null = null;
-let deafened = false;
 
 /**
  * GPU switches for the capture/compositing path.
@@ -439,15 +438,6 @@ function registerIpc(): void {
   ipcMain.handle(IPC.stageRelease, () => api.stageRelease());
   ipcMain.handle(IPC.voiceJoin, () => api.voiceJoin());
   ipcMain.handle(IPC.voiceLeave, () => api.voiceLeave());
-  // Deafened is every Zoia sound: voices, what is shared, cues, in every
-  // window, popouts opened later included.
-  ipcMain.handle(IPC.voiceDeafen, (_event, value: boolean) => {
-    deafened = value === true;
-    for (const window of BrowserWindow.getAllWindows()) window.webContents.setAudioMuted(deafened);
-  });
-  app.on('browser-window-created', (_event, window) => {
-    if (deafened) window.webContents.setAudioMuted(true);
-  });
   // Push to talk, mute, deafen and soundboard pads from anywhere (ADR
   // 0039, 0040). The main window is where voice lives, so it is the one told.
   shortcuts.initShortcuts((event) => {
