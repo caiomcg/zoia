@@ -157,7 +157,8 @@ Nothing about it is secret:
 
 | | Where from |
 |---|---|
-| `Zoia-Setup-<version>-x64.exe` | Your [Releases](https://github.com/caiomcg/zoia/releases) page, or theirs |
+| `Zoia-Setup-<version>-x64.exe` (Windows) | Your [Releases](https://github.com/caiomcg/zoia/releases) page, or theirs |
+| `Zoia-<version>-mac-arm64.dmg` / `-mac-x64.dmg` (macOS 13+) | The same |
 | The server address | You |
 
 They install Zoia, enter the address, and create an account; you approve it, and they are

@@ -1,254 +1,117 @@
 # AGENTS.md
 
 Conventions and invariants for anyone — human or agent — working on this repo.
-`CLAUDE.md` points here; this file is the source of truth.
+`CLAUDE.md` imports this file; it is the source of truth. Each area has its own
+`AGENTS.md` with what only matters there — read it before changing that area:
+[desktop/](desktop/AGENTS.md), [server/](server/AGENTS.md), [android/](android/AGENTS.md).
 
 ## What this is
 
-Zoia is a private one-to-many screen broadcast. Everyone with an approved account picks one of
-a **channel** (each its own LiveKit room; a permanent default plus any admins add, up to a
-limit admins change at runtime; see ADR 0015 and 0036) and watches
-there; **anyone may claim an independent broadcast slot** in their channel and share a screen,
-window or tab with audio. Multiple people may stream at the same time, and each viewer chooses
-which broadcasts to watch. Latency is ~200–500 ms. Beside the channels are **text chats**
-(ADR 0036): messages, photos and videos, replies, threads and @mentions, every chat visible
-to every approved account; **direct messages** between two people, seen by them alone (ADR
-0047); and **scheduled events** with RSVPs, announced as they start (ADR 0050). Access is by
-account: anyone may sign up
-with an email and password, and an admin approves them before they can join. Roles (user,
-admin, one super admin) govern administration only, never who may broadcast — see ADR 0031.
+Zoia is a private one-to-many screen broadcast with voice and text chat. People with an
+approved account (ADR 0031) join a **channel** — a LiveKit room (ADR 0015) — and anyone may
+claim a broadcast slot there to share a screen with audio; each viewer picks which broadcasts
+to watch. Beside the channels are text chats (ADR 0036), direct messages (ADR 0047),
+scheduled events (ADR 0050) and addons (ADR 0041). Roles (user, admin, one super admin)
+govern administration only, never who may broadcast.
 
-It is three pieces:
+It is five pieces:
 
-1. **LiveKit** — a self-hosted SFU. Each broadcaster uploads one stream; LiveKit fans
-   every active stream out to the viewers who selected it. It does no transcoding, so it
-   is cheap on CPU and expensive on upstream bandwidth.
-2. **This Node app** — signs people in against the accounts in its SQLite database (ADR
-   0032), and mints short-lived LiveKit tokens that only ever subscribe.
-3. **Caddy**, running on the same VM — terminates TLS for exactly two hostnames and nothing
-   else, with certificates from a Cloudflare DNS-01 challenge. It is the only publicly
-   reachable surface in the deployment. Media does **not** pass through it; WebRTC goes
-   straight to the VM over UDP 7882.
+| Piece | Where | |
+|---|---|---|
+| **LiveKit** | `livekit.yaml` | Self-hosted SFU. No transcoding: cheap on CPU, expensive on upstream bandwidth |
+| **The server** | `server/` | Node/Express. Accounts in SQLite, chat in ScyllaDB; mints subscribe-only LiveKit tokens |
+| **Caddy** | `Caddyfile`, `caddy/` | TLS for exactly two hostnames; the only public surface. Media bypasses it (UDP 7882) |
+| **The desktop app** | `desktop/` | Electron + React, Windows and macOS. The only client that watches and shares (ADR 0021) |
+| **The addon host** | `addon-host/` | Sidecar that runs addon containers; the only holder of the Docker socket |
 
-   Nginx Proxy Manager serves every *other* service on this network and is deliberately
-   **not** exposed to the internet. Do not route this app through it — see ADR 0004.
+The Android viewer (`android/`) is on hold. Nginx Proxy Manager serves every *other*
+service on this network and is deliberately not exposed — never route Zoia through it (ADR 0004).
 
 ## Commands
 
 ```bash
-npm install
-npm run dev                  # app on :3000, watch mode
-npm test                     # node:test suite
-npm run lint                 # eslint
-npm run format               # prettier --write
-npm run keytool -- account:super <email>       # the one super admin (ADR 0031)
-npm run keytool -- account:list
-npm run keytool -- account:reset <id> --codes <path>   # for an admin nobody can reset
-npm run keytool -- device:list [accountId]
-npm run keytool -- device:revoke <deviceId>
-npm run keytool -- db:backup <path>            # consistent copy while the server runs
-./deploy.sh                  # rsync to the VM + docker compose up -d --build
-./deploy.sh --homolog        # the same, to the homolog VM (ADR 0035)
-./scripts/seed-homolog.sh    # copy production's accounts to the homolog
+npm install && npm run dev   # server on :3000, watch mode
+npm test                     # node:test suite (root); desktop/ has its own
+npm run lint                 # judge by exit code, never by `| tail`
+npm run format
+npm run keytool -- <cmd>     # server admin CLI — see server/AGENTS.md
+./deploy.sh [--homolog]      # rsync to the VM + docker compose up (ADR 0035)
 ```
 
-## Development environment
-
-The workspace lives on `/mnt/c`, which is shared between Windows and WSL. **Run git, npm and
-the test suite from WSL.** `npm install` under WSL creates Unix symlinks in
-`node_modules/.bin` without Windows `.cmd` shims, so a commit made with Windows `git.exe`
-fails in the pre-commit hook with `'eslint' is not recognized`. Use `/usr/bin/git`, or work
-from a WSL-native path.
-
-`server/public/vendor/` is generated by `npm run vendor` and is not committed. `npm start`
-and `npm run dev` regenerate it; the Dockerfile runs it at image build.
-
-### Android
-
-The Android viewer (`android/`, see `SPEC-android.md`) also builds from WSL, against the
-SDK at `~/Android/Sdk` and OpenJDK 17. Set both explicitly: `~/Android/android-env.sh`
-points `ANDROID_HOME` at `~/Android`, not the SDK, and the build fails to find it.
-
-```bash
-cd android
-export ANDROID_HOME=$HOME/Android/Sdk JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
-./gradlew --no-daemon :app:testDebugUnitTest :app:assembleDebug :app:lintDebug
-# APK: android/app/build/outputs/apk/debug/app-debug.apk
-```
-
-To put it on a tablet over USB, use the Windows `adb.exe`
-(`/mnt/c/Users/caiom/AppData/Local/Android/Sdk/platform-tools/adb.exe install -r <apk>`);
-WSL's `adb` does not see USB devices. Release APKs are signed in CI only (`release.yml`).
-
-**Android is a viewer of everything the desktop publishes.** A change to what the desktop
-sends — track sources, the `-gpu` ingress, metadata, a new kind of picture — must be checked
-against `android/app/src/main/kotlin/im/zoia/livekit/LiveKitRoomManager.kt`, which decides
-what an Android viewer sees and hears. The LiveKit Android SDK has no `ScreenShareAudio`
-source; match on "not `MICROPHONE`" instead.
-
-## Layout
-
-| Path | Holds |
-|---|---|
-| `server/src/index.js` | Express app, routes, middleware wiring |
-| `server/src/accounts.js` | Accounts: email, password, role, approval, reset and claim codes |
-| `server/src/database.js` | The SQLite database: schema, migrations, transactions, JSON import |
-| `server/src/stores.js` | Opens the database and every store in it, for the server and keytool |
-| `server/src/token.js` | LiveKit AccessToken minting — subscribe-only, always |
-| `server/src/stage.js` | Who may broadcast, and who is in voice, right now — **the security boundary** |
-| `server/src/config.js` | Env parsing and validation, fail-fast on startup |
-| `server/src/idle.js` | Disconnecting a machine from its channel, and the sweep that does it to the idle (ADR 0037) |
-| `server/src/devices.js` | One credential per machine signed in to an account |
-| `server/src/chats.js` | The text chats and how many there may be (ADR 0036), in SQLite |
-| `server/src/messages.js` | Chat messages, read markers, replies and mentions, in ScyllaDB |
-| `server/src/chat-routes.js` | The chat API and its live SSE stream |
-| `server/src/chat-media.js` | Chat photos and videos on disk, typed by their bytes, under one cap |
-| `server/src/direct-chats.js` | Direct messages: one private chat per pair of accounts (ADR 0047), in SQLite |
-| `server/src/schedule.js` | Scheduled events and their RSVPs (ADR 0050), in SQLite |
-| `server/src/schedule-routes.js` | The schedule API, `/api/schedule`, and the sweep that announces starts |
-| `server/src/addons.js` | Installed addons, their manifests, permissions, settings, commands and chats (ADR 0041) |
-| `server/src/addon-routes.js` | The addon API, `/api/addon/v1`, every route behind one permission |
-| `server/src/addon-admin.js` | The super admin's addon routes: install from GitHub, enable, settings |
-| `addon-host/` | The sidecar that runs addon containers, the only holder of the Docker socket |
-| `docs/addons/` | How to write, publish and install an addon |
-| `server/src/scylla.js` | Connects to ScyllaDB, creates the keyspace, applies its schema |
-| `server/bin/keytool.js` | CLI on the server: the super admin, reset codes, devices, backups |
-| `server/public/` | The login page and viewer app (no build step, plain ESM) |
-| `server/data/zoia.db` | Every credential and identity (ADR 0032). Server-only, gitignored, never deployed over |
-| `android/` | The Android viewer (Kotlin, Compose, LiveKit Android SDK); watches, never publishes |
-| `docs/adr/` | Architecture decision records |
+**WSL and Windows share this checkout (`/mnt/c`).** Run git and the root test suite from WSL,
+with `/usr/bin/git`: a WSL `npm install` leaves no `.cmd` shims, so Windows `git.exe` fails the
+pre-commit hook with `'eslint' is not recognized`. **Install `desktop/` from Windows** — see
+[desktop/AGENTS.md](desktop/AGENTS.md). After a pull that changed a `package-lock.json`, run
+`npm ci` in that folder before trusting lint or tests: CI uses the lockfile, your
+`node_modules` may not.
 
 ## Invariants — do not break these
 
-1. **Join tokens must never carry `canPublish: true`.** There is one tier of user and nobody
-   is a broadcaster by default. Publishing is granted at runtime by `stage.js`, independently
-   per participant and only for that participant's slot. `server/test/token.test.js` and
-   `server/test/stage.test.js` guard this. Voice is granted the same way and covers the
-   microphone alone (`canPublishSources: [MICROPHONE]`, ADR 0039); a microphone-only grant is
-   not a broadcast slot, so never decide who holds one from `canPublish` by itself.
-   **The one exception is an addon's bot** (ADR 0041): a bot of an addon granted
-   `voice.publish` gets a token that publishes the microphone alone (plus a camera with
-   `video.publish`), minted by the server for that bot's identity only. A person's join token
-   never changes.
+1. **Join tokens must never carry `canPublish: true`.** Publishing is granted at runtime by
+   `server/src/stage.js`, per participant and only for that participant's slot. Voice is
+   granted the same way and covers the microphone alone (`canPublishSources: [MICROPHONE]`,
+   ADR 0039); a microphone-only grant is not a broadcast slot, so never decide who holds one
+   from `canPublish` by itself. **The one exception is an addon's bot** (ADR 0041): a bot of
+   an addon granted `voice.publish` gets a token that publishes the microphone alone (plus a
+   camera with `video.publish`), minted for that bot's identity only. A person's join token
+   never changes. Guarded by `server/test/token.test.js` and `stage.test.js`.
 2. **Never log a secret or an email** — no password, device credential or reset code, and no
    email address — not in the app, not in an error message, not in a debug branch. Log the
-   account or device id instead; it is safe and identifies the person.
-3. **Sessions are re-validated against the database on every request**, not just at login:
-   the device and its account. Otherwise signing a machine out or disabling someone does
-   nothing until the cookie expires, which makes it useless exactly when it is needed.
-4. **Admin rules are enforced on the server.** Every admin route checks the caller's role,
-   re-read on every request; nothing in the app can create, demote, disable or reset the super
-   admin, who is set only with `keytool account:super`. Hiding a button in the app is
-   presentation, not enforcement.
-5. **Never commit secrets.** `.env`, `server/data/`, and any key material stay out of git.
-   `livekit.yaml` is committed deliberately *without* credentials — LiveKit reads them from
-   `LIVEKIT_KEYS` in the environment.
-6. **`deploy.sh` must keep excluding `server/data`.** It runs `rsync --delete`; dropping that
-   exclude would wipe the database and lock out every user, including you. `caddy/sites` is
-   excluded for the same reason: it holds the server-local route to the homolog.
-7. **An addon never holds more than it was granted.** Every `/api/addon/v1` route requires
-   one permission, re-read from the database on every request; a bot is always `user`,
-   never signs in and never gets a reset code; and no addon response carries an email, a
-   password hash or a device credential (ADR 0041).
+   account or device id instead.
+3. **Sessions are re-validated against the database on every request** — the device and its
+   account — or signing a machine out or disabling someone does nothing until the cookie expires.
+4. **Admin rules are enforced on the server.** Every admin route re-reads the caller's role on
+   every request; nothing in the app can create, demote, disable or reset the super admin,
+   who is set only with `keytool account:super`. Hiding a button is not enforcement.
+5. **Never commit secrets.** `.env`, `server/data/` and any key material stay out of git.
+   `livekit.yaml` is committed deliberately without credentials (`LIVEKIT_KEYS` env).
+6. **`deploy.sh` must keep excluding `server/data`** and `caddy/sites`. It runs
+   `rsync --delete`; dropping the first wipes the database and locks out every user.
+7. **An addon never holds more than it was granted.** Every `/api/addon/v1` route requires one
+   permission, re-read on every request; a bot is always `user`, never signs in and never gets
+   a reset code; no addon response carries an email, password hash or device credential.
 8. **Only the addon host holds the Docker socket**, and it pulls images by digest only.
-   Nothing else in the compose file mounts it.
-9. **`app.set('trust proxy', ...)` must stay.** Behind Caddy every request otherwise appears to
-   originate from the proxy, so rate limiting would throttle all users as a single client.
+9. **`app.set('trust proxy', ...)` must stay.** Behind Caddy every request otherwise comes from
+   the proxy, and rate limiting throttles all users as one client.
 10. **A direct chat is its two members' alone** (ADR 0047): every chat id goes through
-    `resolveChat` in `chat-routes.js`, which answers `404` to anyone else, admins included,
-    and every event about a chat goes out through `tell`, which passes its members as the
-    audience. A new route or event that skips either leaks private messages. The same holds
-    for a direct chat's threads and files; `server/test/messaging.test.js` guards it.
+    `resolveChat` in `chat-routes.js` (`404` to anyone else, admins included), and every event
+    about a chat goes out through `tell` with its members as the audience. Threads and files
+    too. Guarded by `server/test/messaging.test.js`.
 
-## Environment gotchas
+## Deployment gotchas
 
-These each cost hours if forgotten, and all of them fail in ways that look like app bugs:
+Each fails in a way that looks like an app bug. Details in [docs/SELF_HOSTING.md](docs/SELF_HOSTING.md);
+`scripts/preflight.sh` (run on the VM) checks most of them.
 
-- **`rtc.use_external_ip: true`** in `livekit.yaml`. Without it LiveKit advertises only
-  private ICE candidates: viewers connect, join the room, and see black video forever.
-- **Cloudflare records for `zoia` and `sfu` must be grey-cloud (DNS only).** Cloudflare
-  defaults new records to Proxied and the zone apex is proxied, so this is the easiest
-  mistake to make; the proxy does not carry WebRTC media. TLS uses the existing
-  `*.example.com` wildcard — no new certificate is needed.
-- **Caddy serves only the two configured hostnames**, plus whatever the operator puts in
-  `caddy/sites/` on the server, which is the homolog and nothing else
-  ([ADR 0035](docs/adr/0035-homolog-environment.md)). Adding another widens the public
-  surface; that is a decision, not a config tweak.
-- **A deleted chat message frees its space later, not at once.** ScyllaDB writes a
-  tombstone; the row leaves the disk at the first compaction after `gc_grace_seconds`, which
-  the messages and reactions tables set to an hour (ADR 0042). That is only safe because the
-  keyspace has **one replica**: give it more and the setting must go back to at least the
-  repair interval, or deleted messages come back.
-- **The homolog shares production's LiveKit.** Its `ROOM_NAME` (`zoia-homolog`) is all that
-  keeps its rooms apart from production's, and production's `LIVEKIT_KEYS` must be a
-  `{key: secret, key: secret}` map holding both keys. A comma-separated list does not parse.
-- **UDP 7882 and TCP 7881 must be forwarded** to the VM directly. No HTTP proxy can carry them.
-- **System/tab audio capture is Chrome/Edge desktop only**, and only for a tab or an entire
-  screen — never a single window. No browser can capture one application's audio; that needs
-  a native hook — Discord's *desktop* client does this, but Discord in a browser has the same
-  constraints we do. The escape hatch is a virtual audio cable selected as an input; see the
-  runbook.
-- **macOS desktop builds send system audio, not per-app audio.** `loopback-capture` (WASAPI)
-  is an optional dependency loaded only on Windows; macOS uses ScreenCaptureKit loopback with
-  `restrictOwnAudio`, which must stay or viewers hear themselves echoed, and the WGC/NVENC addon and ffmpeg are not packaged for
-  Mac. Anything added to the broadcast path must degrade on `process.platform !== 'win32'`
-  rather than throw at import time. See [ADR 0025](docs/adr/0025-macos-client.md).
-- **LAN hairpin**: if the router won't route a LAN client to the public hostname, the host PC
-  can't reach the app. Fix with a local DNS override, not with code.
-- **No browser client**: the web address serves a static page linking to the repository.
-  Watching and sharing both need the desktop app ([ADR 0021](docs/adr/0021-retire-the-browser-viewer.md)).
-- **Viewer bandwidth**: selecting several broadcasts downloads several independent streams.
-  Use the viewer's automatic/low quality, focus, or audio-only controls when needed. Only one
-  stream's audio is active by default to avoid an unintelligible mix.
+- `rtc.use_external_ip: true` in `livekit.yaml`, or viewers join and see black video forever.
+- Cloudflare records for `zoia` and `sfu` must be **grey-cloud (DNS only)**; the proxy carries no WebRTC.
+- **UDP 7882 and TCP 7881** forward straight to the VM; no HTTP proxy can carry them.
+- Caddy serves only the two hostnames plus `caddy/sites/` (the homolog). Another hostname widens
+  the public surface: that is a decision, not a config tweak (ADR 0035).
+- The homolog shares production's LiveKit; only `ROOM_NAME` (`zoia-homolog`) keeps them apart, and
+  production's `LIVEKIT_KEYS` must be a `{key: secret, ...}` map holding both keys.
+- LAN hairpin: if the router won't route a LAN client to the public hostname, fix it with a local
+  DNS override, not code.
 
 ## Conventions
 
-- **Conventional Commits**, enforced by commitlint in a hook and in CI.
-  Scopes: `auth` `api` `web` `livekit` `infra` `deploy` `docs` `test` `adr`.
-- ESM everywhere (`"type": "module"`). No build step, no bundler, no framework in the
-  browser code — it is small enough to read.
-- Tests use `node:test` + `supertest`. No test framework dependency.
-- Decisions that a future reader would otherwise re-litigate go in `docs/adr/`.
-- Every release needs `changelog/<version>.md`, written for the people using the app; the
-  release workflow refuses a tag without it. See `changelog/README.md`.
+- **Conventional Commits**, enforced by commitlint (hook and CI). Scopes are in
+  `commitlint.config.js`: mostly `desktop`, `api`, `auth`, `livekit`, `infra`, `deploy`, `docs`,
+  `test`, `adr`.
+- ESM everywhere. Tests use `node:test` + `supertest`; no test framework dependency.
+- Decisions a future reader would otherwise re-litigate go in `docs/adr/`, numbered one past the
+  highest existing ADR.
+- New UI strings go in `desktop/src/shared/i18n/en.ts` and every other language file.
+- Releases: follow [.claude/skills/release/SKILL.md](.claude/skills/release/SKILL.md). Every release
+  needs `changelog/<version>.md`; never retag or delete a published release.
 
-## Releasing
+## Where to look
 
-A release is a `vX.Y.Z` tag on `main`. CI builds the Windows installer and the Mac disk images,
-decides whether Windows can take it as an in-app (OTA) update, and publishes the GitHub Release.
-Installed apps find it themselves: the workflow attaches an `update.json` to the release, and
-the updater reads the latest release's ([ADR 0028](docs/adr/0028-updates-from-releases.md)).
-Details: [docs/DISTRIBUTING.md](docs/DISTRIBUTING.md).
-
-1. **Check what kind of release it is.** `node scripts/classify-desktop-update.js HEAD` prints
-   `asar` (in-app on Windows), `full` (installer needed) or `none`, the reasons, and for `asar`
-   the minimum installed version. Macs always download the disk image, whatever it says.
-2. **Bump both versions**, kept equal:
-   `npm version patch --no-git-tag-version` and the same with `--prefix desktop`.
-3. **Write `changelog/<version>.md`** (format in [changelog/README.md](changelog/README.md)):
-   - Start it with a `summary:` front-matter line: one sentence, shown in the update prompt.
-   - Read the commits *and the diffs* since the previous tag
-     (`git log v<prev>..HEAD`, `git diff v<prev>..HEAD`), plus any new ADR and new UI strings
-     in `desktop/src/shared/i18n/en.ts`. Commit subjects alone undersell and mislabel changes.
-   - Keep what someone using the app would notice, and say where to find it
-     (Settings › Sounds). Leave out refactors, CI and version bumps.
-   - Add a **Good to know** section for anything a person will run into: permissions, first-run
-     prompts, platform differences, a setting that is on by default.
-   - Say which platform a change applies to. Never write install instructions ("in-app
-     update", "installer required", which file to download): the notes are shown in the app
-     to people who have just installed the release.
-   - Claim nothing the diff does not show. The maintainer does not review the entry before the
-     tag: once CI passes, release end to end, and share the notes when it is published.
-4. **Verify:** `node scripts/check-release-version.js vX.Y.Z` (versions agree, entry exists),
-   `npm run lint` and `npm test` at the root and in `desktop/` — judged by exit code. Preview
-   the notes with a local tag: `git tag vX.Y.Z && node scripts/release-notes.js vX.Y.Z`.
-5. **Push `main`, wait for CI to pass, then push the tag.** The release workflow refuses a tag
-   without a changelog entry or with mismatched versions before it builds anything.
-6. **When the release is published,** check it has `update.json` beside the `.exe` (and the
-   `.asar` for an OTA): installed apps from 0.4.4 on read it from there. Apps before 0.4.4
-   read `desktop/updater-manifest.json` on `main` instead, which stays at 0.4.4; to update it,
-   download the release's `.exe` and `.asar` into a folder, run
-   `node scripts/write-updater-manifest.js vX.Y.Z <folder> <asar|full> [minimumVersion]`, and
-   open a pull request, since `main` is protected.
-
-Never retag or delete a published release to fix it; ship the next patch version instead.
+| For | Read |
+|---|---|
+| Adding or changing a feature | [.claude/skills/zoia-feature](.claude/skills/zoia-feature/SKILL.md) |
+| How the pieces fit | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), `docs/adr/` |
+| Running your own server | [.claude/skills/zoia-self-host](.claude/skills/zoia-self-host/SKILL.md), [docs/SELF_HOSTING.md](docs/SELF_HOSTING.md); the author's own: [docs/RUNBOOK.md](docs/RUNBOOK.md) |
+| Writing an addon | [.claude/skills/zoia-addon](.claude/skills/zoia-addon/SKILL.md), [docs/addons/](docs/addons/README.md) |
+| Builds, installers, updates | [docs/DISTRIBUTING.md](docs/DISTRIBUTING.md) |
+| Contributing, CI | [CONTRIBUTING.md](CONTRIBUTING.md) |
