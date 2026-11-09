@@ -25,7 +25,7 @@ import { addonRoutes } from './addon-routes.js';
 import { addonAdminRoutes } from './addon-admin.js';
 import { createAddonHostClient } from './addon-host.js';
 import { BOT_PREFIX, isBotIdentity } from './token.js';
-import { KICK_GRACE_MS, kick } from './idle.js';
+import { KICK_GRACE_MS, MOVE_TOPIC, kick } from './idle.js';
 import { createPresence } from './presence.js';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -34,8 +34,6 @@ const PUBLIC_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'public')
 const COOKIE_NAME = 'zoia_sid';
 const COOKIE_MAX_AGE = 30 * 24 * 60 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
-/** Must match MOVE_TOPIC in desktop/src/renderer/livekit/useRoom.ts. */
-const MOVE_TOPIC = 'zoia.move';
 
 export function createApp({
   config,
@@ -1373,6 +1371,9 @@ export function createApp({
     app.use('/api/schedule', schedule.router);
     app.locals.scheduleSweep = schedule.sweep;
   }
+
+  // Whose machine is in use, for the idle sweep that index.js starts (ADR 0037).
+  app.locals.presence = presence;
 
   // GIFs from KLIPY (ADR 0051), searched here so the key stays on the server.
   app.use(

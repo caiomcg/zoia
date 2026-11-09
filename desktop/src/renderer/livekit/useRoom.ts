@@ -496,8 +496,8 @@ const CAMERA_METADATA = JSON.stringify({ sourceName: null, sourceKind: 'camera' 
 const WATCHING_SETTLE_MS = 1500;
 
 /**
- * An admin moving this machine to another channel arrives on this topic.
- * Must match MOVE_TOPIC in server/src/app.js.
+ * An admin, or the idle sweep, moving this machine to another channel arrives
+ * on this topic. Must match MOVE_TOPIC in server/src/idle.js.
  */
 export const MOVE_TOPIC = 'zoia.move';
 
@@ -513,9 +513,13 @@ export const KICK_TOPIC = 'zoia.kick';
  */
 export type KickReason = 'admin' | 'idle' | 'elsewhere';
 
-/** Where an admin asked this machine to go. */
+/**
+ * Where the server asked this machine to go: an admin's move, or `idle`, the
+ * sweep sending someone away from their computer to the away channel (ADR 0044).
+ */
 export interface MoveRequest {
   channel: string;
+  reason?: 'idle';
 }
 
 export function useRoom() {
@@ -947,8 +951,12 @@ export function useRoom() {
           if (participant || roomRef.current !== room) return;
           try {
             if (topic === MOVE_TOPIC) {
-              const { channel } = JSON.parse(new TextDecoder().decode(payload)) as MoveRequest;
-              if (typeof channel === 'string') setMoveRequest({ channel });
+              const { channel, reason } = JSON.parse(
+                new TextDecoder().decode(payload),
+              ) as MoveRequest;
+              if (typeof channel === 'string') {
+                setMoveRequest(reason === 'idle' ? { channel, reason } : { channel });
+              }
             } else if (topic === KICK_TOPIC) {
               const { reason } = JSON.parse(new TextDecoder().decode(payload)) as {
                 reason?: string;

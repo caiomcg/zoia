@@ -67,7 +67,9 @@ export const en = {
   'channel.error.elsewhere':
     'You joined a channel on another device, so this one left. You can join again here.',
   'channel.error.idle':
-    'You were disconnected from the channel after a while without sharing or watching anyone. You can join again.',
+    'You were disconnected from the channel after a while away from your computer. You can join again.',
+  'channel.notice.movedAway':
+    'You were moved to the away channel after a while away from your computer. Pick any channel to go back.',
   'channel.error.kickFailed': 'Could not disconnect them ({code}).',
   'channel.error.notEmpty': 'Only an empty channel can be deleted.',
   'channel.error.isDefault': 'The main channel cannot be deleted.',
@@ -131,6 +133,10 @@ export const en = {
   'notify.dmFrom': '{name}',
   'notify.mentionIn': '{name} mentioned you in #{chat}',
   'notify.openChat': 'Open chat',
+  'notify.details': 'Details',
+  'notify.back': 'Back',
+  'notify.copy': 'Copy',
+  'notify.copied': 'Copied',
   'sounds.event.eventStart': 'An event you are going to starts',
   'event.field.repeat': 'Repeat',
   'event.repeat.none': 'Never',

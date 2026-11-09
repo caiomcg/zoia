@@ -129,6 +129,19 @@ export function createPresence({
       void refresh(accountId);
     },
 
+    /**
+     * Whether this machine has its app open and has been used lately: its
+     * stream is open and it has not said it is idle. Unknown machines (an
+     * Android viewer, an app without chat) are not, so the idle sweep
+     * (ADR 0037) judges them by what they do in their channel alone.
+     */
+    inUse(deviceId) {
+      for (const found of accounts.values()) {
+        if (found.streams.has(deviceId)) return !found.idle.has(deviceId);
+      }
+      return false;
+    },
+
     /** The account chose another status; see accounts.setPresence. */
     changed: (accountId) => refresh(accountId),
 

@@ -15,7 +15,7 @@ import { useLanguage, useT } from '../i18n';
  * The bell in your bar at the bottom of the sidebar (see notify.ts): how many
  * unread notifications there are, a short pulse when one arrives, and the
  * list of them, grouped, above it. Opening the list marks them read; clicking
- * one goes where it says.
+ * one goes where it says, or, for one that leads nowhere, shows it in full.
  */
 export default function NotificationBell() {
   const t = useT();
@@ -77,20 +77,29 @@ function InboxPanel({
 }) {
   const t = useT();
   const ref = useRef<HTMLDivElement>(null);
+  // The entry read in full, by id: one that leads nowhere (an error, a
+  // warning) opens here, since the list shows only its first lines.
+  const [shownId, setShownId] = useState<number | null>(null);
+  const shown = items.find((item) => item.id === shownId) ?? null;
 
   useEffect(() => {
     const away = (event: MouseEvent) => {
       const target = event.target as Element;
       if (!ref.current?.contains(target) && !target.closest?.('.notify-bell')) onClose();
     };
-    const escape = (event: KeyboardEvent) => event.key === 'Escape' && onClose();
+    // Back to the list first, then closed.
+    const escape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      if (shown) setShownId(null);
+      else onClose();
+    };
     document.addEventListener('mousedown', away);
     document.addEventListener('keydown', escape);
     return () => {
       document.removeEventListener('mousedown', away);
       document.removeEventListener('keydown', escape);
     };
-  }, [onClose]);
+  }, [onClose, shown]);
 
   // Under the bell at the top of the window, above it lower down; its right
   // edge with the bell's, kept on screen.
@@ -108,29 +117,36 @@ function InboxPanel({
       aria-label={t('settings.nav.notifications')}
       style={style}
     >
-      <header>
-        <b>{t('settings.nav.notifications')}</b>
-        {items.length > 0 && (
-          <button type="button" className="event-quiet" onClick={clearInbox}>
-            {t('notify.clear')}
-          </button>
-        )}
-      </header>
-      {items.length === 0 ? (
-        <p className="notify-empty">{t('notify.empty')}</p>
+      {shown ? (
+        <Details item={shown} onBack={() => setShownId(null)} />
       ) : (
-        <ul>
-          {items.map((item) => (
-            <Entry
-              key={item.id}
-              item={item}
-              onOpen={() => {
-                openInboxItem(item.id);
-                onClose();
-              }}
-            />
-          ))}
-        </ul>
+        <>
+          <header>
+            <b>{t('settings.nav.notifications')}</b>
+            {items.length > 0 && (
+              <button type="button" className="event-quiet" onClick={clearInbox}>
+                {t('notify.clear')}
+              </button>
+            )}
+          </header>
+          {items.length === 0 ? (
+            <p className="notify-empty">{t('notify.empty')}</p>
+          ) : (
+            <ul>
+              {items.map((item) => (
+                <Entry
+                  key={item.id}
+                  item={item}
+                  onOpen={() => {
+                    if (!item.target) return setShownId(item.id);
+                    openInboxItem(item.id);
+                    onClose();
+                  }}
+                />
+              ))}
+            </ul>
+          )}
+        </>
       )}
     </div>,
     document.body,
@@ -161,16 +177,88 @@ function Entry({ item, onOpen }: { item: InboxItem; onOpen: () => void }) {
           {item.body && <span className="notify-entry-body">{item.body}</span>}
           <span className="notify-entry-meta">
             {ago}
-            {item.actionLabel && (
+            {(item.actionLabel || !item.target) && (
               <>
                 {' · '}
-                <em>{item.actionLabel}</em>
+                <em>{item.target ? item.actionLabel : t('notify.details')}</em>
               </>
             )}
           </span>
         </span>
       </button>
     </li>
+  );
+}
+
+/** One entry in full: all of its text, when exactly, and a way to copy it. */
+function Details({ item, onBack }: { item: InboxItem; onBack: () => void }) {
+  const t = useT();
+  const { language } = useLanguage();
+  const [copied, setCopied] = useState(false);
+  const when = new Intl.DateTimeFormat(language, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(item.at);
+
+  useEffect(() => {
+    if (!copied) return undefined;
+    const timer = setTimeout(() => setCopied(false), 1500);
+    return () => clearTimeout(timer);
+  }, [copied]);
+
+  const copy = () => {
+    const text = item.body ? `${item.title}\n${item.body}` : item.title;
+    navigator.clipboard.writeText(text).then(
+      () => setCopied(true),
+      () => {
+        // Not allowed or not focused: the text can still be selected by hand.
+      },
+    );
+  };
+
+  return (
+    <>
+      <header>
+        <button type="button" className="event-quiet notify-back" onClick={onBack}>
+          <IconBack />
+          {t('notify.back')}
+        </button>
+        <button type="button" className="event-quiet" onClick={copy}>
+          {copied ? t('notify.copied') : t('notify.copy')}
+        </button>
+      </header>
+      <div className={`notify-details ${item.kind}${item.tone ? ` tone-${item.tone}` : ''}`}>
+        <div className="notify-details-head">
+          <span className="notify-entry-icon" aria-hidden="true">
+            <KindIcon kind={item.kind} />
+          </span>
+          <b>{item.title}</b>
+        </div>
+        {item.body && <p className="notify-details-body">{item.body}</p>}
+        <span className="notify-entry-meta">
+          {when} · {relative(item.at, language)}
+          {item.count > 1 && <> · {t('notify.countNew', { count: item.count })}</>}
+        </span>
+      </div>
+    </>
+  );
+}
+
+function IconBack() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="14"
+      height="14"
+      aria-hidden="true"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M15 18l-6-6 6-6" />
+    </svg>
   );
 }
 

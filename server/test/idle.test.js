@@ -21,6 +21,8 @@ function fakeRoom() {
   const r = {
     participants: [],
     sent: [],
+    // What each message said, beside `sent`, which only says where it went.
+    messages: [],
     removed: [],
     listParticipants: async () => r.participants,
     updateParticipant: async () => {},
@@ -30,6 +32,7 @@ function fakeRoom() {
     },
     sendData: async (_name, data, _kind, options) => {
       r.sent.push({ to: options.destinationIdentities, topic: options.topic });
+      r.messages.push(JSON.parse(Buffer.from(data).toString('utf8')));
     },
   };
   return r;
@@ -130,11 +133,42 @@ describe('the idle sweep', () => {
     await at(19);
     assert.deepEqual(room.removed, ['bob', 'bob-gpu']);
   });
+
+  test('someone using their computer stays, and leaving it starts the clock', async () => {
+    const using = new Set(['gamer']);
+    sweeper = createIdleSweeper({
+      channels: fixedChannels([
+        {
+          id: 'zoia',
+          name: 'Lobby',
+          stage: createStage({ rooms: room, roomName: 'zoia', logger: quiet }),
+        },
+      ]),
+      idleMs: 10 * MINUTE,
+      inUse: (identity) => using.has(identity),
+      graceMs: 0,
+      logger: quiet,
+      now: () => clock,
+    });
+    enter('gamer', { voice: true, tracks: [microphone({ muted: true })] });
+    await at(0);
+    await at(120);
+    assert.deepEqual(room.removed, []);
+
+    using.delete('gamer');
+    await at(129);
+    assert.deepEqual(room.removed, []);
+    await at(130);
+    assert.deepEqual(room.removed, ['gamer', 'gamer-gpu']);
+  });
 });
 
 describe('the away channel', () => {
-  test('keeps someone for its own limit, while other channels keep theirs', async () => {
-    const away = fakeRoom();
+  let away;
+
+  /** A lobby in `room` and an away channel in `away`. */
+  function withAway(options = {}) {
+    away = fakeRoom();
     sweeper = createIdleSweeper({
       channels: fixedChannels([
         {
@@ -154,23 +188,80 @@ describe('the away channel', () => {
       graceMs: 0,
       logger: quiet,
       now: () => clock,
+      ...options,
     });
-    enter('here');
+  }
+
+  /** What the app does when told to move: leaves the lobby for the away channel. */
+  function goAway(identity) {
+    room.participants = room.participants.filter((p) => p.identity !== identity);
     away.participants.push({
-      identity: 'gone',
-      name: 'gone',
+      identity,
+      name: identity,
       permission: {},
       tracks: [],
       attributes: {},
     });
+  }
+
+  test('the idle elsewhere are moved there, not disconnected', async () => {
+    withAway();
+    enter('here');
+    await at(0);
+    await at(9);
+    assert.deepEqual(room.sent, []);
+    await at(10);
+    assert.deepEqual(room.sent, [{ to: ['here'], topic: 'zoia.move' }]);
+    assert.deepEqual(room.messages, [{ channel: 'zoia-away', reason: 'idle' }]);
+    assert.deepEqual(room.removed, []);
+
+    goAway('here');
+    await at(11);
+    assert.deepEqual(room.removed, []);
+    assert.deepEqual(away.removed, []);
+  });
+
+  test('keeps someone for its own limit, counted from arriving', async () => {
+    withAway();
+    enter('here');
     await at(0);
     await at(10);
-    assert.deepEqual(room.removed, ['here', 'here-gpu']);
-    await at(59);
+    goAway('here');
+    await at(11);
+    await at(70);
     assert.deepEqual(away.removed, []);
+    await at(71);
+    assert.deepEqual(away.sent, [{ to: ['here'], topic: 'zoia.kick' }]);
+    assert.deepEqual(away.removed, ['here', 'here-gpu']);
+  });
+
+  test('someone told to move who stays put is disconnected at the next sweep', async () => {
+    withAway();
+    enter('android');
+    await at(0);
+    await at(10);
+    assert.deepEqual(room.removed, []);
+    await at(11);
+    assert.deepEqual(room.sent.at(-1), { to: ['android'], topic: 'zoia.kick' });
+    assert.deepEqual(room.removed, ['android', 'android-gpu']);
+  });
+
+  test('someone told to move who is back before the next sweep stays', async () => {
+    withAway();
+    enter('back');
+    await at(0);
+    await at(10);
+    room.participants[0].attributes = { 'zoia.watching': 'someone' };
+    await at(11);
+    assert.deepEqual(room.removed, []);
+  });
+
+  test('someone using their computer is not moved', async () => {
+    withAway({ inUse: (identity) => identity === 'busy' });
+    enter('busy');
+    await at(0);
     await at(60);
-    assert.deepEqual(away.sent, [{ to: ['gone'], topic: 'zoia.kick' }]);
-    assert.deepEqual(away.removed, ['gone', 'gone-gpu']);
+    assert.deepEqual(room.sent, []);
   });
 
   test('a limit of 0 kicks nobody from the channels it covers', async () => {

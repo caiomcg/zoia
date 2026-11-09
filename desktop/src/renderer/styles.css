@@ -9138,6 +9138,71 @@ button.events-new:hover {
   color: var(--accent);
 }
 
+/* One entry in full, in place of the list. */
+.notify-back {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.notify-details {
+  --tone: var(--accent);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  overflow-y: auto;
+}
+
+.notify-details.tone-error {
+  --tone: var(--danger);
+}
+
+.notify-details.tone-warn {
+  --tone: var(--warn);
+}
+
+.notify-details-head {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  font-size: 14px;
+}
+
+.notify-details.tone-error .notify-details-head b,
+.notify-details.tone-warn .notify-details-head b {
+  color: var(--tone);
+}
+
+.notify-details.tone-error .notify-entry-icon {
+  color: #fff;
+  background: var(--danger);
+}
+
+.notify-details.tone-warn .notify-entry-icon {
+  color: #1c2027;
+  background: var(--warn);
+}
+
+.notify-details.event .notify-entry-icon {
+  background: var(--live);
+}
+
+.notify-details.mention .notify-entry-icon {
+  color: #1c2027;
+  background: var(--warn);
+}
+
+.notify-details-body {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
 /* Settings › Notifications: kinds down, places across. */
 .notify-grid {
   display: flex;

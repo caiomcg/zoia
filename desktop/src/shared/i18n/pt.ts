@@ -61,7 +61,9 @@ export const pt: Messages = {
   'channel.error.elsewhere':
     'Você entrou em um canal em outro dispositivo, então este saiu. Você pode entrar de novo aqui.',
   'channel.error.idle':
-    'Você foi desconectado do canal após um tempo sem compartilhar nem assistir ninguém. Você pode entrar de novo.',
+    'Você foi desconectado do canal após um tempo longe do computador. Você pode entrar de novo.',
+  'channel.notice.movedAway':
+    'Você foi movido para o canal ausente após um tempo longe do computador. Escolha qualquer canal para voltar.',
   'channel.error.kickFailed': 'Não foi possível desconectar ({code}).',
   'channel.error.notEmpty': 'Só é possível apagar um canal vazio.',
   'channel.error.isDefault': 'O canal principal não pode ser apagado.',
@@ -125,6 +127,10 @@ export const pt: Messages = {
   'notify.dmFrom': '{name}',
   'notify.mentionIn': '{name} te mencionou em #{chat}',
   'notify.openChat': 'Abrir chat',
+  'notify.details': 'Detalhes',
+  'notify.back': 'Voltar',
+  'notify.copy': 'Copiar',
+  'notify.copied': 'Copiado',
   'sounds.event.eventStart': 'Um evento em que você vai começa',
   'event.field.repeat': 'Repetir',
   'event.repeat.none': 'Nunca',

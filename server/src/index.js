@@ -127,12 +127,15 @@ const app = createApp({
 // Scheduled events are announced as they start (ADR 0050).
 if (app.locals.scheduleSweep) startScheduleSweep(app.locals.scheduleSweep);
 
-// Nobody sits in a channel for long neither sharing nor watching; ADR 0037.
+// Nobody sits in a channel for long away from their computer, neither sharing
+// nor watching: they go to the away channel, or out (ADR 0037, 0044).
 if (config.idleKickMinutes > 0 || config.awayKickMinutes > 0) {
+  const { presence } = app.locals;
   createIdleSweeper({
     channels,
     idleMs: config.idleKickMinutes * 60_000,
     awayIdleMs: config.awayKickMinutes * 60_000,
+    inUse: (identity) => presence.inUse(identity),
   }).start();
 }
 

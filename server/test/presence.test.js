@@ -56,6 +56,23 @@ describe('the status', () => {
     ]);
   });
 
+  test('a machine is in use while its stream is open and it is not idle', async () => {
+    assert.equal(presence.inUse('pc'), false, 'unknown: an Android viewer, or no chat');
+    const close = presence.connect('a', 'pc');
+    presence.connect('a', 'laptop');
+    assert.equal(presence.inUse('pc'), true);
+
+    presence.setIdle('a', 'pc', true);
+    assert.equal(presence.inUse('pc'), false);
+    assert.equal(presence.inUse('laptop'), true, 'each machine for itself');
+
+    presence.setIdle('a', 'pc', false);
+    assert.equal(presence.inUse('pc'), true);
+    close();
+    assert.equal(presence.inUse('pc'), false);
+    await presence.idle();
+  });
+
   test('a stream that comes back within the grace changes nothing', async () => {
     presence.connect('a', 'pc')();
     presence.connect('a', 'pc');

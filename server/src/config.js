@@ -95,8 +95,9 @@ export function loadConfig(env = process.env) {
     serverName: env.SERVER_NAME ?? null,
     // KLIPY's app key for GIF search (ADR 0051); unset turns GIFs off.
     gifs: { apiKey: env.KLIPY_API_KEY || undefined },
-    // Minutes someone may sit in a channel neither sharing nor watching before
-    // the server kicks them (ADR 0037). 0 turns it off.
+    // Minutes someone may sit in a channel away from their computer, neither
+    // sharing nor watching, before the server moves them to the away channel,
+    // or disconnects them without one (ADR 0037, 0044). 0 turns it off.
     idleKickMinutes: Number(env.IDLE_KICK_MINUTES ?? 30),
     // The same in the away channel, where nobody talks or shares (ADR 0044).
     awayKickMinutes: Number(env.AWAY_KICK_MINUTES ?? 60),

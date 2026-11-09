@@ -501,12 +501,15 @@ export default function App({ preview = false }: { preview?: boolean }) {
     setChannelsVersion((v) => v + 1);
   }
 
-  // An admin moved this machine: go, the way a click would.
+  // An admin moved this machine, or it sat idle and the server sent it to the
+  // away channel (ADR 0044): go, the way a click would, and say why if idle.
   const { moveRequest, clearMoveRequest } = room;
   useEffect(() => {
     if (!moveRequest) return;
     clearMoveRequest();
-    void switchChannel(moveRequest.channel);
+    void switchChannel(moveRequest.channel).then(() => {
+      if (moveRequest.reason === 'idle') setChannelNotice(t('channel.notice.movedAway'));
+    });
     // Only a new request moves; switchChannel is read as it is now.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [moveRequest]);
