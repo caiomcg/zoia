@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import BellAlerts from './components/BellAlerts';
 import CameraDialog from './components/CameraDialog';
+import { rememberBackground } from './livekit/background-effect';
 import AuthScreen from './components/AuthScreen';
 import WaitingScreen from './components/WaitingScreen';
 import Player from './components/Player';
@@ -1466,6 +1467,7 @@ export default function App({ preview = false }: { preview?: boolean }) {
             hopping,
             onScreen: () => setPickerOpen(true),
             onCamera: () => void toggleCamera(),
+            onStopAll: () => void stopSharing(),
             live: {
               source: liveSource,
               since: liveSince,
@@ -1473,6 +1475,18 @@ export default function App({ preview = false }: { preview?: boolean }) {
               onStop: () => void stopScreen(),
               onSwitch: () => setPickerOpen(true),
             },
+            camera: room.cameraInfo
+              ? {
+                  ...room.cameraInfo,
+                  onStop: () => void room.stopCamera(),
+                  onBackground: (background) => {
+                    // Remembered, so the dialog starts from it next time.
+                    rememberBackground(background);
+                    void room.setCameraBackground(background);
+                  },
+                  onDevice: (deviceId) => void room.switchCameraDevice(deviceId),
+                }
+              : undefined,
           }}
           onHoverBroadcast={(target, anchor) => gridRef.current?.hover(target, anchor)}
           onWatchBroadcast={(target) => gridRef.current?.watch(target)}
@@ -1605,13 +1619,13 @@ export default function App({ preview = false }: { preview?: boolean }) {
       {camera.mounted && (
         <CameraDialog
           closing={camera.closing}
-          onStart={(constraints) => {
+          onStart={(constraints, background) => {
             setCameraOpen(false);
             // A camera always goes through the Chromium path: there is no
             // window for the hardware encoder to capture, and the frame is
             // small enough that it does not need one. Whatever screen is
             // shared stays shared; the camera joins it.
-            void room.startCamera(constraints);
+            void room.startCamera(constraints, background);
           }}
           onCancel={() => setCameraOpen(false)}
         />

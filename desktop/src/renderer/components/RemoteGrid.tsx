@@ -13,6 +13,7 @@ import {
 import { createPortal } from 'react-dom';
 import type { LocalVideoTrack, RemoteTrack } from 'livekit-client';
 import { cameraView, viewOwner, type RemoteScreen } from '../livekit/useRoom';
+import { useShownTrack } from '../livekit/useShownTrack';
 import Avatar from './Avatar';
 import { PopoutPlayer, usePopout } from './Popout';
 import { IconEye, IconFullscreen, IconMic, IconVolume, useClickOrDoubleClick } from './Player';
@@ -349,10 +350,13 @@ function useMediaStream(
     return registerAudioSink(element);
   }, [ref]);
 
+  // Your own camera with a background effect shows the processed picture.
+  const shown = useShownTrack(video);
+
   useEffect(() => {
     const element = ref.current;
     if (!element) return;
-    const tracks = video ? [video.mediaStreamTrack] : [];
+    const tracks = shown ? [shown] : [];
     if (audio) tracks.push(audio.mediaStreamTrack);
     if (tracks.length > 0) {
       element.srcObject = new MediaStream(tracks);
@@ -363,7 +367,7 @@ function useMediaStream(
     return () => {
       element.srcObject = null;
     };
-  }, [ref, video, audio]);
+  }, [ref, shown, audio]);
 }
 
 /**

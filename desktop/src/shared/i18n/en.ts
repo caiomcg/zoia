@@ -361,6 +361,9 @@ export const en = {
   'live.watchingNone': 'Nobody watching yet',
   'live.watchingOne': '1 watching',
   'live.watching': '{count} watching',
+  'live.screenRow': 'Screen',
+  'live.stopScreen': 'Stop screen',
+  'live.stopAll': 'Stop all',
   'player.gpuTitle': 'Sharing your screen',
   'player.gpuBody':
     'Encoded on the GPU and sent straight to the server, so there is no local preview. Viewers see it as normal.',
@@ -493,6 +496,28 @@ export const en = {
   'camera.title': 'Share your camera',
   'camera.camera': 'Camera',
   'camera.share': 'Share camera',
+  'camera.background': 'Background',
+  'camera.bgNone': 'None',
+  'camera.bgBlurLight': 'Light blur',
+  'camera.bgBlurStrong': 'Strong blur',
+  'camera.bgPreset.dusk': 'Dusk',
+  'camera.bgPreset.ocean': 'Ocean',
+  'camera.bgPreset.forest': 'Forest',
+  'camera.bgPreset.studio': 'Studio',
+  'camera.bgYourImage': 'Your image',
+  'camera.bgUpload': 'Upload image…',
+  'camera.bgReplace': 'Replace image…',
+  'camera.bgHint':
+    'Done on this computer. An image you upload stays here and is not sent anywhere.',
+  'camera.bgUnsupported': 'Background effects need WebGL2, which this computer does not offer.',
+  'camera.bgBadFile': 'That file is not an image Zoia can read.',
+  'camera.bgTooBig': 'That image is too large to keep. Try a smaller one.',
+  'camera.backgroundFailed':
+    'The background effect could not start, so your camera is shown as it is.',
+  'camera.live': 'Camera on',
+  'camera.stop': 'Stop camera',
+  'camera.settings': 'Camera settings',
+  'camera.switchFailed': 'Could not switch to that camera.',
 
   // ---- voice (ADR 0039)
   'voice.mute': 'Mute microphone',

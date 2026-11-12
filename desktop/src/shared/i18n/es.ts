@@ -356,6 +356,9 @@ export const es: Messages = {
   'live.watchingNone': 'Nadie mirando aún',
   'live.watchingOne': '1 mirando',
   'live.watching': '{count} mirando',
+  'live.screenRow': 'Pantalla',
+  'live.stopScreen': 'Detener pantalla',
+  'live.stopAll': 'Detener todo',
   'player.gpuTitle': 'Compartiendo tu pantalla',
   'player.gpuBody':
     'Codificado en la GPU y enviado directo al servidor, así que no hay vista previa local. Los espectadores la ven normalmente.',
@@ -487,6 +490,28 @@ export const es: Messages = {
   'camera.title': 'Compartir tu cámara',
   'camera.camera': 'Cámara',
   'camera.share': 'Compartir cámara',
+  'camera.background': 'Fondo',
+  'camera.bgNone': 'Ninguno',
+  'camera.bgBlurLight': 'Desenfoque leve',
+  'camera.bgBlurStrong': 'Desenfoque fuerte',
+  'camera.bgPreset.dusk': 'Atardecer',
+  'camera.bgPreset.ocean': 'Océano',
+  'camera.bgPreset.forest': 'Bosque',
+  'camera.bgPreset.studio': 'Estudio',
+  'camera.bgYourImage': 'Tu imagen',
+  'camera.bgUpload': 'Subir imagen…',
+  'camera.bgReplace': 'Cambiar imagen…',
+  'camera.bgHint':
+    'Se hace en esta computadora. La imagen que subas se queda aquí y no se envía a ningún lado.',
+  'camera.bgUnsupported': 'Los efectos de fondo necesitan WebGL2, que esta computadora no ofrece.',
+  'camera.bgBadFile': 'Ese archivo no es una imagen que Zoia pueda leer.',
+  'camera.bgTooBig': 'Esa imagen es demasiado grande para guardarla. Prueba con una más pequeña.',
+  'camera.backgroundFailed':
+    'El efecto de fondo no pudo iniciarse, así que tu cámara se ve tal cual.',
+  'camera.live': 'Cámara encendida',
+  'camera.stop': 'Detener cámara',
+  'camera.settings': 'Ajustes de la cámara',
+  'camera.switchFailed': 'No se pudo cambiar a esa cámara.',
 
   // ---- voz (ADR 0039)
   'voice.mute': 'Silenciar micrófono',
