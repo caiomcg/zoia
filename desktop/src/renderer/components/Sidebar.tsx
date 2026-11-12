@@ -22,6 +22,7 @@ import QuickDeviceMenu from './QuickDeviceMenu';
 import { useCameraDevices } from '../livekit/useCamera';
 import { useVoiceSettings, setVoiceSettings } from '../voice/settings';
 import { systemDefaultLabel } from '../voice/device-label';
+import { followDefault, useDeviceWatch } from '../voice/device-watch';
 import type { Section as SettingsSection } from './SettingsDialog';
 import { useFloatingMenu } from './useFloatingMenu';
 import type { VoiceState } from '../voice/useVoice';
@@ -651,6 +652,8 @@ export default function Sidebar({
   const [micMenuAnchor, setMicMenuAnchor] = useState<DOMRect | null>(null);
   const [speakerMenuAnchor, setSpeakerMenuAnchor] = useState<DOMRect | null>(null);
   const { devices } = useCameraDevices();
+  // "System default" names the device in use, which a held device changes.
+  useDeviceWatch();
   const voiceSettings = useVoiceSettings();
   useEffect(() => {
     if (!inVoice) {
@@ -1425,8 +1428,12 @@ export default function Sidebar({
           title={t('voiceSettings.input')}
           devices={devices.microphones}
           selectedId={voiceSettings.microphoneId}
-          defaultLabel={systemDefaultLabel(t, devices.microphones)}
-          onSelect={(id) => setVoiceSettings({ ...voiceSettings, microphoneId: id })}
+          defaultLabel={systemDefaultLabel(t, devices.microphones, 'audioinput')}
+          onSelect={(id) => {
+            // Picked even though it already was: whatever Windows has now.
+            if (!id) followDefault('audioinput');
+            setVoiceSettings({ ...voiceSettings, microphoneId: id });
+          }}
           onOpenSettings={() => onOpenSettings('voice')}
           onClose={() => setMicMenuAnchor(null)}
         />
@@ -1437,8 +1444,11 @@ export default function Sidebar({
           title={t('voiceSettings.output')}
           devices={devices.speakers}
           selectedId={voiceSettings.speakerId}
-          defaultLabel={systemDefaultLabel(t, devices.speakers)}
-          onSelect={(id) => setVoiceSettings({ ...voiceSettings, speakerId: id })}
+          defaultLabel={systemDefaultLabel(t, devices.speakers, 'audiooutput')}
+          onSelect={(id) => {
+            if (!id) followDefault('audiooutput');
+            setVoiceSettings({ ...voiceSettings, speakerId: id });
+          }}
           onOpenSettings={() => onOpenSettings('voice')}
           onClose={() => setSpeakerMenuAnchor(null)}
         />

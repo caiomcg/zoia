@@ -59,6 +59,7 @@ record that supersedes it, so the history stays legible.
 | [0051](0051-gifs-from-klipy.md) | GIFs from KLIPY, searched through the server | proposed |
 | [0052](0052-admins-rename-people.md) | Admins rename people | proposed |
 | [0053](0053-camera-background-effects.md) | Blurring or replacing what is behind you on camera | proposed |
+| [0054](0054-no-switch-to-a-new-audio-device.md) | Not moving to an audio device just plugged in | proposed |
 
 ## The two that explain the most
 

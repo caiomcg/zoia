@@ -7,16 +7,13 @@
  *
  * A chosen output that is unplugged falls back to the system default, and
  * sound moves back to it as soon as it is plugged in again: the choice is
- * kept, only the device in use changes (availableDeviceId).
+ * kept, only the device in use changes (deviceNow). Following the default,
+ * a default Windows moves onto a device just plugged in is held off until the
+ * person says (device-watch.ts).
  */
 
-import {
-  availableDeviceId,
-  defaultDeviceKey,
-  getVoiceSettings,
-  subscribeVoiceSettings,
-  type ListedDevice,
-} from './settings';
+import { defaultDeviceKey, subscribeVoiceSettings, type ListedDevice } from './settings';
+import { deviceNow, subscribeDevices } from './device-watch';
 
 const registeredContexts = new Set<AudioContext>();
 const registeredElements = new Set<HTMLMediaElement>();
@@ -29,10 +26,12 @@ let outputs: readonly ListedDevice[] | null = null;
 let currentSink: string | null = null;
 let currentDefaultKey = '';
 
-/** The output to play on now: the chosen one if it is plugged in, else the default. */
+/**
+ * The output to play on now: the chosen one if it is plugged in, else the one
+ * held while a new device is asked about, else the default.
+ */
 function sinkNow(): string {
-  const { speakerId } = getVoiceSettings();
-  return outputs ? availableDeviceId(speakerId, outputs, 'audiooutput') : speakerId;
+  return outputs ? deviceNow('audiooutput', outputs) : '';
 }
 
 function defaultKeyNow(): string {
@@ -130,8 +129,9 @@ async function refreshOutputs(): Promise<void> {
 subscribeVoiceSettings(routeAll);
 
 // A device coming or going may move the sound: off an unplugged output onto
-// the default, and back onto it when it returns.
+// the default, and back onto it when it returns. Told by device-watch, after
+// it has decided whether a new default is held off.
 if (typeof navigator !== 'undefined' && navigator.mediaDevices) {
-  navigator.mediaDevices.addEventListener('devicechange', () => void refreshOutputs());
+  subscribeDevices(() => void refreshOutputs());
   void refreshOutputs();
 }
