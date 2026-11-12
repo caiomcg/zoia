@@ -100,6 +100,8 @@ function onFrame(message: { data: Uint8Array; keyframe: boolean }): void {
   // The placeholders fell behind, which means Chromium dropped some. Sending
   // a growing backlog would only add latency, so start again from a keyframe.
   if (queue.length > 4) {
+    // Reported, because viewers see it: the picture holds until the keyframe.
+    scope.postMessage({ type: 'reset', frames: queue.length });
     queue.length = 0;
     awaitingKeyframe = true;
     requestKeyframe();

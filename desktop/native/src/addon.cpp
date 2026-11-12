@@ -141,6 +141,39 @@ HMODULE LoadAmfRuntime(std::string* why) {
   return nullptr;
 }
 
+// The GPU scheduler's priority classes, as dxgkrnl numbers them (d3dkmthk.h's
+// D3DKMT_SCHEDULINGPRIORITYCLASS). Declared here rather than included: the
+// call is looked up at run time, so the build needs nothing from that header.
+constexpr int kGpuClassNormal = 2;
+constexpr int kGpuClassHigh = 4;
+
+/**
+ * Moves this process's GPU work to another scheduling class. Returns the
+ * NTSTATUS, or -1 when this Windows has no such call.
+ *
+ * A game rendering 4K as fast as it can keeps the GPU's queue full, and the
+ * capture's own work — one copy, one scale and one encode a frame — waited
+ * in it behind the game's frames at the same priority. The frames then
+ * reached the encoder late and in bunches, which viewers saw as a hitch that
+ * capping the game's frame rate made go away. Every capture tool raises
+ * itself above the game for this reason; the work is a few milliseconds a
+ * frame, so the game barely notices.
+ *
+ * High, not realtime: realtime needs a privilege only an elevated process
+ * has, and an elevated Zoia cannot capture a window at all (see
+ * main/elevation.ts).
+ */
+long SetProcessGpuClass(int priorityClass) {
+  using SetClass = long(WINAPI*)(HANDLE, int);
+  static const SetClass setClass = [] {
+    HMODULE gdi = LoadLibraryW(L"gdi32.dll");
+    return gdi ? reinterpret_cast<SetClass>(
+                     GetProcAddress(gdi, "D3DKMTSetProcessSchedulingPriorityClass"))
+               : nullptr;
+  }();
+  return setClass ? setClass(GetCurrentProcess(), priorityClass) : -1;
+}
+
 struct AdapterChoice {
   ComPtr<IDXGIAdapter1> adapter;
   UINT vendorId = 0;
@@ -833,6 +866,9 @@ class Session {
     targetFps_ = fps;
     lastFrameTime_ = std::chrono::steady_clock::time_point{};
     nextFrameDue_ = std::chrono::steady_clock::time_point{};
+    lastEmit_ = std::chrono::steady_clock::time_point{};
+    maxEncodeNanos_ = 0;
+    maxGapNanos_ = 0;
 
     // Everything below belongs to one D3D device, and each capture creates its
     // own. Interfaces kept from the previous capture pointed at its device,
@@ -873,6 +909,21 @@ class Session {
     ComPtr<IDXGIDevice> dxgiDevice;
     hr = device_.As(&dxgiDevice);
     if (FAILED(hr)) return HresultMessage("QueryInterface(IDXGIDevice)", hr);
+
+    // Ahead of the game in the GPU's queue (see SetProcessGpuClass), and this
+    // device ahead of anything else the process draws. Neither is required:
+    // a Windows that refuses leaves the capture where it always was, and the
+    // answer is reported so a hitching broadcast's log says which it got.
+    const long classStatus = SetProcessGpuClass(kGpuClassHigh);
+    gpuClassRaised_ = classStatus == 0;
+    const HRESULT threadPriority = dxgiDevice->SetGPUThreadPriority(7);
+    {
+      char buffer[96];
+      snprintf(buffer, sizeof(buffer), "%s (class 0x%08lX, thread 0x%08lX)",
+               gpuClassRaised_ ? "high" : "normal", static_cast<unsigned long>(classStatus),
+               static_cast<unsigned long>(threadPriority));
+      gpuPriority_ = buffer;
+    }
 
     winrt::com_ptr<::IInspectable> inspectable;
     hr = CreateDirect3D11DeviceFromDXGIDevice(dxgiDevice.Get(), inspectable.put());
@@ -1111,16 +1162,18 @@ class Session {
     // monitor the first refresh past 16.7ms is the third (18.2ms), so a game
     // running at 90fps+ was delivered at 55fps — measured 52–55 — and every
     // missing frame was a hitch. Asking for every refresh instead lets the
-    // raw path's own schedule pick 60 evenly spaced frames out of them.
-    // Raw path only: NVENC's pacing was left exactly as it was.
-    if (!encode_) {
-      try {
-        if (winrt::Windows::Foundation::Metadata::ApiInformation::IsPropertyPresent(
-                L"Windows.Graphics.Capture.GraphicsCaptureSession", L"MinUpdateInterval")) {
-          session_.MinUpdateInterval(std::chrono::milliseconds(1));
-        }
-      } catch (...) {
+    // schedule in OnFrameInternal pick 60 evenly spaced frames out of them.
+    //
+    // On every path. It used to be the raw one alone, and NVENC and AMF kept
+    // Windows' spacing: 48fps from a 144Hz monitor, unevenly, which a sharer
+    // with a 4K 144Hz screen saw as a broadcast that hitched at any preset
+    // until the game was capped at 60fps.
+    try {
+      if (winrt::Windows::Foundation::Metadata::ApiInformation::IsPropertyPresent(
+              L"Windows.Graphics.Capture.GraphicsCaptureSession", L"MinUpdateInterval")) {
+        session_.MinUpdateInterval(std::chrono::milliseconds(1));
       }
+    } catch (...) {
     }
 
     frameToken_ = framePool_.FrameArrived({this, &Session::OnFrame});
@@ -1133,6 +1186,10 @@ class Session {
 
  public:
   void Stop() {
+    // Only while capturing: nothing else this process does on the GPU has a
+    // reason to run ahead of a game. Before the check below, so a capture
+    // that failed to start gives the priority back too.
+    if (gpuClassRaised_.exchange(false)) SetProcessGpuClass(kGpuClassNormal);
     if (!running_.exchange(false)) return;
 
     try {
@@ -1187,8 +1244,8 @@ class Session {
     std::lock_guard<std::mutex> guard(encodeMutex_);
     if (!running_) return;
 
-    // The NVENC path paces after the copy, below; this is the raw path's.
-    // Against a schedule of slots at the target rate, as NVENC's is. It used
+    // The raw path's pacing; the encoders' follows it.
+    // Against a schedule of slots at the target rate, as theirs is. It used
     // to drop any frame within 14ms of the last one kept, and on a 144Hz
     // monitor (a frame every 6.9ms) that kept one in three: 48fps, unevenly
     // spaced, which ffmpeg padded out with duplicates and read as stutter.
@@ -1205,7 +1262,28 @@ class Session {
                           : nextFrameDue_ + interval;
     }
     const auto previousArrival = lastFrameTime_;
-    lastFrameTime_ = std::chrono::steady_clock::now();
+    const auto arrival = std::chrono::steady_clock::now();
+    lastFrameTime_ = arrival;
+
+    // The encoders' pacing: against a schedule of slots at the target rate,
+    // so a 144Hz source does not flood the encoder, averaging out to the
+    // target at any refresh rate. Only a source redrawing faster than the
+    // target is paced: a frame after a gap of a whole interval or more — a
+    // window that redraws once when clicked, typed in, or switched — goes out
+    // at once. Dropping it left that picture unsent until the next redraw.
+    //
+    // Before the copy, not after it. Windows now delivers every refresh (see
+    // MinUpdateInterval in StartInternal), and copying a 4K frame 144 times a
+    // second to encode 60 of them is GPU time taken from the game being shared.
+    if (encode_ && targetFps_ > 0) {
+      const auto interval = FrameInterval();
+      const bool redrawingFast = previousArrival.time_since_epoch().count() != 0 &&
+                                 arrival - previousArrival < interval;
+      if (redrawingFast && nextFrameDue_.time_since_epoch().count() != 0 &&
+          arrival + interval / 4 < nextFrameDue_) {
+        return;
+      }
+    }
 
     if (scale_) {
       // The window changed size: a game going fullscreen, or back to a window.
@@ -1270,25 +1348,12 @@ class Session {
                                     captured.Get(), 0, &box);
 
     if (encode_) {
-      // Paced against a schedule of slots at the target rate, so a 144Hz
-      // source does not flood the encoder, averaging out to the target at
-      // any refresh rate. Only a source redrawing faster than the target is
-      // paced: a frame after a gap of a whole interval or more — a window
-      // that redraws once when clicked, typed in, or switched — goes out at
-      // once. Dropping it left that picture unsent until the next redraw.
+      // Paced above, before the copy.
       //
       // All GPU work stays on this callback's thread. Encoding from a thread
       // of our own races Windows Graphics Capture's use of the device and
       // can hang NVENC: viewers see black and stopping the share freezes.
-      const auto now = std::chrono::steady_clock::now();
-      const auto interval = FrameInterval();
-      const bool redrawingFast = previousArrival.time_since_epoch().count() != 0 &&
-                                 now - previousArrival < interval;
-      if (targetFps_ > 0 && redrawingFast && nextFrameDue_.time_since_epoch().count() != 0 &&
-          now + interval / 4 < nextFrameDue_) {
-        return;
-      }
-      EncodeLatest(now);
+      EncodeLatest(arrival);
       return;
     }
 
@@ -1388,10 +1453,24 @@ class Session {
       Emit({}, false, error);
       return;
     }
-    encodeNanos_ += std::chrono::duration_cast<std::chrono::nanoseconds>(
-                        std::chrono::steady_clock::now() - encodeStart)
-                        .count();
-    if (!packet.data.empty()) Emit(std::move(packet.data), packet.keyframe, {});
+    const auto encoded = std::chrono::steady_clock::now();
+    const uint64_t nanos =
+        std::chrono::duration_cast<std::chrono::nanoseconds>(encoded - encodeStart).count();
+    encodeNanos_ += nanos;
+    // The encode waits for the copy and the scale queued ahead of it, so its
+    // slowest run is how long the GPU kept this capture waiting.
+    if (nanos > maxEncodeNanos_) maxEncodeNanos_ = nanos;
+    if (packet.data.empty()) return;
+
+    // The longest wait between two frames handed over: a hitch, whether it
+    // came from Windows delivering late or from the encoder answering late.
+    if (lastEmit_.time_since_epoch().count() != 0) {
+      const uint64_t gap =
+          std::chrono::duration_cast<std::chrono::nanoseconds>(encoded - lastEmit_).count();
+      if (gap > maxGapNanos_) maxGapNanos_ = gap;
+    }
+    lastEmit_ = encoded;
+    Emit(std::move(packet.data), packet.keyframe, {});
   }
 
  public:
@@ -1420,6 +1499,10 @@ class Session {
   uint64_t offered() const { return offeredCount_; }
   uint64_t encodeNanos() const { return encodeNanos_; }
   uint64_t takeMaxReadbackNanos() { return maxReadbackNanos_.exchange(0); }
+  uint64_t takeMaxEncodeNanos() { return maxEncodeNanos_.exchange(0); }
+  uint64_t takeMaxGapNanos() { return maxGapNanos_.exchange(0); }
+  /** "high" or "normal", and what Windows answered when asked. */
+  const std::string& gpuPriority() const { return gpuPriority_; }
   uint64_t backlogDropped() const { return backlogDropped_; }
 
   double averageEncodeMs() const {
@@ -1739,6 +1822,13 @@ class Session {
   std::atomic<uint64_t> offeredCount_{0};
   // Raw path: the slowest scale + readback since stats() last asked.
   std::atomic<uint64_t> maxReadbackNanos_{0};
+  // Encoder path: the slowest encode, and the longest wait between two frames
+  // handed over, since stats() last asked.
+  std::atomic<uint64_t> maxEncodeNanos_{0};
+  std::atomic<uint64_t> maxGapNanos_{0};
+  std::chrono::steady_clock::time_point lastEmit_{};
+  std::atomic<bool> gpuClassRaised_{false};
+  std::string gpuPriority_;
   // Raw path: frames emitted and not yet handed to JavaScript, and how many
   // were skipped because that backlog was full.
   static constexpr uint32_t kMaxRawInFlight = 2;
@@ -1836,6 +1926,7 @@ Napi::Value Start(const Napi::CallbackInfo& info) {
   result.Set("vendor", Napi::String::New(env, g_session.vendor()));
   result.Set("adapter", Napi::String::New(env, g_session.adapterName()));
   result.Set("encoder", Napi::String::New(env, g_session.encoderName()));
+  result.Set("gpuPriority", Napi::String::New(env, g_session.gpuPriority()));
   return result;
 }
 
@@ -1866,6 +1957,8 @@ Napi::Value Stats(const Napi::CallbackInfo& info) {
   stats.Set("framesArrived", Napi::Number::New(env, static_cast<double>(g_session.arrived())));
   stats.Set("encodeMs", Napi::Number::New(env, g_session.encodeNanos() / 1e6));
   stats.Set("maxReadbackMs", Napi::Number::New(env, g_session.takeMaxReadbackNanos() / 1e6));
+  stats.Set("maxEncodeMs", Napi::Number::New(env, g_session.takeMaxEncodeNanos() / 1e6));
+  stats.Set("maxGapMs", Napi::Number::New(env, g_session.takeMaxGapNanos() / 1e6));
   stats.Set("framesBacklogged",
             Napi::Number::New(env, static_cast<double>(g_session.backlogDropped())));
   return stats;
