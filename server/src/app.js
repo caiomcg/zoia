@@ -845,10 +845,8 @@ export function createApp({
       const roles = new Map();
       const rooms = await Promise.all(
         (await channelSet.list()).map(async ({ id, name, isDefault, away, stage: room }) => {
-          const [participants, broadcasters] = await Promise.all([
-            room.participants(),
-            room.broadcasters(),
-          ]);
+          // One shared LiveKit read per channel, however many apps poll.
+          const { participants, broadcasters } = await room.overview();
           return {
             id,
             name,
