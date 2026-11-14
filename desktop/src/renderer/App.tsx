@@ -16,6 +16,7 @@ import DirectList from './components/DirectList';
 import { EventsPanel, EventCarousel, pinnedEvents, useNow } from './components/EventList';
 import EventDialog from './components/EventDialog';
 import { useSchedule } from './schedule/useSchedule';
+import BirthdayPrompt from './components/BirthdayPrompt';
 import BirthdayParty from './components/BirthdayParty';
 import { playCues } from './sounds/useSoundCues';
 import {
@@ -325,6 +326,24 @@ export default function App({ preview = false }: { preview?: boolean }) {
   const accountRef = useRef(account);
   accountRef.current = account;
   const isAdmin = account?.role === 'admin' || account?.role === 'super_admin';
+
+  // Someone from before birthdays is asked for theirs once per sign-in, until
+  // the server has one (ADR 0055). Closing it is "later", not "never": the
+  // next launch, or the next sign-in on this machine, asks again. Undefined is
+  // a server from before birthdays, which is never asked.
+  const [askBirthday, setAskBirthday] = useState(false);
+  const askedForRef = useRef<string | null>(null);
+  const missingBirthday = usable && account?.birthday === null;
+  const signInKey = status?.deviceId ?? null;
+  useEffect(() => {
+    if (!missingBirthday) {
+      setAskBirthday(false);
+      return;
+    }
+    if (askedForRef.current === signInKey) return;
+    askedForRef.current = signInKey;
+    setAskBirthday(true);
+  }, [missingBirthday, signInKey]);
 
   // Someone's birthday today: a party over the whole window (ADR 0055).
   const [party, setParty] = useState<{ name: string; mine: boolean } | null>(null);
@@ -1725,6 +1744,7 @@ export default function App({ preview = false }: { preview?: boolean }) {
         />
       )}
 
+      {askBirthday && <BirthdayPrompt onClose={() => setAskBirthday(false)} />}
       {party && <BirthdayParty {...party} onClose={() => setParty(null)} />}
 
       {notesDialog.mounted && shownNotes && (

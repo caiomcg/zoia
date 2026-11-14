@@ -139,6 +139,9 @@ export const pt: Messages = {
   'birthday.day': 'Dia',
   'birthday.month': 'Mês',
   'birthday.hint': 'Só dia e mês. No dia, ele aparece no calendário de todo mundo.',
+  'birthday.prompt.title': 'Quando é o seu aniversário?',
+  'birthday.prompt.body':
+    'Agora o Zoia coloca o aniversário de todo mundo no calendário. Diga o dia e o mês (sem o ano) para a gente comemorar o seu. Enquanto você não informar, vamos perguntar a cada vez que você entrar.',
   'birthday.error.invalid': 'Escolha um dia e um mês que existam.',
   'birthday.error.failed': 'Não foi possível salvar seu aniversário. Tente de novo.',
   'birthday.saved': 'Aniversário salvo.',

@@ -9705,6 +9705,20 @@ button.events-new:hover {
   font-size: 12px;
 }
 
+.birthday-prompt {
+  text-align: center;
+}
+
+.birthday-prompt .birthday-field {
+  margin: 4px 0 8px;
+  text-align: left;
+}
+
+.birthday-prompt-parrot {
+  display: block;
+  margin: 0 auto 4px;
+}
+
 .birthday-party {
   position: fixed;
   inset: 0;

@@ -145,6 +145,9 @@ export const en = {
   'birthday.day': 'Day',
   'birthday.month': 'Month',
   'birthday.hint': 'Day and month only. On the day, it goes on everyone’s calendar.',
+  'birthday.prompt.title': 'When is your birthday?',
+  'birthday.prompt.body':
+    'Zoia now puts everyone’s birthday on the calendar. Tell us the day and month (no year) so we can celebrate yours. Until you do, we will ask every time you sign in.',
   'birthday.error.invalid': 'Pick a day and month that exist.',
   'birthday.error.failed': 'Could not save your birthday. Try again.',
   'birthday.saved': 'Birthday saved.',

@@ -140,6 +140,9 @@ export const es: Messages = {
   'birthday.day': 'Día',
   'birthday.month': 'Mes',
   'birthday.hint': 'Solo día y mes. Ese día aparece en el calendario de todos.',
+  'birthday.prompt.title': '¿Cuándo es tu cumpleaños?',
+  'birthday.prompt.body':
+    'Ahora Zoia pone el cumpleaños de todos en el calendario. Dinos el día y el mes (sin el año) para celebrar el tuyo. Hasta que lo hagas, te lo preguntaremos cada vez que inicies sesión.',
   'birthday.error.invalid': 'Elige un día y un mes que existan.',
   'birthday.error.failed': 'No se pudo guardar tu cumpleaños. Inténtalo de nuevo.',
   'birthday.saved': 'Cumpleaños guardado.',
