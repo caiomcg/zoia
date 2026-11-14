@@ -40,6 +40,7 @@ import type {
   Presence,
   PresenceState,
   GifResult,
+  Birthday,
 } from '../shared/ipc';
 import type { SoundPage } from '../shared/soundboard';
 
@@ -53,6 +54,8 @@ export interface ZoiaBridge {
     signIn(server: string, email: string, password: string): Promise<AuthOutcome>;
     /** Creates the account, pending approval, and signs in to it. */
     signUp(server: string, email: string, password: string): Promise<AuthOutcome>;
+    /** Your birthday (ADR 0055); the pairing status then carries it. */
+    setBirthday(birthday: Birthday): Promise<ActionOutcome<{ ok: boolean; birthday: string }>>;
     /** Spends a reset code from an admin, then signs in with the new password. */
     redeem(server: string, code: string, password: string): Promise<AuthOutcome>;
     /** Asks the server who this machine is now: approval, role, waiting sign-ups. */

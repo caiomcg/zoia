@@ -815,6 +815,7 @@ export const IPC = {
   nativeVideoPort: 'zoia:native-video:port',
   nativeVideoError: 'zoia:native-video:error',
   renameDevice: 'zoia:device:rename',
+  accountBirthday: 'zoia:account:birthday',
   setAvatar: 'zoia:device:avatar:set',
   removeAvatar: 'zoia:device:avatar:remove',
   avatarGet: 'zoia:avatar:get',

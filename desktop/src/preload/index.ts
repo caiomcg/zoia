@@ -43,6 +43,7 @@ const bridge: ZoiaBridge = {
       ipcRenderer.invoke(IPC.accountSignIn, server, email, password),
     signUp: (server, email, password) =>
       ipcRenderer.invoke(IPC.accountSignUp, server, email, password),
+    setBirthday: (birthday) => ipcRenderer.invoke(IPC.accountBirthday, birthday),
     redeem: (server, code, password) =>
       ipcRenderer.invoke(IPC.accountRedeem, server, code, password),
     refresh: () => ipcRenderer.invoke(IPC.accountRefresh),

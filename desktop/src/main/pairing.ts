@@ -65,6 +65,7 @@ function accountOf(info: SessionInfo): AccountInfo {
     role: info.role,
     status: info.status,
     ...(info.pendingApprovals !== undefined ? { pendingApprovals: info.pendingApprovals } : {}),
+    ...(info.birthday !== undefined ? { birthday: info.birthday } : {}),
   };
 }
 

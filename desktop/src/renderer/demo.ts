@@ -75,6 +75,7 @@ export function installDemo() {
     account: {
       signIn: unavailable,
       signUp: unavailable,
+      setBirthday: unavailable,
       redeem: unavailable,
       refresh: async () => status,
       signOut: async () => status,
