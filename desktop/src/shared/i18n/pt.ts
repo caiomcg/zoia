@@ -132,6 +132,9 @@ export const pt: Messages = {
   'notify.copy': 'Copiar',
   'notify.copied': 'Copiado',
   'sounds.event.eventStart': 'Um evento em que você vai começa',
+  // ---- birthdays (ADR 0055)
+  'birthday.day': 'Dia',
+  'birthday.month': 'Mês',
   'event.field.repeat': 'Repetir',
   'event.repeat.none': 'Nunca',
   'event.repeat.daily': 'Diariamente',

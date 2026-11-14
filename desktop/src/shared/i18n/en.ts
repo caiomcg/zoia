@@ -138,6 +138,9 @@ export const en = {
   'notify.copy': 'Copy',
   'notify.copied': 'Copied',
   'sounds.event.eventStart': 'An event you are going to starts',
+  // ---- birthdays (ADR 0055)
+  'birthday.day': 'Day',
+  'birthday.month': 'Month',
   'event.field.repeat': 'Repeat',
   'event.repeat.none': 'Never',
   'event.repeat.daily': 'Daily',

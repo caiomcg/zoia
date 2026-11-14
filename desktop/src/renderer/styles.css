@@ -9679,3 +9679,23 @@ button.events-new:hover {
 .chat-tab.drop-target {
   box-shadow: inset 2px 0 0 var(--accent);
 }
+
+/* ---- birthdays (ADR 0055) ------------------------------------------------ */
+
+.birthday-field {
+  display: grid;
+  grid-template-columns: 5.5em 1fr;
+  gap: 8px;
+  width: 100%;
+}
+
+.birthday-field select {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 9px 10px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font: inherit;
+}
