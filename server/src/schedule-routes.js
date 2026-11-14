@@ -11,8 +11,9 @@
 import express from 'express';
 import rateLimit from 'express-rate-limit';
 
-import { isAdmin } from './accounts.js';
-import { DEFAULT_DURATION_MINUTES, audienceOf } from './schedule.js';
+import { isAdmin, isBot } from './accounts.js';
+import { DEFAULT_BIRTHDAY_TZ } from './birthdays.js';
+import { DEFAULT_DURATION_MINUTES, audienceOf, isBirthday } from './schedule.js';
 
 /** How often the sweep looks for events that have started. */
 const SWEEP_MS = 20_000;
@@ -38,6 +39,7 @@ const refuse = (res, reason) => res.status(ERRORS[reason] ?? 400).json({ error: 
  * @param {{ list(): Promise<{ id: string }[]> } | null} options.channels
  *   the channels, so an event can only point at one that exists
  * @param {ReturnType<import('./chat-routes.js').createChatHub>} options.hub
+ * @param {string} [options.birthdayZone] the time zone a birthday's day is counted in (ADR 0055)
  */
 export function scheduleRoutes({
   events,
@@ -46,6 +48,7 @@ export function scheduleRoutes({
   hub,
   requireSession,
   writeLimit = { windowMs: 60_000, limit: 30 },
+  birthdayZone = DEFAULT_BIRTHDAY_TZ,
 }) {
   const router = express.Router();
 
@@ -66,7 +69,12 @@ export function scheduleRoutes({
   /** How an event is sent: who scheduled it by name, never by email. */
   async function shown(event) {
     const creator = event.createdBy ? await accountStore.get(event.createdBy) : null;
+    // A birthday by whose it is, under the name they have now.
+    const subject = isBirthday(event) ? await accountStore.get(event.subjectId) : null;
     return {
+      kind: isBirthday(event) ? 'birthday' : null,
+      subjectId: subject?.id ?? null,
+      subjectName: subject?.name ?? null,
       id: event.id,
       title: event.title,
       description: event.description ?? null,
@@ -144,7 +152,11 @@ export function scheduleRoutes({
    * forgets those long past. Resolves to the events announced.
    */
   async function sweep() {
-    const { starting, rolled } = await events.sweep();
+    // Whose birthday may come up: people let in, never a bot.
+    const people = (await accountStore.list())
+      .filter((a) => a.status === 'active' && !isBot(a) && a.birthday)
+      .map(({ id, name, birthday }) => ({ id, name, birthday }));
+    const { starting, rolled } = await events.sweep({ people, zone: birthdayZone });
     for (const event of starting) {
       hub.publish('event_starting', { event: await shown(event) }, audienceOf(event));
     }

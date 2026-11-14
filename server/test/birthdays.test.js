@@ -65,6 +65,10 @@ afterEach(async () => {
   await rm(dir, { recursive: true, force: true });
 });
 
+const sweep = () => app.locals.scheduleSweep();
+const birthdaysOn = async (agent) =>
+  (await agent.get('/api/schedule').expect(200)).body.events.filter((e) => e.kind === 'birthday');
+
 describe('the birthday itself', () => {
   test('is a day and a month that exist, February 29 included', () => {
     assert.equal(parseBirthday({ day: 29, month: 2 }), '02-29');
@@ -163,5 +167,84 @@ describe('giving it', () => {
       .put('/api/birthday')
       .send({ birthday: { day: 1, month: 1 } })
       .expect(401);
+  });
+});
+
+describe('the birthday on the calendar', () => {
+  test('is an all-day event on the day, once, under the name they have now', async () => {
+    const ana = await signIn(app, stores.accounts, 'Ana');
+    const bia = await signIn(app, stores.accounts, 'Bia');
+    await stores.accounts.setBirthday(ana.account.id, { day: 14, month: 11 });
+    await stores.accounts.setBirthday(bia.account.id, { day: 15, month: 11 });
+
+    await sweep();
+    await sweep();
+    const [party, ...rest] = await birthdaysOn(bia.agent);
+    assert.deepEqual(rest, []);
+    assert.equal(party.subjectId, ana.account.id);
+    assert.equal(party.subjectName, 'Ana');
+    assert.equal(party.startsAt, '2026-11-14T03:00:00.000Z');
+    assert.equal(party.durationMinutes, 1440);
+    assert.equal(party.channelId, null);
+    assert.equal(party.createdBy, null);
+
+    await stores.accounts.rename(ana.account.id, 'Aninha');
+    assert.equal((await birthdaysOn(bia.agent))[0].subjectName, 'Aninha');
+
+    // The next day it is Bia's turn, and Ana's has ended.
+    clock += 24 * 3_600_000;
+    await sweep();
+    assert.deepEqual(
+      (await birthdaysOn(ana.agent)).map((e) => e.subjectName),
+      ['Bia'],
+    );
+  });
+
+  test('goes on at once when someone gives today as theirs, and off when they change it', async () => {
+    const ana = await signIn(app, stores.accounts, 'Ana');
+    await ana.agent
+      .put('/api/birthday')
+      .send({ birthday: { day: 14, month: 11 } })
+      .expect(200);
+    await sweep();
+    assert.equal((await birthdaysOn(ana.agent)).length, 1);
+
+    await ana.agent
+      .put('/api/birthday')
+      .send({ birthday: { day: 1, month: 1 } })
+      .expect(200);
+    await sweep();
+    assert.deepEqual(await birthdaysOn(ana.agent), []);
+  });
+
+  test('is not for someone pending or disabled', async () => {
+    const viewer = await signIn(app, stores.accounts, 'Ana');
+    await request(app)
+      .post('/api/signup')
+      .send({ email: 'p@example.com', password: PASSWORD, birthday: { day: 14, month: 11 } })
+      .expect(201);
+    const off = await signIn(app, stores.accounts, 'Off');
+    await stores.accounts.setBirthday(off.account.id, { day: 14, month: 11 });
+    await stores.accounts.setStatus(off.account.id, 'disabled', 'test');
+
+    await sweep();
+    assert.deepEqual(await birthdaysOn(viewer.agent), []);
+  });
+
+  test('is not announced as an event starting, nor counted against the limit', async () => {
+    const ana = await signIn(app, stores.accounts, 'Ana');
+    await stores.accounts.setBirthday(ana.account.id, { day: 14, month: 11 });
+    const announced = await sweep();
+    assert.deepEqual(announced, []);
+    assert.equal((await stores.events.list()).length, 1);
+  });
+
+  test('goes with its account', async () => {
+    const ana = await signIn(app, stores.accounts, 'Ana');
+    const bia = await signIn(app, stores.accounts, 'Bia');
+    await stores.accounts.setBirthday(ana.account.id, { day: 14, month: 11 });
+    await sweep();
+    stores.db.sqlite.prepare('DELETE FROM accounts WHERE id = ?').run(ana.account.id);
+    assert.deepEqual(await birthdaysOn(bia.agent), []);
   });
 });

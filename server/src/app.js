@@ -1391,6 +1391,7 @@ export function createApp({
       hub: chatHub,
       requireSession,
       writeLimit: config.schedule?.writeLimit,
+      birthdayZone: config.birthdayZone,
     });
     app.use('/api/schedule', schedule.router);
     app.locals.scheduleSweep = schedule.sweep;
