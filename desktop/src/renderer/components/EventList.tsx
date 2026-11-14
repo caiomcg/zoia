@@ -90,7 +90,16 @@ export function useShortWhen(): (iso: string) => string {
 }
 
 /** From start to end, 24-hour: "Thu, Nov 5, 21:00 – 23:00", the days only where they differ. */
-export function formatSpan(event: ScheduledEvent, language: string): string {
+export function formatSpan(event: ScheduledEvent, language: string, allDay: string): string {
+  // A birthday is the whole day (ADR 0055): its date, and no hours.
+  if (event.kind === 'birthday') {
+    const day = new Intl.DateTimeFormat(language, {
+      weekday: 'short',
+      day: 'numeric',
+      month: 'short',
+    }).format(new Date(event.startsAt));
+    return `${day} · ${allDay}`;
+  }
   const format = new Intl.DateTimeFormat(language, {
     weekday: 'short',
     day: 'numeric',
@@ -378,7 +387,7 @@ function EventPopup({
         <div className="event-popup-title">
           <b>{event.title}</b>
           {state === 'live' && <span className="event-card-now">{t('event.now')}</span>}
-          <span>{formatSpan(event, language)}</span>
+          <span>{formatSpan(event, language, t('birthday.event.allDay'))}</span>
         </div>
       </div>
       {(channel || event.creatorName || event.recurrence) && (
@@ -439,7 +448,8 @@ function EventPopup({
           </div>
         </>
       ) : (
-        state !== 'ended' && (
+        state !== 'ended' &&
+        event.kind !== 'birthday' && (
           <>
             <span className="event-ask">{t('event.areYouGoing')}</span>
             <div className="event-rsvp small" role="group" aria-label={t('event.yourAnswer')}>
@@ -508,7 +518,9 @@ function EventSlide({
             <>
               <span className="event-card-now">{t('event.now')}</span>{' '}
               <span className="event-when-range">
-                {t('event.untilTime', { time: when(new Date(endOf(event)).toISOString()) })}
+                {event.kind === 'birthday'
+                  ? t('birthday.event.allDay')
+                  : t('event.untilTime', { time: when(new Date(endOf(event)).toISOString()) })}
               </span>
             </>
           ) : (
@@ -634,7 +646,11 @@ function EventRow({
                 ? t('event.ended')
                 : when(event.startsAt)}
             {' · '}
-            {going === 1 ? t('event.goingOne') : t('event.goingCount', { count: going })}
+            {event.kind === 'birthday'
+              ? t('birthday.event.allDay')
+              : going === 1
+                ? t('event.goingOne')
+                : t('event.goingCount', { count: going })}
           </span>
         </span>
         {mine && (

@@ -147,6 +147,7 @@ export const en = {
   'birthday.error.failed': 'Could not save your birthday. Try again.',
   'birthday.saved': 'Birthday saved.',
   'birthday.event.title': '{name}’s birthday',
+  'birthday.event.allDay': 'All day',
   'event.field.repeat': 'Repeat',
   'event.repeat.none': 'Never',
   'event.repeat.daily': 'Daily',
