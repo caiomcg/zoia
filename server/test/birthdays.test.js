@@ -15,6 +15,7 @@ import { createStage } from '../src/stage.js';
 import { PASSWORD, signIn, testStores } from './people.js';
 import { createEventStore } from '../src/schedule.js';
 import { parseBirthday, today } from '../src/birthdays.js';
+import { loadConfig } from '../src/config.js';
 
 const quiet = { info() {}, warn() {}, error() {} };
 const ZONE = 'America/Sao_Paulo';
@@ -96,6 +97,17 @@ describe('the birthday itself', () => {
   test('February 29 is kept on the 28th when the year has none', () => {
     assert.deepEqual(today(Date.parse('2027-02-28T15:00:00Z'), ZONE).birthdays, ['02-28', '02-29']);
     assert.deepEqual(today(Date.parse('2028-02-28T15:00:00Z'), ZONE).birthdays, ['02-28']);
+  });
+
+  test('the server refuses to start with a time zone it does not know', () => {
+    const env = {
+      SESSION_SECRET: 'x'.repeat(32),
+      LIVEKIT_API_KEY: 'k',
+      LIVEKIT_API_SECRET: 's',
+      LIVEKIT_WS_URL: 'wss://x',
+    };
+    assert.equal(loadConfig(env).birthdayZone, ZONE);
+    assert.throws(() => loadConfig({ ...env, BIRTHDAY_TZ: 'Mars/Olympus' }), /BIRTHDAY_TZ/);
   });
 });
 
