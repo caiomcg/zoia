@@ -142,10 +142,10 @@ export function session() {
 // The password goes to the server and nowhere else: it is not stored, and a
 // login answers with the same kind of device credential pairing did.
 
-export function signup(email: string, password: string) {
+export function signup(email: string, password: string, birthday: Birthday) {
   return call<{ status: AccountState }>('/api/signup', {
     method: 'POST',
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ email, password, birthday }),
   });
 }
 

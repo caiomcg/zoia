@@ -342,8 +342,10 @@ function registerIpc(): void {
   ipcMain.handle(IPC.accountSignIn, (_event, server: string, email: string, password: string) =>
     pairing.signIn(String(server), String(email), String(password)),
   );
-  ipcMain.handle(IPC.accountSignUp, (_event, server: string, email: string, password: string) =>
-    pairing.signUp(String(server), String(email), String(password)),
+  ipcMain.handle(
+    IPC.accountSignUp,
+    (_event, server: string, email: string, password: string, birthday: unknown) =>
+      pairing.signUp(String(server), String(email), String(password), birthdayOf(birthday)),
   );
   // Then who this machine is, so the app stops asking for it (ADR 0055).
   ipcMain.handle(IPC.accountBirthday, async (_event, birthday: unknown) => {

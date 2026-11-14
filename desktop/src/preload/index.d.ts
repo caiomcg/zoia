@@ -53,7 +53,12 @@ export interface ZoiaBridge {
   account: {
     signIn(server: string, email: string, password: string): Promise<AuthOutcome>;
     /** Creates the account, pending approval, and signs in to it. */
-    signUp(server: string, email: string, password: string): Promise<AuthOutcome>;
+    signUp(
+      server: string,
+      email: string,
+      password: string,
+      birthday: Birthday,
+    ): Promise<AuthOutcome>;
     /** Your birthday (ADR 0055); the pairing status then carries it. */
     setBirthday(birthday: Birthday): Promise<ActionOutcome<{ ok: boolean; birthday: string }>>;
     /** Spends a reset code from an admin, then signs in with the new password. */

@@ -139,8 +139,10 @@ export const en = {
   'notify.copied': 'Copied',
   'sounds.event.eventStart': 'An event you are going to starts',
   // ---- birthdays (ADR 0055)
+  'birthday.label': 'Birthday',
   'birthday.day': 'Day',
   'birthday.month': 'Month',
+  'birthday.hint': 'Day and month only. On the day, it goes on everyone’s calendar.',
   'event.field.repeat': 'Repeat',
   'event.repeat.none': 'Never',
   'event.repeat.daily': 'Daily',
@@ -650,6 +652,7 @@ export const en = {
     'That is not a server address. It should look like https://zoia.example.com',
   'auth.error.unreachable': 'Could not reach the server. Check the address and your connection.',
   'auth.error.accounts_not_configured': 'That server does not have accounts yet.',
+  'auth.error.invalid_birthday': 'Pick a birthday that exists.',
   'auth.error.mismatch': 'The passwords do not match.',
   'auth.error.generic': 'Something went wrong ({code}).',
   'wait.title': 'Waiting for approval',

@@ -9699,3 +9699,8 @@ button.events-new:hover {
   border-radius: 8px;
   font: inherit;
 }
+
+.birthday-hint {
+  margin: 6px 0 0;
+  font-size: 12px;
+}

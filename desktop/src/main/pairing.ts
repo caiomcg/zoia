@@ -14,7 +14,7 @@ import * as config from './config';
 import { normalizeServerUrl } from './server-url';
 import { t } from './language';
 import { loadCredential, saveCredential, clearCredential } from './credential-store';
-import type { AccountInfo, AuthOutcome, PairingStatus } from '../shared/ipc';
+import type { AccountInfo, AuthOutcome, Birthday, PairingStatus } from '../shared/ipc';
 
 let status: PairingStatus = {
   paired: false,
@@ -177,11 +177,12 @@ export async function signUp(
   serverUrl: string,
   email: string,
   password: string,
+  birthday: Birthday,
 ): Promise<AuthOutcome> {
   const invalid = adoptServer(serverUrl);
   if (invalid) return { ok: false, error: invalid };
   try {
-    await api.signup(email, password);
+    await api.signup(email, password, birthday);
   } catch (err) {
     return { ok: false, error: errorCode(err) };
   }

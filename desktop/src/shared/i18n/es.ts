@@ -134,8 +134,10 @@ export const es: Messages = {
   'notify.copied': 'Copiado',
   'sounds.event.eventStart': 'Empieza un evento al que vas',
   // ---- birthdays (ADR 0055)
+  'birthday.label': 'Cumpleaños',
   'birthday.day': 'Día',
   'birthday.month': 'Mes',
+  'birthday.hint': 'Solo día y mes. Ese día aparece en el calendario de todos.',
   'event.field.repeat': 'Repetir',
   'event.repeat.none': 'Nunca',
   'event.repeat.daily': 'Diariamente',
@@ -646,6 +648,7 @@ export const es: Messages = {
   'auth.error.unreachable':
     'No se pudo contactar con el servidor. Revisa la dirección y tu conexión.',
   'auth.error.accounts_not_configured': 'Ese servidor todavía no tiene cuentas.',
+  'auth.error.invalid_birthday': 'Elige una fecha de cumpleaños que exista.',
   'auth.error.mismatch': 'Las contraseñas no coinciden.',
   'auth.error.generic': 'Algo salió mal ({code}).',
   'wait.title': 'Esperando aprobación',
