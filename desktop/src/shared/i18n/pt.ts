@@ -134,6 +134,7 @@ export const pt: Messages = {
   'sounds.event.eventStart': 'Um evento em que você vai começa',
   // ---- birthdays (ADR 0055)
   'sounds.event.birthday': 'É aniversário de alguém',
+  'notify.kind.birthday': 'É aniversário de alguém',
   'birthday.label': 'Aniversário',
   'birthday.day': 'Dia',
   'birthday.month': 'Mês',

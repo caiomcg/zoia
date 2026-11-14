@@ -11,9 +11,16 @@
 import { useSyncExternalStore } from 'react';
 
 /** `alert`: the app's own errors and warnings, which used to be banners. */
-export type NotifyKind = 'event' | 'direct' | 'mention' | 'alert';
+/** `birthday`: someone's birthday today, a party of its own (ADR 0055). */
+export type NotifyKind = 'event' | 'birthday' | 'direct' | 'mention' | 'alert';
 
-export const NOTIFY_KINDS: readonly NotifyKind[] = ['event', 'direct', 'mention', 'alert'];
+export const NOTIFY_KINDS: readonly NotifyKind[] = [
+  'event',
+  'birthday',
+  'direct',
+  'mention',
+  'alert',
+];
 
 /** Where each kind is said: under the bell, and by Windows. */
 export interface NotifyPrefs {
@@ -22,9 +29,9 @@ export interface NotifyPrefs {
 }
 
 export const DEFAULT_NOTIFY_PREFS: NotifyPrefs = {
-  inApp: { event: true, direct: true, mention: true, alert: true },
+  inApp: { event: true, birthday: true, direct: true, mention: true, alert: true },
   // Windows is for what people do; the app's own troubles stay in Zoia.
-  system: { event: true, direct: true, mention: true, alert: false },
+  system: { event: true, birthday: true, direct: true, mention: true, alert: false },
 };
 
 const PREFS_KEY = 'zoia.notifications';

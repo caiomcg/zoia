@@ -13,6 +13,11 @@ import {
   isFixedCue,
   notesFor,
 } from '../src/renderer/sounds/cues.ts';
+import {
+  DEFAULT_NOTIFY_PREFS,
+  NOTIFY_KINDS,
+  parseNotifyPrefs,
+} from '../src/renderer/notify/notify.ts';
 import type { ScheduledEvent } from '../src/shared/ipc.ts';
 
 const event = (over: Partial<ScheduledEvent>): ScheduledEvent => ({
@@ -77,5 +82,13 @@ describe('the party', () => {
       notesFor('birthday', { style: 'pop', pitch: 3 }),
       notesFor('birthday', { style: 'chime', pitch: 0 }),
     );
+  });
+
+  test('is a kind of notification of its own, on by default, even for settings kept from before it', () => {
+    assert.ok(NOTIFY_KINDS.includes('birthday'));
+    assert.equal(DEFAULT_NOTIFY_PREFS.inApp.birthday, true);
+    const older = JSON.stringify({ inApp: { event: false }, system: { event: false } });
+    assert.equal(parseNotifyPrefs(older).inApp.birthday, true);
+    assert.equal(parseNotifyPrefs(older).system.birthday, true);
   });
 });

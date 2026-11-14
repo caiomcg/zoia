@@ -620,6 +620,7 @@ function LimitField({ label, limit }: { label: string; limit: ServerLimit }) {
 
 const NOTIFY_LABELS: Record<NotifyKind, MessageKey> = {
   event: 'notify.kind.event',
+  birthday: 'notify.kind.birthday',
   direct: 'notify.kind.direct',
   mention: 'notify.kind.mention',
   alert: 'notify.kind.alert',
