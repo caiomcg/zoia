@@ -247,6 +247,7 @@ export function createEventStore({ db, logger = console, now = () => Date.now() 
       return table.mutate((events) => {
         const event = events.find((e) => e.id === id);
         if (!event) return { ok: false, reason: 'not_found' };
+        if (isBirthday(event)) return { ok: false, reason: 'forbidden' };
         if (checked.fields.startsAt && checked.fields.startsAt !== event.startsAt) {
           event.notifiedAt = null;
         }
@@ -260,6 +261,7 @@ export function createEventStore({ db, logger = console, now = () => Date.now() 
       return table.mutate((events) => {
         const index = events.findIndex((e) => e.id === id);
         if (index === -1) return { ok: false, reason: 'not_found' };
+        if (isBirthday(events[index])) return { ok: false, reason: 'forbidden' };
         const [event] = events.splice(index, 1);
         logger.info(`[schedule] event ${id} cancelled by ${by}`);
         return { ok: true, event };
@@ -273,6 +275,8 @@ export function createEventStore({ db, logger = console, now = () => Date.now() 
       return table.mutate((events) => {
         const event = events.find((e) => e.id === id);
         if (!event) return { ok: false, reason: 'not_found' };
+        // Nobody RSVPs to a birthday.
+        if (isBirthday(event)) return { ok: false, reason: 'forbidden' };
         const rsvps = { ...(event.rsvps ?? {}) };
         if (answer === null) delete rsvps[accountId];
         else rsvps[accountId] = answer;

@@ -231,6 +231,21 @@ describe('the birthday on the calendar', () => {
     assert.deepEqual(await birthdaysOn(viewer.agent), []);
   });
 
+  test('nobody changes, cancels or answers it, admins included', async () => {
+    const ana = await signIn(app, stores.accounts, 'Ana');
+    const boss = await signIn(app, stores.accounts, 'Boss', { role: 'admin' });
+    await stores.accounts.setBirthday(ana.account.id, { day: 14, month: 11 });
+    await sweep();
+    const [party] = await birthdaysOn(boss.agent);
+
+    for (const who of [ana, boss]) {
+      await who.agent.patch(`/api/schedule/${party.id}`).send({ title: 'x' }).expect(403);
+      await who.agent.delete(`/api/schedule/${party.id}`).expect(403);
+      await who.agent.put(`/api/schedule/${party.id}/rsvp`).send({ answer: 'going' }).expect(403);
+    }
+    assert.equal((await birthdaysOn(ana.agent)).length, 1);
+  });
+
   test('is not announced as an event starting, nor counted against the limit', async () => {
     const ana = await signIn(app, stores.accounts, 'Ana');
     await stores.accounts.setBirthday(ana.account.id, { day: 14, month: 11 });

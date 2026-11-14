@@ -97,7 +97,8 @@ export function scheduleRoutes({
       refuse(res, 'not_found');
       return null;
     }
-    if (event.createdBy !== req.user.accountId && !isAdmin(req.user)) {
+    // A birthday is the sweep's: nobody changes or cancels it, admins included.
+    if (isBirthday(event) || (event.createdBy !== req.user.accountId && !isAdmin(req.user))) {
       refuse(res, 'forbidden');
       return null;
     }
