@@ -12,7 +12,7 @@ import request from 'supertest';
 
 import { createApp } from '../src/app.js';
 import { createStage } from '../src/stage.js';
-import { PASSWORD, testStores } from './people.js';
+import { PASSWORD, signIn, testStores } from './people.js';
 import { createEventStore } from '../src/schedule.js';
 import { parseBirthday, today } from '../src/birthdays.js';
 
@@ -125,5 +125,31 @@ describe('giving it', () => {
       .post('/api/signup')
       .send({ email: 'ana@example.com', password: PASSWORD })
       .expect(201);
+  });
+
+  test('someone without one is told so at every sign-in, until they give it', async () => {
+    const ana = await signIn(app, stores.accounts, 'Ana');
+    assert.equal((await ana.agent.get('/api/session').expect(200)).body.birthday, null);
+
+    const bad = await ana.agent
+      .put('/api/birthday')
+      .send({ birthday: { day: 31, month: 6 } })
+      .expect(400);
+    assert.equal(bad.body.error, 'invalid_birthday');
+    assert.equal((await ana.agent.get('/api/session')).body.birthday, null);
+
+    const res = await ana.agent
+      .put('/api/birthday')
+      .send({ birthday: { day: 30, month: 6 } })
+      .expect(200);
+    assert.equal(res.body.birthday, '06-30');
+    assert.equal((await ana.agent.get('/api/session')).body.birthday, '06-30');
+  });
+
+  test('only by the person, signed in', async () => {
+    await request(app)
+      .put('/api/birthday')
+      .send({ birthday: { day: 1, month: 1 } })
+      .expect(401);
   });
 });
