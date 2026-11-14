@@ -183,6 +183,7 @@ export function createApp({
       email: account.email,
       role: account.role,
       status: account.status,
+      birthday: account.birthday ?? null,
     };
   }
 
@@ -300,6 +301,8 @@ export function createApp({
       email: user.email,
       role: user.role,
       status: user.status,
+      // Null until given: the app then asks for it at every sign-in (ADR 0055).
+      birthday: user.birthday ?? null,
       ...(isAdmin(user) ? { pendingApprovals: await accountStore.countPending() } : {}),
     };
   }
@@ -472,6 +475,7 @@ export function createApp({
       const result = await accountStore.signup({
         email: req.body?.email,
         password: req.body?.password,
+        birthday: req.body?.birthday ?? null,
         ip: req.ip,
       });
       if (!result.ok) {
@@ -1084,6 +1088,26 @@ export function createApp({
     }
   });
 
+  // ---- birthday (ADR 0055) -----------------------------------------------
+  // Day and month, set by the person alone. A birthday that is today goes on
+  // the calendar at once rather than at the sweep's next turn.
+
+  app.put('/api/birthday', requireSession, async (req, res, next) => {
+    try {
+      const result = await accountStore.setBirthday(req.user.accountId, req.body?.birthday);
+      if (!result.ok) {
+        const status = result.reason === 'invalid_birthday' ? 400 : 404;
+        return res.status(status).json({ error: result.reason });
+      }
+      res.json({ ok: true, birthday: result.account.birthday });
+      void app.locals
+        .scheduleSweep?.()
+        .catch((err) => logger.warn(`[schedule] sweep after a birthday failed: ${err.message}`));
+    } catch (err) {
+      next(err);
+    }
+  });
+
   // ---- profile picture ---------------------------------------------------
   // The bytes arrive raw rather than as JSON, under their own limit: the
   // global JSON parser's 32kb is sized for crash reports, not pictures.
@@ -1367,6 +1391,7 @@ export function createApp({
       hub: chatHub,
       requireSession,
       writeLimit: config.schedule?.writeLimit,
+      birthdayZone: config.birthdayZone,
     });
     app.use('/api/schedule', schedule.router);
     app.locals.scheduleSweep = schedule.sweep;

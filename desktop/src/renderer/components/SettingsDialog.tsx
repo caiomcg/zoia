@@ -620,6 +620,7 @@ function LimitField({ label, limit }: { label: string; limit: ServerLimit }) {
 
 const NOTIFY_LABELS: Record<NotifyKind, MessageKey> = {
   event: 'notify.kind.event',
+  birthday: 'notify.kind.birthday',
   direct: 'notify.kind.direct',
   mention: 'notify.kind.mention',
   alert: 'notify.kind.alert',
@@ -745,6 +746,7 @@ const CUE_LABELS: Record<CueEvent, MessageKey> = {
   viewerLeave: 'sounds.event.viewerLeave',
   mention: 'sounds.event.mention',
   eventStart: 'sounds.event.eventStart',
+  birthday: 'sounds.event.birthday',
 };
 
 /**

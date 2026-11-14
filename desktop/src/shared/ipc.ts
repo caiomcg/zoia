@@ -38,6 +38,17 @@ export interface AccountInfo {
   status: AccountState;
   /** Sign-ups waiting for an admin. Only sent to admins. */
   pendingApprovals?: number;
+  /**
+   * Your birthday as `MM-DD` (ADR 0055); null until given, when the app asks
+   * for it at every sign-in. Absent from a server from before birthdays.
+   */
+  birthday?: string | null;
+}
+
+/** A birthday as it is entered: day and month, never a year (ADR 0055). */
+export interface Birthday {
+  day: number;
+  month: number;
 }
 
 /** An account as an admin sees it. */
@@ -417,6 +428,14 @@ export type RsvpAnswer = 'going' | 'maybe' | 'no';
 
 /** A scheduled event (ADR 0050). */
 export interface ScheduledEvent {
+  /**
+   * `birthday` for the all-day event the server puts on the calendar on
+   * someone's birthday (ADR 0055), which nobody changes or answers.
+   */
+  kind?: 'birthday' | null;
+  /** Whose birthday it is, and their name now. */
+  subjectId?: string | null;
+  subjectName?: string | null;
   id: string;
   title: string;
   description: string | null;
@@ -796,6 +815,7 @@ export const IPC = {
   nativeVideoPort: 'zoia:native-video:port',
   nativeVideoError: 'zoia:native-video:error',
   renameDevice: 'zoia:device:rename',
+  accountBirthday: 'zoia:account:birthday',
   setAvatar: 'zoia:device:avatar:set',
   removeAvatar: 'zoia:device:avatar:remove',
   avatarGet: 'zoia:avatar:get',

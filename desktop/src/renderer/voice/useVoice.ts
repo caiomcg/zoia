@@ -27,7 +27,6 @@ import {
 import type { ConnectionState } from '../livekit/useRoom';
 import { tNow } from '../i18n';
 import {
-  availableDeviceId,
   captureOptions,
   defaultDeviceKey,
   defaultDeviceName,
@@ -35,6 +34,7 @@ import {
   subscribeVoiceSettings,
   type ListedDevice,
 } from './settings';
+import { deviceNow, subscribeDevices } from './device-watch';
 import { VOICE_SAMPLE_RATE, VoiceProcessor } from './pipeline';
 import { registerAudioSink } from './audioSink';
 import { useSpeaking } from './speaking';
@@ -114,11 +114,14 @@ function listDevices(): Promise<ListedDevice[]> {
   return navigator.mediaDevices.enumerateDevices().catch(() => []);
 }
 
-/** The microphone to capture from now: the chosen one if it is plugged in, else the default. */
+/**
+ * The microphone to capture from now: the chosen one if it is plugged in,
+ * else the one held while a new device is asked about, else the default.
+ */
 async function microphoneNow(): Promise<MicrophoneInUse> {
   const devices = await listDevices();
   return {
-    id: availableDeviceId(getVoiceSettings().microphoneId, devices, 'audioinput'),
+    id: deviceNow('audioinput', devices),
     defaultKey: defaultDeviceKey(devices, 'audioinput'),
     defaultName: defaultDeviceName(devices.filter((d) => d.kind === 'audioinput')),
   };
@@ -537,15 +540,17 @@ export function useVoice(roomRef: RefObject<Room | null>, connection: Connection
 
   // A device coming or going moves the microphone: off a chosen one that was
   // unplugged onto the system default, back onto it when it returns, and onto
-  // whatever Windows makes the default when that one goes.
-  useEffect(() => {
-    const listener = () => {
-      if (trackRef.current) restartMicrophone(true);
-      else retryMicrophone();
-    };
-    navigator.mediaDevices.addEventListener('devicechange', listener);
-    return () => navigator.mediaDevices.removeEventListener('devicechange', listener);
-  }, [restartMicrophone, retryMicrophone]);
+  // whatever Windows makes the default when that one goes. A default moved
+  // onto a device just plugged in is held off and asked about first, which is
+  // why this listens to device-watch rather than to devicechange.
+  useEffect(
+    () =>
+      subscribeDevices(() => {
+        if (trackRef.current) restartMicrophone(true);
+        else retryMicrophone();
+      }),
+    [restartMicrophone, retryMicrophone],
+  );
 
   useEffect(
     () => () => {

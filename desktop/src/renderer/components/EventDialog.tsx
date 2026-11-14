@@ -118,7 +118,9 @@ export default function EventDialog({
               channels={channels}
               people={people}
               me={me}
-              canChange={isAdmin || (me !== null && live.createdBy === me)}
+              canChange={
+                live.kind !== 'birthday' && (isAdmin || (me !== null && live.createdBy === me))
+              }
               onEdit={() => setEditing(true)}
               onJoin={onJoin}
               onClose={onClose}
@@ -420,7 +422,7 @@ function EventDetails({
         <div className="event-hero-text">
           <h2>{event.title}</h2>
           <p className="event-hero-when">
-            {formatSpan(event, language)}
+            {formatSpan(event, language, t('birthday.event.allDay'))}
             <span className={`event-relative${live ? ' live' : ''}`}>
               {live ? t('event.now') : relativeTo(event.startsAt, language)}
             </span>
@@ -442,43 +444,48 @@ function EventDetails({
 
       {event.description && <p className="event-description">{event.description}</p>}
 
-      <div className="event-rsvp" role="group" aria-label={t('event.yourAnswer')}>
-        {ANSWERS.map((a) => (
-          <button
-            key={a}
-            type="button"
-            className={`event-answer ${a}${mine === a ? ' on' : ''}`}
-            aria-pressed={mine === a}
-            onClick={() => void answer(a)}
-          >
-            {t(`event.answer.${a}`)}
-          </button>
-        ))}
-      </div>
+      {/* A birthday is nobody's to answer (ADR 0055). */}
+      {event.kind !== 'birthday' && (
+        <div className="event-rsvp" role="group" aria-label={t('event.yourAnswer')}>
+          {ANSWERS.map((a) => (
+            <button
+              key={a}
+              type="button"
+              className={`event-answer ${a}${mine === a ? ' on' : ''}`}
+              aria-pressed={mine === a}
+              onClick={() => void answer(a)}
+            >
+              {t(`event.answer.${a}`)}
+            </button>
+          ))}
+        </div>
+      )}
 
-      <div className="event-attendees">
-        {(['going', 'maybe', 'no'] as const).map(
-          (a) =>
-            who[a].length > 0 && (
-              <div className={`event-attendee-row ${a}`} key={a}>
-                <span className="event-attendee-label">
-                  {t(`event.answer.${a}`)} · {who[a].length}
-                </span>
-                <span className="event-faces">
-                  {who[a].slice(0, FACES).map((id) => (
-                    <Face key={id} id={id} people={people} />
-                  ))}
-                  {who[a].length > FACES && (
-                    <span className="event-faces-more">+{who[a].length - FACES}</span>
-                  )}
-                </span>
-              </div>
-            ),
-        )}
-        {who.going.length === 0 && who.maybe.length === 0 && (
-          <p className="event-nobody">{t('event.nobodyYet')}</p>
-        )}
-      </div>
+      {event.kind !== 'birthday' && (
+        <div className="event-attendees">
+          {(['going', 'maybe', 'no'] as const).map(
+            (a) =>
+              who[a].length > 0 && (
+                <div className={`event-attendee-row ${a}`} key={a}>
+                  <span className="event-attendee-label">
+                    {t(`event.answer.${a}`)} · {who[a].length}
+                  </span>
+                  <span className="event-faces">
+                    {who[a].slice(0, FACES).map((id) => (
+                      <Face key={id} id={id} people={people} />
+                    ))}
+                    {who[a].length > FACES && (
+                      <span className="event-faces-more">+{who[a].length - FACES}</span>
+                    )}
+                  </span>
+                </div>
+              ),
+          )}
+          {who.going.length === 0 && who.maybe.length === 0 && (
+            <p className="event-nobody">{t('event.nobodyYet')}</p>
+          )}
+        </div>
+      )}
 
       {error && <p className="settings-error">{error}</p>}
       <div className="event-footer">

@@ -3,6 +3,7 @@
 import { storePaths } from './stores.js';
 import { isKeyspaceName } from './scylla.js';
 import { DEFAULT_MAX_CHANNELS } from './channels.js';
+import { DEFAULT_BIRTHDAY_TZ, isTimeZone } from './birthdays.js';
 
 const required = ['SESSION_SECRET', 'LIVEKIT_API_KEY', 'LIVEKIT_API_SECRET', 'LIVEKIT_WS_URL'];
 
@@ -29,6 +30,10 @@ export function loadConfig(env = process.env) {
     throw new Error(
       'SCYLLA_KEYSPACE must be lowercase letters, digits and underscores, starting with a letter',
     );
+  }
+
+  if (env.BIRTHDAY_TZ !== undefined && !isTimeZone(env.BIRTHDAY_TZ)) {
+    throw new Error('BIRTHDAY_TZ must be an IANA time zone, such as America/Sao_Paulo');
   }
 
   return {
@@ -95,6 +100,8 @@ export function loadConfig(env = process.env) {
     serverName: env.SERVER_NAME ?? null,
     // KLIPY's app key for GIF search (ADR 0051); unset turns GIFs off.
     gifs: { apiKey: env.KLIPY_API_KEY || undefined },
+    // The time zone a birthday's day runs midnight to midnight in (ADR 0055).
+    birthdayZone: env.BIRTHDAY_TZ ?? DEFAULT_BIRTHDAY_TZ,
     // Minutes someone may sit in a channel away from their computer, neither
     // sharing nor watching, before the server moves them to the away channel,
     // or disconnects them without one (ADR 0037, 0044). 0 turns it off.

@@ -33,7 +33,7 @@ import * as soundboard from './soundboard';
 import { isShortcutAction } from '../shared/shortcuts';
 import { isLanguagePreference } from '../shared/i18n';
 import { CHAT_MEDIA_MAX_BYTES, IDLE_AWAY_MS, IPC, PRESENCES } from '../shared/ipc';
-import type { ChatSendExtras, GpuStatus, ScheduledEventInput } from '../shared/ipc';
+import type { Birthday, ChatSendExtras, GpuStatus, ScheduledEventInput } from '../shared/ipc';
 import {
   checkForUpdate,
   getUpdaterConfig,
@@ -328,6 +328,12 @@ function sendExtras(value: unknown): ChatSendExtras {
   };
 }
 
+/** A birthday from the renderer, as numbers; the server judges whether the day exists. */
+function birthdayOf(value: unknown): Birthday {
+  const { day, month } = (value ?? {}) as { day?: unknown; month?: unknown };
+  return { day: Number(day), month: Number(month) };
+}
+
 function registerIpc(): void {
   ipcMain.handle(IPC.pairingStatus, () => pairing.getRestoredStatus());
 
@@ -336,9 +342,17 @@ function registerIpc(): void {
   ipcMain.handle(IPC.accountSignIn, (_event, server: string, email: string, password: string) =>
     pairing.signIn(String(server), String(email), String(password)),
   );
-  ipcMain.handle(IPC.accountSignUp, (_event, server: string, email: string, password: string) =>
-    pairing.signUp(String(server), String(email), String(password)),
+  ipcMain.handle(
+    IPC.accountSignUp,
+    (_event, server: string, email: string, password: string, birthday: unknown) =>
+      pairing.signUp(String(server), String(email), String(password), birthdayOf(birthday)),
   );
+  // Then who this machine is, so the app stops asking for it (ADR 0055).
+  ipcMain.handle(IPC.accountBirthday, async (_event, birthday: unknown) => {
+    const result = await api.attempt(api.setBirthday(birthdayOf(birthday)));
+    if (result.ok) await pairing.refresh();
+    return result;
+  });
   ipcMain.handle(IPC.accountRedeem, (_event, server: string, code: string, password: string) =>
     pairing.redeem(String(server), String(code), String(password)),
   );

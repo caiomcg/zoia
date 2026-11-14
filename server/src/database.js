@@ -51,6 +51,8 @@ export const TABLES = {
       presence: 'text',
       // Set for a bot user, which belongs to this addon (ADR 0041).
       addonId: 'text',
+      // Day and month, `MM-DD`, never a year (ADR 0055); null until given.
+      birthday: 'text',
     },
   },
   devices: {
@@ -144,6 +146,10 @@ export const TABLES = {
       durationMinutes: 'integer',
       // 'daily' | 'weekly' | 'monthly', or null for once.
       recurrence: 'text',
+      // 'birthday' for one the sweep put there (ADR 0055); null for a person's.
+      kind: 'text',
+      // Whose birthday it is.
+      subjectId: 'text',
     },
   },
 };
@@ -301,6 +307,16 @@ const MIGRATIONS = [
   -- to the next. Null is once.
   ALTER TABLE events ADD COLUMN recurrence TEXT
     CHECK (recurrence IS NULL OR recurrence IN ('daily', 'weekly', 'monthly'));
+  `,
+  `
+  -- Birthdays (ADR 0055): day and month only, and the all-day event the sweep
+  -- puts on the calendar for each, which goes with its account.
+  ALTER TABLE accounts ADD COLUMN birthday TEXT
+    CHECK (birthday IS NULL OR birthday GLOB '[01][0-9]-[0-3][0-9]');
+  ALTER TABLE events ADD COLUMN kind TEXT CHECK (kind IS NULL OR kind = 'birthday');
+  ALTER TABLE events ADD COLUMN subject_id TEXT REFERENCES accounts (id) ON DELETE CASCADE;
+  CREATE UNIQUE INDEX one_birthday_a_day ON events (subject_id, starts_at)
+    WHERE kind = 'birthday';
   `,
 ];
 

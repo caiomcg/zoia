@@ -22,6 +22,7 @@ import type {
   AccountDevice,
   AccountRole,
   AccountState,
+  Birthday,
   AdminAccount,
   IssuedCode,
   ChatList,
@@ -122,6 +123,8 @@ export interface SessionInfo {
   status: AccountState;
   /** Sign-ups waiting for approval; only sent to admins. */
   pendingApprovals?: number;
+  /** `MM-DD`, or null until given (ADR 0055); absent from an older server. */
+  birthday?: string | null;
 }
 
 export function deviceSession(deviceCredential: string) {
@@ -139,10 +142,18 @@ export function session() {
 // The password goes to the server and nowhere else: it is not stored, and a
 // login answers with the same kind of device credential pairing did.
 
-export function signup(email: string, password: string) {
+export function signup(email: string, password: string, birthday: Birthday) {
   return call<{ status: AccountState }>('/api/signup', {
     method: 'POST',
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ email, password, birthday }),
+  });
+}
+
+/** Your birthday, day and month (ADR 0055). */
+export function setBirthday(birthday: Birthday) {
+  return call<{ ok: boolean; birthday: string }>('/api/birthday', {
+    method: 'PUT',
+    body: JSON.stringify({ birthday }),
   });
 }
 

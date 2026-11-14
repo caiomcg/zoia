@@ -10,6 +10,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useT } from '../i18n';
 import { systemDefaultLabel } from '../voice/device-label';
+import { useDeviceWatch } from '../voice/device-watch';
 import type { MessageKey } from '../../shared/i18n';
 import { useCameraDevices } from '../livekit/useCamera';
 import { useWheelRange } from './useWheelRange';
@@ -363,6 +364,8 @@ export default function VoiceSettingsSection({ closing = false }: { closing?: bo
   const t = useT();
   const settings = useVoiceSettings();
   const { devices } = useCameraDevices();
+  // "System default" names the device in use, which a held device changes.
+  useDeviceWatch();
   // Off on every visit: it lives and dies with this section, never in the background.
   const [hearing, setHearing] = useState(false);
   const mic = useMicLevel(settings, hearing && !closing);
@@ -395,7 +398,7 @@ export default function VoiceSettingsSection({ closing = false }: { closing?: bo
             value={settings.speakerId}
             onChange={(event) => setVoiceSettings({ ...settings, speakerId: event.target.value })}
           >
-            <option value="">{systemDefaultLabel(t, devices.speakers)}</option>
+            <option value="">{systemDefaultLabel(t, devices.speakers, 'audiooutput')}</option>
             {devices.speakers
               .filter((s) => s.deviceId !== 'default')
               .map((s) => (
@@ -430,7 +433,7 @@ export default function VoiceSettingsSection({ closing = false }: { closing?: bo
               setVoiceSettings({ ...settings, microphoneId: event.target.value })
             }
           >
-            <option value="">{systemDefaultLabel(t, devices.microphones)}</option>
+            <option value="">{systemDefaultLabel(t, devices.microphones, 'audioinput')}</option>
             {devices.microphones.map((m) => (
               <option key={m.deviceId} value={m.deviceId}>
                 {m.label}

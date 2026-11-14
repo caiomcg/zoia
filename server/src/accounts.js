@@ -14,6 +14,7 @@ import { randomBytes } from 'node:crypto';
 import { PASSWORD_SCRYPT, decoyHash, hashSecret, parseCredential, secretMatches } from './store.js';
 import { createTableStore } from './database.js';
 import { MAX_NAME_LENGTH, nameKey, uniqueName } from './names.js';
+import { parseBirthday } from './birthdays.js';
 
 export const ROLES = ['user', 'admin', 'super_admin'];
 /**
@@ -141,12 +142,15 @@ export function createAccountStore({ db, maxPending = 20, logger = console }) {
     /**
      * A new account, pending until an admin approves it. Its display name is
      * the part of the email before the `@`, made unique; the person changes
-     * it afterwards.
+     * it afterwards. The birthday is asked for by the app (ADR 0055); one
+     * from before it sends none, and is asked again after signing in.
      */
-    async signup({ email, password, ip = null }) {
+    async signup({ email, password, birthday = null, ip = null }) {
       const address = normalizeEmail(email);
       if (!address) return { ok: false, reason: 'invalid_email' };
       if (!isValidPassword(password)) return { ok: false, reason: 'weak_password' };
+      const day = birthday === null ? null : parseBirthday(birthday);
+      if (birthday !== null && !day) return { ok: false, reason: 'invalid_birthday' };
 
       // Hashed before the queue, so one slow scrypt does not hold up every write.
       const secret = await hashPassword(password);
@@ -167,6 +171,7 @@ export function createAccountStore({ db, maxPending = 20, logger = console }) {
           lastSeen: null,
           failedLogins: 0,
           lockedUntil: null,
+          birthday: day,
         };
         records.push(record);
         return { ok: true, account: safe(record) };
@@ -272,6 +277,18 @@ export function createAccountStore({ db, maxPending = 20, logger = console }) {
         else delete record.avatar;
         record.avatarChangedAt = new Date().toISOString();
         return safe(record);
+      });
+    },
+
+    /** Day and month of the person's birthday (ADR 0055); see src/birthdays.js. */
+    async setBirthday(id, birthday) {
+      const day = parseBirthday(birthday);
+      if (!day) return { ok: false, reason: 'invalid_birthday' };
+      return store.mutate((records) => {
+        const record = findLive(records, id);
+        if (!record || isBot(record)) return { ok: false, reason: 'unknown_account' };
+        record.birthday = day;
+        return { ok: true, account: safe(record) };
       });
     },
 
