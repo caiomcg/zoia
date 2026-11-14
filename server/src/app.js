@@ -183,6 +183,7 @@ export function createApp({
       email: account.email,
       role: account.role,
       status: account.status,
+      birthday: account.birthday ?? null,
     };
   }
 
@@ -300,6 +301,8 @@ export function createApp({
       email: user.email,
       role: user.role,
       status: user.status,
+      // Null until given: the app then asks for it at every sign-in (ADR 0055).
+      birthday: user.birthday ?? null,
       ...(isAdmin(user) ? { pendingApprovals: await accountStore.countPending() } : {}),
     };
   }
@@ -472,6 +475,7 @@ export function createApp({
       const result = await accountStore.signup({
         email: req.body?.email,
         password: req.body?.password,
+        birthday: req.body?.birthday ?? null,
         ip: req.ip,
       });
       if (!result.ok) {
