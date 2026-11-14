@@ -9704,3 +9704,103 @@ button.events-new:hover {
   margin: 6px 0 0;
   font-size: 12px;
 }
+
+.birthday-party {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: grid;
+  place-items: center;
+  background: rgb(0 0 0 / 35%);
+  animation: birthday-fade 240ms ease-out;
+}
+
+.birthday-confetti {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.birthday-confetti span {
+  position: absolute;
+  top: -16px;
+  width: 8px;
+  height: 14px;
+  border-radius: 2px;
+  opacity: 0.95;
+  animation-name: birthday-fall;
+  animation-timing-function: cubic-bezier(0.25, 0.4, 0.55, 1);
+  animation-iteration-count: 2;
+  animation-fill-mode: both;
+}
+
+.birthday-confetti span.round {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.birthday-card {
+  position: relative;
+  width: min(380px, calc(100% - 32px));
+  box-sizing: border-box;
+  padding: 28px 24px 22px;
+  text-align: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: 0 20px 60px rgb(0 0 0 / 45%);
+  animation: birthday-pop 520ms cubic-bezier(0.2, 1.4, 0.4, 1);
+}
+
+.birthday-card h2 {
+  margin: 10px 0 6px;
+  font-size: 22px;
+}
+
+.birthday-card p {
+  margin: 0 0 18px;
+  color: var(--muted);
+}
+
+.birthday-card-parrot {
+  display: block;
+  margin: 0 auto;
+}
+
+@keyframes birthday-fall {
+  from {
+    transform: translate3d(0, 0, 0) rotate(0deg);
+  }
+  to {
+    transform: translate3d(var(--drift), 105vh, 0) rotate(var(--spin));
+  }
+}
+
+@keyframes birthday-pop {
+  from {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes birthday-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .birthday-confetti {
+    display: none;
+  }
+  .birthday-card,
+  .birthday-party {
+    animation: none;
+  }
+}

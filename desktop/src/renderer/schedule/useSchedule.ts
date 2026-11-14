@@ -10,22 +10,31 @@ import { useT } from '../i18n';
 import type { RsvpAnswer, ScheduledEvent, ScheduledEventInput } from '../../shared/ipc';
 import { playCues } from '../sounds/useSoundCues';
 import { sortEvents } from './model';
+import { markCelebrated, readCelebrated, toCelebrate } from './birthday';
 
 export function useSchedule({
   usable,
   onNotice,
+  onBirthday,
 }: {
   /** Signed in, approved, and on a server with chat (whose stream carries the changes). */
   usable: boolean;
   /** Said by the system when the window is not in front: the title and body. */
   /** An event you said you would come to has started: tell the person. */
   onNotice?: (event: ScheduledEvent) => void;
+  /**
+   * A birthday is on the calendar today and this machine has not had its
+   * party yet (ADR 0055): at midnight if the app is open, else when it opens.
+   */
+  onBirthday?: (event: ScheduledEvent) => void;
 }) {
   const [events, setEvents] = useState<ScheduledEvent[]>([]);
   const [enabled, setEnabled] = useState(false);
   const [starting, setStarting] = useState<ScheduledEvent | null>(null);
   const noticeRef = useRef(onNotice);
   noticeRef.current = onNotice;
+  const birthdayRef = useRef(onBirthday);
+  birthdayRef.current = onBirthday;
 
   const refresh = useCallback(async () => {
     const result = await window.zoia.schedule.list();
@@ -68,6 +77,15 @@ export function useSchedule({
       }),
     [refresh],
   );
+
+  // Each birthday once per machine, remembered before the party so a second
+  // run of this effect does not throw it again.
+  useEffect(() => {
+    for (const event of toCelebrate(events, Date.now(), readCelebrated())) {
+      markCelebrated(event.id);
+      birthdayRef.current?.(event);
+    }
+  }, [events]);
 
   /** Puts a changed event in the list at once, before the stream says so. */
   const put = useCallback((event: ScheduledEvent) => {

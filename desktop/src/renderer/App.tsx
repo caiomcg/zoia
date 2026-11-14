@@ -16,7 +16,10 @@ import DirectList from './components/DirectList';
 import { EventsPanel, EventCarousel, pinnedEvents, useNow } from './components/EventList';
 import EventDialog from './components/EventDialog';
 import { useSchedule } from './schedule/useSchedule';
+import BirthdayParty from './components/BirthdayParty';
+import { playCues } from './sounds/useSoundCues';
 import {
+  currentNotifyPrefs,
   listenForNotificationClicks,
   notify,
   setNotifyHandler,
@@ -322,6 +325,9 @@ export default function App({ preview = false }: { preview?: boolean }) {
   const accountRef = useRef(account);
   accountRef.current = account;
   const isAdmin = account?.role === 'admin' || account?.role === 'super_admin';
+
+  // Someone's birthday today: a party over the whole window (ADR 0055).
+  const [party, setParty] = useState<{ name: string; mine: boolean } | null>(null);
   useEffect(() => {
     if (!usable || !accountId) return;
     const every = isAdmin ? ADMIN_POLL_MS : ACCOUNT_POLL_MS;
@@ -868,6 +874,22 @@ export default function App({ preview = false }: { preview?: boolean }) {
         target: { type: 'event', id: event.id, channelId: event.channelId },
         actionLabel: where ? t('event.join', { channel: where.name }) : t('event.details'),
       });
+    },
+    onBirthday: (event) => {
+      const mine = event.subjectId === accountRef.current?.id;
+      const name = event.subjectName ?? event.title;
+      notify({
+        kind: 'birthday',
+        group: `birthday:${event.id}`,
+        title: mine ? t('birthday.party.mineTitle', { name }) : t('birthday.party.title', { name }),
+        body: mine ? t('birthday.party.mineBody') : t('birthday.party.body', { name }),
+        target: { type: 'event', id: event.id, channelId: null },
+        actionLabel: t('event.details'),
+      });
+      // The party itself goes with "in Zoia" for birthdays in Settings › Notifications.
+      if (!currentNotifyPrefs().inApp.birthday) return;
+      playCues(['birthday']);
+      setParty({ name, mine });
     },
   });
   // Following a notification, from the bell or from Windows: join its channel
@@ -1702,6 +1724,8 @@ export default function App({ preview = false }: { preview?: boolean }) {
           }}
         />
       )}
+
+      {party && <BirthdayParty {...party} onClose={() => setParty(null)} />}
 
       {notesDialog.mounted && shownNotes && (
         <ReleaseNotesDialog

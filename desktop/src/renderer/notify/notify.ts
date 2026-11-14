@@ -76,6 +76,9 @@ export function setNotifyPrefs(next: NotifyPrefs) {
   for (const listen of prefListeners) listen();
 }
 
+/** The preferences now, for code outside React. */
+export const currentNotifyPrefs = () => prefs;
+
 export function useNotifyPrefs(): NotifyPrefs {
   return useSyncExternalStore(
     (listen) => {
