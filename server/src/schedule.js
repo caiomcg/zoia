@@ -13,6 +13,7 @@
 import { randomBytes } from 'node:crypto';
 
 import { createTableStore } from './database.js';
+import { DEFAULT_BIRTHDAY_TZ, today } from './birthdays.js';
 
 export const TITLE_MAX = 100;
 export const DESCRIPTION_MAX = 1000;
@@ -44,6 +45,9 @@ const ANNOUNCE_WINDOW_MS = 15 * 60_000;
 const KEEP_MS = 7 * 24 * 60 * 60_000;
 
 export const ANSWERS = ['going', 'maybe', 'no'];
+
+/** A birthday (ADR 0055): the sweep's to put on the calendar and take off, nobody else's. */
+export const isBirthday = (event) => event?.kind === 'birthday';
 
 /** How an event may repeat; null is once. */
 export const RECURRENCES = ['daily', 'weekly', 'monthly'];
@@ -153,6 +157,50 @@ export function createEventStore({ db, logger = console, now = () => Date.now() 
   // Events not over yet: to come, or on now.
   const upcoming = (events, at) => events.filter((e) => endOf(e) > at);
 
+  /**
+   * Puts today's birthdays on the calendar, as all-day events in `zone`, and
+   * takes off one whose person no longer has a birthday today (they changed
+   * it, or left). Resolves to whether the list changed.
+   */
+  function syncBirthdays(events, people, zone, at) {
+    const day = today(at, zone);
+    const due = new Map(
+      people.filter((p) => day.birthdays.includes(p.birthday)).map((p) => [p.id, p]),
+    );
+    let changed = false;
+    for (let i = events.length - 1; i >= 0; i -= 1) {
+      const event = events[i];
+      if (!isBirthday(event) || endOf(event) <= at) continue;
+      if (due.has(event.subjectId) && event.startsAt === day.startsAt) {
+        due.delete(event.subjectId);
+      } else {
+        events.splice(i, 1);
+        changed = true;
+      }
+    }
+    for (const person of due.values()) {
+      events.push({
+        id: randomBytes(6).toString('hex'),
+        title: person.name,
+        description: null,
+        startsAt: day.startsAt,
+        durationMinutes: day.durationMinutes,
+        recurrence: null,
+        channelId: null,
+        createdBy: null,
+        createdAt: new Date(at).toISOString(),
+        updatedAt: null,
+        notifiedAt: null,
+        rsvps: {},
+        kind: 'birthday',
+        subjectId: person.id,
+      });
+      logger.info(`[schedule] birthday of ${person.id} on the calendar`);
+      changed = true;
+    }
+    return changed;
+  }
+
   return {
     /** Events on now and still to come, soonest first. */
     async list() {
@@ -170,7 +218,8 @@ export function createEventStore({ db, logger = console, now = () => Date.now() 
       const checked = fieldsOf(input ?? {}, { isChannel });
       if (!checked.ok) return checked;
       return table.mutate((events) => {
-        if (upcoming(events, now()).length >= UPCOMING_MAX) {
+        // Birthdays come on their own and do not count against the limit.
+        if (upcoming(events, now()).filter((e) => !isBirthday(e)).length >= UPCOMING_MAX) {
           return { ok: false, reason: 'event_limit' };
         }
         const event = {
@@ -236,14 +285,17 @@ export function createEventStore({ db, logger = console, now = () => Date.now() 
      * Run every few seconds. Events that have just started and were not yet
      * announced are marked as announced; a repeating event that has ended
      * moves on to its next occurrence, its answers starting over with its
-     * creator going; and events long over are deleted. Resolves to
-     * `{ starting, rolled }`: those to announce, and whether any moved on.
+     * creator going; and events long over are deleted. Given `people` (each
+     * `{ id, name, birthday }`), today's birthdays are put on the calendar
+     * too (ADR 0055). Resolves to `{ starting, rolled }`: those to announce,
+     * and whether the list changed otherwise. Birthdays are never in
+     * `starting`: the app celebrates them from the list.
      */
-    async sweep() {
+    async sweep({ people = null, zone = DEFAULT_BIRTHDAY_TZ } = {}) {
       const at = now();
       return table.mutate((events) => {
         const starting = [];
-        let rolled = false;
+        let rolled = people ? syncBirthdays(events, people, zone, at) : false;
         for (const event of events) {
           if (!event.recurrence || endOf(event) > at) continue;
           // Several, if the server was down through more than one.
@@ -256,7 +308,7 @@ export function createEventStore({ db, logger = console, now = () => Date.now() 
           const start = Date.parse(event.startsAt);
           if (event.notifiedAt || start > at) continue;
           event.notifiedAt = new Date(at).toISOString();
-          if (start > at - ANNOUNCE_WINDOW_MS) starting.push(event);
+          if (!isBirthday(event) && start > at - ANNOUNCE_WINDOW_MS) starting.push(event);
         }
         for (let i = events.length - 1; i >= 0; i -= 1) {
           if (endOf(events[i]) < at - KEEP_MS) events.splice(i, 1);
