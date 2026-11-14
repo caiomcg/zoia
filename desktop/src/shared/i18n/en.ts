@@ -146,6 +146,7 @@ export const en = {
   'birthday.error.invalid': 'Pick a day and month that exist.',
   'birthday.error.failed': 'Could not save your birthday. Try again.',
   'birthday.saved': 'Birthday saved.',
+  'birthday.event.title': '{name}’s birthday',
   'event.field.repeat': 'Repeat',
   'event.repeat.none': 'Never',
   'event.repeat.daily': 'Daily',

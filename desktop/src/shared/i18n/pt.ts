@@ -140,6 +140,7 @@ export const pt: Messages = {
   'birthday.error.invalid': 'Escolha um dia e um mês que existam.',
   'birthday.error.failed': 'Não foi possível salvar seu aniversário. Tente de novo.',
   'birthday.saved': 'Aniversário salvo.',
+  'birthday.event.title': 'Aniversário de {name}',
   'event.field.repeat': 'Repetir',
   'event.repeat.none': 'Nunca',
   'event.repeat.daily': 'Diariamente',

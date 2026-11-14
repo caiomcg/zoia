@@ -141,6 +141,7 @@ export const es: Messages = {
   'birthday.error.invalid': 'Elige un día y un mes que existan.',
   'birthday.error.failed': 'No se pudo guardar tu cumpleaños. Inténtalo de nuevo.',
   'birthday.saved': 'Cumpleaños guardado.',
+  'birthday.event.title': 'Cumpleaños de {name}',
   'event.field.repeat': 'Repetir',
   'event.repeat.none': 'Nunca',
   'event.repeat.daily': 'Diariamente',

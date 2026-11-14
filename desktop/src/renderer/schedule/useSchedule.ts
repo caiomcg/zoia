@@ -5,7 +5,8 @@
  * a notification from the system.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useT } from '../i18n';
 import type { RsvpAnswer, ScheduledEvent, ScheduledEventInput } from '../../shared/ipc';
 import { playCues } from '../sounds/useSoundCues';
 import { sortEvents } from './model';
@@ -110,9 +111,22 @@ export function useSchedule({
     [put],
   );
 
+  // A birthday is titled in the window's language, under the name its person
+  // has now (ADR 0055); the server's title is only the name it was made with.
+  const t = useT();
+  const shown = useMemo(
+    () =>
+      events.map((e) =>
+        e.kind === 'birthday'
+          ? { ...e, title: t('birthday.event.title', { name: e.subjectName ?? e.title }) }
+          : e,
+      ),
+    [events, t],
+  );
+
   return {
     enabled,
-    events,
+    events: shown,
     /** The event that has just started, until dismissed. */
     starting,
     dismissStarting: () => setStarting(null),
