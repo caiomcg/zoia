@@ -745,6 +745,7 @@ const CUE_LABELS: Record<CueEvent, MessageKey> = {
   viewerLeave: 'sounds.event.viewerLeave',
   mention: 'sounds.event.mention',
   eventStart: 'sounds.event.eventStart',
+  birthday: 'sounds.event.birthday',
 };
 
 /**

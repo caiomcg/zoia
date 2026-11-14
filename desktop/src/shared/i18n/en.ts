@@ -139,6 +139,7 @@ export const en = {
   'notify.copied': 'Copied',
   'sounds.event.eventStart': 'An event you are going to starts',
   // ---- birthdays (ADR 0055)
+  'sounds.event.birthday': 'It is someone’s birthday',
   'birthday.label': 'Birthday',
   'birthday.day': 'Day',
   'birthday.month': 'Month',

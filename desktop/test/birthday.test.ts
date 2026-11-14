@@ -7,6 +7,12 @@ import {
   parseBirthday,
   toCelebrate,
 } from '../src/renderer/schedule/birthday.ts';
+import {
+  CUE_EVENTS,
+  DEFAULT_SOUND_SETTINGS,
+  isFixedCue,
+  notesFor,
+} from '../src/renderer/sounds/cues.ts';
 import type { ScheduledEvent } from '../src/shared/ipc.ts';
 
 const event = (over: Partial<ScheduledEvent>): ScheduledEvent => ({
@@ -61,5 +67,15 @@ describe('the party', () => {
     assert.equal(isBirthdayOn(event({ kind: null }), during), false);
     assert.equal(isBirthdayOn(event({}), Date.parse('2026-11-15T03:00:00Z')), false);
     assert.equal(isBirthdayOn(event({}), Date.parse('2026-11-14T02:59:00Z')), false);
+  });
+
+  test('has a sound of its own, on by default, that no style changes', () => {
+    assert.ok(CUE_EVENTS.includes('birthday'));
+    assert.equal(DEFAULT_SOUND_SETTINGS.cues.birthday.enabled, true);
+    assert.ok(isFixedCue('birthday'));
+    assert.deepEqual(
+      notesFor('birthday', { style: 'pop', pitch: 3 }),
+      notesFor('birthday', { style: 'chime', pitch: 0 }),
+    );
   });
 });
