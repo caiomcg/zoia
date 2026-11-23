@@ -31,11 +31,11 @@
     "@commitlint/cli": "^21.2.4",
     "@commitlint/config-conventional": "^21.2.4",
     "@eslint/js": "^10.0.1",
-    "eslint": "^10.14.0",
+    "eslint": "^10.15.0",
     "globals": "^17.14.0",
     "husky": "^9.1.7",
-    "prettier": "^3.9.10",
-    "supertest": "^7.3.1"
+    "prettier": "^3.10.1",
+    "supertest": "^7.3.2"
   },
   "license": "MIT",
   "repository": {
