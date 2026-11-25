@@ -53,6 +53,15 @@ const VOICE_PERMISSION = {
  */
 const STALE_CLAIM_MS = 20_000;
 
+/**
+ * How long one LiveKit read of a channel serves the channel list. Every app
+ * polls /api/rooms every two seconds, and each poll read every channel twice,
+ * so the calls grew with everyone online times every channel (35 a second
+ * with seven people and five channels, each one a line in LiveKit's log).
+ * Only what people see is read this way; who may publish is always read live.
+ */
+const OVERVIEW_TTL_MS = 1_000;
+
 import { DataPacket_Kind, TrackSource } from 'livekit-server-sdk';
 import { isWhipIdentity, ownerOf, WHIP_SUFFIX } from './whip.js';
 import { AVATAR_ATTRIBUTE } from './avatars.js';
@@ -109,6 +118,35 @@ export function createStage({ rooms, roomName, logger = console, now = () => Dat
   // restart) makes an idle holder look stale, which errs towards the stage
   // being available rather than stuck — the right way round.
   const claimedAt = new Map();
+
+  // The last read for the channel list, shared by everyone polling it.
+  let overview = null;
+
+  /**
+   * Makes a change in the room. The next channel list must show it, so the
+   * shared read is dropped before and after: one taken while the change was
+   * in flight could hold the old state.
+   */
+  async function change(update) {
+    overview = null;
+    try {
+      return await update();
+    } finally {
+      overview = null;
+    }
+  }
+
+  function overviewList() {
+    if (overview && now() - overview.at < OVERVIEW_TTL_MS) return overview.list;
+    const list = listParticipants();
+    const entry = { at: now(), list };
+    overview = entry;
+    // A failed read is not kept: the next poll tries again.
+    list.catch(() => {
+      if (overview === entry) overview = null;
+    });
+    return list;
+  }
 
   async function listParticipants() {
     try {
@@ -173,21 +211,43 @@ export function createStage({ rooms, roomName, logger = console, now = () => Dat
    */
   async function dropWhip(identity) {
     try {
-      await rooms.removeParticipant?.(roomName, `${identity}${WHIP_SUFFIX}`);
+      await change(() => rooms.removeParticipant?.(roomName, `${identity}${WHIP_SUFFIX}`));
     } catch {
       // Usually it was never there: most broadcasts are not hardware-encoded.
     }
   }
 
+  /** A participant as the app and the channel list see it. */
+  function describe(p) {
+    // The picture's version, for the channel list. Informational only:
+    // nothing here reads it to decide anything.
+    const avatar = p.attributes?.[AVATAR_ATTRIBUTE];
+    return {
+      identity: p.identity,
+      name: p.name || p.identity,
+      // Holds a broadcast slot; a voice participant's microphone is not one.
+      canPublish: holdsSlot(p),
+      publishing: sharing(p),
+      voice: inVoice(p),
+      audible: audible(p),
+      joinedAt: Number(p.joinedAt ?? 0),
+      // Watching someone's picture, for the idle sweep (src/idle.js).
+      watching: Boolean(p.attributes?.[WATCHING_ATTRIBUTE]),
+      ...(avatar ? { avatar } : {}),
+    };
+  }
+
   async function setPermission(identity, permission) {
-    await rooms.updateParticipant(roomName, identity, { permission });
+    await change(() => rooms.updateParticipant(roomName, identity, { permission }));
   }
 
   async function setVoice(identity, joined, permission) {
-    await rooms.updateParticipant(roomName, identity, {
-      ...(permission ? { permission } : {}),
-      attributes: { [VOICE_ATTRIBUTE]: joined ? '1' : '' },
-    });
+    await change(() =>
+      rooms.updateParticipant(roomName, identity, {
+        ...(permission ? { permission } : {}),
+        attributes: { [VOICE_ATTRIBUTE]: joined ? '1' : '' },
+      }),
+    );
   }
 
   return {
@@ -208,7 +268,7 @@ export function createStage({ rooms, roomName, logger = console, now = () => Dat
       for (const p of await listParticipants()) {
         if (!machines.has(ownerOf(p.identity))) continue;
         try {
-          await rooms.updateParticipant(roomName, p.identity, { name });
+          await change(() => rooms.updateParticipant(roomName, p.identity, { name }));
         } catch {
           // Left the room in the meantime.
         }
@@ -221,9 +281,11 @@ export function createStage({ rooms, roomName, logger = console, now = () => Dat
      */
     async setAvatar(identity, version) {
       try {
-        await rooms.updateParticipant(roomName, identity, {
-          attributes: { [AVATAR_ATTRIBUTE]: version ?? '' },
-        });
+        await change(() =>
+          rooms.updateParticipant(roomName, identity, {
+            attributes: { [AVATAR_ATTRIBUTE]: version ?? '' },
+          }),
+        );
       } catch {
         // Not in this room, which is most rooms.
       }
@@ -233,7 +295,7 @@ export function createStage({ rooms, roomName, logger = console, now = () => Dat
       for (const identity of identities) {
         for (const id of [identity, `${identity}${WHIP_SUFFIX}`]) {
           try {
-            await rooms.removeParticipant?.(roomName, id);
+            await change(() => rooms.removeParticipant?.(roomName, id));
           } catch {
             // Not in this room, which is most rooms.
           }
@@ -265,25 +327,17 @@ export function createStage({ rooms, roomName, logger = console, now = () => Dat
     },
 
     async participants() {
-      const list = await listParticipants();
-      return list.map((p) => {
-        // The picture's version, for the channel list. Informational only:
-        // nothing here reads it to decide anything.
-        const avatar = p.attributes?.[AVATAR_ATTRIBUTE];
-        return {
-          identity: p.identity,
-          name: p.name || p.identity,
-          // Holds a broadcast slot; a voice participant's microphone is not one.
-          canPublish: holdsSlot(p),
-          publishing: sharing(p),
-          voice: inVoice(p),
-          audible: audible(p),
-          joinedAt: Number(p.joinedAt ?? 0),
-          // Watching someone's picture, for the idle sweep (src/idle.js).
-          watching: Boolean(p.attributes?.[WATCHING_ATTRIBUTE]),
-          ...(avatar ? { avatar } : {}),
-        };
-      });
+      return (await listParticipants()).map(describe);
+    },
+
+    /**
+     * Who is in the channel and who is broadcasting, for the channel list:
+     * one LiveKit read, shared by every caller for a second. Display only;
+     * never decide who may publish from it.
+     */
+    async overview() {
+      const list = await overviewList();
+      return { participants: list.map(describe), broadcasters: broadcastersAmong(list) };
     },
 
     /**

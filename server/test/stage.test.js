@@ -311,3 +311,64 @@ describe('voice', () => {
     assert.equal(alice.publishing, true);
   });
 });
+
+describe('the channel list overview', () => {
+  test('one LiveKit read serves every poll for a second', async () => {
+    let reads = 0;
+    rooms.listParticipants = async () => {
+      reads += 1;
+      return participants;
+    };
+    participants = [participant('alice', { canPublish: true, tracks: [{}] })];
+
+    const views = await Promise.all([stage.overview(), stage.overview(), stage.overview()]);
+    assert.equal(reads, 1);
+    for (const view of views) {
+      assert.deepEqual(
+        view.participants.map((p) => p.identity),
+        ['alice'],
+      );
+      assert.deepEqual(
+        view.broadcasters.map((b) => b.identity),
+        ['alice'],
+      );
+    }
+
+    clock += 1_000;
+    await stage.overview();
+    assert.equal(reads, 2);
+  });
+
+  test('a change made through the stage shows at once', async () => {
+    participants = [participant('alice')];
+    assert.deepEqual((await stage.overview()).broadcasters, []);
+
+    await stage.claim({ id: 'alice', name: 'Alice' });
+    const { broadcasters } = await stage.overview();
+    assert.deepEqual(
+      broadcasters.map((b) => b.identity),
+      ['alice'],
+    );
+  });
+
+  test('a failed read is not kept', async () => {
+    let fail = true;
+    rooms.listParticipants = async () => {
+      if (fail) throw new Error('livekit unavailable');
+      return participants;
+    };
+    participants = [participant('alice')];
+
+    await assert.rejects(stage.overview());
+    fail = false;
+    assert.equal((await stage.overview()).participants.length, 1);
+  });
+
+  test('who may publish is never read from the overview', async () => {
+    participants = [participant('alice')];
+    await stage.overview();
+    participants = [participant('alice', { canPublish: true, tracks: [{}] })];
+
+    assert.equal(await stage.isBroadcaster('alice'), true);
+  });
+});

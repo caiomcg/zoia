@@ -1,3 +1,12 @@
+# Every container's log, rotated. Docker's default keeps it all: LiveKit's
+# grew to 7.6 GB in three weeks on a 32 GB disk, and a full disk stops
+# everything, the database included.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: 50m
+    max-file: '3'
+
 services:
   # Public entry point. The only container that publishes ports to the world.
   caddy:
@@ -5,6 +14,7 @@ services:
       context: .
       dockerfile: Dockerfile.caddy
     restart: unless-stopped
+    logging: *logging
     ports:
       - '80:80'
       - '443:443'
@@ -26,6 +36,7 @@ services:
   livekit:
     image: livekit/livekit-server:v1.13.7
     restart: unless-stopped
+    logging: *logging
     # Host networking is not an optimisation here. WebRTC behind Docker's NAT
     # means wrestling ICE against a second layer of address translation; host
     # mode sidesteps it entirely.
@@ -41,6 +52,7 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
+    logging: *logging
     network_mode: host
     command: redis-server --bind 127.0.0.1 --port 6379 --save "" --appendonly no
 
@@ -51,6 +63,7 @@ services:
   scylla:
     image: scylladb/scylla:2025.1
     restart: unless-stopped
+    logging: *logging
     command: --smp 1 --memory 1G --overprovisioned 1 --developer-mode 1
     expose:
       - '9042'
@@ -66,6 +79,7 @@ services:
   app:
     build: .
     restart: unless-stopped
+    logging: *logging
     env_file: .env
     environment:
       # livekit runs in the host network namespace.
@@ -97,6 +111,7 @@ services:
     build: ./addon-host
     profiles: ['addons']
     restart: unless-stopped
+    logging: *logging
     environment:
       ADDON_HOST_SECRET: ${ADDON_HOST_SECRET:-}
       ADDON_NETWORK: zoia-addons
