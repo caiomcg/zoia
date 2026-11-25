@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { LocalVideoTrack } from 'livekit-client';
 import type { SendAudio } from '../livekit/useRoom';
+import { useShownTrack } from '../livekit/useShownTrack';
 import Avatar from './Avatar';
 import { useT } from '../i18n';
 
@@ -161,15 +162,17 @@ export default function Player({
   const stageRef = useRef<HTMLElement>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
+  // With a background effect, the processed picture: what viewers get.
+  const shown = useShownTrack(localTrack);
+
   useEffect(() => {
     const el = videoRef.current;
     if (!el) return undefined;
-    el.srcObject =
-      localTrack && showPreview ? new MediaStream([localTrack.mediaStreamTrack]) : null;
+    el.srcObject = shown && showPreview ? new MediaStream([shown]) : null;
     return () => {
       el.srcObject = null;
     };
-  }, [localTrack, showPreview]);
+  }, [shown, showPreview]);
 
   useEffect(() => {
     const handler = () => setIsFullscreen(Boolean(document.fullscreenElement));

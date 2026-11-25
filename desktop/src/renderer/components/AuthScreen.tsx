@@ -2,6 +2,8 @@ import { useState } from 'react';
 import type { AuthOutcome, PairingStatus } from '../../shared/ipc';
 import { isStrongPassword } from '../../shared/password';
 import PasswordRules from './PasswordRules';
+import BirthdayField, { type BirthdayDraft } from './BirthdayField';
+import { isRealBirthday } from '../schedule/birthday';
 import { authError } from '../account-errors';
 import { useT } from '../i18n';
 
@@ -31,6 +33,8 @@ export default function AuthScreen({
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [code, setCode] = useState('');
+  // Asked at sign-up (ADR 0055); day and month only.
+  const [birthday, setBirthday] = useState<BirthdayDraft>({ day: null, month: null });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(status.error);
 
@@ -52,6 +56,10 @@ export default function AuthScreen({
       setError(authError(t, 'mismatch'));
       return;
     }
+    if (mode === 'signUp' && !isRealBirthday(birthday)) {
+      setError(authError(t, 'invalid_birthday'));
+      return;
+    }
 
     setBusy(true);
     setError(null);
@@ -61,7 +69,9 @@ export default function AuthScreen({
         mode === 'signIn'
           ? await window.zoia.account.signIn(server, email, password)
           : mode === 'signUp'
-            ? await window.zoia.account.signUp(server, email, password)
+            ? isRealBirthday(birthday)
+              ? await window.zoia.account.signUp(server, email, password, birthday)
+              : { ok: false, error: 'invalid_birthday' }
             : await window.zoia.account.redeem(server, code, password);
     } catch {
       outcome = { ok: false, error: 'unreachable' };
@@ -171,6 +181,20 @@ export default function AuthScreen({
               autoComplete="new-password"
               required
             />
+          </>
+        )}
+
+        {mode === 'signUp' && (
+          <>
+            <label htmlFor="auth-birthday">{t('birthday.label')}</label>
+            <BirthdayField
+              id="auth-birthday"
+              value={birthday}
+              onChange={setBirthday}
+              disabled={busy}
+              required
+            />
+            <p className="muted birthday-hint">{t('birthday.hint')}</p>
           </>
         )}
 

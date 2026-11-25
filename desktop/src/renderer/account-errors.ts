@@ -21,6 +21,7 @@ const KNOWN = new Set([
   'unreachable',
   'accounts_not_configured',
   'mismatch',
+  'invalid_birthday',
 ]);
 
 /**

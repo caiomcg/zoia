@@ -3656,29 +3656,65 @@ button.danger {
   font-variant-numeric: tabular-nums;
 }
 
-.live-card-detail {
-  display: flex;
-  gap: 8px;
+.live-card-watching {
+  padding-left: 16px;
   font-size: 12px;
   color: var(--muted);
 }
 
-.live-card-source {
+/* One row for each thing shared: what it is, then its own buttons. */
+.live-card-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding-top: 8px;
+  border-top: 1px solid color-mix(in srgb, var(--danger) 30%, transparent);
+}
+
+.live-card-row-icon {
+  flex: none;
+  color: var(--muted);
+}
+
+.live-card-row-text {
+  display: flex;
   flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  font-size: 13px;
+}
+
+.live-card-source {
   min-width: 0;
   overflow: hidden;
+  font-size: 12px;
+  color: var(--muted);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.live-card-watching {
-  flex-shrink: 0;
+.live-card-stop.square {
+  flex: none;
+  width: 32px;
+  padding: 0;
 }
 
-.live-card-actions {
-  display: flex;
+/* Both on: stops everything, quieter than each row's own stop. */
+.live-card-stop-all {
+  display: inline-flex;
   gap: 6px;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
   margin-top: 2px;
+  font-weight: 700;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid var(--danger);
+}
+
+.live-card-stop-all:hover {
+  background: color-mix(in srgb, var(--danger) 20%, transparent);
 }
 
 .live-card-stop {
@@ -4115,6 +4151,185 @@ button.danger {
   display: flex;
   gap: 8px;
   justify-content: flex-end;
+}
+
+/* The background choices (ADR 0053) make the dialog taller than a small
+   window: it scrolls rather than pushing the buttons off screen. */
+.camera-dialog {
+  max-height: 92vh;
+  overflow-y: auto;
+}
+
+.camera-bg {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  font-size: 12px;
+}
+
+.camera-bg-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(76px, 1fr));
+  gap: 8px;
+}
+
+.camera-bg-option {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: stretch;
+  padding: 4px;
+  font: inherit;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.camera-bg-option:hover {
+  background: var(--raised);
+}
+
+.camera-bg-option.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.camera-bg-swatch {
+  display: block;
+  aspect-ratio: 16 / 9;
+  background-color: var(--bg);
+  background-position: center;
+  background-size: cover;
+  border-radius: 5px;
+}
+
+/* A slashed circle: nothing done to the background. */
+.camera-bg-swatch.none {
+  background-image: linear-gradient(
+    to top right,
+    transparent calc(50% - 1px),
+    var(--muted) calc(50% - 1px),
+    var(--muted) calc(50% + 1px),
+    transparent calc(50% + 1px)
+  );
+}
+
+/* Soft shapes standing in for a blurred room; stronger is softer. */
+.camera-bg-swatch.blur {
+  background-image:
+    radial-gradient(circle at 30% 40%, #8a9bb0 0 18%, transparent 19%),
+    radial-gradient(circle at 70% 60%, #c2a27a 0 22%, transparent 23%),
+    linear-gradient(135deg, #3b4252, #5e6a7d);
+}
+
+.camera-bg-swatch.blur.light {
+  filter: blur(1.5px);
+}
+
+.camera-bg-swatch.blur.strong {
+  filter: blur(4px);
+}
+
+.camera-bg-label {
+  overflow: hidden;
+  font-size: 11px;
+  text-align: center;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.camera-bg-upload button {
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
+.camera-bg-hint,
+.camera-bg .error {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+/* The camera card's settings, beside the sidebar while the camera is on. */
+.camera-card-settings.active {
+  color: var(--accent);
+}
+
+.camera-menu {
+  position: fixed;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 320px;
+  max-height: min(560px, calc(100vh - 16px));
+  padding: 12px;
+  overflow-y: auto;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgb(0 0 0 / 0.45);
+  animation: pop-in 150ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.camera-menu header {
+  font-size: 13px;
+}
+
+.camera-menu-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.camera-menu-devices {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.camera-menu-device {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+  padding: 6px 8px;
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  color: var(--text);
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.camera-menu-device:hover {
+  background: var(--raised);
+}
+
+.camera-menu-radio {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--muted);
+  border-radius: 50%;
+}
+
+.camera-menu-device.selected .camera-menu-radio {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 2px var(--surface-2);
+  background: var(--accent);
+}
+
+.camera-menu-device-name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 /* ---- Motion
@@ -9463,4 +9678,159 @@ button.events-new:hover {
 /* A chat tab being dragged over another: where it will go. */
 .chat-tab.drop-target {
   box-shadow: inset 2px 0 0 var(--accent);
+}
+
+/* ---- birthdays (ADR 0055) ------------------------------------------------ */
+
+.birthday-field {
+  display: grid;
+  grid-template-columns: 6.5em 1fr;
+  gap: 8px;
+  width: 100%;
+}
+
+/* Our own chevron, inset from the edge: the native one sits flush against the
+   border. Drawn in --muted (#95a0b0); a data URI cannot read the variable. */
+.birthday-field select {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 9px 30px 9px 10px;
+  color: var(--text);
+  background: var(--bg)
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 4.5 6 8l3.5-3.5' fill='none' stroke='%2395a0b0' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
+    no-repeat right 11px center;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font: inherit;
+  appearance: none;
+  cursor: pointer;
+}
+
+.birthday-field select:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.birthday-field select:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.birthday-hint {
+  margin: 6px 0 0;
+  font-size: 12px;
+}
+
+.birthday-prompt {
+  text-align: center;
+}
+
+.birthday-prompt .birthday-field {
+  margin: 4px 0 8px;
+  text-align: left;
+}
+
+.birthday-prompt-parrot {
+  display: block;
+  margin: 0 auto 4px;
+}
+
+.birthday-party {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: grid;
+  place-items: center;
+  background: rgb(0 0 0 / 35%);
+  animation: birthday-fade 240ms ease-out;
+}
+
+.birthday-confetti {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.birthday-confetti span {
+  position: absolute;
+  top: -16px;
+  width: 8px;
+  height: 14px;
+  border-radius: 2px;
+  opacity: 0.95;
+  animation-name: birthday-fall;
+  animation-timing-function: cubic-bezier(0.25, 0.4, 0.55, 1);
+  animation-iteration-count: 2;
+  animation-fill-mode: both;
+}
+
+.birthday-confetti span.round {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.birthday-card {
+  position: relative;
+  width: min(380px, calc(100% - 32px));
+  box-sizing: border-box;
+  padding: 28px 24px 22px;
+  text-align: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: 0 20px 60px rgb(0 0 0 / 45%);
+  animation: birthday-pop 520ms cubic-bezier(0.2, 1.4, 0.4, 1);
+}
+
+.birthday-card h2 {
+  margin: 10px 0 6px;
+  font-size: 22px;
+}
+
+.birthday-card p {
+  margin: 0 0 18px;
+  color: var(--muted);
+}
+
+.birthday-card-parrot {
+  display: block;
+  margin: 0 auto;
+}
+
+@keyframes birthday-fall {
+  from {
+    transform: translate3d(0, 0, 0) rotate(0deg);
+  }
+  to {
+    transform: translate3d(var(--drift), 105vh, 0) rotate(var(--spin));
+  }
+}
+
+@keyframes birthday-pop {
+  from {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes birthday-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .birthday-confetti {
+    display: none;
+  }
+  .birthday-card,
+  .birthday-party {
+    animation: none;
+  }
 }

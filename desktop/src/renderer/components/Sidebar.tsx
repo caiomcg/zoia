@@ -22,6 +22,7 @@ import QuickDeviceMenu from './QuickDeviceMenu';
 import { useCameraDevices } from '../livekit/useCamera';
 import { useVoiceSettings, setVoiceSettings } from '../voice/settings';
 import { systemDefaultLabel } from '../voice/device-label';
+import { followDefault, useDeviceWatch } from '../voice/device-watch';
 import type { Section as SettingsSection } from './SettingsDialog';
 import { useFloatingMenu } from './useFloatingMenu';
 import type { VoiceState } from '../voice/useVoice';
@@ -35,6 +36,7 @@ import { usePlayingSound } from '../soundboard/player';
 import { useT } from '../i18n';
 import { useLeaving } from '../presence';
 import type { PresenceController } from '../chat/usePresence';
+import LiveCard, { type SidebarCamera, type SidebarLive } from './LiveCard';
 
 /**
  * Who is in the room, and who is sharing. Your own name sits in the footer,
@@ -67,20 +69,15 @@ export interface SidebarShare {
   hopping: boolean;
   onScreen: () => void;
   onCamera: () => void;
-  /** While a screen is live: the card that says so, and stops it. */
+  /** While a screen is live: its row in the live card. */
   live?: SidebarLive;
+  /** While the camera is on: its row in the live card. */
+  camera?: SidebarCamera;
+  /** Both on: the live card's last button stops everything. */
+  onStopAll: () => void;
 }
 
-/** Your screen share, for the card above the share buttons. */
-export interface SidebarLive {
-  /** The window or screen's name, when known. */
-  source: string | null;
-  /** When it went live, in ms since the epoch; kept across a switch. */
-  since: number | null;
-  watching: number;
-  onStop: () => void;
-  onSwitch: () => void;
-}
+export type { SidebarLive, SidebarCamera };
 
 /** Voice in the current channel (ADR 0039), and its controls. */
 export interface SidebarVoice {
@@ -655,6 +652,8 @@ export default function Sidebar({
   const [micMenuAnchor, setMicMenuAnchor] = useState<DOMRect | null>(null);
   const [speakerMenuAnchor, setSpeakerMenuAnchor] = useState<DOMRect | null>(null);
   const { devices } = useCameraDevices();
+  // "System default" names the device in use, which a held device changes.
+  useDeviceWatch();
   const voiceSettings = useVoiceSettings();
   useEffect(() => {
     if (!inVoice) {
@@ -1208,9 +1207,15 @@ export default function Sidebar({
               <IconLeave />
             </button>
           </div>
-          {/* Sharing your screen: said in words, with its stop, where it
-              cannot be missed. */}
-          {share?.live && share.screenLive && <LiveCard live={share.live} />}
+          {/* What you are sharing, screen and camera in one card: said in
+              words, with their stops, where they cannot be missed. */}
+          {share && (share.screenLive || share.cameraLive) && (
+            <LiveCard
+              screen={share.screenLive ? (share.live ?? null) : null}
+              camera={share.cameraLive ? (share.camera ?? null) : null}
+              onStopAll={share.onStopAll}
+            />
+          )}
           {/* What you can do in it, a row of equal buttons under where you are. */}
           {(share || (soundboard && voice?.state === 'on')) && (
             <div className="voice-panel-actions">
@@ -1423,8 +1428,12 @@ export default function Sidebar({
           title={t('voiceSettings.input')}
           devices={devices.microphones}
           selectedId={voiceSettings.microphoneId}
-          defaultLabel={systemDefaultLabel(t, devices.microphones)}
-          onSelect={(id) => setVoiceSettings({ ...voiceSettings, microphoneId: id })}
+          defaultLabel={systemDefaultLabel(t, devices.microphones, 'audioinput')}
+          onSelect={(id) => {
+            // Picked even though it already was: whatever Windows has now.
+            if (!id) followDefault('audioinput');
+            setVoiceSettings({ ...voiceSettings, microphoneId: id });
+          }}
           onOpenSettings={() => onOpenSettings('voice')}
           onClose={() => setMicMenuAnchor(null)}
         />
@@ -1435,8 +1444,11 @@ export default function Sidebar({
           title={t('voiceSettings.output')}
           devices={devices.speakers}
           selectedId={voiceSettings.speakerId}
-          defaultLabel={systemDefaultLabel(t, devices.speakers)}
-          onSelect={(id) => setVoiceSettings({ ...voiceSettings, speakerId: id })}
+          defaultLabel={systemDefaultLabel(t, devices.speakers, 'audiooutput')}
+          onSelect={(id) => {
+            if (!id) followDefault('audiooutput');
+            setVoiceSettings({ ...voiceSettings, speakerId: id });
+          }}
           onOpenSettings={() => onOpenSettings('voice')}
           onClose={() => setSpeakerMenuAnchor(null)}
         />
@@ -1803,98 +1815,10 @@ function ShareButtons({
   );
 }
 
-/** "1:05" or "1:02:05": how long you have been live. */
-export function formatElapsed(ms: number): string {
-  const total = Math.max(0, Math.floor(ms / 1000));
-  const hours = Math.floor(total / 3600);
-  const minutes = Math.floor((total % 3600) / 60);
-  const seconds = String(total % 60).padStart(2, '0');
-  return hours > 0
-    ? `${hours}:${String(minutes).padStart(2, '0')}:${seconds}`
-    : `${minutes}:${seconds}`;
-}
-
-/** Re-renders once a second while `since` is set, for a running clock. */
-function useNow(since: number | null): number {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (since === null) return;
-    const timer = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, [since]);
-  return now;
-}
-
-/**
- * You are sharing your screen: what, for how long, who is watching, and the
- * buttons to stop or switch it. Above the share buttons, so stopping is
- * never more than one obvious click away.
- */
-function LiveCard({ live }: { live: SidebarLive }) {
-  const t = useT();
-  const now = useNow(live.since);
-  return (
-    <section className="live-card" aria-label={t('player.youreLive')}>
-      <div className="live-card-head">
-        <span className="live-card-dot" aria-hidden="true" />
-        <span className="live-card-title">{t('player.youreLive')}</span>
-        {live.since !== null && (
-          <span className="live-card-time">{formatElapsed(now - live.since)}</span>
-        )}
-      </div>
-      <div className="live-card-detail">
-        <span className="live-card-source" title={live.source ?? undefined}>
-          {live.source ?? t('live.screen')}
-        </span>
-        <span className="live-card-watching">
-          {live.watching === 0
-            ? t('live.watchingNone')
-            : live.watching === 1
-              ? t('live.watchingOne')
-              : t('live.watching', { count: live.watching })}
-        </span>
-      </div>
-      <div className="live-card-actions">
-        <button className="live-card-stop" onClick={live.onStop}>
-          <IconStopSquare />
-          {t('common.stopSharing')}
-        </button>
-        <button
-          className="icon-button live-card-switch"
-          onClick={live.onSwitch}
-          title={t('player.switchTitle')}
-          aria-label={t('player.switch')}
-        >
-          <IconSwitchArrows />
-        </button>
-      </div>
-    </section>
-  );
-}
-
 function IconStopSquare() {
   return (
     <svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true">
       <rect x="5" y="5" width="14" height="14" rx="2" fill="currentColor" />
-    </svg>
-  );
-}
-
-/** Two arrows passing: one thing for another. */
-function IconSwitchArrows() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      width="15"
-      height="15"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M4 7h13l-3-3M20 17H7l3 3" />
     </svg>
   );
 }

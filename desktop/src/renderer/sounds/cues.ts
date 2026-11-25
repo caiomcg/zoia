@@ -14,7 +14,8 @@ export type CueEvent =
   | 'viewerJoin'
   | 'viewerLeave'
   | 'mention'
-  | 'eventStart';
+  | 'eventStart'
+  | 'birthday';
 
 export const CUE_EVENTS: readonly CueEvent[] = [
   'join',
@@ -25,6 +26,7 @@ export const CUE_EVENTS: readonly CueEvent[] = [
   'viewerLeave',
   'mention',
   'eventStart',
+  'birthday',
 ];
 
 export type CueStyle = 'chime' | 'pop' | 'soft';
@@ -62,6 +64,8 @@ export const DEFAULT_SOUND_SETTINGS: SoundSettings = {
     mention: { enabled: true, style: 'chime', pitch: 0, volume: 1 },
     // An event you said you would come to has started (ADR 0050).
     eventStart: { enabled: true, style: 'chime', pitch: 0, volume: 1 },
+    // It is someone's birthday today (ADR 0055).
+    birthday: { enabled: true, style: 'chime', pitch: 0, volume: 1 },
   },
 };
 
@@ -268,6 +272,29 @@ export const FIXED_CUES: Partial<Record<CueEvent, { voice: StyleVoice; notes: No
     notes: [
       { at: 0, frequency: 1046.5, duration: 0.5 },
       { at: 0.13, frequency: 1318.5, duration: 0.8 },
+    ],
+  },
+  // A party (ADR 0055): a quick "ta-da" up a major chord, a beat's rest, and
+  // a high bright chord left to ring like a toy glockenspiel. Nothing else
+  // Zoia plays leaves a gap and lands on a chord.
+  birthday: {
+    voice: {
+      wave: 'triangle',
+      base: 784,
+      gap: 0.08,
+      duration: 0.4,
+      attack: 0.003,
+      overtone: 0.12,
+      lowpass: 0,
+      partials: [[3.01, 0.12]],
+    },
+    notes: [
+      { at: 0, frequency: 784, duration: 0.18 },
+      { at: 0.08, frequency: 1046.5, duration: 0.18 },
+      { at: 0.16, frequency: 1318.5, duration: 0.18 },
+      { at: 0.36, frequency: 1568, duration: 1.1 },
+      { at: 0.36, frequency: 2093, duration: 1.1 },
+      { at: 0.36, frequency: 2637, duration: 1.1 },
     ],
   },
 };

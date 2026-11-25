@@ -32,6 +32,8 @@ import {
   type CaptureTrackHandle,
 } from '../audio/capture-track';
 import { WATCHING_ATTRIBUTE, isWatching, watchingValue } from './watching';
+import { NO_BACKGROUND, type CameraBackground } from './camera-background';
+import { applyBackground } from './background-effect';
 import { AVATAR_ATTRIBUTE, avatarVersion } from '../avatars';
 import { createNativeVideo, type NativeVideo } from './native-video';
 import { tNow } from '../i18n';
@@ -522,6 +524,14 @@ export interface MoveRequest {
   reason?: 'idle';
 }
 
+/** Your camera while it is on: since when, from which device, with what behind you. */
+export interface CameraInfo {
+  since: number;
+  /** The device the picture comes from, as the browser names it. */
+  deviceId: string | null;
+  background: CameraBackground;
+}
+
 export function useRoom() {
   const roomRef = useRef<Room | null>(null);
   const localTrackRef = useRef<LocalVideoTrack | null>(null);
@@ -674,6 +684,8 @@ export function useRoom() {
   const cameraRef = useRef<{ video: LocalVideoTrack | null } | null>(null);
   const [cameraState, setCameraState] = useState<BroadcastState>('idle');
   const [cameraTrack, setCameraTrack] = useState<LocalVideoTrack | null>(null);
+  // The live camera's card in the sidebar reads these; null while it is off.
+  const [cameraInfo, setCameraInfo] = useState<CameraInfo | null>(null);
   // From the moment a screen share starts until it stops, on either path.
   // The hardware path runs outside this hook, so App reports it (setGpuScreen).
   const screenActiveRef = useRef(false);
@@ -1219,11 +1231,14 @@ export function useRoom() {
     cameraRef.current = null;
     setCameraState('idle');
     setCameraTrack(null);
+    setCameraInfo(null);
     if (!camera) return;
     const room = roomRef.current;
     const track = camera.video;
     if (track) {
       if (room) await room.localParticipant.unpublishTrack(track, true).catch(() => {});
+      // The background effect's segmenter holds the GPU until told to stop.
+      await track.stopProcessor().catch(() => {});
       track.mediaStreamTrack.stop();
     }
     if (screenActive()) return;
@@ -1239,9 +1254,13 @@ export function useRoom() {
    * nothing. It publishes as Camera, which is how a viewer tells it from the
    * screen and shows it as a picture of its own (ADR 0034). A picture only:
    * what you say goes out through voice (ADR 0039).
+   *
+   * A background effect (ADR 0053) is put on before publishing, so the raw
+   * picture never goes out, not even for a frame. If it cannot run, the
+   * camera goes out as it is rather than not at all, and says so.
    */
   const startCamera = useCallback(
-    async (constraints: MediaStreamConstraints) => {
+    async (constraints: MediaStreamConstraints, background: CameraBackground = NO_BACKGROUND) => {
       setBroadcastError(null);
       setCameraState('starting');
       // Held from here, so a screen stopping meanwhile keeps the stage.
@@ -1270,6 +1289,18 @@ export function useRoom() {
         local.source = Track.Source.Camera;
         camera.video = local;
 
+        let applied = background;
+        if (background.kind !== 'none') {
+          try {
+            await applyBackground(local, background);
+          } catch (err) {
+            console.warn('[camera] background effect failed', err);
+            setRoomNotice(tNow('camera.backgroundFailed'));
+            applied = NO_BACKGROUND;
+          }
+        }
+        if (cameraRef.current !== camera) throw new Error(tNow('room.couldNotStart'));
+
         // The low layer is what a viewer takes while the camera sits small
         // over a screen, and for thumbnails when it is shared alone.
         await room.localParticipant.publishTrack(local, {
@@ -1285,6 +1316,11 @@ export function useRoom() {
         });
 
         setCameraTrack(local);
+        setCameraInfo({
+          since: Date.now(),
+          deviceId: videoTrack.getSettings().deviceId ?? null,
+          background: applied,
+        });
         setCameraState('live');
         return true;
       } catch (err) {
@@ -1297,6 +1333,57 @@ export function useRoom() {
       }
     },
     [screenActive, stopCamera],
+  );
+
+  /**
+   * Changes the background of a camera that is on, without stopping it:
+   * viewers see the new one from the next frame.
+   */
+  const setCameraBackground = useCallback(async (background: CameraBackground) => {
+    const track = cameraRef.current?.video;
+    if (!track) return;
+    try {
+      await applyBackground(track, background);
+      setCameraInfo((info) => (info ? { ...info, background } : info));
+    } catch (err) {
+      console.warn('[camera] background effect failed', err);
+      setRoomNotice(tNow('camera.backgroundFailed'));
+    }
+  }, []);
+
+  /**
+   * Moves a camera that is on to another device, without stopping it: the
+   * same track and publication carry on, so viewers keep watching, and the
+   * background effect is restarted on the new picture by LiveKit itself.
+   */
+  const switchCameraDevice = useCallback(
+    async (deviceId: string) => {
+      const camera = cameraRef.current;
+      const track = camera?.video;
+      if (!camera || !track) return;
+      try {
+        await track.restartTrack({ deviceId: { exact: deviceId } });
+      } catch (err) {
+        console.warn('[camera] could not switch camera', err);
+        setRoomNotice(tNow('camera.switchFailed'));
+        return;
+      }
+      const raw = track.mediaStreamTrack;
+      raw.contentHint = 'motion';
+      const processed = track.getProcessor()?.processedTrack;
+      if (processed) processed.contentHint = 'motion';
+      // The old device's listener went with its track; unplugging this one
+      // must stop the camera just the same.
+      raw.addEventListener('ended', () => {
+        if (cameraRef.current === camera && camera.video?.mediaStreamTrack === raw) {
+          void stopCamera();
+        }
+      });
+      setCameraInfo((info) =>
+        info ? { ...info, deviceId: raw.getSettings().deviceId ?? deviceId } : info,
+      );
+    },
+    [stopCamera],
   );
 
   /**
@@ -1794,5 +1881,8 @@ export function useRoom() {
     cameraTrack,
     startCamera,
     stopCamera,
+    setCameraBackground,
+    switchCameraDevice,
+    cameraInfo,
   };
 }

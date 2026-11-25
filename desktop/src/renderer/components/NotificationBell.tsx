@@ -309,6 +309,14 @@ function KindIcon({ kind }: { kind: NotifyKind }) {
       </svg>
     );
   }
+  if (kind === 'birthday') {
+    return (
+      <svg {...common}>
+        <path d="M4 21h16M5 21v-7h14v7M5 17c2 1 3-1 4.7-1S12 18 14 18s3-2 5-1" />
+        <path d="M12 14v-3M8 14v-2M16 14v-2M12 8.5a1.2 1.2 0 01-1.2-1.2C10.8 6.4 12 5 12 5s1.2 1.4 1.2 2.3A1.2 1.2 0 0112 8.5z" />
+      </svg>
+    );
+  }
   if (kind === 'alert') {
     return (
       <svg {...common}>

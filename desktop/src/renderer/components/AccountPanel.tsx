@@ -5,6 +5,8 @@ import PasswordRules from './PasswordRules';
 import { authError } from '../account-errors';
 import { useT } from '../i18n';
 import { SettingsCard } from './SettingsCard';
+import BirthdayField, { type BirthdayDraft } from './BirthdayField';
+import { isRealBirthday, parseBirthday } from '../schedule/birthday';
 
 /**
  * Your account, under Profile: which email you sign in with, your password,
@@ -35,6 +37,12 @@ export default function AccountPanel({
           </button>
         </div>
       </SettingsCard>
+      {/* Absent on a server from before birthdays (ADR 0055). */}
+      {account.birthday !== undefined && (
+        <SettingsCard id="settings-birthday" title={t('birthday.label')}>
+          <BirthdayForm stored={account.birthday} />
+        </SettingsCard>
+      )}
       <SettingsCard id="settings-password" title={t('account.password')}>
         <PasswordForm />
       </SettingsCard>
@@ -42,6 +50,68 @@ export default function AccountPanel({
         <Devices />
       </SettingsCard>
     </>
+  );
+}
+
+/** Your birthday, to give or correct; the session then carries the new one. */
+function BirthdayForm({ stored }: { stored: string | null }) {
+  const t = useT();
+  const saved = parseBirthday(stored);
+  const [value, setValue] = useState<BirthdayDraft>(saved ?? { day: null, month: null });
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const changed = !saved || value.day !== saved.day || value.month !== saved.month;
+
+  async function submit(event: React.FormEvent) {
+    event.preventDefault();
+    if (!isRealBirthday(value)) {
+      setError(t('birthday.error.invalid'));
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const outcome = await window.zoia.account.setBirthday(value);
+      if (outcome.ok) setMessage(t('birthday.saved'));
+      else {
+        setError(
+          outcome.error === 'invalid_birthday'
+            ? t('birthday.error.invalid')
+            : t('birthday.error.failed'),
+        );
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form className="settings-field" onSubmit={(event) => void submit(event)}>
+      <span className="muted">{t('birthday.hint')}</span>
+      <div className="settings-inline">
+        <BirthdayField
+          id="settings-birthday-day"
+          value={value}
+          disabled={busy}
+          onChange={(next) => {
+            setValue(next);
+            setMessage(null);
+            setError(null);
+          }}
+        />
+        <button
+          type="submit"
+          className="primary"
+          disabled={busy || !changed || !isRealBirthday(value)}
+        >
+          {t('settings.save')}
+        </button>
+      </div>
+      {error && <p className="settings-error">{error}</p>}
+      {message && <p className="settings-message">{message}</p>}
+    </form>
   );
 }
 
