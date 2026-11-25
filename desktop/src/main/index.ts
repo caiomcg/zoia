@@ -1022,14 +1022,20 @@ function registerIpc(): void {
         );
       }
       console.log(
-        `[native-video] ${info.adapter} -> ${info.width}x${info.height} (${info.encoder})`,
+        `[native-video] ${info.adapter} -> ${info.width}x${info.height} (${info.encoder}), ` +
+          `GPU priority ${info.gpuPriority ?? 'unknown'}`,
       );
       watchWindow(options.hwnd, () => {
         if (!win.isDestroyed()) {
           win.webContents.send(IPC.nativeVideoError, 'The shared window was closed.');
         }
       });
-      return { width: info.width, height: info.height, encoder: info.encoder };
+      return {
+        width: info.width,
+        height: info.height,
+        encoder: info.encoder,
+        gpuPriority: info.gpuPriority ?? 'unknown',
+      };
     },
   );
 
@@ -1043,6 +1049,21 @@ function registerIpc(): void {
       throw new Error(`Not a bitrate: ${String(bitsPerSecond)}`);
     }
     capture.setBitrate(bitsPerSecond);
+  });
+
+  // Read by the renderer for its periodic log line (native-video.ts): the
+  // packaged app has no main-process console for a tester to copy from.
+  ipcMain.handle(IPC.nativeVideoStats, () => {
+    const stats = capture.stats();
+    if (!stats) return null;
+    return {
+      framesOffered: stats.framesOffered,
+      framesArrived: stats.framesArrived,
+      encodeMs: stats.encodeMs,
+      // An addon built before these existed reports neither; read as zero.
+      maxEncodeMs: stats.maxEncodeMs ?? 0,
+      maxGapMs: stats.maxGapMs ?? 0,
+    };
   });
 
   ipcMain.handle(IPC.nativeVideoStop, () => {

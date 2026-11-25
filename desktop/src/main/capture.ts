@@ -58,6 +58,8 @@ interface CaptureAddon {
     fallbackReason: string;
     /** "nvenc" or "amf" when the addon encodes; empty when frames go out raw. */
     encoder: string;
+    /** Whether the capture runs ahead of a game on the GPU. Absent from an older addon. */
+    gpuPriority?: string;
   };
   stop(): { framesArrived: number; averageEncodeMs: number };
   stats(): CaptureStats;
@@ -171,6 +173,7 @@ export function start(
   adapter: string;
   fallbackReason: string;
   encoder: string;
+  gpuPriority?: string;
 } {
   const native = load();
   if (!native) throw new Error(loadError ?? 'The native capture module is unavailable.');
@@ -246,6 +249,10 @@ export interface CaptureStats {
   maxReadbackMs: number;
   /** Raw frames skipped because JavaScript had not taken the last ones yet. */
   framesBacklogged: number;
+  /** Encoder path: the slowest encode since the last call. Absent from an older addon. */
+  maxEncodeMs?: number;
+  /** Encoder path: the longest wait between two encoded frames since the last call. */
+  maxGapMs?: number;
 }
 
 export function stats(): CaptureStats | null {

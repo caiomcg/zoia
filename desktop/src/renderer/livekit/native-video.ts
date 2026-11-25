@@ -17,6 +17,7 @@
  */
 
 import { captureBorderEnabled } from '../capture-border';
+import type { NativeVideoStats } from '../../shared/ipc';
 import { createSenderAdaptation, limitsFor } from './adaptive-bitrate';
 
 interface TrackGenerator extends MediaStreamTrack {
@@ -34,6 +35,9 @@ interface CandidatePairStats {
   state?: string;
   availableOutgoingBitrate?: number;
 }
+
+/** How often the capture's numbers go to the console. */
+const REPORT_MS = 5000;
 
 // The placeholder is never seen by anyone; it only has to be a valid frame.
 const PLACEHOLDER_SIZE = 16;
@@ -74,6 +78,11 @@ export function createNativeVideo(
   let encoderName = '';
   let sender: RTCRtpSender | null = null;
   let adaptTimer: ReturnType<typeof setInterval> | null = null;
+  let reportTimer: ReturnType<typeof setInterval> | null = null;
+  // Times the transform threw its queue away and waited for a keyframe (see
+  // native-transform.worker.ts), and the frames that cost, since the last report.
+  let queueResets = 0;
+  let framesDiscarded = 0;
 
   worker.onmessage = (event: MessageEvent) => {
     const message = event.data as { type: string };
@@ -88,6 +97,9 @@ export function createNativeVideo(
       else previewWriter.write(frame).catch(() => frame.close());
     } else if (message.type === 'keyframe') {
       void window.zoia.nativeVideo.requestKeyframe();
+    } else if (message.type === 'reset') {
+      queueResets += 1;
+      framesDiscarded += (event.data as { frames: number }).frames;
     }
   };
 
@@ -181,6 +193,45 @@ export function createNativeVideo(
     }, 1000);
   };
 
+  /**
+   * Where the frames went, every few seconds, into the console — the one log a
+   * tester can open in the packaged app. A broadcast that hitches looks the
+   * same from outside whatever the cause; these numbers tell them apart:
+   * Windows delivering fewer frames than the preset asks for, the GPU keeping
+   * the encoder waiting (a slow encode, a long gap), or Chromium dropping
+   * placeholders until the transform has to start again from a keyframe.
+   */
+  const startReporting = () => {
+    let previous: NativeVideoStats | null = null;
+    let previousAt = performance.now();
+    reportTimer = setInterval(() => {
+      void window.zoia.nativeVideo
+        .stats()
+        .then((current) => {
+          const now = performance.now();
+          if (stopped || !current) return;
+          if (previous) {
+            const seconds = (now - previousAt) / 1000;
+            const encoded = current.framesArrived - previous.framesArrived;
+            const average = encoded > 0 ? (current.encodeMs - previous.encodeMs) / encoded : 0;
+            console.log(
+              `[native-video] windows delivered ` +
+                `${((current.framesOffered - previous.framesOffered) / seconds).toFixed(1)} fps, ` +
+                `encoded ${(encoded / seconds).toFixed(1)} fps, ` +
+                `encode avg ${average.toFixed(1)}ms max ${current.maxEncodeMs.toFixed(1)}ms, ` +
+                `longest gap ${current.maxGapMs.toFixed(0)}ms, ` +
+                `${queueResets} queue resets (${framesDiscarded} frames discarded)`,
+            );
+          }
+          previous = current;
+          previousAt = now;
+          queueResets = 0;
+          framesDiscarded = 0;
+        })
+        .catch(() => {});
+    }, REPORT_MS);
+  };
+
   // Chromium only runs frames through a sender's transform if it is set
   // before the connection negotiates that sender; set afterwards, it is
   // created but never fed, and the placeholder itself goes out. LiveKit
@@ -228,7 +279,12 @@ export function createNativeVideo(
       });
       size = { width: info.width, height: info.height };
       encoderName = info.encoder;
+      console.log(
+        `[native-video] ${info.encoder} at ${info.width}x${info.height}, ` +
+          `GPU priority ${info.gpuPriority}`,
+      );
       startAdapting();
+      startReporting();
       return size;
     },
     async stop() {
@@ -236,6 +292,8 @@ export function createNativeVideo(
       stopped = true;
       if (adaptTimer) clearInterval(adaptTimer);
       adaptTimer = null;
+      if (reportTimer) clearInterval(reportTimer);
+      reportTimer = null;
       restoreAddTransceiver();
       window.removeEventListener('message', onPort);
       offError();

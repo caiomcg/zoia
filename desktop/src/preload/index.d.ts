@@ -9,6 +9,7 @@ import type {
   ClaimResult,
   SourceInfo,
   GpuStatus,
+  NativeVideoStats,
   EncoderStatus,
   UpdaterConfig,
   LanguageState,
@@ -209,11 +210,19 @@ export interface ZoiaBridge {
       maxWidth: number;
       maxHeight: number;
       showBorder: boolean;
-    }): Promise<{ width: number; height: number; encoder: string }>;
+    }): Promise<{
+      width: number;
+      height: number;
+      encoder: string;
+      /** "high" or "normal", and what Windows answered when the capture asked. */
+      gpuPriority: string;
+    }>;
     stop(): Promise<void>;
     requestKeyframe(): Promise<void>;
     /** Moves the running encoder to a new target bitrate, without a keyframe. */
     setBitrate(bitsPerSecond: number): Promise<void>;
+    /** The capture's running totals, or null when nothing is capturing. */
+    stats(): Promise<NativeVideoStats | null>;
     onError(cb: (message: string) => void): () => void;
   };
   device: {

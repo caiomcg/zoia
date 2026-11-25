@@ -662,6 +662,24 @@ export interface GpuStatus {
   gpuEncoder: 'nvenc' | 'amf' | 'qsv' | 'none';
 }
 
+/**
+ * Running totals from the native capture (NVENC or AMF), for the broadcast's
+ * periodic log line. The counts only grow, so two readings give a rate; the
+ * two maxima are since the reading before.
+ */
+export interface NativeVideoStats {
+  /** Frames Windows delivered, before pacing. */
+  framesOffered: number;
+  /** Frames kept and encoded. */
+  framesArrived: number;
+  /** Total time spent encoding, in milliseconds. */
+  encodeMs: number;
+  /** The slowest single encode: how long the GPU kept the capture waiting. */
+  maxEncodeMs: number;
+  /** The longest wait between two encoded frames: a hitch at the source. */
+  maxGapMs: number;
+}
+
 /** What the Language setting shows: the choice, and what it resolves to. */
 export interface LanguageState {
   preference: 'system' | 'en' | 'es' | 'pt';
@@ -793,6 +811,7 @@ export const IPC = {
   nativeVideoStop: 'zoia:native-video:stop',
   nativeVideoKeyframe: 'zoia:native-video:keyframe',
   nativeVideoBitrate: 'zoia:native-video:bitrate',
+  nativeVideoStats: 'zoia:native-video:stats',
   nativeVideoPort: 'zoia:native-video:port',
   nativeVideoError: 'zoia:native-video:error',
   renameDevice: 'zoia:device:rename',

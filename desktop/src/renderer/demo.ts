@@ -148,6 +148,7 @@ export function installDemo() {
       stop: noop,
       requestKeyframe: noop,
       setBitrate: noop,
+      stats: async () => null,
       onError: subscribe,
     },
     device: {
