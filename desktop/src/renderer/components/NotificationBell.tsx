@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import {
   clearInbox,
   markAllRead,
+  markGreeted,
   openInboxItem,
   unreadCount,
   useInbox,
@@ -10,6 +11,7 @@ import {
   type NotifyKind,
 } from '../notify/notify';
 import { useLanguage, useT } from '../i18n';
+import { BIRTHDAY_GREETINGS, sendBirthdayGreeting } from '../schedule/greetings';
 
 /**
  * The bell in your bar at the bottom of the sidebar (see notify.ts): how many
@@ -186,7 +188,60 @@ function Entry({ item, onOpen }: { item: InboxItem; onOpen: () => void }) {
           </span>
         </span>
       </button>
+      {item.kind === 'birthday' && item.greet && <Greetings item={item} />}
     </li>
+  );
+}
+
+/**
+ * Under someone else's birthday: the greetings to send them, by direct
+ * message. One is enough; once sent, the entry says so instead.
+ */
+function Greetings({ item }: { item: InboxItem }) {
+  const t = useT();
+  const [sending, setSending] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const greet = item.greet!;
+
+  if (item.greeted) {
+    return <p className="notify-greet-sent">{t('birthday.greet.sent', { name: greet.name })}</p>;
+  }
+
+  const send = async (greeting: string) => {
+    setSending(true);
+    setFailed(false);
+    const error = await sendBirthdayGreeting(greet.accountId, greeting);
+    setSending(false);
+    if (error) {
+      console.warn(`[birthday] greeting account ${greet.accountId} failed: ${error}`);
+      setFailed(true);
+      return;
+    }
+    markGreeted(item.id);
+  };
+
+  return (
+    <div
+      className="notify-greet"
+      role="group"
+      aria-label={t('birthday.greet.label', { name: greet.name })}
+    >
+      <span className="notify-greet-label">{t('birthday.greet.label', { name: greet.name })}</span>
+      <div className="notify-greet-options">
+        {BIRTHDAY_GREETINGS.map((greeting) => (
+          <button
+            key={greeting}
+            type="button"
+            className="notify-greet-option"
+            disabled={sending}
+            onClick={() => void send(greeting)}
+          >
+            {greeting}
+          </button>
+        ))}
+      </div>
+      {failed && <span className="notify-greet-failed">{t('birthday.greet.failed')}</span>}
+    </div>
   );
 }
 
