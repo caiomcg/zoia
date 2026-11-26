@@ -929,7 +929,10 @@ export const es: Messages = {
   'soundboard.searchFailed':
     'No se pudo conectar con Myinstants. Inténtalo de nuevo en un momento.',
   'soundboard.noResults': 'No se encontraron sonidos.',
-  'soundboard.more': 'Cargar más',
+  'soundboard.pages': 'Páginas de la búsqueda',
+  'soundboard.previousPage': 'Página anterior',
+  'soundboard.nextPage': 'Página siguiente',
+  'soundboard.page': 'Página {page}',
   'soundboard.pad': 'Tu pad · {count}/{max}',
   'soundboard.empty': 'Busca un sonido y añádelo a tu pad.',
   'soundboard.find': 'Añadir sonido',

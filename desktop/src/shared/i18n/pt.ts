@@ -925,7 +925,10 @@ export const pt: Messages = {
   'soundboard.searchFailed':
     'Não foi possível falar com o Myinstants. Tente de novo daqui a pouco.',
   'soundboard.noResults': 'Nenhum som encontrado.',
-  'soundboard.more': 'Carregar mais',
+  'soundboard.pages': 'Páginas da busca',
+  'soundboard.previousPage': 'Página anterior',
+  'soundboard.nextPage': 'Próxima página',
+  'soundboard.page': 'Página {page}',
   'soundboard.pad': 'Seu pad · {count}/{max}',
   'soundboard.empty': 'Busque um som e adicione ao seu pad.',
   'soundboard.find': 'Adicionar som',

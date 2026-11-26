@@ -7299,11 +7299,33 @@ button.danger:active:not(:disabled),
   color: var(--accent);
 }
 
-.soundboard-more {
-  align-self: center;
+.soundboard-pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
   margin: 4px 0;
-  padding: 6px 14px;
   font-size: 13px;
+}
+
+.soundboard-pager button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+}
+
+.soundboard-pager button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.soundboard-pager span {
+  min-width: 64px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
 }
 
 /* ---- the entrance sound, in Settings › Sounds. */

@@ -40,7 +40,7 @@ import { removeRecent } from '../soundboard/model';
 import { useWheelRange } from './useWheelRange';
 import { playSound } from '../soundboard/player';
 import type { SoundboardControls } from '../soundboard/useSoundboard';
-import { useSoundSearch } from '../soundboard/useSoundSearch';
+import { useSoundSearch, type SoundSearch } from '../soundboard/useSoundSearch';
 
 /** Marks the button that opens the panel, which a click outside it does not count. */
 export const TOGGLE_ATTRIBUTE = 'data-soundboard-toggle';
@@ -85,7 +85,7 @@ export default function SoundboardPanel({
   const padList = usePads();
   // What you played that is not on your pad: once added, it is there instead.
   const recentList = useRecents().filter((s) => !onPad(padList, s.slug));
-  const { query, setQuery, search, loadMore } = useSoundSearch();
+  const { query, setQuery, search, goTo } = useSoundSearch();
   const [previewFailed, setPreviewFailed] = useState<string | null>(null);
   // The pad being edited, by its slug.
   const [editing, setEditing] = useState<string | null>(null);
@@ -300,11 +300,7 @@ export default function SoundboardPanel({
                 {!search.loading && !search.failed && search.sounds.length === 0 && (
                   <p className="soundboard-note">{t('soundboard.noResults')}</p>
                 )}
-                {search.next && !search.loading && (
-                  <button type="button" className="soundboard-more" onClick={loadMore}>
-                    {t('soundboard.more')}
-                  </button>
-                )}
+                <SoundPager search={search} onPage={goTo} />
               </>
             ) : (
               <>
@@ -766,6 +762,48 @@ const ICON = {
   strokeLinejoin: 'round',
 } as const;
 
+/**
+ * Moves through a search's pages, under its results. Shown once there is
+ * more than one page; the list goes back to its top on each move.
+ */
+export function SoundPager({
+  search,
+  onPage,
+}: {
+  search: SoundSearch;
+  onPage: (page: number) => void;
+}) {
+  const t = useT();
+  if (search.page <= 1 && !search.next) return null;
+  const go = (event: ReactMouseEvent<HTMLButtonElement>, page: number) => {
+    event.currentTarget.closest('.soundboard-list')?.scrollTo({ top: 0 });
+    onPage(page);
+  };
+  return (
+    <nav className="soundboard-pager" aria-label={t('soundboard.pages')}>
+      <button
+        type="button"
+        disabled={search.page <= 1 || search.loading}
+        onClick={(event) => go(event, search.page - 1)}
+        aria-label={t('soundboard.previousPage')}
+        title={t('soundboard.previousPage')}
+      >
+        <IconBack />
+      </button>
+      <span aria-live="polite">{t('soundboard.page', { page: search.page })}</span>
+      <button
+        type="button"
+        disabled={!search.next || search.loading}
+        onClick={(event) => search.next && go(event, search.next)}
+        aria-label={t('soundboard.nextPage')}
+        title={t('soundboard.nextPage')}
+      >
+        <IconForward />
+      </button>
+    </nav>
+  );
+}
+
 export function IconPreview() {
   return (
     <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
@@ -810,6 +848,14 @@ function IconBack() {
   return (
     <svg {...ICON} width="16" height="16">
       <path d="M15 5l-7 7 7 7" />
+    </svg>
+  );
+}
+
+function IconForward() {
+  return (
+    <svg {...ICON} width="16" height="16">
+      <path d="M9 5l7 7-7 7" />
     </svg>
   );
 }
