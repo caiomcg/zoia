@@ -905,6 +905,8 @@ export default function App({ preview = false }: { preview?: boolean }) {
         body: mine ? t('birthday.party.mineBody') : t('birthday.party.body', { name }),
         target: { type: 'event', id: event.id, channelId: null },
         actionLabel: t('event.details'),
+        // Anyone else's: a way to congratulate them, under the bell.
+        ...(!mine && event.subjectId ? { greet: { accountId: event.subjectId, name } } : {}),
       });
       // The party itself goes with "in Zoia" for birthdays in Settings › Notifications.
       if (!currentNotifyPrefs().inApp.birthday) return;
