@@ -127,11 +127,18 @@ export interface ZoiaBridge {
     setLimit(max: number): Promise<ChannelOutcome>;
     /** Which channel is the away channel (ADR 0044), or none. Admins only. */
     setAway(id: string | null): Promise<ChannelOutcome>;
+    /**
+     * Someone's broadcast picture in a channel (ADR 0056), as a data: URL;
+     * null when there is none now.
+     */
+    preview(room: string, identity: string, version: string): Promise<string | null>;
   };
   stage: {
     get(): Promise<StageState>;
     claim(): Promise<ClaimResult>;
     release(): Promise<{ ok: boolean; released?: boolean }>;
+    /** Sends your broadcast's latest picture (ADR 0056); false when refused. */
+    preview(bytes: Uint8Array): Promise<boolean>;
   };
   /** Voice in the current channel (ADR 0039). */
   voice: {

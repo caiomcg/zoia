@@ -95,6 +95,8 @@ export const es: Messages = {
   'sidebar.showCamera': 'Ver la cámara de {name}',
   'sidebar.hideCamera': 'Ocultar la cámara de {name}',
   'sidebar.watchLive': 'Ver a {name}. Pasa el ratón para una vista previa.',
+  'sidebar.previewLive': '{name} está en directo',
+  'sidebar.previewNone': 'Todavía sin imagen',
   'sidebar.settings': 'Configuración',
   'sidebar.leave': 'Salir del canal',
   'sidebar.kickHint': 'Clic derecho para desconectar',

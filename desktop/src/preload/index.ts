@@ -84,11 +84,14 @@ const bridge: ZoiaBridge = {
     remove: (id) => ipcRenderer.invoke(IPC.roomsRemove, id),
     setLimit: (max) => ipcRenderer.invoke(IPC.roomsSetLimit, max),
     setAway: (id) => ipcRenderer.invoke(IPC.roomsSetAway, id),
+    preview: (room, identity, version) =>
+      ipcRenderer.invoke(IPC.roomsPreview, room, identity, version),
   },
   stage: {
     get: () => ipcRenderer.invoke(IPC.stageGet),
     claim: () => ipcRenderer.invoke(IPC.stageClaim),
     release: () => ipcRenderer.invoke(IPC.stageRelease),
+    preview: (bytes) => ipcRenderer.invoke(IPC.stagePreview, bytes),
   },
   voice: {
     join: () => ipcRenderer.invoke(IPC.voiceJoin),

@@ -143,8 +143,22 @@ export interface RoomInfo {
     role?: AccountRole;
     /** An addon's bot (ADR 0041). */
     bot?: boolean;
+    /**
+     * In voice (ADR 0039), and if so whether they can be heard: so people
+     * outside the channel see it as those inside do. Older servers do not say.
+     */
+    voice?: boolean;
+    muted?: boolean;
+    deafened?: boolean;
   }>;
-  broadcasters: Array<{ identity: string; name: string }>;
+  broadcasters: Array<{
+    identity: string;
+    name: string;
+    /** What they share, as their app labels it; older servers do not say. */
+    source?: { name: string | null; kind: 'screen' | 'window' | 'camera' | null };
+    /** The version of its latest picture (ADR 0056), when there is one. */
+    preview?: string;
+  }>;
 }
 
 /**
@@ -763,6 +777,8 @@ export const IPC = {
   adminKickDevice: 'zoia:admin:kickDevice',
   getToken: 'zoia:token:get',
   roomsList: 'zoia:rooms:list',
+  roomsPreview: 'zoia:rooms:preview',
+  stagePreview: 'zoia:stage:preview',
   roomsCreate: 'zoia:rooms:create',
   roomsRename: 'zoia:rooms:rename',
   roomsSetAway: 'zoia:rooms:set-away',

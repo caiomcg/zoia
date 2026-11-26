@@ -119,8 +119,14 @@ export function installDemo() {
       rename: unavailable,
       remove: unavailable,
       setLimit: unavailable,
+      preview: async () => null,
     },
-    stage: { get: unsupported, claim: unsupported, release: async () => ({ ok: true }) },
+    stage: {
+      get: unsupported,
+      claim: unsupported,
+      release: async () => ({ ok: true }),
+      preview: async () => false,
+    },
     voice: { join: async () => false, leave: async () => ({ ok: true }) },
     shortcuts: {
       get: async () => shortcuts,

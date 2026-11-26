@@ -69,6 +69,7 @@ import {
   type SourceInfo,
 } from '../shared/ipc';
 import { isLeagueSource } from '../shared/league';
+import { useBroadcastPreview } from './livekit/broadcast-preview';
 import { useT } from './i18n';
 import type { MessageKey } from '../shared/i18n';
 import type { ReleaseInfo } from '../shared/ipc';
@@ -289,6 +290,11 @@ export default function App({ preview = false }: { preview?: boolean }) {
   const screenLive = room.broadcastState === 'live' || gpuCast.state === 'live';
   const cameraLive = room.cameraState === 'live';
   const isLive = screenLive || cameraLive;
+  // What people outside the channel see of it (ADR 0056): the screen when it
+  // is shared, else the camera, as your own thumbnail shows it.
+  useBroadcastPreview(
+    demo ? null : screenLive ? room.localTrack : cameraLive ? room.cameraTrack : null,
+  );
   const isStarting =
     room.broadcastState === 'starting' ||
     gpuCast.state === 'starting' ||

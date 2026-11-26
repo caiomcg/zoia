@@ -37,6 +37,7 @@ import { useT } from '../i18n';
 import { useLeaving } from '../presence';
 import type { PresenceController } from '../chat/usePresence';
 import LiveCard, { type SidebarCamera, type SidebarLive } from './LiveCard';
+import { useRoomPreview } from '../livekit/broadcast-preview';
 
 /**
  * Who is in the room, and who is sharing. Your own name sits in the footer,
@@ -606,6 +607,30 @@ export default function Sidebar({
         }
       : {};
 
+  // Someone live in another channel: hovering them shows what they share,
+  // from its latest picture (ADR 0056), without joining. Read from the poll
+  // at render, so a broadcast that ends or moves takes its card with it.
+  const [peek, setPeek] = useState<{ room: string; identity: string; anchor: DOMRect } | null>(
+    null,
+  );
+  useEffect(() => setPeek(null), [currentChannel, collapsed, dragging]);
+  const peekAt = (channel: RoomInfo, identity: string): HTMLAttributes<HTMLElement> => {
+    if (!channel.broadcasters.some((b) => b.identity === identity)) return {};
+    const show = (element: HTMLElement) =>
+      setPeek({ room: channel.id, identity, anchor: element.getBoundingClientRect() });
+    return {
+      onMouseEnter: (event) => show(event.currentTarget),
+      onMouseLeave: () => setPeek(null),
+    };
+  };
+  const peekChannel =
+    peek && peek.room !== currentChannel ? channels.find((c) => c.id === peek.room) : null;
+  const peekBroadcast = peekChannel?.broadcasters.find((b) => b.identity === peek?.identity);
+  const peekCard =
+    peek && peekChannel && peekBroadcast ? (
+      <OutsidePreview room={peekChannel.id} broadcast={peekBroadcast} anchor={peek.anchor} />
+    ) : null;
+
   // Someone who leaves fades out rather than vanishing; see presence.ts.
   const currentChannelName = channels.find((c) => c.id === currentChannel)?.name ?? '';
   const shownMembers = useLeaving(liveMembers, (m) => m.identity, currentChannel ?? '');
@@ -1065,6 +1090,7 @@ export default function Sidebar({
                               onMessageMember && !p.bot ? () => onMessageMember(p.name) : undefined
                             }
                             {...dragFrom(p.identity, p.role, c.id)}
+                            {...peekAt(c, p.identity)}
                           >
                             <span className="avatar-wrap">
                               <Avatar
@@ -1077,6 +1103,7 @@ export default function Sidebar({
                             </span>
                             <span className="member-name">{p.name}</span>
                             {!p.bot && <UnreadFrom count={unreadByName[p.name] ?? 0} />}
+                            <OutsideVoice person={p} />
                           </div>
                         ))}
                       </div>
@@ -1106,6 +1133,7 @@ export default function Sidebar({
                                   : undefined
                               }
                               {...dragFrom(p.identity, p.role, c.id)}
+                              {...peekAt(c, p.identity)}
                             >
                               <Avatar
                                 name={p.name}
@@ -1133,6 +1161,7 @@ export default function Sidebar({
                 </div>
               );
             })}
+            {peekCard}
             {editing === 'new' && (
               <ChannelNameField
                 initial=""
@@ -2098,6 +2127,80 @@ function othersInChannel(channel: RoomInfo, here: ReadonlySet<string>): RoomInfo
     ...people.filter((p) => live.has(p.identity)),
     ...people.filter((p) => !live.has(p.identity)),
   ];
+}
+
+/**
+ * Someone in another channel who cannot be heard: the same mark their row
+ * has inside it, from the server's poll rather than the room.
+ */
+function OutsideVoice({ person }: { person: RoomInfo['participants'][number] }) {
+  const t = useT();
+  if (!person.voice || !(person.deafened || person.muted)) return null;
+  const label = person.deafened ? t('voice.deafenedInVoice') : t('voice.mutedInVoice');
+  return (
+    <span className="member-voice" title={label} aria-label={label} role="img">
+      {person.deafened ? <IconHeadset off /> : <IconMic muted />}
+    </span>
+  );
+}
+
+const OUTSIDE_PREVIEW_WIDTH = 320;
+const OUTSIDE_PREVIEW_HEIGHT = 180;
+
+/**
+ * What someone in another channel shares, as a card beside their row: its
+ * latest picture and its name, as their app labels it (ADR 0056). A still,
+ * refreshed every few seconds by the broadcaster; watching it means joining.
+ */
+function OutsidePreview({
+  room,
+  broadcast,
+  anchor,
+}: {
+  room: string;
+  broadcast: RoomInfo['broadcasters'][number];
+  anchor: DOMRect;
+}) {
+  const t = useT();
+  const picture = useRoomPreview(room, broadcast.identity, broadcast.preview);
+  const source = broadcast.source;
+  const label = source?.name
+    ? source.kind === 'window'
+      ? t('grid.sourceWindow', { name: source.name })
+      : source.kind === 'screen'
+        ? t('grid.sourceScreen', { name: source.name })
+        : source.name
+    : source?.kind === 'camera'
+      ? t('grid.source.camera')
+      : t('sidebar.previewLive', { name: broadcast.name });
+  const top = Math.min(
+    Math.max(8, anchor.top + anchor.height / 2 - OUTSIDE_PREVIEW_HEIGHT / 2),
+    window.innerHeight - OUTSIDE_PREVIEW_HEIGHT - 8,
+  );
+  return createPortal(
+    <div
+      className="member-preview outside-preview"
+      style={{ top, right: window.innerWidth - anchor.left + 8, width: OUTSIDE_PREVIEW_WIDTH }}
+      role="tooltip"
+    >
+      <div className="thumb">
+        <div className="thumb-watch">
+          {picture ? (
+            <img src={picture} alt="" />
+          ) : (
+            <span className="thumb-blank outside-preview-none">
+              {broadcast.preview ? '' : t('sidebar.previewNone')}
+            </span>
+          )}
+          <span className="thumb-label">
+            <Avatar name={broadcast.name} identity={broadcast.identity} live />
+            <span>{label}</span>
+          </span>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
 }
 
 function WatchingYou() {

@@ -2947,6 +2947,32 @@ button.danger {
   box-shadow: 0 8px 28px rgb(0 0 0 / 0.6);
 }
 
+/* Someone live in another channel (ADR 0056). Outside, the picture is all
+   there is to go by, so it is shown sharp; it is only a tooltip, not a way
+   in, and the mouse passes through it. */
+.outside-preview {
+  pointer-events: none;
+}
+
+.outside-preview .thumb-watch {
+  cursor: default;
+}
+
+.outside-preview .thumb-watch > img {
+  filter: none;
+  transform: none;
+}
+
+.outside-preview-none {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-bottom: 28px;
+  box-sizing: border-box;
+  color: var(--muted);
+  font-size: 12px;
+}
+
 /* Someone's camera, under their picture: the way to it from the collapsed
    list, which has no room for the button on their row. CAMERA_BAR_HEIGHT in
    RemoteGrid is this, margin included. */
