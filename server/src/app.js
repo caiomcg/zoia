@@ -27,6 +27,7 @@ import { createAddonHostClient } from './addon-host.js';
 import { BOT_PREFIX, isBotIdentity } from './token.js';
 import { KICK_GRACE_MS, MOVE_TOPIC, kick } from './idle.js';
 import { createPresence } from './presence.js';
+import { createPreviews, isJpeg, PREVIEW_MAX_BYTES } from './previews.js';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -69,6 +70,8 @@ export function createApp({
     offlineGraceMs: config.presence?.offlineGraceMs,
     logger,
   }),
+  // Each live broadcast's latest picture, for the channel list (ADR 0056).
+  previews = createPreviews(),
 }) {
   const app = express();
 
@@ -861,7 +864,7 @@ export function createApp({
             participants: await Promise.all(
               participants
                 .filter((p) => !p.identity.endsWith(WHIP_SUFFIX))
-                .map(async ({ identity, name: who, avatar }) => {
+                .map(async ({ identity, name: who, avatar, voice, audible, deafened }) => {
                   const role = await roleOf(identity, roles);
                   return {
                     identity,
@@ -872,10 +875,22 @@ export function createApp({
                     ...(role ? { role } : {}),
                     // An addon's bot, which has no device (ADR 0041).
                     ...(isBotIdentity(identity) ? { bot: true } : {}),
+                    // Whether they can be heard, for people outside the
+                    // channel, as those inside see it (ADR 0039).
+                    ...(voice ? { voice: true, muted: !audible, deafened } : {}),
                   };
                 }),
             ),
-            broadcasters: broadcasters.map(({ identity, name: who }) => ({ identity, name: who })),
+            broadcasters: broadcasters.map(({ identity, name: who, source }) => {
+              const preview = previews.version(id, identity);
+              return {
+                identity,
+                name: who,
+                // What is on, in words and as a picture (ADR 0056).
+                ...(source ? { source } : {}),
+                ...(preview ? { preview } : {}),
+              };
+            }),
           };
         }),
       );
@@ -992,7 +1007,65 @@ export function createApp({
     try {
       const channel = await channelOf(req, res);
       if (!channel) return;
+      previews.drop(req.user.id);
       res.json(await channel.stage.release(req.user));
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // ---- broadcast previews (ADR 0056) -------------------------------------
+  // A broadcaster's app sends a small picture of what it shares now and then,
+  // so people outside the channel see what is on. Only the one broadcasting
+  // may set theirs, checked against LiveKit as a claim is; anyone signed in
+  // may look, as anyone signed in may join the channel and watch it.
+
+  const rawPreview = express.raw({ type: () => true, limit: PREVIEW_MAX_BYTES });
+  const readPreviewBody = (req, res, next) =>
+    rawPreview(req, res, (err) => {
+      if (!err) return next();
+      const tooLarge = err.type === 'entity.too.large';
+      res
+        .status(tooLarge ? 413 : 400)
+        .json({ error: tooLarge ? 'preview_too_large' : 'invalid_image' });
+    });
+
+  app.put('/api/stage/preview', requireSession, readPreviewBody, async (req, res, next) => {
+    try {
+      if (!isJpeg(req.body)) return res.status(400).json({ error: 'invalid_image' });
+      const channel = await channelOf(req, res);
+      if (!channel) return;
+      // Read live, never from the channel list's shared read: a slot given up
+      // a moment ago must not keep its picture up.
+      if (!(await channel.stage.isBroadcaster(req.user.id))) {
+        return res.status(409).json({ error: 'not_stage_holder' });
+      }
+      const result = previews.put(channel.id, req.user.id, req.body);
+      if (!result.ok) return res.status(429).json({ error: result.reason });
+      res.json({ ok: true, preview: result.version });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  app.get('/api/rooms/:id/preview/:identity', requireSession, async (req, res, next) => {
+    try {
+      const channel = await channelSet.get(req.params.id);
+      const shot = channel ? previews.get(channel.id, req.params.identity) : null;
+      if (!shot) return res.status(404).json({ error: 'no_preview' });
+      // Still live there: a broadcast that ended without a release (a crash,
+      // a kick) stops showing within a channel-list read, not at the TTL.
+      const { broadcasters } = await channel.stage.overview();
+      if (!broadcasters.some((b) => b.identity === req.params.identity)) {
+        previews.drop(req.params.identity);
+        return res.status(404).json({ error: 'no_preview' });
+      }
+      res
+        .type('image/jpeg')
+        // Each picture has its own version in the URL; this one never changes.
+        .set('Cache-Control', 'private, max-age=60')
+        .set('X-Content-Type-Options', 'nosniff')
+        .send(shot.bytes);
     } catch (err) {
       next(err);
     }

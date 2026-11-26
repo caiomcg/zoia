@@ -11,6 +11,7 @@ import { mkdtemp, rm, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import request from 'supertest';
+import { TrackSource } from 'livekit-server-sdk';
 
 import { createApp } from '../src/app.js';
 import {
@@ -24,6 +25,7 @@ import { signIn, testStores } from './people.js';
 import { createTokenIssuer, decodeTokenPayload } from '../src/token.js';
 import { createStage } from '../src/stage.js';
 import { createWhipPublisher } from '../src/whip.js';
+import { PREVIEW_MAX_BYTES } from '../src/previews.js';
 
 const quiet = { info() {}, warn() {}, error() {} };
 const SECRET = 'a-secret-long-enough-for-hmac-signing';
@@ -451,5 +453,126 @@ describe('the channel routes', () => {
     const [room] = (await agent.get('/api/rooms')).body.rooms;
     const roles = Object.fromEntries(room.participants.map((p) => [p.name, p.role ?? 'user']));
     assert.deepEqual(roles, { Owner: 'super_admin', Admin: 'admin', Bob: 'user' });
+  });
+
+  test('the room list says who is muted or deafened in voice, to people outside the channel', async () => {
+    const { agent } = await signedIn('Outsider');
+    await signedIn('Talking', 'zoia');
+    await signedIn('Muted', 'zoia');
+    await signedIn('Deaf', 'zoia');
+    await signedIn('Watching', 'zoia');
+    const [talking, muted, deaf] = byRoom.zoia;
+    const voice = { 'zoia.voice': '1' };
+    talking.attributes = voice;
+    talking.tracks = [{ source: TrackSource.MICROPHONE, muted: false }];
+    muted.attributes = voice;
+    muted.tracks = [{ source: TrackSource.MICROPHONE, muted: true }];
+    deaf.attributes = { ...voice, 'zoia.deafened': '1' };
+    // Deafened, as the app does it, and so muted too: no microphone at all.
+
+    const [room] = (await agent.get('/api/rooms')).body.rooms;
+    const state = Object.fromEntries(
+      room.participants.map((p) => [
+        p.name,
+        p.voice ? { muted: p.muted, deafened: p.deafened } : 'not in voice',
+      ]),
+    );
+    assert.deepEqual(state, {
+      Talking: { muted: false, deafened: false },
+      Muted: { muted: true, deafened: false },
+      Deaf: { muted: true, deafened: true },
+      Watching: 'not in voice',
+    });
+  });
+
+  describe('broadcast previews', () => {
+    // The start of a JPEG is all the server looks at.
+    const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3, 4]);
+    const upload = (agent, room, bytes = jpeg) =>
+      agent
+        .put(`/api/stage/preview?room=${room}`)
+        .set('content-type', 'application/octet-stream')
+        .send(bytes);
+
+    test('a broadcaster shows everyone outside the channel what is on, in words and as a picture', async () => {
+      const { agent: alice, record } = await signedIn('Alice', 'zoia', 'admin');
+      const other = await newChannel(alice, 'Jogos');
+      const { agent: bob } = await signedIn('Bob', other);
+      await alice.post('/api/stage/claim').send({ room: 'zoia' });
+      byRoom.zoia[0].metadata = JSON.stringify({
+        sourceName: 'Hollow Knight',
+        sourceKind: 'window',
+      });
+
+      const sent = await upload(alice, 'zoia');
+      assert.equal(sent.status, 200);
+
+      const [room] = (await bob.get('/api/rooms')).body.rooms;
+      assert.deepEqual(room.broadcasters, [
+        {
+          identity: record.id,
+          name: 'Alice',
+          source: { name: 'Hollow Knight', kind: 'window' },
+          preview: sent.body.preview,
+        },
+      ]);
+
+      const shot = await bob
+        .get(`/api/rooms/zoia/preview/${record.id}?v=${sent.body.preview}`)
+        .buffer(true)
+        .parse((res, done) => {
+          const chunks = [];
+          res.on('data', (c) => chunks.push(c));
+          res.on('end', () => done(null, Buffer.concat(chunks)));
+        });
+      assert.equal(shot.status, 200);
+      assert.equal(shot.headers['content-type'], 'image/jpeg');
+      assert.deepEqual(shot.body, jpeg);
+    });
+
+    test('only someone broadcasting there may set a preview', async () => {
+      const { agent: alice } = await signedIn('Alice', 'zoia');
+      assert.equal((await upload(alice, 'zoia')).status, 409);
+      assert.equal((await upload(alice, 'nowhere')).status, 404);
+    });
+
+    test('a preview must be a small JPEG, and comes no faster than every few seconds', async () => {
+      const { agent: alice } = await signedIn('Alice', 'zoia');
+      await alice.post('/api/stage/claim').send({ room: 'zoia' });
+
+      const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+      assert.equal((await upload(alice, 'zoia', png)).status, 400);
+      const huge = Buffer.concat([jpeg, Buffer.alloc(PREVIEW_MAX_BYTES)]);
+      assert.equal((await upload(alice, 'zoia', huge)).status, 413);
+
+      assert.equal((await upload(alice, 'zoia')).status, 200);
+      assert.equal((await upload(alice, 'zoia')).status, 429);
+    });
+
+    test('a preview goes when its broadcast does, released or not', async () => {
+      const { agent: alice, record } = await signedIn('Alice', 'zoia', 'admin');
+      const { agent: bob } = await signedIn('Bob');
+      await alice.post('/api/stage/claim').send({ room: 'zoia' });
+      const { preview } = (await upload(alice, 'zoia')).body;
+      const path = `/api/rooms/zoia/preview/${record.id}?v=${preview}`;
+
+      // Gone from the room without releasing, as a crashed app would be.
+      const [participant] = byRoom.zoia;
+      byRoom.zoia = [];
+      assert.equal((await bob.get(path)).status, 404);
+
+      // Back and live again, then released: no picture either.
+      byRoom.zoia = [participant];
+      assert.equal((await upload(alice, 'zoia')).status, 200);
+      await alice.post('/api/stage/release').send({ room: 'zoia' });
+      const [room] = (await bob.get('/api/rooms')).body.rooms;
+      assert.equal(room.broadcasters.length, 0);
+      assert.equal((await bob.get(path)).status, 404);
+    });
+
+    test('a preview cannot be seen without a session', async () => {
+      const { record } = await signedIn('Alice', 'zoia');
+      assert.equal((await request(app).get(`/api/rooms/zoia/preview/${record.id}`)).status, 401);
+    });
   });
 });
