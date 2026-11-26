@@ -9245,6 +9245,56 @@ button.events-new:hover {
   background: color-mix(in srgb, var(--accent) 10%, transparent);
 }
 
+/* Under someone else's birthday: the greetings to send them (ADR 0055). */
+.notify-greet {
+  display: grid;
+  gap: 6px;
+  padding: 2px 8px 8px 44px;
+}
+
+.notify-greet-label,
+.notify-greet-sent,
+.notify-greet-failed {
+  margin: 0;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.notify-greet-sent {
+  padding: 0 8px 8px 44px;
+}
+
+.notify-greet-failed {
+  color: var(--danger);
+}
+
+.notify-greet-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.notify-greet-option {
+  padding: 4px 10px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text);
+  background: var(--raised);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.notify-greet-option:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 18%, var(--raised));
+  border-color: var(--accent);
+}
+
+.notify-greet-option:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
 .notify-entry-icon {
   display: grid;
   place-items: center;
