@@ -50,7 +50,10 @@ the rules for itself, and ignores a sound unless:
 - the listener has not muted effects, or that person's.
 
 One sound per person: a new one from someone cuts theirs. Every sound stops at ten seconds,
-fading out.
+fading out. A sound lasts only while its sender may play one: when they mute their microphone
+or leave voice, their app cuts it for them and every listener's cuts it there, from the same
+microphone mute and voice attribute that decide whether it plays at all. The lock still runs
+its course, so muting and unmuting is no way round it.
 
 **Myinstants is read from main.** It sends no CORS headers, and the page, loaded from
 `file://`, could not read it. Main fetches the search and the files, and keeps each file in

@@ -9,10 +9,18 @@
  * again only once their last sound has played out, and must not be someone
  * you muted. The sender
  * hears their own as they send it, at their own volume, as everyone does.
+ * A sound lasts only while its sender may play: muting the microphone or
+ * leaving voice cuts it, for them and for everyone listening.
  */
 
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
-import { RoomEvent, Track, type RemoteParticipant, type Room } from 'livekit-client';
+import {
+  RoomEvent,
+  Track,
+  type Participant,
+  type RemoteParticipant,
+  type Room,
+} from 'livekit-client';
 import type { ConnectionState } from '../livekit/useRoom';
 import { inVoice } from '../voice/voice-room';
 import type { VoiceState } from '../voice/useVoice';
@@ -47,7 +55,7 @@ export interface SoundboardControls {
 }
 
 /** The sender's microphone is on, as voice needs to play a sound. */
-function speaking(participant: RemoteParticipant): boolean {
+function speaking(participant: Participant): boolean {
   const microphone = participant.getTrackPublication(Track.Source.Microphone);
   return inVoice(participant) && !!microphone && !microphone.isMuted;
 }
@@ -93,14 +101,38 @@ export function useSoundboard(
     };
     // Someone leaving takes their sound with them.
     const onLeft = (participant: RemoteParticipant) => stopSound(participant.identity);
+    // So does muting their microphone or leaving voice: a sound plays only
+    // while its sender may play one. Yours is stopped below, from your voice.
+    const onVoiceChanged = (participant: Participant) => {
+      if (participant === room.localParticipant || speaking(participant)) return;
+      stopSound(participant.identity, 'effect');
+    };
+    const onTrackChanged = (_publication: unknown, participant: Participant) =>
+      onVoiceChanged(participant);
+    const onAttributesChanged = (_changed: unknown, participant: Participant) =>
+      onVoiceChanged(participant);
     room.on(RoomEvent.DataReceived, onData);
     room.on(RoomEvent.ParticipantDisconnected, onLeft);
+    room.on(RoomEvent.TrackMuted, onTrackChanged);
+    room.on(RoomEvent.TrackUnpublished, onTrackChanged);
+    room.on(RoomEvent.ParticipantAttributesChanged, onAttributesChanged);
     return () => {
       room.off(RoomEvent.DataReceived, onData);
       room.off(RoomEvent.ParticipantDisconnected, onLeft);
+      room.off(RoomEvent.TrackMuted, onTrackChanged);
+      room.off(RoomEvent.TrackUnpublished, onTrackChanged);
+      room.off(RoomEvent.ParticipantAttributesChanged, onAttributesChanged);
       stopAllSounds();
     };
   }, [roomRef, connection]);
+
+  // Muting your microphone or leaving voice cuts the sound you are playing,
+  // here as it does for everyone listening.
+  const canSpeak = voice.state === 'on' && !voice.muted;
+  useEffect(() => {
+    const identity = roomRef.current?.localParticipant.identity;
+    if (!canSpeak && identity) stopSound(identity, 'effect');
+  }, [canSpeak, roomRef]);
 
   // Muting everything, or one person, stops what is playing now too.
   useEffect(
