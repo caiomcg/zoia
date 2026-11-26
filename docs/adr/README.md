@@ -61,6 +61,7 @@ record that supersedes it, so the history stays legible.
 | [0053](0053-camera-background-effects.md) | Blurring or replacing what is behind you on camera | proposed |
 | [0054](0054-no-switch-to-a-new-audio-device.md) | Not moving to an audio device just plugged in | proposed |
 | [0055](0055-birthdays.md) | Birthdays on the calendar, with a party | proposed |
+| [0056](0056-seeing-a-channel-from-outside.md) | Seeing a channel from outside: voice state and broadcast previews | proposed |
 
 ## The two that explain the most
 
