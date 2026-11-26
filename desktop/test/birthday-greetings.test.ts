@@ -1,6 +1,6 @@
 /**
  * Congratulating someone on their birthday: only the predefined greetings,
- * sent in your direct chat with them.
+ * sent in your direct chat with them, and the bell remembering it was done.
  */
 
 import { test, describe } from 'node:test';
@@ -10,6 +10,7 @@ import {
   sendBirthdayGreeting,
   type GreetingBridge,
 } from '../src/renderer/schedule/greetings.ts';
+import { addToInbox, parseInbox, type InboxItem } from '../src/renderer/notify/notify.ts';
 
 function fakeBridge(fail?: { direct?: string; send?: string }) {
   const calls: string[] = [];
@@ -59,5 +60,30 @@ describe('birthday greetings', () => {
       await sendBirthdayGreeting('acc-7', BIRTHDAY_GREETINGS[0], refused.bridge),
       'rate_limited',
     );
+  });
+});
+
+describe('a birthday under the bell', () => {
+  const now = Date.now();
+  const item = {
+    id: 1,
+    kind: 'birthday' as const,
+    group: 'birthday:e1',
+    title: 'It’s Ana’s birthday!',
+    body: '',
+    at: now,
+    greet: { accountId: 'acc-7', name: 'Ana' },
+  };
+
+  test('keeps whose it is, and whether they were congratulated, across a restart', () => {
+    const list: InboxItem[] = [{ ...addToInbox([], item)[0], greeted: true }];
+    const [back] = parseInbox(JSON.stringify(list), now);
+    assert.deepEqual(back.greet, { accountId: 'acc-7', name: 'Ana' });
+    assert.equal(back.greeted, true);
+  });
+
+  test('an entry with a malformed greetee is dropped', () => {
+    const raw = JSON.stringify([{ ...item, count: 1, read: false, greet: { accountId: 7 } }]);
+    assert.deepEqual(parseInbox(raw, now), []);
   });
 });
