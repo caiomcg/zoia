@@ -8,10 +8,10 @@ import {
   useEntranceSound,
   useSoundboardSettings,
 } from '../soundboard/library';
-import { playSound } from '../soundboard/player';
+import { playSound, PREVIEW_KEY } from '../soundboard/player';
 import { useSoundSearch } from '../soundboard/useSoundSearch';
 import { SettingsCard, SettingsToggle } from './SettingsCard';
-import { IconClose, IconNote, IconPreview, IconSearch } from './SoundboardPanel';
+import { IconClose, IconNote, IconPreview, IconSearch, SoundPager } from './SoundboardPanel';
 import { useWheelRange } from './useWheelRange';
 
 /**
@@ -24,7 +24,7 @@ export default function EntranceSettingsSection() {
   const settings = useSoundboardSettings();
   const chosen = useEntranceSound();
   const [previewFailed, setPreviewFailed] = useState<string | null>(null);
-  const { query, setQuery, search, loadMore } = useSoundSearch();
+  const { query, setQuery, search, goTo } = useSoundSearch();
   const percent = Math.round(settings.entranceVolume * 100);
   const volumeRef = useWheelRange(stepEntranceVolume);
 
@@ -35,7 +35,7 @@ export default function EntranceSettingsSection() {
 
   const preview = async (sound: Sound) => {
     setPreviewFailed(null);
-    if ((await playSound('preview', sound, false, 'entrance')) === null) {
+    if ((await playSound(PREVIEW_KEY, sound, false, 'entrance')) === null) {
       setPreviewFailed(sound.name);
     }
   };
@@ -115,11 +115,7 @@ export default function EntranceSettingsSection() {
           {!search.loading && !search.failed && search.sounds.length === 0 && (
             <p className="soundboard-note">{t('soundboard.noResults')}</p>
           )}
-          {search.next && !search.loading && (
-            <button type="button" className="soundboard-more" onClick={loadMore}>
-              {t('soundboard.more')}
-            </button>
-          )}
+          <SoundPager search={search} onPage={goTo} />
         </div>
       )}
 

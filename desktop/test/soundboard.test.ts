@@ -15,6 +15,10 @@ import {
   parseSoundPage,
   addPad,
   clip,
+  cutAt,
+  cutShorter,
+  MIN_SOUND_SECONDS,
+  soundSeconds,
   MAX_PAD_NAME,
   MAX_PADS,
   padEmoji,
@@ -48,6 +52,12 @@ import {
   MAX_LOCK_MS,
   NETWORK_SLACK_MS,
   DEFAULT_SOUNDBOARD_SETTINGS,
+  effectsCap,
+  MAX_HEARD_SECONDS,
+  MIN_HEARD_SECONDS,
+  MIN_PLAY_SECONDS,
+  playCut,
+  playLength,
 } from '../src/renderer/soundboard/model.ts';
 import { MAX_SOUND_SHORTCUTS } from '../src/shared/shortcuts.ts';
 
@@ -149,6 +159,26 @@ describe('messages', () => {
     assert.deepEqual(decodeSoundMessage(encodeSoundMessage(played)), { ...played, color: null });
   });
 
+  test('where the player cut a sound goes with it; an uncut one carries no cut', () => {
+    const cut = cutAt(sound('bruh'), 2.5);
+    assert.equal(decodeSoundMessage(encodeSoundMessage(cut))?.seconds, 2.5);
+    assert.equal('seconds' in decodeSoundMessage(encodeSoundMessage(sound('bruh')))!, false);
+  });
+
+  test("a cut from the room is held between half a second and every sound's limit", () => {
+    const sent = (seconds: unknown) =>
+      decodeSoundMessage(new TextEncoder().encode(JSON.stringify({ ...sound('a'), seconds })));
+    assert.equal(sent(0.01)?.seconds, MIN_SOUND_SECONDS);
+    assert.equal(sent(-3)?.seconds, MIN_SOUND_SECONDS);
+    assert.equal(sent(3.14159)?.seconds, 3.1);
+    // At or past the limit every sound is cut there anyway: no cut of its own.
+    assert.equal(sent(MAX_SOUND_SECONDS)?.seconds, undefined);
+    assert.equal(sent(1e9)?.seconds, undefined);
+    // Anything not a number is no cut, and the sound still plays.
+    for (const odd of ['2', null, NaN, {}]) assert.equal(sent(odd)?.seconds, undefined);
+    assert.equal(soundSeconds(Infinity), undefined);
+  });
+
   test('anything else from the room is nothing', () => {
     assert.equal(decodeSoundMessage(new TextEncoder().encode('{')), null);
     const elsewhere = { ...sound('a'), url: 'https://evil.example/a.mp3' };
@@ -185,6 +215,29 @@ describe('the pad and recents', () => {
     const long = 'x'.repeat(MAX_PAD_NAME - 1) + '👍🏽👍🏽';
     assert.equal(renamePad(list, 'a', { name: long, emoji: null })[0]?.name, long.slice(0, -4));
     assert.equal(clip('👨‍👩‍👧 family', 1), '👨‍👩‍👧');
+  });
+
+  test('a pad is cut where you set it, for everyone, and played whole again on null', () => {
+    let list = renamePad(addPad([], sound('a')), 'a', { name: 'A', emoji: null, seconds: 3 });
+    assert.equal(list[0]?.seconds, 3);
+    assert.equal(padSound(list[0]!).seconds, 3);
+    // Renaming without a cut keeps the one it had.
+    list = renamePad(list, 'a', { name: 'B', emoji: null });
+    assert.equal(list[0]?.seconds, 3);
+    // Kept between sessions.
+    assert.equal(parsePads(JSON.stringify(list))[0]?.seconds, 3);
+    list = renamePad(list, 'a', { name: 'B', emoji: null, seconds: null });
+    assert.equal('seconds' in list[0]!, false);
+    assert.equal('seconds' in padSound(list[0]!), false);
+  });
+
+  test("the panel's length cuts what you play, unless it is cut shorter already", () => {
+    assert.equal(cutShorter(sound('a'), 3).seconds, 3);
+    assert.equal(cutShorter(cutAt(sound('a'), 2), 3).seconds, 2);
+    assert.equal(cutShorter(cutAt(sound('a'), 5), 3).seconds, 3);
+    // Whole in the panel leaves a pad's own cut alone, and an uncut sound uncut.
+    assert.equal(cutShorter(cutAt(sound('a'), 5), null).seconds, 5);
+    assert.equal('seconds' in cutShorter(sound('a'), null), false);
   });
 
   test("a pad's emoji is one emoji, the last one given, or none", () => {
@@ -254,6 +307,27 @@ describe('settings', () => {
     assert.deepEqual(parseSoundboardSettings('{"mutedPeople":["ana",4,"ana",""]}').mutedPeople, [
       'ana',
     ]);
+  });
+
+  test('your cut of every effect is 1 to 10 seconds, by halves; 10 is none of your own', () => {
+    assert.equal(DEFAULT_SOUNDBOARD_SETTINGS.maxSeconds, MAX_HEARD_SECONDS);
+    assert.equal(MAX_HEARD_SECONDS, MAX_SOUND_SECONDS);
+    assert.equal(parseSoundboardSettings('{"maxSeconds":0}').maxSeconds, MIN_HEARD_SECONDS);
+    assert.equal(parseSoundboardSettings('{"maxSeconds":99}').maxSeconds, MAX_HEARD_SECONDS);
+    assert.equal(parseSoundboardSettings('{"maxSeconds":2.7}').maxSeconds, 2.5);
+    assert.equal(parseSoundboardSettings('{"maxSeconds":"3"}').maxSeconds, MAX_HEARD_SECONDS);
+    assert.equal(effectsCap(DEFAULT_SOUNDBOARD_SETTINGS), undefined);
+    assert.equal(MIN_PLAY_SECONDS, MIN_SOUND_SECONDS);
+  });
+
+  test('the length of what you play is half a second to 10, by halves; 10 is whole', () => {
+    assert.equal(DEFAULT_SOUNDBOARD_SETTINGS.playSeconds, MAX_HEARD_SECONDS);
+    assert.equal(parseSoundboardSettings('{"playSeconds":0}').playSeconds, MIN_PLAY_SECONDS);
+    assert.equal(parseSoundboardSettings('{"playSeconds":99}').playSeconds, MAX_HEARD_SECONDS);
+    assert.equal(parseSoundboardSettings('{"playSeconds":1.2}').playSeconds, 1);
+    assert.equal(playCut(DEFAULT_SOUNDBOARD_SETTINGS), null);
+    assert.equal(playCut({ ...DEFAULT_SOUNDBOARD_SETTINGS, playSeconds: 2.5 }), 2.5);
+    assert.equal(effectsCap({ ...DEFAULT_SOUNDBOARD_SETTINGS, maxSeconds: 3 }), 3);
   });
 
   test('muted plays nothing, whatever the volume', () => {
@@ -376,6 +450,21 @@ describe('who may play', () => {
   test('the lock is never longer than a sound may play', () => {
     assert.equal(lockMs(60), MAX_LOCK_MS);
     assert.equal(MAX_LOCK_MS, MAX_SOUND_SECONDS * 1000);
+  });
+
+  test("a sound plays to its player's cut, or the limit, whichever comes first", () => {
+    assert.deepEqual(playLength(7, 10), { seconds: 7, heard: 7 });
+    assert.deepEqual(playLength(30, 10), { seconds: 10, heard: 10 });
+    assert.deepEqual(playLength(7, 10, 2.5), { seconds: 2.5, heard: 2.5 });
+    // A cut past the sound's end changes nothing.
+    assert.deepEqual(playLength(2, 10, 5), { seconds: 2, heard: 2 });
+  });
+
+  test("a listener's own cut shortens what they hear, never the player's lock", () => {
+    // Cut at 2 s for you: you hear 2 s, and the player stays held for all 7.
+    assert.deepEqual(playLength(7, 10, undefined, 2), { seconds: 7, heard: 2 });
+    assert.deepEqual(playLength(7, 10, 4, 2), { seconds: 4, heard: 2 });
+    assert.deepEqual(playLength(1, 10, undefined, 2), { seconds: 1, heard: 1 });
   });
 
   test('a sound of no length locks for nothing', () => {

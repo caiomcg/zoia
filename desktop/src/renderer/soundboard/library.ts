@@ -12,7 +12,14 @@ import {
   type Pad,
   type Sound,
 } from '../../shared/soundboard';
-import { MAX_RECENTS, parseSoundboardSettings, type SoundboardSettings } from './model';
+import {
+  MAX_HEARD_SECONDS,
+  MAX_RECENTS,
+  MIN_HEARD_SECONDS,
+  MIN_PLAY_SECONDS,
+  parseSoundboardSettings,
+  type SoundboardSettings,
+} from './model';
 
 interface Store<T> {
   get(): T;
@@ -68,6 +75,25 @@ export function stepEntranceVolume(direction: 1 | -1) {
   const settings = soundboardSettings.get();
   const percent = Math.min(100, Math.max(0, Math.round(settings.entranceVolume * 100) + direction));
   soundboardSettings.set({ ...settings, entranceVolume: percent / 100 });
+}
+
+/** Half a second either way, within `min` and MAX_HEARD_SECONDS. */
+function stepSeconds(value: number, min: number, direction: 1 | -1): number {
+  return Math.min(MAX_HEARD_SECONDS, Math.max(min, value + direction * 0.5));
+}
+
+/** The length of the sounds you play half a second up or down, as the wheel moves its slider. */
+export function stepPlaySeconds(direction: 1 | -1) {
+  const settings = soundboardSettings.get();
+  const playSeconds = stepSeconds(settings.playSeconds, MIN_PLAY_SECONDS, direction);
+  soundboardSettings.set({ ...settings, playSeconds });
+}
+
+/** Your cut of every effect half a second up or down, as the wheel moves its slider. */
+export function stepMaxSeconds(direction: 1 | -1) {
+  const settings = soundboardSettings.get();
+  const maxSeconds = stepSeconds(settings.maxSeconds, MIN_HEARD_SECONDS, direction);
+  soundboardSettings.set({ ...settings, maxSeconds });
 }
 
 export function useSoundboardSettings(): SoundboardSettings {

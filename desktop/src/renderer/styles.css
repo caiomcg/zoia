@@ -6954,11 +6954,48 @@ button.danger:active:not(:disabled),
 
 .soundboard-volume-value {
   flex: none;
-  width: 34px;
+  /* As wide as "100%" and "2,5 s", so the volume's and the length's sliders end together. */
+  width: 36px;
   font-size: 12px;
   color: var(--muted);
   text-align: right;
   font-variant-numeric: tabular-nums;
+}
+
+/* Your cut of every effect, in Settings: as voice's sliders are laid out. */
+.soundboard-cut {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.soundboard-cut .settings-range {
+  margin: 0;
+}
+
+.soundboard-cut .settings-range:disabled {
+  opacity: 0.4;
+}
+
+.soundboard-cut-note {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+/* The length's line, under the volume's: its icon where the mute button is. */
+.soundboard-play-length {
+  margin-top: -4px;
+}
+
+.soundboard-length-icon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  color: var(--muted);
 }
 
 .soundboard-mute {
@@ -7299,11 +7336,33 @@ button.danger:active:not(:disabled),
   color: var(--accent);
 }
 
-.soundboard-more {
-  align-self: center;
+.soundboard-pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
   margin: 4px 0;
-  padding: 6px 14px;
   font-size: 13px;
+}
+
+.soundboard-pager button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+}
+
+.soundboard-pager button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.soundboard-pager span {
+  min-width: 64px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
 }
 
 /* ---- the entrance sound, in Settings › Sounds. */
@@ -7404,6 +7463,21 @@ button.danger:active:not(:disabled),
   flex: 1;
   min-width: 0;
   min-height: 32px;
+}
+
+.soundpad-length .settings-range {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Wide enough for "7.5 s of 9.3 s" not to move the slider as it changes. */
+.soundpad-length-value {
+  flex: none;
+  min-width: 92px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  text-align: right;
 }
 
 .soundpad-editor-actions {

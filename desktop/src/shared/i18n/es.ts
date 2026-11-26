@@ -929,7 +929,10 @@ export const es: Messages = {
   'soundboard.searchFailed':
     'No se pudo conectar con Myinstants. Inténtalo de nuevo en un momento.',
   'soundboard.noResults': 'No se encontraron sonidos.',
-  'soundboard.more': 'Cargar más',
+  'soundboard.pages': 'Páginas de la búsqueda',
+  'soundboard.previousPage': 'Página anterior',
+  'soundboard.nextPage': 'Página siguiente',
+  'soundboard.page': 'Página {page}',
   'soundboard.pad': 'Tu pad · {count}/{max}',
   'soundboard.empty': 'Busca un sonido y añádelo a tu pad.',
   'soundboard.find': 'Añadir sonido',
@@ -959,6 +962,18 @@ export const es: Messages = {
   'soundboard.playing': 'Reproduciendo «{sound}»',
   'soundboard.mutePerson': 'Silenciar sus efectos de sonido',
   'soundboard.from': 'Sonidos de Myinstants',
+  'soundboard.length': 'Duración',
+  'soundboard.lengthHint': 'Todos en el canal lo oyen detenerse aquí',
+  'soundboard.lengthWhole': 'Entero',
+  'soundboard.lengthWholeOf': 'Entero · {length}',
+  'soundboard.lengthOf': '{seconds} de {length}',
+  'soundboard.seconds': '{seconds} s',
+  'soundboard.maxSeconds': 'Cortar efectos de sonido después de',
+  'soundboard.playLength': 'Duración de los sonidos que reproduces',
+  'soundboard.playLengthHint':
+    'Duración de los sonidos que reproduces: todos los oyen detenerse aquí',
+  'soundboard.maxSecondsHint':
+    'Solo para ti: los demás oyen cada sonido tanto como eligió quien lo reprodujo. Las vistas previas suenan enteras.',
   'entrance.title': 'Sonido de entrada',
   'entrance.intro':
     'Suena para el canal cuando llegas con el micrófono activado, {seconds} segundos como máximo. Se guarda en este ordenador. Un sonido nuevo cuenta desde el próximo canal al que entres.',

@@ -29,7 +29,7 @@ In the app it is called **Zumbido**, in every language; "soundboard" stays the n
 code, its files, settings keys and the room topic.
 
 **A sound is played by a message, and heard by each listener playing it.** The app sends
-`{slug, name, url}` on the `zoia.soundboard` topic. Every other app in the room checks it,
+`{slug, name, url, seconds?}` on the `zoia.soundboard` topic. Every other app in the room checks it,
 fetches the file, and plays it through a gain of its own: the effects' volume, under deafen
 like voices and cues (ADR 0039). The sender's app plays it too as it sends it, through the same
 gain, so they hear what they played; the panel's preview plays a sound for them alone.
@@ -43,7 +43,7 @@ the rules for itself, and ignores a sound unless:
   and their microphone's mute;
 - the sender's last sound has played out: a sound locks its sender out from when it
   starts playing to when it ends, exactly its decoded length, at most ten seconds (where
-  every sound is cut). While it is still loading, the sender's app plays nothing else; its
+  every sound is cut) or where the sender cut it, if sooner. While it is still loading, the sender's app plays nothing else; its
   bar runs over the playing only. A listener holds the sender from when the sound starts
   playing there until it ends, less half a second, what the network may close up between
   two messages;
@@ -52,17 +52,34 @@ the rules for itself, and ignores a sound unless:
 One sound per person: a new one from someone cuts theirs. Every sound stops at ten seconds,
 fading out.
 
+**A sound may be cut shorter, by whoever plays it and by whoever hears it.** The panel has a
+length under the volume, from half a second to the whole sound, by halves, and whatever you
+play from it or a shortcut is cut there; a pad may also keep a cut of its own, and the shorter
+wins. The message then carries `seconds`, and every listener stops the sound there, fading
+out, and holds the sender only that long. Recent sounds are kept whole, so the length is
+always the panel's as it is now.
+Each listener may also cut every effect they hear, from one second to ten, their own as they
+play it included and previews aside. That cut is theirs alone and shortens only what they
+hear: the lock stays the sound's, on the sender's app and on theirs, so cutting what you hear
+is no way to play more often, and a listener holds a sender exactly as long as one who does not
+cut. A sound lasts only while its sender may play one: when they mute their microphone
+or leave voice, their app cuts it for them and every listener's cuts it there, from the same
+microphone mute and voice attribute that decide whether it plays at all. The lock still runs
+its course, so muting and unmuting is no way round it.
+
 **Myinstants is read from main.** It sends no CORS headers, and the page, loaded from
 `file://`, could not read it. Main fetches the search and the files, and keeps each file in
 `userData/soundboard`, up to 100 MB, those played longest ago going first. A sound played
 again, or by someone else in the channel, starts at once.
 
 **What is kept is per machine:** a soundpad of up to 10 sounds, the last 4 sounds played,
-the effects' volume (up to 100 %, half by default) and mute, and whose sounds are muted. Each
+the effects' volume (up to 100 %, half by default) and mute, the length of the sounds you
+play, where every effect is cut for you, and whose sounds are muted. Each
 pad may be renamed, emoji included, be given an emoji to show, and have a global shortcut,
 held by the same input hook as voice's. A pad plays under the name you gave it, its emoji
-first: that is the name everyone else sees beside you while it plays. The file is still
-Myinstants', so the rules above do not change.
+first, and is cut where you cut it: that is the name everyone else sees beside you while it
+plays, and the length they hear. The file is still Myinstants', so the rules above do not
+change.
 
 ## Consequences
 
@@ -84,5 +101,12 @@ Myinstants', so the rules above do not change.
   second and a half after the last, which only a sound shorter than that allows. The lock
   was first counted from the click, which freed the sender before a slow-loading sound
   ended; it is counted from when the sound starts.
+- A pad's cut was added on 2026-11-26. An app from before it ignores `seconds`, plays the
+  sound up to ten seconds and holds the sender that long, so it drops their next sound if it
+  comes before then, as the sender's app now allows. Those listeners miss a sound, nothing
+  more, until they update. A modified app may send any cut it likes; it can only make its
+  sound shorter.
+- A listener who cuts every effect short hears the start of each, never the rest; the lock
+  still runs for the whole sound, so they may hear silence from someone who cannot play yet.
 - Apps before this one ignore the topic, as they ignore anything a participant sends. Android
   plays no sounds until it learns to.

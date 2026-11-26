@@ -8,7 +8,7 @@ import Avatar from './Avatar';
 import AvatarCropDialog from './AvatarCropDialog';
 import EntranceSettingsSection from './EntranceSettings';
 import { encodeAvatar, type AvatarCrop, type EncodedAvatar } from '../avatars';
-import { tNow, useT } from '../i18n';
+import { tNow, useLanguage, useT } from '../i18n';
 import LanguagePicker from './LanguagePicker';
 import type { MessageKey } from '../../shared/i18n';
 import {
@@ -23,10 +23,12 @@ import {
 import { setSoundSettings, useSoundSettings } from '../sounds/settings';
 import {
   soundboardSettings,
+  stepMaxSeconds,
   stepSoundboardVolume,
   useSoundboardSettings,
 } from '../soundboard/library';
 import { useWheelRange } from './useWheelRange';
+import { MAX_HEARD_SECONDS, MIN_HEARD_SECONDS } from '../soundboard/model';
 import VoiceSettingsSection from './VoiceSettings';
 import { playCue } from '../sounds/synth';
 import ReleaseNotesDialog from './ReleaseNotesDialog';
@@ -883,11 +885,19 @@ function SoundsSection() {
   );
 }
 
-/** The soundboard's own volume and mute (ADR 0040), the same ones its panel has. */
+/**
+ * The soundboard's own volume and mute (ADR 0040), the same ones its panel
+ * has, and where you cut everyone's sounds for yourself.
+ */
 function SoundboardSettingsSection() {
   const t = useT();
+  const { language } = useLanguage();
   const settings = useSoundboardSettings();
   const percent = Math.round(settings.volume * 100);
+  const cutRef = useWheelRange(stepMaxSeconds);
+  const cutAfter = t('soundboard.seconds', {
+    seconds: settings.maxSeconds.toLocaleString(language, { maximumFractionDigits: 1 }),
+  });
   const volumeRef = useWheelRange(stepSoundboardVolume);
   return (
     <SettingsCard id="settings-sounds-soundboard" title={t('soundboard.title')}>
@@ -915,6 +925,29 @@ function SoundboardSettingsSection() {
           }
         />
       </label>
+      {/* Laid out as voice's sliders: name and value on a line, the slider bare under them. */}
+      <div className="soundboard-cut">
+        <div className="voice-row">
+          <span className="voice-label">{t('soundboard.maxSeconds')}</span>
+          <span className="voice-value">{cutAfter}</span>
+        </div>
+        <input
+          ref={cutRef}
+          className="settings-range"
+          type="range"
+          min={MIN_HEARD_SECONDS}
+          max={MAX_HEARD_SECONDS}
+          step={0.5}
+          value={settings.maxSeconds}
+          disabled={settings.muted}
+          onChange={(event) =>
+            soundboardSettings.set({ ...settings, maxSeconds: Number(event.target.value) })
+          }
+          aria-label={t('soundboard.maxSeconds')}
+          aria-valuetext={cutAfter}
+        />
+        <p className="muted soundboard-cut-note">{t('soundboard.maxSecondsHint')}</p>
+      </div>
     </SettingsCard>
   );
 }
