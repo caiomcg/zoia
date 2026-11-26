@@ -23,6 +23,7 @@ import {
 import { setSoundSettings, useSoundSettings } from '../sounds/settings';
 import {
   soundboardSettings,
+  stepMaxSeconds,
   stepSoundboardVolume,
   useSoundboardSettings,
 } from '../soundboard/library';
@@ -893,6 +894,7 @@ function SoundboardSettingsSection() {
   const { language } = useLanguage();
   const settings = useSoundboardSettings();
   const percent = Math.round(settings.volume * 100);
+  const cutRef = useWheelRange(stepMaxSeconds);
   const cutAfter = t('soundboard.seconds', {
     seconds: settings.maxSeconds.toLocaleString(language, { maximumFractionDigits: 1 }),
   });
@@ -923,9 +925,14 @@ function SoundboardSettingsSection() {
           }
         />
       </label>
-      <label className="settings-field">
-        <span>{t('soundboard.maxSeconds', { seconds: cutAfter })}</span>
+      {/* Laid out as voice's sliders: name and value on a line, the slider bare under them. */}
+      <div className="soundboard-cut">
+        <div className="voice-row">
+          <span className="voice-label">{t('soundboard.maxSeconds')}</span>
+          <span className="voice-value">{cutAfter}</span>
+        </div>
         <input
+          ref={cutRef}
           className="settings-range"
           type="range"
           min={MIN_HEARD_SECONDS}
@@ -936,10 +943,11 @@ function SoundboardSettingsSection() {
           onChange={(event) =>
             soundboardSettings.set({ ...settings, maxSeconds: Number(event.target.value) })
           }
+          aria-label={t('soundboard.maxSeconds')}
           aria-valuetext={cutAfter}
         />
-      </label>
-      <p className="muted settings-card-note">{t('soundboard.maxSecondsHint')}</p>
+        <p className="muted soundboard-cut-note">{t('soundboard.maxSecondsHint')}</p>
+      </div>
     </SettingsCard>
   );
 }

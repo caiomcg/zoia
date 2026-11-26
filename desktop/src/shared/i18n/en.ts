@@ -966,7 +966,9 @@ export const en = {
   'soundboard.lengthWholeOf': 'Whole · {length}',
   'soundboard.lengthOf': '{seconds} of {length}',
   'soundboard.seconds': '{seconds} s',
-  'soundboard.maxSeconds': 'Cut sound effects after · {seconds}',
+  'soundboard.maxSeconds': 'Cut sound effects after',
+  'soundboard.playLength': 'How long the sounds you play last',
+  'soundboard.playLengthHint': 'How long the sounds you play last: everyone hears them stop here',
   'soundboard.maxSecondsHint':
     'Only for you: everyone else hears each sound as long as whoever played it chose. Previews play whole.',
   'entrance.title': 'Entrance sound',

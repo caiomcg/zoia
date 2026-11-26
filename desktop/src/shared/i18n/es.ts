@@ -968,7 +968,10 @@ export const es: Messages = {
   'soundboard.lengthWholeOf': 'Entero · {length}',
   'soundboard.lengthOf': '{seconds} de {length}',
   'soundboard.seconds': '{seconds} s',
-  'soundboard.maxSeconds': 'Cortar efectos de sonido después de · {seconds}',
+  'soundboard.maxSeconds': 'Cortar efectos de sonido después de',
+  'soundboard.playLength': 'Duración de los sonidos que reproduces',
+  'soundboard.playLengthHint':
+    'Duración de los sonidos que reproduces: todos los oyen detenerse aquí',
   'soundboard.maxSecondsHint':
     'Solo para ti: los demás oyen cada sonido tanto como eligió quien lo reprodujo. Las vistas previas suenan enteras.',
   'entrance.title': 'Sonido de entrada',

@@ -25,6 +25,7 @@ import type { ConnectionState } from '../livekit/useRoom';
 import { inVoice } from '../voice/voice-room';
 import type { VoiceState } from '../voice/useVoice';
 import {
+  cutShorter,
   decodeSoundMessage,
   encodeSoundMessage,
   padSound,
@@ -32,7 +33,15 @@ import {
   type Sound,
 } from '../../shared/soundboard';
 import { pads, recents, soundboardSettings, useSoundboardSettings } from './library';
-import { addRecent, lockMs, NETWORK_SLACK_MS, sendBlock, SoundLock, type SendBlock } from './model';
+import {
+  addRecent,
+  lockMs,
+  NETWORK_SLACK_MS,
+  playCut,
+  sendBlock,
+  SoundLock,
+  type SendBlock,
+} from './model';
 import { playSound, stopAllSounds, stopSound } from './player';
 
 /** What the panel needs: whether you may play, and the way to. */
@@ -48,7 +57,7 @@ export interface SoundboardControls {
    * that started at `lockedAt` ends.
    */
   readyAt: number;
-  /** Plays `sound` for everyone else in the channel. */
+  /** Plays `sound` for everyone else in the channel, cut at the panel's length. */
   send(sound: Sound): Promise<void>;
   /** Plays a pad, from its shortcut. */
   sendPad(slug: string): void;
@@ -146,13 +155,15 @@ export function useSoundboard(
   );
 
   const send = useCallback(
-    async (sound: Sound) => {
+    async (chosen: Sound) => {
       const room = roomRef.current;
       if (!room || blockedRef.current) return;
       if (loadingRef.current || performance.now() < readyAtRef.current) return;
       loadingRef.current = true;
       setLock((current) => ({ ...current, loading: true }));
-      recents.set(addRecent(recents.get(), sound, pads.get()));
+      // Kept whole: the length is the panel's, set again for each play.
+      recents.set(addRecent(recents.get(), chosen, pads.get()));
+      const sound = cutShorter(chosen, playCut(soundboardSettings.get()));
       // Yours plays for you as it goes out, beside your name like anyone's.
       // You are locked out from when it starts to when it ends, no longer.
       void playSound(room.localParticipant.identity, sound, true).then((played) => {

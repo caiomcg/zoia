@@ -34,6 +34,13 @@ export const MAX_HEARD_SECONDS = MAX_LOCK_MS / 1000;
 export const MIN_HEARD_SECONDS = 1;
 
 /**
+ * The shortest you may cut the sounds you play (SoundboardSettings.playSeconds),
+ * by steps of as much. The same as MIN_SOUND_SECONDS; the longest, which is no
+ * cut, is MAX_HEARD_SECONDS.
+ */
+export const MIN_PLAY_SECONDS = 0.5;
+
+/**
  * How long a sound plays, in seconds: `seconds`, which locks its player out
  * and is the same for everyone, and `heard`, what plays here.
  *
@@ -89,6 +96,12 @@ export interface SoundboardSettings {
    * of your own.
    */
   maxSeconds: number;
+  /**
+   * How long the sounds you play last, for everyone, in seconds: whatever you
+   * play is cut here, a pad's own cut kept if it is shorter. MAX_HEARD_SECONDS
+   * plays them whole.
+   */
+  playSeconds: number;
   /** Entrance sounds' volume, 0–1, apart from the effects'. */
   entranceVolume: number;
   /** No entrance sound plays for you. Yours still plays for everyone else. */
@@ -102,6 +115,7 @@ export const DEFAULT_SOUNDBOARD_SETTINGS: SoundboardSettings = {
   muted: false,
   mutedPeople: [],
   maxSeconds: MAX_HEARD_SECONDS,
+  playSeconds: MAX_HEARD_SECONDS,
   entranceVolume: 0.5,
   entrancesMuted: false,
   mutedEntrances: [],
@@ -113,9 +127,10 @@ function parseVolume(value: unknown, fallback: number): number {
     : fallback;
 }
 
-function parseMaxSeconds(value: unknown): number {
+/** Seconds between `min` and MAX_HEARD_SECONDS, by halves; anything else is MAX_HEARD_SECONDS. */
+function parseSeconds(value: unknown, min: number): number {
   if (typeof value !== 'number' || !Number.isFinite(value)) return MAX_HEARD_SECONDS;
-  return Math.min(MAX_HEARD_SECONDS, Math.max(MIN_HEARD_SECONDS, Math.round(value * 2) / 2));
+  return Math.min(MAX_HEARD_SECONDS, Math.max(min, Math.round(value * 2) / 2));
 }
 
 function parseIdentities(value: unknown): string[] {
@@ -133,13 +148,14 @@ export function parseSoundboardSettings(raw: string | null): SoundboardSettings 
   } catch {
     // Unreadable is the same as never set.
   }
-  const { volume, muted, mutedPeople, maxSeconds } = stored;
+  const { volume, muted, mutedPeople, maxSeconds, playSeconds } = stored;
   const { entranceVolume, entrancesMuted, mutedEntrances } = stored;
   return {
     volume: parseVolume(volume, DEFAULT_SOUNDBOARD_SETTINGS.volume),
     muted: muted === true,
     mutedPeople: parseIdentities(mutedPeople),
-    maxSeconds: parseMaxSeconds(maxSeconds),
+    maxSeconds: parseSeconds(maxSeconds, MIN_HEARD_SECONDS),
+    playSeconds: parseSeconds(playSeconds, MIN_PLAY_SECONDS),
     entranceVolume: parseVolume(entranceVolume, DEFAULT_SOUNDBOARD_SETTINGS.entranceVolume),
     entrancesMuted: entrancesMuted === true,
     mutedEntrances: parseIdentities(mutedEntrances),
@@ -154,6 +170,11 @@ export function effectsGain(settings: SoundboardSettings): number {
 /** Where you cut everyone's sound effects, or undefined for no cut of your own. */
 export function effectsCap(settings: SoundboardSettings): number | undefined {
   return settings.maxSeconds < MAX_HEARD_SECONDS ? settings.maxSeconds : undefined;
+}
+
+/** Where you cut the sounds you play, for everyone, or null to play them whole. */
+export function playCut(settings: SoundboardSettings): number | null {
+  return settings.playSeconds < MAX_HEARD_SECONDS ? settings.playSeconds : null;
 }
 
 /** How loud entrance sounds play: nothing while muted, whatever the effects do. */

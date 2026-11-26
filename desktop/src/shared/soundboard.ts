@@ -237,6 +237,15 @@ export function cutAt<T extends Sound>(sound: T, seconds: number | null): T {
   return next;
 }
 
+/**
+ * `sound` cut at `seconds` too, unless it is cut shorter already: the
+ * panel's length over a pad's own. Null leaves it as it is.
+ */
+export function cutShorter<T extends Sound>(sound: T, seconds: number | null): T {
+  if (seconds === null || (sound.seconds !== undefined && sound.seconds <= seconds)) return sound;
+  return cutAt(sound, seconds);
+}
+
 /** What a pad plays as, for everyone: its emoji, the name you gave it, where you cut it. */
 export function padSound(pad: Pad): Sound {
   const { slug, url, color } = pad;

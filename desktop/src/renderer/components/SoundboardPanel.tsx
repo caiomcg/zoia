@@ -34,12 +34,13 @@ import {
   pads as padStore,
   recents,
   soundboardSettings,
+  stepPlaySeconds,
   stepSoundboardVolume,
   usePads,
   useRecents,
   useSoundboardSettings,
 } from '../soundboard/library';
-import { removeRecent } from '../soundboard/model';
+import { MAX_HEARD_SECONDS, MIN_PLAY_SECONDS, removeRecent } from '../soundboard/model';
 import { useWheelRange } from './useWheelRange';
 import { playSound, PREVIEW_KEY, soundLength } from '../soundboard/player';
 import type { SoundboardControls } from '../soundboard/useSoundboard';
@@ -65,8 +66,8 @@ const PAD_EMOJI = (
 
 /**
  * The soundboard (ADR 0040), above its button in the sidebar's footer: your
- * soundpad, the sounds you played last, Myinstants' search and the effects'
- * volume. A pad plays its sound for the channel; its own buttons preview it
+ * soundpad, the sounds you played last, Myinstants' search, the effects'
+ * volume and how long the sounds you play last. A pad plays its sound for the channel; its own buttons preview it
  * for you alone and edit it: a name and an emoji of your own, and a
  * shortcut. Closes on a click elsewhere or Escape.
  */
@@ -183,6 +184,12 @@ export default function SoundboardPanel({
   const setMuted = (muted: boolean) => soundboardSettings.set({ ...settings, muted });
   const percent = Math.round(settings.volume * 100);
   const volumeRef = useWheelRange(stepSoundboardVolume);
+  const lengthRef = useWheelRange(stepPlaySeconds);
+  const { language } = useLanguage();
+  // 10 s at the top is every sound's limit: shown as the number it is.
+  const playLength = t('soundboard.seconds', {
+    seconds: settings.playSeconds.toLocaleString(language, { maximumFractionDigits: 1 }),
+  });
 
   return createPortal(
     <div
@@ -226,6 +233,29 @@ export default function SoundboardPanel({
           />
           <span className="soundboard-volume-value">{percent}%</span>
         </span>
+      </div>
+      {/* How long what you play lasts, for everyone: under the volume, lined up with it. */}
+      <div
+        className="soundboard-volume soundboard-play-length"
+        title={t('soundboard.playLengthHint')}
+      >
+        <span className="soundboard-length-icon" aria-hidden="true">
+          <IconTimer />
+        </span>
+        <input
+          ref={lengthRef}
+          type="range"
+          min={MIN_PLAY_SECONDS}
+          max={MAX_HEARD_SECONDS}
+          step={MIN_PLAY_SECONDS}
+          value={settings.playSeconds}
+          onChange={(event) =>
+            soundboardSettings.set({ ...settings, playSeconds: Number(event.target.value) })
+          }
+          aria-label={t('soundboard.playLength')}
+          aria-valuetext={playLength}
+        />
+        <span className="soundboard-volume-value">{playLength}</span>
       </div>
 
       {editingPad ? (
@@ -895,6 +925,16 @@ function IconEdit() {
   return (
     <svg {...ICON} width="13" height="13">
       <path d="M4 20h4L19 9l-4-4L4 16z" />
+    </svg>
+  );
+}
+
+/** A stopwatch: how long a sound you play lasts. */
+function IconTimer() {
+  return (
+    <svg {...ICON} width="16" height="16">
+      <circle cx="12" cy="13" r="8" />
+      <path d="M12 9v4l2.5 2.5M9.5 2h5" />
     </svg>
   );
 }

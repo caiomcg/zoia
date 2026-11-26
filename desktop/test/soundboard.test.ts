@@ -16,6 +16,7 @@ import {
   addPad,
   clip,
   cutAt,
+  cutShorter,
   MIN_SOUND_SECONDS,
   soundSeconds,
   MAX_PAD_NAME,
@@ -54,6 +55,8 @@ import {
   effectsCap,
   MAX_HEARD_SECONDS,
   MIN_HEARD_SECONDS,
+  MIN_PLAY_SECONDS,
+  playCut,
   playLength,
 } from '../src/renderer/soundboard/model.ts';
 import { MAX_SOUND_SHORTCUTS } from '../src/shared/shortcuts.ts';
@@ -228,6 +231,15 @@ describe('the pad and recents', () => {
     assert.equal('seconds' in padSound(list[0]!), false);
   });
 
+  test("the panel's length cuts what you play, unless it is cut shorter already", () => {
+    assert.equal(cutShorter(sound('a'), 3).seconds, 3);
+    assert.equal(cutShorter(cutAt(sound('a'), 2), 3).seconds, 2);
+    assert.equal(cutShorter(cutAt(sound('a'), 5), 3).seconds, 3);
+    // Whole in the panel leaves a pad's own cut alone, and an uncut sound uncut.
+    assert.equal(cutShorter(cutAt(sound('a'), 5), null).seconds, 5);
+    assert.equal('seconds' in cutShorter(sound('a'), null), false);
+  });
+
   test("a pad's emoji is one emoji, the last one given, or none", () => {
     assert.equal(padEmoji('🔥'), '🔥');
     assert.equal(padEmoji('🔥🚀'), '🚀');
@@ -305,6 +317,16 @@ describe('settings', () => {
     assert.equal(parseSoundboardSettings('{"maxSeconds":2.7}').maxSeconds, 2.5);
     assert.equal(parseSoundboardSettings('{"maxSeconds":"3"}').maxSeconds, MAX_HEARD_SECONDS);
     assert.equal(effectsCap(DEFAULT_SOUNDBOARD_SETTINGS), undefined);
+    assert.equal(MIN_PLAY_SECONDS, MIN_SOUND_SECONDS);
+  });
+
+  test('the length of what you play is half a second to 10, by halves; 10 is whole', () => {
+    assert.equal(DEFAULT_SOUNDBOARD_SETTINGS.playSeconds, MAX_HEARD_SECONDS);
+    assert.equal(parseSoundboardSettings('{"playSeconds":0}').playSeconds, MIN_PLAY_SECONDS);
+    assert.equal(parseSoundboardSettings('{"playSeconds":99}').playSeconds, MAX_HEARD_SECONDS);
+    assert.equal(parseSoundboardSettings('{"playSeconds":1.2}').playSeconds, 1);
+    assert.equal(playCut(DEFAULT_SOUNDBOARD_SETTINGS), null);
+    assert.equal(playCut({ ...DEFAULT_SOUNDBOARD_SETTINGS, playSeconds: 2.5 }), 2.5);
     assert.equal(effectsCap({ ...DEFAULT_SOUNDBOARD_SETTINGS, maxSeconds: 3 }), 3);
   });
 

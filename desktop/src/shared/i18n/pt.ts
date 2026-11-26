@@ -963,7 +963,9 @@ export const pt: Messages = {
   'soundboard.lengthWholeOf': 'Inteiro · {length}',
   'soundboard.lengthOf': '{seconds} de {length}',
   'soundboard.seconds': '{seconds} s',
-  'soundboard.maxSeconds': 'Cortar efeitos sonoros após · {seconds}',
+  'soundboard.maxSeconds': 'Cortar efeitos sonoros após',
+  'soundboard.playLength': 'Duração dos sons que você toca',
+  'soundboard.playLengthHint': 'Duração dos sons que você toca: todos os ouvem parar aqui',
   'soundboard.maxSecondsHint':
     'Só para você: os outros ouvem cada som pelo tempo que quem tocou escolheu. As prévias tocam inteiras.',
   'entrance.title': 'Som de entrada',

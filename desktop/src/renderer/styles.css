@@ -6954,11 +6954,48 @@ button.danger:active:not(:disabled),
 
 .soundboard-volume-value {
   flex: none;
-  width: 34px;
+  /* As wide as "100%" and "2,5 s", so the volume's and the length's sliders end together. */
+  width: 36px;
   font-size: 12px;
   color: var(--muted);
   text-align: right;
   font-variant-numeric: tabular-nums;
+}
+
+/* Your cut of every effect, in Settings: as voice's sliders are laid out. */
+.soundboard-cut {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.soundboard-cut .settings-range {
+  margin: 0;
+}
+
+.soundboard-cut .settings-range:disabled {
+  opacity: 0.4;
+}
+
+.soundboard-cut-note {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+/* The length's line, under the volume's: its icon where the mute button is. */
+.soundboard-play-length {
+  margin-top: -4px;
+}
+
+.soundboard-length-icon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  color: var(--muted);
 }
 
 .soundboard-mute {

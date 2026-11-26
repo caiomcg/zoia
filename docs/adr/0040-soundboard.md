@@ -52,9 +52,12 @@ the rules for itself, and ignores a sound unless:
 One sound per person: a new one from someone cuts theirs. Every sound stops at ten seconds,
 fading out.
 
-**A sound may be cut shorter, by whoever plays it and by whoever hears it.** A pad may be cut
-anywhere from half a second to the whole sound, by halves; the message then carries
-`seconds`, and every listener stops it there, fading out, and holds the sender only that long.
+**A sound may be cut shorter, by whoever plays it and by whoever hears it.** The panel has a
+length under the volume, from half a second to the whole sound, by halves, and whatever you
+play from it or a shortcut is cut there; a pad may also keep a cut of its own, and the shorter
+wins. The message then carries `seconds`, and every listener stops the sound there, fading
+out, and holds the sender only that long. Recent sounds are kept whole, so the length is
+always the panel's as it is now.
 Each listener may also cut every effect they hear, from one second to ten, their own as they
 play it included and previews aside. That cut is theirs alone and shortens only what they
 hear: the lock stays the sound's, on the sender's app and on theirs, so cutting what you hear
@@ -70,8 +73,8 @@ its course, so muting and unmuting is no way round it.
 again, or by someone else in the channel, starts at once.
 
 **What is kept is per machine:** a soundpad of up to 10 sounds, the last 4 sounds played,
-the effects' volume (up to 100 %, half by default) and mute, where every effect is cut for
-you, and whose sounds are muted. Each
+the effects' volume (up to 100 %, half by default) and mute, the length of the sounds you
+play, where every effect is cut for you, and whose sounds are muted. Each
 pad may be renamed, emoji included, be given an emoji to show, and have a global shortcut,
 held by the same input hook as voice's. A pad plays under the name you gave it, its emoji
 first, and is cut where you cut it: that is the name everyone else sees beside you while it
