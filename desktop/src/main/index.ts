@@ -515,6 +515,16 @@ function registerIpc(): void {
   ipcMain.handle(IPC.adminRemoveBotAvatar, (_event, id: unknown) =>
     api.attempt(api.removeBotAvatar(String(id))),
   );
+  // Broadcast previews (ADR 0056): yours going up, others' coming down.
+  ipcMain.handle(IPC.stagePreview, (_event, bytes: unknown) => {
+    if (!(bytes instanceof Uint8Array)) throw new Error('expected image bytes');
+    return api.stagePreview(bytes);
+  });
+  ipcMain.handle(IPC.roomsPreview, (_event, room: unknown, identity: unknown, version: unknown) =>
+    typeof room === 'string' && typeof identity === 'string' && typeof version === 'string'
+      ? api.fetchRoomPreview(room, identity, version)
+      : null,
+  );
   ipcMain.handle(IPC.avatarGet, (_event, identity: unknown, version: unknown) =>
     typeof identity === 'string' && typeof version === 'string'
       ? api.fetchAvatar(identity, version)

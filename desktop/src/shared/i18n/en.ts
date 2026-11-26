@@ -101,6 +101,8 @@ export const en = {
   'sidebar.showCamera': 'Show {name}’s camera',
   'sidebar.hideCamera': 'Hide {name}’s camera',
   'sidebar.watchLive': 'Watch {name}. Hover to preview.',
+  'sidebar.previewLive': '{name} is live',
+  'sidebar.previewNone': 'No picture yet',
   'sidebar.settings': 'Settings',
   'sidebar.leave': 'Leave channel',
   'sidebar.kickHint': 'Right-click to disconnect',

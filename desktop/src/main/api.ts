@@ -407,6 +407,55 @@ export async function fetchAvatar(identity: string, version: string): Promise<st
   return `data:${type};base64,${bytes.toString('base64')}`;
 }
 
+/**
+ * Your broadcast's latest picture, for people outside the channel (ADR 0056).
+ * Refusals (no longer live, too soon after the last) are expected around a
+ * broadcast's start and end and say nothing worth showing: false, not thrown.
+ */
+export async function stagePreview(bytes: Uint8Array): Promise<boolean> {
+  const query = currentRoom ? `?room=${encodeURIComponent(currentRoom)}` : '';
+  try {
+    await call(`/api/stage/preview${query}`, {
+      method: 'PUT',
+      body: Buffer.from(bytes),
+      headers: { 'content-type': 'application/octet-stream' },
+    });
+    return true;
+  } catch (err) {
+    if (err instanceof ApiError && err.status < 500) return false;
+    throw err;
+  }
+}
+
+/** Channel ids are the room name and a hex suffix; previews' versions base 36. */
+const ROOM_ID = /^[A-Za-z0-9_-]{1,64}$/;
+const PREVIEW_VERSION = /^[0-9a-z]{1,32}$/;
+
+/**
+ * Someone's broadcast preview in another channel as a data: URL, or null
+ * when there is none now. Fetched here for the cookie, as fetchAvatar is.
+ */
+export async function fetchRoomPreview(
+  room: string,
+  identity: string,
+  version: string,
+): Promise<string | null> {
+  if (!ROOM_ID.test(room) || !AVATAR_ID.test(identity) || !PREVIEW_VERSION.test(version)) {
+    return null;
+  }
+  const base = getServerUrl();
+  if (!base) throw new NoServerError();
+
+  const res = await net.fetch(`${base}/api/rooms/${room}/preview/${identity}?v=${version}`, {
+    credentials: 'include',
+  });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new ApiError(res.status, null);
+  if (!(res.headers.get('content-type') ?? '').startsWith('image/jpeg')) return null;
+  const bytes = Buffer.from(await res.arrayBuffer());
+  return `data:image/jpeg;base64,${bytes.toString('base64')}`;
+}
+
 export function stageGet() {
   const query = currentRoom ? `?room=${encodeURIComponent(currentRoom)}` : '';
   return call<StageState>(`/api/stage${query}`);

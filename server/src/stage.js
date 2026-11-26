@@ -80,6 +80,33 @@ const WATCHING_ATTRIBUTE = 'zoia.watching';
  */
 export const VOICE_ATTRIBUTE = 'zoia.voice';
 
+/**
+ * Hearing nothing: deafened. Each app sets it on itself, since only it knows.
+ * Must match DEAFENED_ATTRIBUTE in desktop/src/renderer/voice/voice-room.ts.
+ * Display only, like the source label: nothing is decided from it.
+ */
+export const DEAFENED_ATTRIBUTE = 'zoia.deafened';
+
+/**
+ * What a broadcast shows, as its app labels it in its metadata: the window
+ * or screen's name, and which kind it is. Display only; null when unlabelled.
+ */
+function sourceOf(p) {
+  try {
+    const value = JSON.parse(p?.metadata || '');
+    const name =
+      typeof value?.sourceName === 'string' && value.sourceName
+        ? value.sourceName.slice(0, 200)
+        : null;
+    const kind = ['screen', 'window', 'camera'].includes(value?.sourceKind)
+      ? value.sourceKind
+      : null;
+    return name || kind ? { name, kind } : null;
+  } catch {
+    return null;
+  }
+}
+
 /** May publish the microphone and nothing else: in voice, not on the stage. */
 function microphoneOnly(permission) {
   const sources = permission?.canPublishSources ?? [];
@@ -195,10 +222,12 @@ export function createStage({ rooms, roomName, logger = console, now = () => Dat
           (p) => isWhipIdentity(p.identity) && (p.tracks ?? []).length > 0,
         );
         if (!permitted && !whipPublishing) return null;
+        const source = sourceOf(owner);
         return {
           identity,
           name: owner?.name || related[0]?.name || identity,
           publishing: related.some(sharing),
+          ...(source ? { source } : {}),
         };
       })
       .filter(Boolean);
@@ -230,6 +259,7 @@ export function createStage({ rooms, roomName, logger = console, now = () => Dat
       publishing: sharing(p),
       voice: inVoice(p),
       audible: audible(p),
+      deafened: inVoice(p) && p.attributes?.[DEAFENED_ATTRIBUTE] === '1',
       joinedAt: Number(p.joinedAt ?? 0),
       // Watching someone's picture, for the idle sweep (src/idle.js).
       watching: Boolean(p.attributes?.[WATCHING_ATTRIBUTE]),
