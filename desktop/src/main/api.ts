@@ -34,6 +34,7 @@ import type {
   ChatSendExtras,
   DirectChatInfo,
   RsvpAnswer,
+  PersonBirthday,
   ScheduledEvent,
   ScheduledEventInput,
   AddonInfo,
@@ -687,6 +688,11 @@ export const schedule = {
       }).then((r) => r.event),
     ),
   remove: (id: string) => attempt(call(eventPath(id), { method: 'DELETE' }).then(() => undefined)),
+  /** Everyone's birthday, all year, for the calendar (ADR 0056). */
+  birthdays: () =>
+    attempt(
+      call<{ birthdays: PersonBirthday[] }>('/api/schedule/birthdays').then((r) => r.birthdays),
+    ),
   rsvp: (id: string, answer: RsvpAnswer | null) =>
     attempt(
       call<{ event: ScheduledEvent }>(eventPath(id, '/rsvp'), {

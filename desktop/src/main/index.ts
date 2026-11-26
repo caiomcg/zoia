@@ -560,6 +560,8 @@ function registerIpc(): void {
     switch (action) {
       case 'list':
         return api.schedule.list();
+      case 'birthdays':
+        return api.schedule.birthdays();
       case 'create':
         return api.schedule.create(fields);
       case 'update':

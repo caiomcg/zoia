@@ -573,12 +573,15 @@ export function EventsPanel({
   now,
   onOpen,
   onNew,
+  onCalendar,
 }: {
   events: ScheduledEvent[];
   me: string | null;
   now: number;
   onOpen: (event: ScheduledEvent) => void;
   onNew: () => void;
+  /** Opens the month's calendar (ADR 0056). */
+  onCalendar?: () => void;
 }) {
   const t = useT();
   const week = events.filter((e) => Date.parse(e.startsAt) - now <= CARD_AHEAD_MS);
@@ -587,6 +590,17 @@ export function EventsPanel({
     <section className="member-group events-panel" aria-label={t('event.title')}>
       <div className="events-panel-head">
         <h2>{t('event.title')}</h2>
+        {onCalendar && (
+          <button
+            type="button"
+            className="events-calendar"
+            onClick={onCalendar}
+            title={t('calendar.open')}
+          >
+            <IconCalendar />
+            <span>{t('calendar.title')}</span>
+          </button>
+        )}
       </div>
       <button type="button" className="events-new" onClick={onNew}>
         + {t('event.new')}

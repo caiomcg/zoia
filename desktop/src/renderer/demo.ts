@@ -245,6 +245,7 @@ export function installDemo() {
     notify: { show: async () => false, onClick: subscribe },
     schedule: {
       list: () => ok([]),
+      birthdays: () => ok([]),
       create: unavailable,
       update: unavailable,
       remove: unavailable,

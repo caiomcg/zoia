@@ -49,6 +49,7 @@ export default function EventDialog({
   event,
   editing: startEditing = false,
   newChannelId = null,
+  newStart = null,
   channels,
   people,
   me,
@@ -62,6 +63,8 @@ export default function EventDialog({
   editing?: boolean;
   /** A new event's channel to start with: one right-clicked to schedule there. */
   newChannelId?: string | null;
+  /** A new event's start to begin with: a day picked on the calendar. */
+  newStart?: string | null;
   channels: RoomInfo[];
   people: ChatPerson[];
   me: string | null;
@@ -106,6 +109,7 @@ export default function EventDialog({
             schedule={schedule}
             event={live}
             initialChannelId={newChannelId}
+            initialStart={newStart}
             channels={channels.filter((c) => !c.away)}
             onDone={() => (live ? setEditing(false) : onClose())}
             onCancel={() => (live ? setEditing(false) : onClose())}
@@ -153,6 +157,7 @@ function EventForm({
   schedule,
   event,
   initialChannelId,
+  initialStart,
   channels,
   onDone,
   onCancel,
@@ -160,13 +165,15 @@ function EventForm({
   schedule: ScheduleController;
   event: ScheduledEvent | null;
   initialChannelId: string | null;
+  initialStart: string | null;
   channels: RoomInfo[];
   onDone: () => void;
   onCancel: () => void;
 }) {
   const t = useT();
-  // A new event starts now, to the minute; one being changed, when it does.
-  const initial = toLocalInput(event?.startsAt ?? new Date().toISOString());
+  // A new event starts now, to the minute, or on the day picked on the
+  // calendar; one being changed, when it does.
+  const initial = toLocalInput(event?.startsAt ?? initialStart ?? new Date().toISOString());
   const [title, setTitle] = useState(event?.title ?? '');
   const [date, setDate] = useState(initial.slice(0, 10));
   const [time, setTime] = useState(initial.slice(11));

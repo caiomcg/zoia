@@ -7,7 +7,12 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useT } from '../i18n';
-import type { RsvpAnswer, ScheduledEvent, ScheduledEventInput } from '../../shared/ipc';
+import type {
+  PersonBirthday,
+  RsvpAnswer,
+  ScheduledEvent,
+  ScheduledEventInput,
+} from '../../shared/ipc';
 import { playCues } from '../sounds/useSoundCues';
 import { sortEvents } from './model';
 import { markCelebrated, readCelebrated, toCelebrate } from './birthday';
@@ -30,6 +35,8 @@ export function useSchedule({
 }) {
   const [events, setEvents] = useState<ScheduledEvent[]>([]);
   const [enabled, setEnabled] = useState(false);
+  // Everyone's birthday for the calendar (ADR 0056); null from a server before it.
+  const [birthdays, setBirthdays] = useState<PersonBirthday[] | null>(null);
   const [starting, setStarting] = useState<ScheduledEvent | null>(null);
   const noticeRef = useRef(onNotice);
   noticeRef.current = onNotice;
@@ -37,7 +44,12 @@ export function useSchedule({
   birthdayRef.current = onBirthday;
 
   const refresh = useCallback(async () => {
-    const result = await window.zoia.schedule.list();
+    const [result, people] = await Promise.all([
+      window.zoia.schedule.list(),
+      window.zoia.schedule.birthdays(),
+    ]);
+    if (people.ok) setBirthdays(people.value);
+    else if (people.error === 'http_404') setBirthdays(null);
     if (result.ok) {
       setEnabled(true);
       setEvents(sortEvents(result.value));
@@ -51,6 +63,7 @@ export function useSchedule({
     if (!usable) {
       setEvents([]);
       setEnabled(false);
+      setBirthdays(null);
       return;
     }
     void refresh();
@@ -145,6 +158,7 @@ export function useSchedule({
   return {
     enabled,
     events: shown,
+    birthdays,
     /** The event that has just started, until dismissed. */
     starting,
     dismissStarting: () => setStarting(null),

@@ -31,6 +31,7 @@ import type {
   ChatCommand,
   DirectChatInfo,
   RsvpAnswer,
+  PersonBirthday,
   ScheduledEvent,
   ScheduledEventInput,
   ChatSendExtras,
@@ -314,6 +315,8 @@ export interface ZoiaBridge {
   };
   schedule: {
     list(): Promise<ActionOutcome<ScheduledEvent[]>>;
+    /** Everyone's birthday, all year (ADR 0056); `http_404` from an older server. */
+    birthdays(): Promise<ActionOutcome<PersonBirthday[]>>;
     create(input: ScheduledEventInput): Promise<ActionOutcome<ScheduledEvent>>;
     /** Its creator or an admin only. */
     update(id: string, input: ScheduledEventInput): Promise<ActionOutcome<ScheduledEvent>>;
