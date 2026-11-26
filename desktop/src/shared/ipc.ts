@@ -440,6 +440,14 @@ export type Recurrence = 'daily' | 'weekly' | 'monthly';
 /** An answer to a scheduled event (ADR 0050). */
 export type RsvpAnswer = 'going' | 'maybe' | 'no';
 
+/** Someone's birthday as the calendar shows it all year (ADR 0056). */
+export interface PersonBirthday {
+  accountId: string;
+  name: string | null;
+  /** `MM-DD`: a day and a month, never a year (ADR 0055). */
+  birthday: string;
+}
+
 /** A scheduled event (ADR 0050). */
 export interface ScheduledEvent {
   /**

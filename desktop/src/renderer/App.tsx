@@ -15,6 +15,7 @@ import ChatList from './components/ChatList';
 import DirectList from './components/DirectList';
 import { EventsPanel, EventCarousel, pinnedEvents, useNow } from './components/EventList';
 import EventDialog from './components/EventDialog';
+import CalendarDialog from './components/CalendarDialog';
 import { useSchedule } from './schedule/useSchedule';
 import BirthdayPrompt from './components/BirthdayPrompt';
 import BirthdayParty from './components/BirthdayParty';
@@ -910,6 +911,8 @@ export default function App({ preview = false }: { preview?: boolean }) {
         body: mine ? t('birthday.party.mineBody') : t('birthday.party.body', { name }),
         target: { type: 'event', id: event.id, channelId: null },
         actionLabel: t('event.details'),
+        // Anyone else's: a way to congratulate them, under the bell.
+        ...(!mine && event.subjectId ? { greet: { accountId: event.subjectId, name } } : {}),
       });
       // The party itself goes with "in Zoia" for birthdays in Settings › Notifications.
       if (!currentNotifyPrefs().inApp.birthday) return;
@@ -951,8 +954,10 @@ export default function App({ preview = false }: { preview?: boolean }) {
   // The event open in its dialog, or 'new' to schedule one.
   // The event open in its dialog, or a new one, maybe in a channel already.
   const [eventOpen, setEventOpen] = useState<
-    ScheduledEvent | { new: true; channelId: string | null } | null
+    ScheduledEvent | { new: true; channelId: string | null; startsAt?: string | null } | null
   >(null);
+  // The month's calendar (ADR 0056); an event opened from it shows over it.
+  const [calendarOpen, setCalendarOpen] = useState(false);
   const eventNow = useNow();
   // On now and coming up this week, in the sidebar's carousel.
   const pinned = schedule.enabled ? pinnedEvents(schedule.events, eventNow) : [];
@@ -1626,6 +1631,7 @@ export default function App({ preview = false }: { preview?: boolean }) {
                       now={eventNow}
                       onOpen={setEventOpen}
                       onNew={() => setEventOpen({ new: true, channelId: null })}
+                      onCalendar={() => setCalendarOpen(true)}
                     />
                   ),
                   card:
@@ -1678,9 +1684,25 @@ export default function App({ preview = false }: { preview?: boolean }) {
         />
       )}
 
+      {calendarOpen && schedule.enabled && (
+        <CalendarDialog
+          events={schedule.events}
+          birthdays={schedule.birthdays}
+          me={accountId}
+          now={eventNow}
+          onOpenEvent={setEventOpen}
+          onNew={(startsAt) => setEventOpen({ new: true, channelId: null, startsAt })}
+          onClose={() => setCalendarOpen(false)}
+        />
+      )}
+
       {eventOpen && (
         <EventDialog
-          key={'new' in eventOpen ? `new:${eventOpen.channelId ?? ''}` : eventOpen.id}
+          key={
+            'new' in eventOpen
+              ? `new:${eventOpen.channelId ?? ''}:${eventOpen.startsAt ?? ''}`
+              : eventOpen.id
+          }
           schedule={schedule}
           event={'new' in eventOpen ? null : eventOpen}
           newChannelId={
@@ -1690,6 +1712,7 @@ export default function App({ preview = false }: { preview?: boolean }) {
                 null)
               : null
           }
+          newStart={'new' in eventOpen ? (eventOpen.startsAt ?? null) : null}
           channels={channels}
           people={chat.people}
           me={accountId}

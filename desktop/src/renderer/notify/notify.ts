@@ -124,6 +124,16 @@ export interface InboxItem {
   actionLabel?: string;
   /** How bad an alert is: red for an error, amber for a warning. */
   tone?: 'error' | 'warn';
+  /** Someone else's birthday: who to wish a happy one, by direct message. */
+  greet?: BirthdayGreetee;
+  /** A greeting has been sent from this entry: once is enough. */
+  greeted?: boolean;
+}
+
+/** Whose birthday a notification is, to congratulate them. */
+export interface BirthdayGreetee {
+  accountId: string;
+  name: string;
 }
 
 /** Entries kept at most; the oldest go. */
@@ -151,6 +161,7 @@ export function addToInbox(
         target: item.target,
         actionLabel: item.actionLabel,
         tone: item.tone,
+        greet: item.greet,
         count: same.count + 1,
       }
     : { ...item, count: 1, read: false };
@@ -183,7 +194,12 @@ export function parseInbox(raw: string | null, now: number): InboxItem[] {
       typeof x.body === 'string' &&
       typeof x.count === 'number' &&
       typeof x.at === 'number' &&
-      typeof x.read === 'boolean',
+      typeof x.read === 'boolean' &&
+      (x.greet === undefined ||
+        (x.greet !== null &&
+          typeof x.greet === 'object' &&
+          typeof x.greet.accountId === 'string' &&
+          typeof x.greet.name === 'string')),
   );
   return pruneInbox(items, now).slice(0, INBOX_MAX);
 }
@@ -241,6 +257,13 @@ export function markAllRead() {
   changed();
 }
 
+/** Marks an entry's birthday as congratulated, so its greetings are not offered again. */
+export function markGreeted(id: number) {
+  if (!inbox.some((x) => x.id === id && !x.greeted)) return;
+  inbox = inbox.map((x) => (x.id === id ? { ...x, greeted: true } : x));
+  changed();
+}
+
 export function clearInbox() {
   inbox = [];
   changed();
@@ -293,6 +316,7 @@ export function notify(
     target?: NotifyTarget;
     actionLabel?: string;
     tone?: 'error' | 'warn';
+    greet?: BirthdayGreetee;
   },
   {
     evenInFront = false,

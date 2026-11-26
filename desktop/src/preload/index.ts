@@ -197,6 +197,7 @@ const bridge: ZoiaBridge = {
   },
   schedule: {
     list: () => ipcRenderer.invoke(IPC.schedule, 'list'),
+    birthdays: () => ipcRenderer.invoke(IPC.schedule, 'birthdays'),
     create: (input) => ipcRenderer.invoke(IPC.schedule, 'create', null, input),
     update: (id, input) => ipcRenderer.invoke(IPC.schedule, 'update', id, input),
     remove: (id) => ipcRenderer.invoke(IPC.schedule, 'remove', id),

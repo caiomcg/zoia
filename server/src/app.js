@@ -1171,6 +1171,8 @@ export function createApp({
         return res.status(status).json({ error: result.reason });
       }
       res.json({ ok: true, birthday: result.account.birthday });
+      // The calendar shows every birthday all year (ADR 0056): apps read it again.
+      chatHub.publish('schedule', {});
       void app.locals
         .scheduleSweep?.()
         .catch((err) => logger.warn(`[schedule] sweep after a birthday failed: ${err.message}`));

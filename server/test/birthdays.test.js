@@ -14,6 +14,7 @@ import { createApp } from '../src/app.js';
 import { createStage } from '../src/stage.js';
 import { PASSWORD, signIn, testStores } from './people.js';
 import { createEventStore } from '../src/schedule.js';
+import { createChatHub } from '../src/chat-routes.js';
 import { parseBirthday, today } from '../src/birthdays.js';
 import { loadConfig } from '../src/config.js';
 
@@ -25,8 +26,9 @@ let stores;
 let app;
 let clock;
 
-function buildApp() {
+function buildApp(extra = {}) {
   return createApp({
+    ...extra,
     config: {
       sessionSecret: 'test-session-secret-long-enough',
       trustProxy: 1,
@@ -261,5 +263,49 @@ describe('the birthday on the calendar', () => {
     await sweep();
     stores.db.sqlite.prepare('DELETE FROM accounts WHERE id = ?').run(ana.account.id);
     assert.deepEqual(await birthdaysOn(bia.agent), []);
+  });
+});
+
+describe('every birthday, for the calendar (ADR 0056)', () => {
+  test('is day, month and name of everyone let in, never an email, and only for the signed in', async () => {
+    const ana = await signIn(app, stores.accounts, 'Ana');
+    const bia = await signIn(app, stores.accounts, 'Bia');
+    await signIn(app, stores.accounts, 'Cau');
+    await stores.accounts.setBirthday(ana.account.id, { day: 5, month: 3 });
+    await stores.accounts.setBirthday(bia.account.id, { day: 29, month: 2 });
+    await request(app)
+      .post('/api/signup')
+      .send({ email: 'p@example.com', password: PASSWORD, birthday: { day: 1, month: 1 } })
+      .expect(201);
+    const off = await signIn(app, stores.accounts, 'Off');
+    await stores.accounts.setBirthday(off.account.id, { day: 2, month: 2 });
+    await stores.accounts.setStatus(off.account.id, 'disabled', 'test');
+
+    const res = await ana.agent.get('/api/schedule/birthdays').expect(200);
+    const sorted = [...res.body.birthdays].sort((a, b) => a.name.localeCompare(b.name));
+    assert.deepEqual(sorted, [
+      { accountId: ana.account.id, name: 'Ana', birthday: '03-05' },
+      { accountId: bia.account.id, name: 'Bia', birthday: '02-29' },
+    ]);
+    assert.doesNotMatch(JSON.stringify(res.body), /@/);
+
+    await request(app).get('/api/schedule/birthdays').expect(401);
+  });
+
+  test('a changed birthday tells every app to read the calendar again', async () => {
+    const told = [];
+    const hub = createChatHub();
+    const publish = hub.publish;
+    hub.publish = (event, data, to) => {
+      told.push(event);
+      publish(event, data, to);
+    };
+    app = buildApp({ chatHub: hub });
+    const ana = await signIn(app, stores.accounts, 'Ana');
+    await ana.agent
+      .put('/api/birthday')
+      .send({ birthday: { day: 1, month: 6 } })
+      .expect(200);
+    assert.ok(told.includes('schedule'));
   });
 });

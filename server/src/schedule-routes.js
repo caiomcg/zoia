@@ -110,6 +110,16 @@ export function scheduleRoutes({
     res.json({ events: await Promise.all(list.map(shown)) });
   });
 
+  // Everyone's birthday, all year, for the calendar (ADR 0056): the day and
+  // month and the name, never an email. People let in, never a bot, as the
+  // sweep counts them.
+  router.get('/birthdays', requireSession, async (_req, res) => {
+    const birthdays = (await accountStore.list())
+      .filter((a) => a.status === 'active' && !isBot(a) && a.birthday)
+      .map((a) => ({ accountId: a.id, name: a.name ?? null, birthday: a.birthday }));
+    res.json({ birthdays });
+  });
+
   router.post('/', requireSession, writeLimiter, async (req, res) => {
     const result = await events.add(req.body ?? {}, {
       by: req.user.accountId,
