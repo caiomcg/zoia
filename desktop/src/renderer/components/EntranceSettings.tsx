@@ -8,7 +8,7 @@ import {
   useEntranceSound,
   useSoundboardSettings,
 } from '../soundboard/library';
-import { playSound } from '../soundboard/player';
+import { playSound, PREVIEW_KEY } from '../soundboard/player';
 import { useSoundSearch } from '../soundboard/useSoundSearch';
 import { SettingsCard, SettingsToggle } from './SettingsCard';
 import { IconClose, IconNote, IconPreview, IconSearch, SoundPager } from './SoundboardPanel';
@@ -35,7 +35,7 @@ export default function EntranceSettingsSection() {
 
   const preview = async (sound: Sound) => {
     setPreviewFailed(null);
-    if ((await playSound('preview', sound, false, 'entrance')) === null) {
+    if ((await playSound(PREVIEW_KEY, sound, false, 'entrance')) === null) {
       setPreviewFailed(sound.name);
     }
   };

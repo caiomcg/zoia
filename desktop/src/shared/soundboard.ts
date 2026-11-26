@@ -23,6 +23,12 @@ const SOUND_PATH = '/media/sounds/';
 /** A sound plays for this long at most, for everyone, then fades out. */
 export const MAX_SOUND_SECONDS = 10;
 
+/**
+ * The shortest a sound may be cut to by the person who plays it. Shorter is a
+ * click, not a sound.
+ */
+export const MIN_SOUND_SECONDS = 0.5;
+
 /** Someone's entrance sound (ADR 0046), as JSON, set by their own app as they arrive. */
 export const ENTRANCE_ATTRIBUTE = 'zoia.entrance';
 
@@ -43,6 +49,11 @@ export interface Sound {
   url: string;
   /** Its button colour on Myinstants, as six hex digits, when it has one. */
   color: string | null;
+  /**
+   * Where the person who plays it cut it, in seconds: everyone hears it stop
+   * there, fading out. Absent, it plays whole, up to MAX_SOUND_SECONDS.
+   */
+  seconds?: number;
 }
 
 /** One page of a search. */
@@ -71,6 +82,18 @@ export function isSoundUrl(value: unknown): value is string {
   return FILE.test(file) && !/^\.+$/.test(file);
 }
 
+/**
+ * Where a sound is cut, from a pad or a message: MIN_SOUND_SECONDS to just
+ * under MAX_SOUND_SECONDS, to a tenth. Anything else is no cut (undefined):
+ * MAX_SOUND_SECONDS or more is where every sound is cut anyway.
+ */
+export function soundSeconds(value: unknown): number | undefined {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value >= MAX_SOUND_SECONDS) {
+    return undefined;
+  }
+  return Math.max(MIN_SOUND_SECONDS, Math.round(value * 10) / 10);
+}
+
 /** A sound from Myinstants or from a message, or null if any of it is wrong. */
 export function parseSound(value: unknown): Sound | null {
   if (!value || typeof value !== 'object') return null;
@@ -82,7 +105,10 @@ export function parseSound(value: unknown): Sound | null {
   const name = [...raw.name.trim()].slice(0, MAX_NAME).join('').trim();
   if (!name) return null;
   const color = typeof raw.color === 'string' && COLOR.test(raw.color) ? raw.color : null;
-  return { slug: raw.slug, name, url, color };
+  const seconds = soundSeconds(raw.seconds);
+  return seconds === undefined
+    ? { slug: raw.slug, name, url, color }
+    : { slug: raw.slug, name, url, color, seconds };
 }
 
 /** A list of sounds as kept, each one once, at most `max`. Anything else is an empty list. */
@@ -120,7 +146,8 @@ export function parseSoundPage(body: unknown, page: number): SoundPage {
 /** The message that plays `sound` for everyone in the room. */
 export function encodeSoundMessage(sound: Sound): Uint8Array<ArrayBuffer> {
   const { slug, name, url } = sound;
-  return new TextEncoder().encode(JSON.stringify({ slug, name, url }));
+  const seconds = soundSeconds(sound.seconds);
+  return new TextEncoder().encode(JSON.stringify({ slug, name, url, seconds }));
 }
 
 /** A message from the room, as the sound it plays, or null for anything else. */
@@ -161,7 +188,8 @@ export const MAX_PAD_NAME = 40;
 
 /**
  * A sound kept on your soundpad: named as you like, emoji included, with an
- * emoji of its own to show on the pad. Myinstants' slug and file stay its.
+ * emoji of its own to show on the pad, and cut where you like (`seconds`).
+ * Myinstants' slug and file stay its.
  */
 export interface Pad extends Sound {
   emoji: string | null;
@@ -182,23 +210,38 @@ export function removePad(pads: readonly Pad[], slug: string): Pad[] {
   return pads.filter((p) => p.slug !== slug);
 }
 
-/** Names a pad and sets its emoji. An empty name keeps the one it had. */
+/**
+ * Names a pad, sets its emoji and, given `seconds`, where it is cut: null
+ * plays it whole. An empty name keeps the one it had.
+ */
 export function renamePad(
   pads: readonly Pad[],
   slug: string,
-  change: { name: string; emoji: string | null },
+  change: { name: string; emoji: string | null; seconds?: number | null },
 ): Pad[] {
   return pads.map((p) => {
     if (p.slug !== slug) return p;
     const name = clip(change.name.trim(), MAX_PAD_NAME) || p.name;
-    return { ...p, name, emoji: padEmoji(change.emoji) };
+    const renamed: Pad = { ...p, name, emoji: padEmoji(change.emoji) };
+    return change.seconds === undefined ? renamed : cutAt(renamed, change.seconds);
   });
 }
 
-/** What a pad plays as, for everyone: its emoji and the name you gave it. */
+/** `sound` cut at `seconds`, or whole for null or anything past every sound's limit. */
+export function cutAt<T extends Sound>(sound: T, seconds: number | null): T {
+  const cut = soundSeconds(seconds);
+  const next = { ...sound };
+  // Gone rather than undefined, so a pad played whole is kept and sent as before.
+  if (cut === undefined) delete next.seconds;
+  else next.seconds = cut;
+  return next;
+}
+
+/** What a pad plays as, for everyone: its emoji, the name you gave it, where you cut it. */
 export function padSound(pad: Pad): Sound {
   const { slug, url, color } = pad;
-  return { slug, url, color, name: pad.emoji ? `${pad.emoji} ${pad.name}` : pad.name };
+  const name = pad.emoji ? `${pad.emoji} ${pad.name}` : pad.name;
+  return cutAt({ slug, url, color, name }, pad.seconds ?? null);
 }
 
 const GRAPHEMES = new Intl.Segmenter(undefined, { granularity: 'grapheme' });

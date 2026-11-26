@@ -957,6 +957,15 @@ export const pt: Messages = {
   'soundboard.playing': 'Tocando “{sound}”',
   'soundboard.mutePerson': 'Mutar os efeitos sonoros desta pessoa',
   'soundboard.from': 'Sons do Myinstants',
+  'soundboard.length': 'Duração',
+  'soundboard.lengthHint': 'Todos no canal ouvem o som parar aqui',
+  'soundboard.lengthWhole': 'Inteiro',
+  'soundboard.lengthWholeOf': 'Inteiro · {length}',
+  'soundboard.lengthOf': '{seconds} de {length}',
+  'soundboard.seconds': '{seconds} s',
+  'soundboard.maxSeconds': 'Cortar efeitos sonoros após · {seconds}',
+  'soundboard.maxSecondsHint':
+    'Só para você: os outros ouvem cada som pelo tempo que quem tocou escolheu. As prévias tocam inteiras.',
   'entrance.title': 'Som de entrada',
   'entrance.intro':
     'Toca para o canal quando você chega com o microfone ligado, por no máximo {seconds} segundos. Fica salvo neste computador. Um som novo vale a partir do próximo canal em que você entrar.',

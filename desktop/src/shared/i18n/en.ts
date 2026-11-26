@@ -960,6 +960,15 @@ export const en = {
   'soundboard.playing': 'Playing “{sound}”',
   'soundboard.mutePerson': 'Mute their sound effects',
   'soundboard.from': 'Sounds from Myinstants',
+  'soundboard.length': 'Length',
+  'soundboard.lengthHint': 'Everyone in the channel hears it stop here',
+  'soundboard.lengthWhole': 'Whole',
+  'soundboard.lengthWholeOf': 'Whole · {length}',
+  'soundboard.lengthOf': '{seconds} of {length}',
+  'soundboard.seconds': '{seconds} s',
+  'soundboard.maxSeconds': 'Cut sound effects after · {seconds}',
+  'soundboard.maxSecondsHint':
+    'Only for you: everyone else hears each sound as long as whoever played it chose. Previews play whole.',
   'entrance.title': 'Entrance sound',
   'entrance.intro':
     'Plays for the channel when you arrive with your microphone on, for {seconds} seconds at most. It is kept on this computer. A new sound counts from the next channel you join.',

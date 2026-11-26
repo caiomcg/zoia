@@ -24,6 +24,36 @@ export const MAX_LOCK_MS = 10_000;
  */
 export const NETWORK_SLACK_MS = 500;
 
+/**
+ * The most a sound effect may play for you, whoever played it: you may cut
+ * everyone's shorter (SoundboardSettings.maxSeconds), from this down to
+ * MIN_HEARD_SECONDS. The same as MAX_SOUND_SECONDS, which is not imported
+ * so `node --test` can load this file.
+ */
+export const MAX_HEARD_SECONDS = MAX_LOCK_MS / 1000;
+export const MIN_HEARD_SECONDS = 1;
+
+/**
+ * How long a sound plays, in seconds: `seconds`, which locks its player out
+ * and is the same for everyone, and `heard`, what plays here.
+ *
+ * - `audible`: its audible part (audibleRange).
+ * - `limit`: its kind's, where every sound of it is cut.
+ * - `cut`: where the person who played it cut it, if they did.
+ * - `cap`: where you cut everyone's, if you do. It shortens only what you
+ *   hear: the lock stays the sound's, so a cap is no way to play more often,
+ *   and a listener with one holds the sender as long as anyone does.
+ */
+export function playLength(
+  audible: number,
+  limit: number,
+  cut?: number,
+  cap?: number,
+): { seconds: number; heard: number } {
+  const seconds = Math.max(0, Math.min(audible, limit, cut ?? Infinity));
+  return { seconds, heard: Math.min(seconds, cap ?? Infinity) };
+}
+
 /** How long a sound of `seconds` plays, so how long it locks the player out, in ms. */
 export function lockMs(seconds: number): number {
   if (!Number.isFinite(seconds) || seconds <= 0) return 0;
@@ -53,6 +83,12 @@ export interface SoundboardSettings {
   muted: boolean;
   /** Identities whose sounds you do not hear. */
   mutedPeople: string[];
+  /**
+   * The most any sound effect plays for you, in seconds: everyone's, yours
+   * as you play it included, but not a preview. MAX_HEARD_SECONDS is no cut
+   * of your own.
+   */
+  maxSeconds: number;
   /** Entrance sounds' volume, 0–1, apart from the effects'. */
   entranceVolume: number;
   /** No entrance sound plays for you. Yours still plays for everyone else. */
@@ -65,6 +101,7 @@ export const DEFAULT_SOUNDBOARD_SETTINGS: SoundboardSettings = {
   volume: 0.5,
   muted: false,
   mutedPeople: [],
+  maxSeconds: MAX_HEARD_SECONDS,
   entranceVolume: 0.5,
   entrancesMuted: false,
   mutedEntrances: [],
@@ -74,6 +111,11 @@ function parseVolume(value: unknown, fallback: number): number {
   return typeof value === 'number' && Number.isFinite(value)
     ? Math.min(1, Math.max(0, value))
     : fallback;
+}
+
+function parseMaxSeconds(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return MAX_HEARD_SECONDS;
+  return Math.min(MAX_HEARD_SECONDS, Math.max(MIN_HEARD_SECONDS, Math.round(value * 2) / 2));
 }
 
 function parseIdentities(value: unknown): string[] {
@@ -91,11 +133,13 @@ export function parseSoundboardSettings(raw: string | null): SoundboardSettings 
   } catch {
     // Unreadable is the same as never set.
   }
-  const { volume, muted, mutedPeople, entranceVolume, entrancesMuted, mutedEntrances } = stored;
+  const { volume, muted, mutedPeople, maxSeconds } = stored;
+  const { entranceVolume, entrancesMuted, mutedEntrances } = stored;
   return {
     volume: parseVolume(volume, DEFAULT_SOUNDBOARD_SETTINGS.volume),
     muted: muted === true,
     mutedPeople: parseIdentities(mutedPeople),
+    maxSeconds: parseMaxSeconds(maxSeconds),
     entranceVolume: parseVolume(entranceVolume, DEFAULT_SOUNDBOARD_SETTINGS.entranceVolume),
     entrancesMuted: entrancesMuted === true,
     mutedEntrances: parseIdentities(mutedEntrances),
@@ -105,6 +149,11 @@ export function parseSoundboardSettings(raw: string | null): SoundboardSettings 
 /** How loud the soundboard plays: nothing while muted. */
 export function effectsGain(settings: SoundboardSettings): number {
   return settings.muted ? 0 : settings.volume;
+}
+
+/** Where you cut everyone's sound effects, or undefined for no cut of your own. */
+export function effectsCap(settings: SoundboardSettings): number | undefined {
+  return settings.maxSeconds < MAX_HEARD_SECONDS ? settings.maxSeconds : undefined;
 }
 
 /** How loud entrance sounds play: nothing while muted, whatever the effects do. */

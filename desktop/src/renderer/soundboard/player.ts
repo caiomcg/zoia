@@ -5,7 +5,8 @@
  * silences both (deafen.ts).
  *
  * One sound per person, whatever its kind: a new one from someone cuts the
- * one they were playing. Every sound stops at its kind's limit, fading out.
+ * one they were playing. Every sound stops at its kind's limit, fading out,
+ * or sooner where its player cut it, or where you cut every effect.
  */
 
 import { isDucked, subscribeDucked } from '../voice/duck';
@@ -13,11 +14,21 @@ import { isDeafenedHere, subscribeDeafened } from '../voice/deafen';
 import { useSyncExternalStore } from 'react';
 import { MAX_ENTRANCE_SECONDS, MAX_SOUND_SECONDS, type Sound } from '../../shared/soundboard';
 import { soundboardSettings } from './library';
-import { audibleRange, effectsGain, entranceGain, type SoundKind } from './model';
+import {
+  audibleRange,
+  effectsCap,
+  effectsGain,
+  entranceGain,
+  playLength,
+  type SoundKind,
+} from './model';
 import { registerAudioSink } from '../voice/audioSink';
 
 /** Long enough not to click when a sound is cut, short enough not to be heard as a fade. */
 const FADE_S = 0.15;
+
+/** What your own previews play as: heard whole, past your cut of everyone's. */
+export const PREVIEW_KEY = 'preview';
 
 /** Decoded sounds kept for the next play, most recent last. */
 const MAX_DECODED = 30;
@@ -137,11 +148,23 @@ export function stopAllSounds(kind?: SoundKind) {
 }
 
 /**
- * Plays `sound` as `key`'s: an identity, or "preview" for your own preview.
+ * How long `sound` plays, in seconds, its silence skipped and cut where its
+ * player cut it, up to the effects' limit; null if it could not be loaded.
+ */
+export async function soundLength(sound: Sound): Promise<number | null> {
+  const buffer = await bufferFor(output().context, sound.url);
+  if (!buffer) return null;
+  const { from, to } = audibleOf(buffer);
+  return playLength(to - from, LIMIT_SECONDS.effect, sound.seconds).seconds;
+}
+
+/**
+ * Plays `sound` as `key`'s: an identity, or PREVIEW_KEY for your own preview.
  * With `show`, the people list shows it beside them while it plays. Resolves
- * to when it started (performance.now()) and how many seconds it plays for
- * (its audible part, the silence around it skipped, up to `kind`'s limit),
- * or null if it could not be loaded.
+ * to when it started (performance.now()) and how many seconds the sound is
+ * (its audible part, the silence around it skipped, up to `kind`'s limit and
+ * where its player cut it), or null if it could not be loaded. That is what
+ * locks its player out; your own cut of every effect only plays less of it.
  */
 export async function playSound(
   key: string,
@@ -157,8 +180,9 @@ export async function playSound(
   if (generation.get(key) === mine) loading.delete(key);
   if (!buffer) return null;
   const { from, to } = audibleOf(buffer);
-  const limit = LIMIT_SECONDS[kind];
-  const seconds = Math.min(to - from, limit);
+  const cap =
+    kind === 'effect' && key !== PREVIEW_KEY ? effectsCap(soundboardSettings.get()) : undefined;
+  const { seconds, heard } = playLength(to - from, LIMIT_SECONDS[kind], sound.seconds, cap);
   if (generation.get(key) !== mine) return { startedAt: performance.now(), seconds };
 
   const source = context.createBufferSource();
@@ -166,11 +190,12 @@ export async function playSound(
   const gain = context.createGain();
   source.connect(gain).connect(masters[kind]);
   const start = context.currentTime;
-  if (to - from > limit) {
-    gain.gain.setValueAtTime(1, start + limit - FADE_S);
-    gain.gain.linearRampToValueAtTime(0, start + limit);
+  if (to - from > heard) {
+    const fade = Math.min(FADE_S, heard / 2);
+    gain.gain.setValueAtTime(1, start + heard - fade);
+    gain.gain.linearRampToValueAtTime(0, start + heard);
   }
-  source.start(start, from, seconds);
+  source.start(start, from, heard);
   const startedAt = performance.now();
   const entry: Playing = { source, gain, kind, shown: show ? sound.name : null };
   playing.set(key, entry);

@@ -9,8 +9,11 @@ import {
 import { createPortal } from 'react-dom';
 import {
   addPad,
+  cutAt,
   MAX_PAD_NAME,
   MAX_PADS,
+  MAX_SOUND_SECONDS,
+  MIN_SOUND_SECONDS,
   onPad,
   padEmoji,
   padSound,
@@ -26,7 +29,7 @@ import {
   type SoundShortcut,
 } from '../../shared/shortcuts';
 import type { MessageKey } from '../../shared/i18n';
-import { useT } from '../i18n';
+import { useLanguage, useT } from '../i18n';
 import {
   pads as padStore,
   recents,
@@ -38,7 +41,7 @@ import {
 } from '../soundboard/library';
 import { removeRecent } from '../soundboard/model';
 import { useWheelRange } from './useWheelRange';
-import { playSound } from '../soundboard/player';
+import { playSound, PREVIEW_KEY, soundLength } from '../soundboard/player';
 import type { SoundboardControls } from '../soundboard/useSoundboard';
 import { useSoundSearch, type SoundSearch } from '../soundboard/useSoundSearch';
 
@@ -159,7 +162,7 @@ export default function SoundboardPanel({
 
   const preview = async (sound: Sound) => {
     setPreviewFailed(null);
-    if ((await playSound('preview', sound, false)) === null) setPreviewFailed(sound.name);
+    if ((await playSound(PREVIEW_KEY, sound, false)) === null) setPreviewFailed(sound.name);
   };
 
   const padFull = padList.length >= MAX_PADS;
@@ -231,7 +234,7 @@ export default function SoundboardPanel({
           pad={editingPad}
           shortcut={shortcuts}
           previewDisabled={settings.muted}
-          onPreview={() => void preview(editingPad)}
+          onPreview={(seconds) => void preview(cutAt(editingPad, seconds))}
           onSave={(change) => {
             padStore.set(renamePad(padStore.get(), editingPad.slug, change));
             setEditing(null);
@@ -490,8 +493,8 @@ function PadButton({
 
 /**
  * Editing a pad, in the pad's place: its emoji, its name, which may hold
- * emoji too, and its shortcut. Saving keeps the name and emoji; a shortcut is
- * kept as soon as it is recorded, as voice's are.
+ * emoji too, where it is cut, and its shortcut. Saving keeps the name, emoji
+ * and cut; a shortcut is kept as soon as it is recorded, as voice's are.
  */
 function PadEditor({
   pad,
@@ -505,14 +508,17 @@ function PadEditor({
   pad: Pad;
   shortcut: SoundShortcuts;
   previewDisabled: boolean;
-  onPreview: () => void;
-  onSave: (change: { name: string; emoji: string | null }) => void;
+  /** Previews it cut at `seconds`, null for whole: as the editor has it, saved or not. */
+  onPreview: (seconds: number | null) => void;
+  onSave: (change: { name: string; emoji: string | null; seconds: number | null }) => void;
   onRemove: () => void;
   onBack: () => void;
 }) {
   const t = useT();
   const [name, setName] = useState(pad.name);
   const [emoji, setEmoji] = useState(pad.emoji ?? '');
+  const [seconds, setSeconds] = useState<number | null>(pad.seconds ?? null);
+  const length = usePadLength(pad);
   const nameRef = useRef<HTMLInputElement>(null);
   const emojiRef = useRef<HTMLInputElement>(null);
   // Where the system's picker types: the field used last, the name at first.
@@ -524,7 +530,7 @@ function PadEditor({
     nameRef.current?.select();
   }, []);
 
-  const save = () => onSave({ name, emoji: emoji || null });
+  const save = () => onSave({ name, emoji: emoji || null, seconds });
   // The grid's buttons must not take the focus from the field being typed in.
   const keepFocus = (event: ReactMouseEvent) => event.preventDefault();
 
@@ -613,6 +619,8 @@ function PadEditor({
         </button>
       </div>
 
+      <PadLength length={length} seconds={seconds} onChange={setSeconds} />
+
       {shortcut.available && (
         <div className="soundpad-editor-row">
           <span className="soundpad-editor-label">{t('soundboard.shortcutLabel')}</span>
@@ -654,7 +662,7 @@ function PadEditor({
         <button
           type="button"
           className="icon-button soundboard-icon"
-          onClick={onPreview}
+          onClick={() => onPreview(seconds)}
           disabled={previewDisabled}
           title={t('soundboard.preview', { name: pad.name })}
           aria-label={t('soundboard.preview', { name: pad.name })}
@@ -666,6 +674,77 @@ function PadEditor({
         </button>
       </div>
     </div>
+  );
+}
+
+/** The step a pad's cut moves by: MIN_SOUND_SECONDS. */
+const CUT_STEP = MIN_SOUND_SECONDS;
+
+/** How long `pad`'s sound is whole, in seconds, once loaded; null until then or if it cannot be. */
+function usePadLength(pad: Pad): number | null {
+  const [length, setLength] = useState<number | null>(null);
+  useEffect(() => {
+    let live = true;
+    void soundLength(cutAt(pad, null)).then((seconds) => live && setLength(seconds));
+    return () => {
+      live = false;
+    };
+  }, [pad]);
+  return length;
+}
+
+/**
+ * Where a pad is cut, for everyone who hears it: from MIN_SOUND_SECONDS up to
+ * the whole sound, which is its right end. Until the sound has loaded, the
+ * scale runs to MAX_SOUND_SECONDS, where every sound is cut.
+ */
+function PadLength({
+  length,
+  seconds,
+  onChange,
+}: {
+  length: number | null;
+  seconds: number | null;
+  onChange: (seconds: number | null) => void;
+}) {
+  const t = useT();
+  const { language } = useLanguage();
+  // The whole sound, to the next step: past it a cut changes nothing.
+  const whole = Math.max(
+    CUT_STEP,
+    Math.min(MAX_SOUND_SECONDS, Math.ceil((length ?? MAX_SOUND_SECONDS) / CUT_STEP) * CUT_STEP),
+  );
+  const value = seconds === null ? whole : Math.min(seconds, whole);
+  const format = (n: number) =>
+    t('soundboard.seconds', {
+      seconds: n.toLocaleString(language, { maximumFractionDigits: 1 }),
+    });
+  const shown =
+    seconds === null || seconds >= whole
+      ? length === null
+        ? t('soundboard.lengthWhole')
+        : t('soundboard.lengthWholeOf', { length: format(length) })
+      : length === null
+        ? format(value)
+        : t('soundboard.lengthOf', { seconds: format(value), length: format(length) });
+  return (
+    <label className="soundpad-editor-row soundpad-length" title={t('soundboard.lengthHint')}>
+      <span className="soundpad-editor-label">{t('soundboard.length')}</span>
+      <input
+        className="settings-range"
+        type="range"
+        min={CUT_STEP}
+        max={whole}
+        step={CUT_STEP}
+        value={value}
+        onChange={(event) => {
+          const next = Number(event.target.value);
+          onChange(next >= whole ? null : next);
+        }}
+        aria-valuetext={shown}
+      />
+      <span className="soundpad-length-value">{shown}</span>
+    </label>
   );
 }
 

@@ -7428,6 +7428,21 @@ button.danger:active:not(:disabled),
   min-height: 32px;
 }
 
+.soundpad-length .settings-range {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Wide enough for "7.5 s of 9.3 s" not to move the slider as it changes. */
+.soundpad-length-value {
+  flex: none;
+  min-width: 92px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  text-align: right;
+}
+
 .soundpad-editor-actions {
   display: flex;
   gap: 6px;
